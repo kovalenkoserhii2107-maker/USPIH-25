@@ -1,5 +1,5 @@
 // URL вашего будущего веб-приложения Google (заполним позже)
-const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbyEsia0QDjhq3BmPGe7NQ1yuYYQJgM90EdJ1ZX1cO1jApuja6nuM3TnVOOANjD6CzXY5w/exec";
+const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbyhlSN4ut-ZqF2a_rrmN1MTnrC4Dui7bvR7uEBTqLZRwS8ya0NufGKVFBMDDpXHsLTa4g/exec";
 
 const loginSection = document.getElementById('loginSection');
 const passwordSection = document.getElementById('passwordSection');
@@ -136,8 +136,17 @@ function renderOwnerCard(ownerData, number, isEditMode) {
     card.className = 'card owner-card';
     
     let isNew = !ownerData;
-    let shareFrac = ownerData ? ownerData.shareFrac : "";
-    let sharePerc = ownerData ? ownerData.sharePerc : "";
+    let shareFrac = ownerData ? String(ownerData.shareFrac) : "";
+    let sharePerc = ownerData ? String(ownerData.sharePerc) : "";
+
+    // ЖОРСТКИЙ ЗАХИСТ ВІД ДАТ ТА АПОСТРОФІВ
+    if (shareFrac.includes('GMT') || shareFrac.includes('Time') || shareFrac.includes('2026')) {
+        shareFrac = ""; sharePerc = "";
+    }
+    // Якщо скрипт повернув апостроф (який ми ставили для захисту від дат), прибираємо його
+    if (shareFrac.startsWith("'")) {
+        shareFrac = shareFrac.substring(1);
+    }
 
     const name = ownerData ? ownerData.name : "";
     const docInfo = ownerData ? ownerData.docInfo : "";
