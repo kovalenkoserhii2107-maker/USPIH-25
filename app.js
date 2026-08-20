@@ -50,9 +50,10 @@ document.getElementById('loginBtn').addEventListener('click', () => {
             loginSection.style.display = "none";
             
             if (data.isFirstLogin) {
+                document.getElementById('cancelPassBtn').style.display = 'none'; // Забороняємо скасовувати при першому вході
                 passwordSection.style.display = "block";
             } else {
-                topNav.style.display = "block"; // Показуємо шапку тільки в кабінеті
+                topNav.style.display = "block";
                 dataSection.style.display = "block";
             }
         } else {
@@ -68,14 +69,62 @@ function showError(msg) {
     err.innerText = msg; err.style.display = "block";
 }
 
-// ЛОГІКА ДЗВІНОЧКА (Колокольчик)
+// ЛОГІКА ДЗВІНОЧКА ТА МЕНЮ
 const bellBtn = document.getElementById('bellBtn');
 const notifPopup = document.getElementById('notifPopup');
+const menuBtn = document.getElementById('menuBtn');
+const menuPopup = document.getElementById('menuPopup');
+
+// Відкриття повідомлень
 bellBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    menuPopup.style.display = 'none'; // Ховаємо меню, якщо відкрите
     notifPopup.style.display = notifPopup.style.display === 'none' ? 'block' : 'none';
-    document.getElementById('notifBadge').style.display = 'none'; // Ховаємо червону крапку після прочитання
+    document.getElementById('notifBadge').style.display = 'none';
 });
+
+// Відкриття меню (три крапки)
+menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    notifPopup.style.display = 'none'; // Ховаємо повідомлення, якщо відкриті
+    menuPopup.style.display = menuPopup.style.display === 'none' ? 'block' : 'none';
+});
+
+// Закриття попапів при кліку в будь-яке інше місце
+document.addEventListener('click', (e) => {
+    if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
+        notifPopup.style.display = 'none';
+    }
+    if (!menuPopup.contains(e.target) && !menuBtn.contains(e.target)) {
+        menuPopup.style.display = 'none';
+    }
+});
+
+// Кнопка: Вийти з кабінету (з меню)
+document.getElementById('menuLogoutBtn').addEventListener('click', () => {
+    location.reload(); 
+});
+
+// Кнопка: Змінити пароль (з меню)
+document.getElementById('menuChangePassBtn').addEventListener('click', () => {
+    menuPopup.style.display = 'none';
+    document.getElementById('dataSection').style.display = 'none';
+    
+    // Очищаємо поля перед відкриттям
+    document.getElementById('newPass').value = '';
+    document.getElementById('confirmPass').value = '';
+    document.getElementById('passError').style.display = 'none';
+    
+    document.getElementById('cancelPassBtn').style.display = 'block'; // Дозволяємо скасувати
+    document.getElementById('passwordSection').style.display = 'block';
+});
+
+// Скасування зміни пароля (повернення в кабінет)
+document.getElementById('cancelPassBtn').addEventListener('click', () => {
+    document.getElementById('passwordSection').style.display = 'none';
+    document.getElementById('dataSection').style.display = 'block';
+});
+
 // Закрити попап при кліку в іншому місці
 document.addEventListener('click', (e) => {
     if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
@@ -418,5 +467,3 @@ async function refreshDataSilent() {
         console.error("Помилка фонового оновлення", e);
     }
 }
-
-document.getElementById('logoutBtn').addEventListener('click', () => location.reload());
