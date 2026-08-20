@@ -1,5 +1,5 @@
 // URL вашего будущего веб-приложения Google (заполним позже)
-const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbySXBdYHimQ04-wf7wQnz5xXQEIDlAlIsibYVXJ5rZFUt5--QQ-bbn7YPMtAknDwLlExA/exec";
+const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbxff531zYaHcDTiI8W6XR16VjkFp96sAfqqUVl7NzqH1V1pno-Z6t3KlngcZqicOeIVsA/exec";
 
 const loginSection = document.getElementById('loginSection');
 const passwordSection = document.getElementById('passwordSection');
@@ -202,6 +202,13 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
         </div>
 
         <div class="edit-mode" style="display: ${isEditMode ? 'block' : 'none'};">
+            <!-- ОСЬ ЦЕЙ РЯДОК ЗБЕРІГАЄ СТАРІ ДОКУМЕНТИ -->
+            <input type="hidden" class="h-existing-files" value="${fileUrls}">
+            
+            <h3 class="card-title">${name ? 'Редагування даних' : 'Новий співвласник'}</h3>
+            <div class="form-group">
+                <label>ПІБ співвласника</label>
+                
             <h3 class="card-title">${name ? 'Редагування даних' : 'Новий співвласник'}</h3>
             <div class="form-group">
                 <label>ПІБ співвласника</label>
@@ -304,6 +311,10 @@ async function saveAllDataToGoogle() {
         const customInput = card.querySelector('.i-share-custom').value;
         const fileInput = card.querySelector('.i-files');
         
+        // Зчитуємо старі файли з прихованого поля
+        const existingFilesInput = card.querySelector('.h-existing-files');
+        const existingFiles = existingFilesInput ? existingFilesInput.value : "";
+        
         let shareFrac = "", sharePerc = "";
         if (presetSelect === 'custom') {
             const calc = calculateShares(customInput);
@@ -321,21 +332,22 @@ async function saveAllDataToGoogle() {
             }
         }
 
-        ownersData.push({ name: name, docInfo: card.querySelector('.i-doc').value, shareFrac: shareFrac, sharePerc: sharePerc, files: filesData });
+        ownersData.push({ 
+            name: name, 
+            docInfo: card.querySelector('.i-doc').value, 
+            shareFrac: shareFrac, 
+            sharePerc: sharePerc, 
+            existingFiles: existingFiles, // <--- ПЕРЕДАЄМО СТАРІ ФАЙЛИ НА СЕРВЕР
+            files: filesData 
+        });
     }
 
-    // Надійне зчитування площі (страховка від порожнього поля)
     let currentArea = document.getElementById('aptArea').value;
     if (!currentArea || currentArea.trim() === "") {
         currentArea = document.getElementById('displayAreaVal').innerText.replace('--', '').trim();
     }
 
-    const payload = { 
-        action: "update", 
-        aptNumber: aptInput.value, 
-        area: currentArea, // Тепер площа ніколи не загубиться
-        owners: ownersData 
-    };
+    const payload = { action: "update", aptNumber: aptInput.value, area: currentArea, owners: ownersData };
     const res = await fetch(GOOGLE_APP_URL, { method: 'POST', body: JSON.stringify(payload) });
     const data = await res.json();
     if (data.status !== "success") throw new Error(data.message);
