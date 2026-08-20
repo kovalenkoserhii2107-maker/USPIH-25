@@ -457,3 +457,36 @@ select {
 }
 .btn-doc-view:hover { background: #E5E5EA; transform: scale(0.98); }
 .btn-doc-view svg { width: 16px; height: 16px; stroke: currentColor; }
+/* ВИПАДАЮЧЕ МЕНЮ (Apple Style) */
+.menu-popup {
+    position: absolute;
+    top: 40px;
+    right: 0;
+    width: 200px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+    padding: 6px 0;
+    z-index: 101;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+.menu-item {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 12px 20px;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.menu-item:hover {
+    background: var(--input-bg);
+}
+.menu-item-danger {
+    color: var(--apple-red);
+}
