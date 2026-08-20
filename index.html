@@ -3,38 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Реєстр співвласників | ОСББ «Успіх-25»</title>
+    <title>ОСББ «Успіх-25» | Кабінет</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    
+    <!-- Шапка з повідомленнями (показується тільки після входу) -->
+    <header id="topNav" style="display: none;">
+        <div class="nav-content">
+            <h2 class="nav-title">ОСББ «Успіх-25»</h2>
+            <div class="notification-wrapper">
+                <button id="bellBtn" class="bell-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                    <span id="notifBadge" class="badge" style="display:none;"></span>
+                </button>
+                <!-- Вікно повідомлень -->
+                <div id="notifPopup" class="notif-popup" style="display:none;">
+                    <h4>Повідомлення від адміністратора</h4>
+                    <p id="adminMessageText">Немає нових повідомлень.</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
     <div class="container">
-        
-        <!-- Блок авторизации -->
+        <!-- Блок авторизації -->
         <div id="loginSection" class="card central-card">
-            <h1 class="apple-title">ОСББ «Успіх-25»</h1>
-            <p class="subtitle">Кабінет співвласника</p>
+            <h1 class="apple-title">Вхід у кабінет</h1>
+            <p class="subtitle">Введіть дані вашої квартири</p>
             <div class="form-group">
-                <label for="aptInput">Номер квартири</label>
+                <label>Номер квартири</label>
                 <input type="number" id="aptInput" placeholder="Наприклад: 45">
             </div>
             <div class="form-group">
-                <label for="passInput">Пароль</label>
+                <label>Пароль</label>
                 <input type="password" id="passInput" placeholder="Введіть пароль">
             </div>
             <button id="loginBtn" class="btn btn-primary">Увійти</button>
             <p id="loginError" class="error-text" style="display: none;"></p>
         </div>
 
-        <!-- Блок смены пароля -->
+        <!-- Блок зміни пароля -->
         <div id="passwordSection" class="card central-card" style="display: none;">
             <h2 class="apple-title">Безпека</h2>
-            <p class="subtitle">Будь ласка, встановіть власний пароль.</p>
+            <p class="subtitle">Будь ласка, встановіть власний надійний пароль.</p>
             <div class="form-group">
-                <label for="newPass">Новий пароль</label>
+                <label>Новий пароль</label>
                 <input type="password" id="newPass" placeholder="Мінімум 4 символи">
             </div>
             <div class="form-group">
-                <label for="confirmPass">Повторіть новий пароль</label>
+                <label>Повторіть новий пароль</label>
                 <input type="password" id="confirmPass" placeholder="Повторіть пароль">
             </div>
             <button id="savePassBtn" class="btn btn-primary">Зберегти пароль</button>
@@ -44,18 +62,27 @@
         <!-- Головний кабінет (Блок даних) -->
         <div id="dataSection" style="display: none;">
             
-            <!-- Картка площі -->
-            <div class="card" id="areaCard">
-                <div id="areaViewMode">
-                    <h3 class="card-title">Загальна площа</h3>
-                    <div class="area-value-display"><span id="displayAreaVal">--</span> <span class="area-unit">кв.м</span></div>
-                    <button id="editAreaBtn" class="btn btn-secondary">Редагувати площу</button>
-                </div>
-                <div id="areaEditMode" style="display: none;">
-                    <h3 class="card-title">Вкажіть площу</h3>
-                    <div class="form-group">
-                        <input type="number" id="aptArea" step="0.1" placeholder="Наприклад: 65.4">
+            <!-- Картка адреси та площі -->
+            <div class="card" id="areaCard" style="padding: 20px;">
+                <div id="areaViewMode" class="area-view-layout">
+                    <!-- Іконка будинку -->
+                    <div class="building-icon">
+                        <svg viewBox="0 0 24 24" width="40" height="40" stroke="currentColor" stroke-width="1.5" fill="none"><path d="M3 21h18"></path><path d="M9 8h1"></path><path d="M9 12h1"></path><path d="M9 16h1"></path><path d="M14 8h1"></path><path d="M14 12h1"></path><path d="M14 16h1"></path><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path></svg>
                     </div>
+                    <div class="area-details">
+                        <p class="address-text">м. Одеса, вул. Інглезі, буд. 3/3</p>
+                        <p class="area-label">Загальна площа</p>
+                        <div class="area-val-row">
+                            <span class="area-value-display"><span id="displayAreaVal">--</span> <span class="area-unit">кв.м</span></span>
+                            <!-- Маленька кнопка редагування -->
+                            <button id="editAreaBtn" class="btn-small-edit">Редагувати</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="areaEditMode" style="display: none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+                    <label>Вкажіть загальну площу (кв.м)</label>
+                    <input type="number" id="aptArea" step="0.1" placeholder="Наприклад: 65.4">
                     <div class="action-group">
                         <button id="saveAreaBtn" class="btn btn-success">Зберегти</button>
                         <button id="cancelAreaBtn" class="btn btn-secondary">Скасувати</button>
@@ -66,13 +93,12 @@
             <!-- Заголовок блоку співвласників -->
             <div class="section-header">
                 <h2 class="section-title">Співвласники</h2>
-                <button id="addOwnerBtn" class="btn btn-primary btn-small">+ Додати</button>
+                <button id="addOwnerBtn" class="btn btn-primary btn-small" style="background: #007AFF;">+ Додати</button>
             </div>
             
-            <!-- Контейнер для карток власників -->
             <div id="ownersContainer"></div>
             
-            <button id="logoutBtn" class="btn btn-logout">Вийти з кабінету</button>
+            <button id="logoutBtn" class="btn btn-logout" style="margin-top: 40px;">Вийти з кабінету</button>
         </div>
     </div>
     <script src="app.js"></script>
