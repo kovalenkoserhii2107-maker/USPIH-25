@@ -98,6 +98,7 @@ document.getElementById('saveAreaBtn').addEventListener('click', async () => {
     btn.innerText = "⏳..."; btn.disabled = true;
     try {
         await saveAllDataToGoogle();
+        await refreshDataSilent();
         document.getElementById('displayAreaVal').innerText = document.getElementById('aptArea').value || "--";
         document.getElementById('areaEditMode').style.display = 'none';
         document.getElementById('areaViewMode').style.display = 'flex';
@@ -281,7 +282,8 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
 
         try {
             await saveAllDataToGoogle(); 
-            location.reload(); // Найпростіший спосіб оновити UI після збереження, щоб підтягнулися нові кнопки документів і прогресс-бари
+            await refreshDataSilent(); // <--- ТИХЕ ОНОВЛЕННЯ ЗАМІСТЬ RELOAD
+            alert("Дані успішно збережено!");
         } catch (error) {
             alert("Помилка збереження. Перевірте інтернет.");
             btn.innerText = "Зберегти"; btn.disabled = false;
@@ -322,7 +324,18 @@ async function saveAllDataToGoogle() {
         ownersData.push({ name: name, docInfo: card.querySelector('.i-doc').value, shareFrac: shareFrac, sharePerc: sharePerc, files: filesData });
     }
 
-    const payload = { action: "update", aptNumber: aptInput.value, area: document.getElementById('aptArea').value, owners: ownersData };
+    // Надійне зчитування площі (страховка від порожнього поля)
+    let currentArea = document.getElementById('aptArea').value;
+    if (!currentArea || currentArea.trim() === "") {
+        currentArea = document.getElementById('displayAreaVal').innerText.replace('--', '').trim();
+    }
+
+    const payload = { 
+        action: "update", 
+        aptNumber: aptInput.value, 
+        area: currentArea, // Тепер площа ніколи не загубиться
+        owners: ownersData 
+    };
     const res = await fetch(GOOGLE_APP_URL, { method: 'POST', body: JSON.stringify(payload) });
     const data = await res.json();
     if (data.status !== "success") throw new Error(data.message);
@@ -363,5 +376,35 @@ document.getElementById('savePassBtn').addEventListener('click', () => {
         }
     }).finally(() => { btn.innerText = "Зберегти пароль"; btn.disabled = false; });
 });
+
+// ФУНКЦІЯ ТИХОГО ОНОВЛЕННЯ ДАНИХ (БЕЗ ПЕРЕЗАВАНТАЖЕННЯ СТОРІНКИ)
+async function refreshDataSilent() {
+    const apt = aptInput.value;
+    const pass = passInput.value;
+    if (!apt || !pass) return;
+
+    try {
+        const res = await fetch(GOOGLE_APP_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: "login", aptNumber: apt, password: pass })
+        });
+        const data = await res.json();
+        
+        if (data.status === "success") {
+            const areaVal = data.area || "";
+            document.getElementById('aptArea').value = areaVal;
+            document.getElementById('displayAreaVal').innerText = areaVal || "--";
+
+            ownersContainer.innerHTML = ""; 
+            if (data.owners && data.owners.length > 0) {
+                data.owners.forEach((o, index) => renderOwnerCard(o, index + 1, false));
+            } else {
+                renderOwnerCard(null, 1, true);
+            }
+        }
+    } catch (e) {
+        console.error("Помилка фонового оновлення", e);
+    }
+}
 
 document.getElementById('logoutBtn').addEventListener('click', () => location.reload());
