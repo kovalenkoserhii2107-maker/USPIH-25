@@ -1,5 +1,5 @@
 // URL вашего будущего веб-приложения Google (заполним позже)
-const GOOGLE_APP_URL = "ТУТ_БУДЕТ_ССЫЛКА_ИЗ_APPS_SCRIPT";
+const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbxsEF6jgoaC0Md4stZsAayt9POU9fibVjo7GvwreAXwTcRB_JgfRcnG2G9NM43S-3rShQ/exec";
 
 // Элементы интерфейса
 const loginSection = document.getElementById('loginSection');
