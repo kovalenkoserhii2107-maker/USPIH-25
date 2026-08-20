@@ -41,25 +41,24 @@
             <p id="passError" class="error-text" style="display: none;"></p>
         </div>
         
-        <!-- Блок данных (изначально скрыт) -->
+        <!-- Блок данных -->
         <div id="dataSection" style="display: none;">
-            <h2>Дані співвласника</h2>
+            <h2>Дані про власність</h2>
             <div class="form-group">
-                <label for="ownerName">ПІБ власника</label>
-                <input type="text" id="ownerName">
-            </div>
-            <div class="form-group">
-                <label for="aptArea">Площа (кв.м)</label>
-                <input type="number" id="aptArea" step="0.1">
+                <label for="aptArea">Загальна площа квартири (кв.м)</label>
+                <input type="number" id="aptArea" step="0.1" placeholder="Наприклад: 65.4">
             </div>
             
-            <div class="form-group upload-group">
-                <label>Документ на право власності</label>
-                <p class="hint">Завантажте фото або скан (PDF, JPG, PNG)</p>
-                <input type="file" id="docUpload" accept="image/*,application/pdf">
+            <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+            
+            <h3>Співвласники</h3>
+            <div id="ownersContainer">
+                <!-- Сюди будуть додаватись блоки власників -->
             </div>
+            
+            <button id="addOwnerBtn" class="btn-secondary" style="margin-bottom: 20px;">+ Додати співвласника</button>
 
-            <button id="saveBtn">Зберегти та відправити</button>
+            <button id="saveBtn">Зберегти всі дані</button>
             <button id="logoutBtn" class="btn-secondary">Вийти</button>
         </div>
     </div>
