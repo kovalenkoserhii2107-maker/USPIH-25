@@ -8,11 +8,11 @@
 </head>
 <body>
     <div class="container">
-        <h1>ОСББ «Успіх-25»</h1>
         
         <!-- Блок авторизации -->
-        <div id="loginSection">
-            <h2>Вхід до реєстру</h2>
+        <div id="loginSection" class="card central-card">
+            <h1 class="apple-title">ОСББ «Успіх-25»</h1>
+            <p class="subtitle">Кабінет співвласника</p>
             <div class="form-group">
                 <label for="aptInput">Номер квартири</label>
                 <input type="number" id="aptInput" placeholder="Наприклад: 45">
@@ -21,14 +21,14 @@
                 <label for="passInput">Пароль</label>
                 <input type="password" id="passInput" placeholder="Введіть пароль">
             </div>
-            <button id="loginBtn">Увійти</button>
-            <p id="loginError" class="error-text" style="display: none;">Невірний пароль або номер квартири</p>
+            <button id="loginBtn" class="btn btn-primary">Увійти</button>
+            <p id="loginError" class="error-text" style="display: none;"></p>
         </div>
-        
-        <!-- Блок смены пароля (изначально скрыт) -->
-        <div id="passwordSection" style="display: none;">
-            <h2>Зміна пароля</h2>
-            <p class="hint">З метою безпеки змініть тимчасовий пароль на власний.</p>
+
+        <!-- Блок смены пароля -->
+        <div id="passwordSection" class="card central-card" style="display: none;">
+            <h2 class="apple-title">Безпека</h2>
+            <p class="subtitle">Будь ласка, встановіть власний пароль.</p>
             <div class="form-group">
                 <label for="newPass">Новий пароль</label>
                 <input type="password" id="newPass" placeholder="Мінімум 4 символи">
@@ -37,32 +37,43 @@
                 <label for="confirmPass">Повторіть новий пароль</label>
                 <input type="password" id="confirmPass" placeholder="Повторіть пароль">
             </div>
-            <button id="savePassBtn">Зберегти пароль</button>
+            <button id="savePassBtn" class="btn btn-primary">Зберегти пароль</button>
             <p id="passError" class="error-text" style="display: none;"></p>
         </div>
-        
-        <!-- Блок данных -->
+
+        <!-- Головний кабінет (Блок даних) -->
         <div id="dataSection" style="display: none;">
-            <h2>Дані по квартирі</h2>
-            <div class="form-group">
-                <label for="aptArea">Загальна площа квартири (кв.м)</label>
-                <input type="number" id="aptArea" step="0.1" placeholder="Наприклад: 65.4">
+            
+            <!-- Картка площі -->
+            <div class="card" id="areaCard">
+                <div id="areaViewMode">
+                    <h3 class="card-title">Загальна площа</h3>
+                    <div class="area-value-display"><span id="displayAreaVal">--</span> <span class="area-unit">кв.м</span></div>
+                    <button id="editAreaBtn" class="btn btn-secondary">Редагувати площу</button>
+                </div>
+                <div id="areaEditMode" style="display: none;">
+                    <h3 class="card-title">Вкажіть площу</h3>
+                    <div class="form-group">
+                        <input type="number" id="aptArea" step="0.1" placeholder="Наприклад: 65.4">
+                    </div>
+                    <div class="action-group">
+                        <button id="saveAreaBtn" class="btn btn-success">Зберегти</button>
+                        <button id="cancelAreaBtn" class="btn btn-secondary">Скасувати</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Заголовок блоку співвласників -->
+            <div class="section-header">
+                <h2 class="section-title">Співвласники</h2>
+                <button id="addOwnerBtn" class="btn btn-primary btn-small">+ Додати</button>
             </div>
             
-            <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+            <!-- Контейнер для карток власників -->
+            <div id="ownersContainer"></div>
             
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3>Співвласники</h3>
-                <button id="addOwnerBtn" class="btn-secondary" style="width: auto; padding: 5px 10px; margin: 0;">+ Додати</button>
-            </div>
-            
-            <div id="ownersContainer">
-                <!-- Сюди будуть додаватись блоки власників -->
-            </div>
-            
-            <button id="logoutBtn" class="btn-secondary" style="margin-top: 30px;">Вийти з кабінету</button>
+            <button id="logoutBtn" class="btn btn-logout">Вийти з кабінету</button>
         </div>
-        
     </div>
     <script src="app.js"></script>
 </body>
