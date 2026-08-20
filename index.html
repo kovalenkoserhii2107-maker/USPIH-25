@@ -123,6 +123,28 @@
                     </div>
                 </div>
             </div>
+           
+            <!-- Віджет статусу електроенергії -->
+            <div class="card premium-widget-card" id="powerCard" style="margin-top: 16px;">
+                <div class="widget-layout">
+                    <div class="widget-header" style="margin-bottom: 0;">
+                        <!-- Іконка блискавки -->
+                        <div class="icon-circle" id="powerIconBg" style="background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%); color: var(--apple-green);">
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        </div>
+                        <div class="address-group" style="flex: 1;">
+                            <h4 class="address-main" style="font-size: 15px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Електропостачання</h4>
+                            <!-- Статус -->
+                            <p class="address-sub" id="powerStatusText" style="font-size: 20px; font-weight: 700; color: var(--text-main); margin-top: 2px;">Є світло</p>
+                        </div>
+                        <!-- Час оновлення -->
+                        <div class="power-time" style="text-align: right;">
+                            <span style="font-size: 12px; color: var(--text-muted); font-weight: 600; display: block;">Оновлено</span>
+                            <span id="powerLastUpdated" style="font-size: 14px; font-weight: 700; color: var(--text-main);">14:20</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
             <!-- Заголовок блоку співвласників -->
             <div class="section-header">
