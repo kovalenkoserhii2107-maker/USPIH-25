@@ -1,5 +1,5 @@
 // URL вашего будущего веб-приложения Google (заполним позже)
-const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbyhlSN4ut-ZqF2a_rrmN1MTnrC4Dui7bvR7uEBTqLZRwS8ya0NufGKVFBMDDpXHsLTa4g/exec";
+const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbySXBdYHimQ04-wf7wQnz5xXQEIDlAlIsibYVXJ5rZFUt5--QQ-bbn7YPMtAknDwLlExA/exec";
 
 const loginSection = document.getElementById('loginSection');
 const passwordSection = document.getElementById('passwordSection');
@@ -28,6 +28,8 @@ document.getElementById('loginBtn').addEventListener('click', () => {
             const areaVal = data.area || "";
             document.getElementById('aptArea').value = areaVal;
             document.getElementById('displayAreaVal').innerText = areaVal || "--";
+            // Відображення площі та квартири
+            document.getElementById('displayAptNum').innerText = apt; // <--- ДОДАТИ ЦЕ
 
             // Обробка повідомлень від адміністратора
             if (data.adminMessage && data.adminMessage.trim() !== "") {
@@ -108,7 +110,7 @@ document.getElementById('saveAreaBtn').addEventListener('click', async () => {
 
 // 3. МАЛЮВАННЯ КАРТОК ВЛАСНИКІВ
 document.getElementById('addOwnerBtn').addEventListener('click', () => {
-    renderOwnerCard(null, ownersContainer.children.length + 1, true);
+    renderOwnerCard(null, ownersContainer.children.length + 1, true, true);
 });
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
@@ -131,7 +133,8 @@ function calculateShares(val) {
     return { frac: val, perc: val };
 }
 
-function renderOwnerCard(ownerData, number, isEditMode) {
+// Зверніть увагу на новий аргумент "isNewAtTop"
+function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
     const card = document.createElement('div');
     card.className = 'card owner-card';
     
@@ -139,29 +142,58 @@ function renderOwnerCard(ownerData, number, isEditMode) {
     let shareFrac = ownerData ? String(ownerData.shareFrac) : "";
     let sharePerc = ownerData ? String(ownerData.sharePerc) : "";
 
-    // ЖОРСТКИЙ ЗАХИСТ ВІД ДАТ ТА АПОСТРОФІВ
+    // Захист від дат
     if (shareFrac.includes('GMT') || shareFrac.includes('Time') || shareFrac.includes('2026')) {
         shareFrac = ""; sharePerc = "";
     }
-    // Якщо скрипт повернув апостроф (який ми ставили для захисту від дат), прибираємо його
-    if (shareFrac.startsWith("'")) {
-        shareFrac = shareFrac.substring(1);
-    }
+    if (shareFrac.startsWith("'")) shareFrac = shareFrac.substring(1);
 
     const name = ownerData ? ownerData.name : "";
     const docInfo = ownerData ? ownerData.docInfo : "";
+    const fileUrls = ownerData ? ownerData.fileUrls : "";
+
+    // 1. Формуємо HTML для бару частки (Progress Bar)
+    let shareBarHtml = "";
+    if (sharePerc && !isNaN(parseFloat(sharePerc))) {
+        shareBarHtml = `
+        <div class="share-bar-container">
+            <div class="share-bar-fill" style="width: ${sharePerc}%;"></div>
+        </div>`;
+    }
+
+    // 2. Формуємо HTML для кнопок документів
+    let docLinksHtml = "";
+    if (fileUrls && fileUrls.trim() !== "") {
+        let links = fileUrls.split(", ");
+        docLinksHtml = `<div class="doc-links-container">`;
+        links.forEach((url, i) => {
+            if (url.trim() !== "") {
+                docLinksHtml += `
+                <a href="${url.trim()}" target="_blank" class="btn-doc-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    Документ ${i+1}
+                </a>`;
+            }
+        });
+        docLinksHtml += `</div>`;
+    }
 
     card.innerHTML = `
         <div class="view-mode" style="display: ${isEditMode ? 'none' : 'block'};">
             <h3 class="card-title v-name" style="color: var(--apple-blue); font-size: 19px;">${name || 'Новий співвласник'}</h3>
+            
             <div class="owner-data-row">
                 <span class="owner-data-label">Частка власності</span>
                 <span class="owner-data-value v-share">${shareFrac ? `${shareFrac} (${sharePerc}%)` : '—'}</span>
+                ${shareBarHtml} <!-- Наш новий бар -->
             </div>
+            
             <div class="owner-data-row">
                 <span class="owner-data-label">Дані документа</span>
                 <span class="owner-data-value v-doc">${docInfo || '—'}</span>
+                ${docLinksHtml} <!-- Наші нові кнопки -->
             </div>
+            
             <div class="action-group">
                 <button class="btn btn-secondary edit-btn">Редагувати</button>
                 <button class="btn btn-danger delete-btn">Видалити</button>
@@ -193,7 +225,7 @@ function renderOwnerCard(ownerData, number, isEditMode) {
                 <input type="text" class="i-doc" value="${docInfo}" placeholder="Договір купівлі-продажу №123">
             </div>
             <div class="form-group">
-                <label>Завантажити скан/фото</label>
+                <label>Завантажити скан/фото (замінить старі)</label>
                 <input type="file" class="i-files" multiple accept="image/*,application/pdf" style="background: white; border: 1px dashed #ccc;">
             </div>
             <div class="action-group">
@@ -203,8 +235,16 @@ function renderOwnerCard(ownerData, number, isEditMode) {
         </div>
     `;
 
-    ownersContainer.appendChild(card);
+    // 3. Вставляємо картку: якщо це нова картка з кнопки, то НАГОРУ (prepend), інакше - вниз (append)
+    if (isNewAtTop) {
+        ownersContainer.prepend(card);
+    } else {
+        ownersContainer.appendChild(card);
+    }
 
+    // --- Далі йде ВАШ СТАРИЙ КОД логіки кнопок всередині картки (presetSelect, edit-btn, save-ok-btn тощо) ---
+    // (Не видаляйте його, він залишається без змін)
+    
     const presetSelect = card.querySelector('.i-share-preset');
     const customInput = card.querySelector('.i-share-custom');
     presetSelect.addEventListener('change', (e) => {
@@ -241,29 +281,11 @@ function renderOwnerCard(ownerData, number, isEditMode) {
 
         try {
             await saveAllDataToGoogle(); 
-            isNew = false;
-            
-            const newName = card.querySelector('.i-name').value;
-            let finalFrac = "", finalPerc = "";
-            if (presetSelect.value === 'custom') {
-                const calc = calculateShares(customInput.value);
-                finalFrac = calc.frac; finalPerc = calc.perc;
-            } else if (presetSelect.value) {
-                const parts = presetSelect.value.split('|');
-                finalFrac = parts[0]; finalPerc = parts[1];
-            }
-
-            card.querySelector('.v-name').innerText = newName || 'Не вказано';
-            card.querySelector('.v-doc').innerText = card.querySelector('.i-doc').value || '—';
-            card.querySelector('.v-share').innerText = finalFrac ? `${finalFrac} (${finalPerc}%)` : '—';
-            
-            card.querySelector('.edit-mode').style.display = 'none';
-            card.querySelector('.view-mode').style.display = 'block';
+            location.reload(); // Найпростіший спосіб оновити UI після збереження, щоб підтягнулися нові кнопки документів і прогресс-бари
         } catch (error) {
             alert("Помилка збереження. Перевірте інтернет.");
-        } finally {
             btn.innerText = "Зберегти"; btn.disabled = false;
-        }
+        } 
     });
 }
 
