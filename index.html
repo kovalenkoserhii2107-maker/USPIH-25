@@ -8,19 +8,34 @@
 </head>
 <body>
     
-    <!-- Шапка з повідомленнями (показується тільки після входу) -->
+    <!-- Шапка з повідомленнями та меню -->
     <header id="topNav" style="display: none;">
         <div class="nav-content">
             <h2 class="nav-title">ОСББ «Успіх-25»</h2>
-            <div class="notification-wrapper">
-                <button id="bellBtn" class="bell-btn">
-                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                    <span id="notifBadge" class="badge" style="display:none;"></span>
-                </button>
-                <!-- Вікно повідомлень -->
-                <div id="notifPopup" class="notif-popup" style="display:none;">
-                    <h4>Повідомлення від адміністратора</h4>
-                    <p id="adminMessageText">Немає нових повідомлень.</p>
+            
+            <div class="nav-actions" style="display: flex; align-items: center; gap: 15px;">
+                <!-- Дзвіночок -->
+                <div class="notification-wrapper">
+                    <button id="bellBtn" class="bell-btn">
+                        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                        <span id="notifBadge" class="badge" style="display:none;"></span>
+                    </button>
+                    <div id="notifPopup" class="notif-popup" style="display:none;">
+                        <h4>Повідомлення від адміністратора</h4>
+                        <p id="adminMessageText">Немає нових повідомлень.</p>
+                    </div>
+                </div>
+
+                <!-- Нове Меню (Три крапки) -->
+                <div class="menu-wrapper" style="position: relative;">
+                    <button id="menuBtn" class="bell-btn">
+                        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>
+                    </button>
+                    <!-- Випадаючий список меню -->
+                    <div id="menuPopup" class="menu-popup" style="display:none;">
+                        <button id="menuChangePassBtn" class="menu-item">Змінити пароль</button>
+                        <button id="menuLogoutBtn" class="menu-item menu-item-danger">Вийти з кабінету</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -56,6 +71,7 @@
                 <input type="password" id="confirmPass" placeholder="Повторіть пароль">
             </div>
             <button id="savePassBtn" class="btn btn-primary">Зберегти пароль</button>
+            <button id="cancelPassBtn" class="btn btn-secondary" style="margin-top: 10px; display: none;">Скасувати</button>
             <p id="passError" class="error-text" style="display: none;"></p>
         </div>
 
@@ -116,7 +132,6 @@
             
             <div id="ownersContainer"></div>
             
-            <button id="logoutBtn" class="btn btn-logout" style="margin-top: 40px;">Вийти з кабінету</button>
         </div>
     </div>
     <script src="app.js"></script>
