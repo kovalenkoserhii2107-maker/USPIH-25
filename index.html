@@ -24,7 +24,23 @@
             <button id="loginBtn">Увійти</button>
             <p id="loginError" class="error-text" style="display: none;">Невірний пароль або номер квартири</p>
         </div>
-
+        
+        <!-- Блок смены пароля (изначально скрыт) -->
+        <div id="passwordSection" style="display: none;">
+            <h2>Зміна пароля</h2>
+            <p class="hint">З метою безпеки змініть тимчасовий пароль на власний.</p>
+            <div class="form-group">
+                <label for="newPass">Новий пароль</label>
+                <input type="password" id="newPass" placeholder="Мінімум 4 символи">
+            </div>
+            <div class="form-group">
+                <label for="confirmPass">Повторіть новий пароль</label>
+                <input type="password" id="confirmPass" placeholder="Повторіть пароль">
+            </div>
+            <button id="savePassBtn">Зберегти пароль</button>
+            <p id="passError" class="error-text" style="display: none;"></p>
+        </div>
+        
         <!-- Блок данных (изначально скрыт) -->
         <div id="dataSection" style="display: none;">
             <h2>Дані співвласника</h2>
