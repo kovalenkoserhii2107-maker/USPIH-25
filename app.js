@@ -1,6 +1,6 @@
 // 1. ПІДКЛЮЧЕННЯ FIREBASE
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, updatePassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -127,6 +127,7 @@ async function loadCabinetData(apt) {
     if (isAdmin) {
         // ШЛЯХ А: Це Адміністратор
         document.getElementById('adminDashboardSection').style.display = "block";
+        await loadAdminMessageHistory();
         
         // Тут ми пізніше додамо завантаження статистики або історії надісланих повідомлень
         
@@ -153,7 +154,7 @@ async function loadCabinetData(apt) {
         } else {
             renderOwnerCard(null, 1, true);
         }
-        
+        await loadUserMessages(apt, entranceVal);
         // Тут ми пізніше викличемо функцію завантаження вхідних новин для мешканця
     }
 }
@@ -311,8 +312,10 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
             targetValue: targetValue,   // '1, 3' або '45, 298'
             createdAt: serverTimestamp(),
             author: "Правління ОСББ",
-            readBy: []                  // Поки порожній масив (сюди записуватимемо, хто прочитав)
+            readBy: {}                  
         });
+
+        loadAdminMessageHistory(); // ДОДАНО: Миттєво оновити історію після надсилання
 
         // Показуємо успіх і очищаємо форму
         alert('Повідомлення успішно надіслано!');
@@ -524,3 +527,143 @@ document.getElementById('savePassBtn').addEventListener('click', async () => {
         btn.innerText = "Зберегти пароль"; btn.disabled = false;
     }
 });
+
+// ==========================================
+// СИСТЕМА ПОВІДОМЛЕНЬ ТА КОНТРОЛЬ ПРОЧИТАННЯ
+// ==========================================
+let unreadMsgIds = [];
+let currentAptForMessages = "";
+
+// 1. Завантаження новин для конкретного жильця
+async function loadUserMessages(apt, entrance) {
+    currentAptForMessages = apt;
+    const list = document.getElementById('messagesList'); // Знаходимо стрічку у дзвіночку
+    const badge = document.getElementById('notifBadge');
+    
+    if (!list) return; // Якщо HTML ще не оновлений, ігноруємо
+    list.innerHTML = '<p style="text-align:center; color:#888;">Завантаження...</p>';
+    unreadMsgIds = [];
+    
+    try {
+        const q = query(collection(db, "messages"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        
+        let html = '';
+        let count = 0;
+
+        snap.forEach(d => {
+            const msg = d.data();
+            let isTarget = false;
+            
+            // Фільтрація: Кому призначена новина?
+            if (msg.targetType === 'all') isTarget = true;
+            else if (msg.targetType === 'entrance' && msg.targetValue.split(',').map(s=>s.trim()).includes(entrance)) isTarget = true;
+            else if (msg.targetType === 'apartment' && msg.targetValue.split(',').map(s=>s.trim()).includes(apt)) isTarget = true;
+
+            if (isTarget) {
+                count++;
+                const isRead = msg.readBy && msg.readBy[apt]; // Чи читала це квартира?
+                if (!isRead) unreadMsgIds.push(d.id); // Записуємо ID непрочитаних
+                
+                const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
+                
+                html += `
+                    <div style="border-bottom: 1px solid #F0F0F0; padding-bottom: 12px; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                            <strong style="font-size: 15px; color: ${isRead ? 'var(--text-main)' : 'var(--apple-blue)'};">${msg.title}</strong>
+                            <span style="font-size: 11px; color: #A1A1A6; white-space: nowrap;">${dateStr}</span>
+                        </div>
+                        <p style="margin: 0; font-size: 14px; color: var(--text-main); line-height: 1.4;">${msg.body}</p>
+                    </div>`;
+            }
+        });
+
+        list.innerHTML = count > 0 ? html : '<p style="font-size: 14px; color: var(--text-muted); text-align: center;">Немає нових повідомлень.</p>';
+        badge.style.display = unreadMsgIds.length > 0 ? 'block' : 'none';
+
+    } catch(e) {
+        console.error("Помилка завантаження новин:", e);
+    }
+}
+
+// 2. Логіка кліку по дзвіночку (ВІДМІТКА "ПРОЧИТАНО")
+document.getElementById('bellBtn').addEventListener('click', async (e) => {
+    // Якщо меню відкрито і є непрочитані - маркуємо їх
+    if (document.getElementById('notifPopup').style.display === 'block' && unreadMsgIds.length > 0) {
+        document.getElementById('notifBadge').style.display = 'none';
+        
+        // Генеруємо поточний час (наприклад: 21.08.2026, 14:30)
+        const now = new Date().toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+        
+        // Відправляємо відмітки в базу даних
+        for (let id of unreadMsgIds) {
+            try {
+                await updateDoc(doc(db, "messages", id), {
+                    [`readBy.${currentAptForMessages}`]: now
+                });
+            } catch(error) { console.error("Помилка оновлення статусу:", error); }
+        }
+        unreadMsgIds = []; // Очищаємо чергу
+    }
+});
+
+// 3. Завантаження історії для Адміністратора
+async function loadAdminMessageHistory() {
+    const container = document.getElementById('adminMsgHistoryContainer');
+    if(!container) return;
+    container.innerHTML = '<p style="text-align: center; color:#888;">Завантаження історії...</p>';
+    
+    try {
+        const q = query(collection(db, "messages"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 14px; text-align: center;">Історія порожня.</p>';
+            return;
+        }
+
+        let html = '';
+        snap.forEach(d => {
+            const msg = d.data();
+            const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
+            
+            // Формуємо красивий текст одержувачів
+            let targetText = "Усьому будинку";
+            if (msg.targetType === 'entrance') targetText = `Парадні: ${msg.targetValue}`;
+            if (msg.targetType === 'apartment') targetText = `Квартири: ${msg.targetValue}`;
+
+            // Формуємо бейджі прочитання
+            let readHtml = '';
+            if (msg.readBy && Object.keys(msg.readBy).length > 0) {
+                for (let [aptNum, time] of Object.entries(msg.readBy)) {
+                    readHtml += `<span style="display:inline-block; background: #E8F5E9; color: var(--apple-green); padding: 4px 8px; border-radius: 8px; font-size: 11px; margin: 3px 3px 0 0; font-weight: 600;">Кв.${aptNum} <span style="opacity:0.7; font-weight:400;">${time}</span></span>`;
+                }
+            } else {
+                readHtml = '<span style="font-size: 12px; color: var(--text-muted);">Ще ніхто не прочитав</span>';
+            }
+
+            html += `
+                <div style="background: #F2F2F7; padding: 16px; border-radius: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                        <strong style="font-size: 16px; color: var(--text-main);">${msg.title}</strong>
+                        <span style="font-size: 11px; color: #A1A1A6;">${dateStr}</span>
+                    </div>
+                    <p style="font-size: 12px; color: var(--apple-blue); margin: 0 0 8px 0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Кому: ${targetText}</p>
+                    <p style="font-size: 14px; color: var(--text-main); margin: 0 0 12px 0; line-height: 1.4;">${msg.body}</p>
+                    
+                    <div style="border-top: 1px solid #E5E5EA; padding-top: 10px;">
+                        <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Прочитали:</span>
+                        ${readHtml}
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch(e) {
+        console.error("Помилка завантаження історії:", e);
+        container.innerHTML = '<p style="color: var(--apple-red); font-size: 14px; text-align: center;">Помилка завантаження.</p>';
+    }
+}
+
+// Прив'язуємо кнопку оновлення історії
+document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminMessageHistory);
