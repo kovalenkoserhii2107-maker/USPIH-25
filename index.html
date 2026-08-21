@@ -67,6 +67,8 @@
 
         <!-- Блок авторизації (ТЕПЕР ПРИХОВАНИЙ ЗА ЗАМОВЧУВАННЯМ) -->
         <div id="loginSection" class="card central-card" style="display: none;">
+            <!-- Новий заголовок ОСББ -->
+            <h2 style="text-align: center; color: var(--apple-blue); font-size: 22px; margin: 0 0 5px 0; font-weight: 800; letter-spacing: 0.5px;">ОСББ «УСПІХ-25»</h2>
             <h1 class="apple-title">Вхід у кабінет</h1>
             <p class="subtitle">Введіть дані вашої квартири</p>
             
@@ -128,7 +130,7 @@
         <!-- Головний кабінет (Блок даних) -->
         <div id="dataSection" style="display: none;">
             
-            <!-- Преміум-картка адреси та площі -->
+            <!-- Преміум-картка адреси та площі (Тільки для читання) -->
             <div class="card premium-widget-card" id="areaCard">
                 <div id="areaViewMode" class="widget-layout">
                     
@@ -140,9 +142,9 @@
                             <h4 class="address-main">вул. Інглезі, 3/3</h4>
                             <p class="address-sub">м. Одеса</p>
                         </div>
-                        <!-- Стильний бейдж номера квартири -->
-                        <div class="apt-badge">
-                            кв. <span id="displayAptNum">--</span>
+                        <!-- Новий бейдж парадної (замість квартири) -->
+                        <div class="entrance-badge">
+                            Парадна <span id="displayEntranceNum">--</span>
                         </div>
                     </div>
 
@@ -156,20 +158,11 @@
                                 <span class="val-unit">кв.м</span>
                             </div>
                         </div>
-                        <button id="editAreaBtn" class="btn-widget-edit">
-                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                            Змінити
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Режим редагування площі -->
-                <div id="areaEditMode" style="display: none; padding-top: 10px;">
-                    <label>Вкажіть загальну площу (кв.м)</label>
-                    <input type="number" id="aptArea" step="0.1" placeholder="Наприклад: 65.4">
-                    <div class="action-group">
-                        <button id="saveAreaBtn" class="btn btn-success">Зберегти</button>
-                        <button id="cancelAreaBtn" class="btn btn-secondary">Скасувати</button>
+                        <!-- Бейдж квартири (там, де раніше була кнопка "Змінити") -->
+                        <div class="apt-badge-large">
+                            <span class="apt-badge-label">Квартира</span>
+                            <span id="displayAptNum" class="apt-badge-number">--</span>
+                        </div>
                     </div>
                 </div>
             </div>
