@@ -2,669 +2,571 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ОСББ «Успіх-25» | Кабінет</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#F2F2F7">
+    <title>ОСББ «Успіх-25»</title>
+    <link rel="stylesheet" href="style.css?v=1">
 </head>
 <body>
-    
-    <!-- ШАПКА: логотип, сповіщення, меню -->
-    <header id="topNav" class="app-header" style="display: none;">
-        <div class="nav-content">
 
-            <div class="nav-brand">
-                <div class="nav-logo-tile">
-                    <svg viewBox="0 0 100 100" width="20" height="20">
-                        <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
-                        <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
-                        <rect x="50" y="30" width="6" height="60" fill="#BDC4C9"/>
-                        <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
-                        <rect x="25" y="15" width="6" height="75" fill="#CED3D7"/>
-                        <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="58" y="85" width="14" height="5" fill="#5C6B77"/>
-                        <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
-                        <path d="M18 55 Q 16 75 18 90" stroke="#6D5A50" stroke-width="2" fill="none"/>
-                        <circle cx="18" cy="55" r="10" fill="#83B799"/>
-                        <circle cx="12" cy="62" r="8" fill="#83B799"/>
-                        <circle cx="24" cy="60" r="7" fill="#83B799"/>
-                        <circle cx="15" cy="68" r="7" fill="#83B799"/>
-                        <circle cx="21" cy="72" r="6" fill="#83B799"/>
-                        <circle cx="18" cy="48" r="7" fill="#83B799"/>
-                    </svg>
-                </div>
-                <div class="nav-brand-text">
-                    <h2 class="nav-title">ОСББ «Успіх-25»</h2>
-                    <span class="nav-subtitle" id="navAptMeta">Кабінет мешканця</span>
-                </div>
-            </div>
-
-            <div class="nav-actions">
-                <button id="bellBtn" class="nav-icon-btn" aria-label="Оголошення">
-                    <svg viewBox="0 0 24 24" width="21" height="21" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                    <span id="notifBadge" class="nav-badge" style="display:none;"></span>
-                </button>
-                <button id="menuBtn" class="nav-icon-btn" aria-label="Меню">
-                    <svg viewBox="0 0 24 24" width="21" height="21" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"></circle></svg>
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <!-- Затемнення під висувні панелі -->
-    <div id="navBackdrop" class="nav-backdrop" style="display: none;"></div>
-
-    <!-- ПАНЕЛЬ ОГОЛОШЕНЬ (висувається знизу) -->
-    <div id="notifPopup" class="sheet" style="display:none;">
-        <div class="sheet-grabber"></div>
-        <div class="sheet-header">
-            <h4 class="sheet-title">Оголошення</h4>
-            <button class="sheet-close" data-close-sheet="notifPopup" aria-label="Закрити">✕</button>
-        </div>
-        <div class="sheet-body">
-            <div id="messagesList" class="messages-list">
-                <p class="sheet-empty">Немає нових повідомлень.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- ПАНЕЛЬ МЕНЮ (висувається знизу) -->
-    <div id="menuPopup" class="sheet" style="display:none;">
-        <div class="sheet-grabber"></div>
-        <div class="sheet-header">
-            <h4 class="sheet-title">Меню</h4>
-            <button class="sheet-close" data-close-sheet="menuPopup" aria-label="Закрити">✕</button>
-        </div>
-        <div class="sheet-body">
-            <div class="menu-list">
-                <button id="menuDocsBtn" class="menu-row">
-                    <span class="menu-row-icon mi-blue"><svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span>
-                    <span class="menu-row-text"><strong>База документів</strong><small>Статут, протоколи, звіти</small></span>
-                    <svg class="menu-row-chevron" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </button>
-                <button id="menuRequestsBtn" class="menu-row">
-                    <span class="menu-row-icon mi-green"><svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></span>
-                    <span class="menu-row-text"><strong>Звернення до Правління</strong><small>Написати та бачити відповіді</small></span>
-                    <svg class="menu-row-chevron" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </button>
-                <button id="menuBoardBtn" class="menu-row">
-                    <span class="menu-row-icon mi-orange"><svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
-                    <span class="menu-row-text"><strong>Контакти Правління</strong><small>Голова та бухгалтер</small></span>
-                    <svg class="menu-row-chevron" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </button>
-                <button id="menuChangePassBtn" class="menu-row">
-                    <span class="menu-row-icon mi-grey"><svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
-                    <span class="menu-row-text"><strong>Змінити пароль</strong><small>Безпека кабінету</small></span>
-                    <svg class="menu-row-chevron" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </button>
-                <button id="menuLogoutBtn" class="menu-row menu-row-danger">
-                    <span class="menu-row-icon mi-red"><svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></span>
-                    <span class="menu-row-text"><strong>Вийти з кабінету</strong></span>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div class="container" style="max-width: 480px; margin: 0 auto; padding: 20px 15px;">
-        
-        <!-- БЛОК ЗАВАНТАЖЕННЯ З ЧЕРЕПАХОЮ -->
-        <div id="appLoader" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh;">
-            <div style="animation: swim-turtle 2.5s infinite ease-in-out;">
-                <svg viewBox="0 0 120 120" width="80" height="80">
-                    <g fill="var(--apple-green)">
-                        <circle cx="90" cy="60" r="12" />
-                        <circle cx="55" cy="60" r="28" fill="#30D158" />
-                        <circle cx="55" cy="60" r="22" fill="#E8F5E9" />
-                        <ellipse cx="65" cy="25" rx="8" ry="16" transform="rotate(45 65 25)" />
-                        <ellipse cx="65" cy="95" rx="8" ry="16" transform="rotate(-45 65 95)" />
-                        <ellipse cx="30" cy="30" rx="6" ry="12" transform="rotate(-45 30 30)" />
-                        <ellipse cx="30" cy="90" rx="6" ry="12" transform="rotate(45 30 90)" />
-                    </g>
+<!-- ============ ШАПКА ============ -->
+<header id="topNav" class="app-header" style="display: none;">
+    <div class="nav-content">
+        <div class="nav-brand">
+            <span class="nav-logo-tile">
+                <svg viewBox="0 0 100 100" width="20" height="20">
+                    <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
+                    <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
+                    <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
+                    <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
+                    <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
+                    <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
+                    <circle cx="18" cy="55" r="10" fill="#83B799"/>
+                    <circle cx="12" cy="62" r="8" fill="#83B799"/>
+                    <circle cx="24" cy="60" r="7" fill="#83B799"/>
                 </svg>
+            </span>
+            <span class="nav-brand-text">
+                <h2 class="nav-title">ОСББ «Успіх-25»</h2>
+                <span class="nav-subtitle" id="navAptMeta">Кабінет мешканця</span>
+            </span>
+        </div>
+        <div class="nav-actions">
+            <button id="bellBtn" class="icon-btn" aria-label="Оголошення">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                <span id="notifBadge" class="nav-badge" style="display:none;"></span>
+            </button>
+            <button id="menuBtn" class="icon-btn" aria-label="Меню">
+                <svg viewBox="0 0 24 24" width="21" height="21"><circle cx="5" cy="12" r="1.6" fill="currentColor"></circle><circle cx="12" cy="12" r="1.6" fill="currentColor"></circle><circle cx="19" cy="12" r="1.6" fill="currentColor"></circle></svg>
+            </button>
+        </div>
+    </div>
+</header>
+
+<div id="navBackdrop" class="nav-backdrop"></div>
+
+<!-- ============ ПАНЕЛЬ ОГОЛОШЕНЬ ============ -->
+<div id="notifPopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Оголошення</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body">
+        <div id="messagesList" class="messages-list">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+</div>
+
+<!-- ============ ПАНЕЛЬ МЕНЮ ============ -->
+<div id="menuPopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Меню</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body">
+        <div class="menu-list">
+            <button id="menuDocsBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-blue"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span>
+                <span class="menu-row-text"><strong>База документів</strong><small>Статут, протоколи, звіти</small></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuRequestsBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-green"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></span>
+                <span class="menu-row-text"><strong>Звернення до Правління</strong><small>Написати та бачити відповіді</small></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuBoardBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-orange"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
+                <span class="menu-row-text"><strong>Контакти Правління</strong><small>Голова та бухгалтер</small></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuChangePassBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-grey"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
+                <span class="menu-row-text"><strong>Змінити пароль</strong><small>Безпека кабінету</small></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuLogoutBtn" class="menu-row menu-row-danger" type="button">
+                <span class="menu-row-icon mi-red"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></span>
+                <span class="menu-row-text"><strong>Вийти з кабінету</strong></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- ============ ЗАВАНТАЖЕННЯ ============ -->
+    <div id="appLoader">
+        <div class="turtle">
+            <svg width="90" height="70" viewBox="0 0 100 80">
+                <ellipse cx="50" cy="45" rx="30" ry="22" fill="#83B799"/>
+                <path d="M50 23c-16 0-30 10-30 22h60c0-12-14-22-30-22z" fill="#6BA383"/>
+                <circle cx="50" cy="40" r="9" fill="#5C8F72"/>
+                <circle cx="35" cy="45" r="6" fill="#5C8F72"/>
+                <circle cx="65" cy="45" r="6" fill="#5C8F72"/>
+                <ellipse cx="82" cy="42" rx="10" ry="8" fill="#95C7A8"/>
+                <circle cx="86" cy="39" r="2" fill="#1D1D1F"/>
+                <ellipse cx="26" cy="62" rx="8" ry="5" fill="#95C7A8"/>
+                <ellipse cx="70" cy="62" rx="8" ry="5" fill="#95C7A8"/>
+            </svg>
+        </div>
+        <p class="loader-text">Завантаження кабінету…</p>
+    </div>
+
+    <!-- ============ ВХІД ============ -->
+    <div id="loginSection" style="display: none;">
+        <div class="card central-card">
+            <h1 class="screen-title" style="margin-bottom: 6px;">Вхід у кабінет</h1>
+            <p class="admin-card-sub" style="margin-bottom: 24px;">ОСББ «Успіх-25», вул. Інглезі 3/3</p>
+
+            <div class="field">
+                <label class="field-label" for="aptInput">Номер квартири</label>
+                <input type="number" id="aptInput" class="field-input" placeholder="Наприклад, 45" inputmode="numeric">
             </div>
-            <p style="margin-top: 20px; font-size: 16px; font-weight: 600; color: var(--text-muted); animation: pulse-text 1.5s infinite ease-in-out;">Завантаження даних...</p>
+            <div class="field">
+                <label class="field-label" for="passInput">Пароль</label>
+                <div class="password-wrapper">
+                    <input type="password" id="passInput" class="field-input" placeholder="Ваш пароль">
+                    <button class="toggle-password" data-target="passInput" type="button" aria-label="Показати пароль">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                </div>
+            </div>
+
+            <button id="loginBtn" class="btn-primary">Увійти</button>
+            <p id="loginError" class="error-text" style="display: none;"></p>
+        </div>
+    </div>
+
+    <!-- ============ ЗМІНА ПАРОЛЯ ============ -->
+    <div id="passwordSection" style="display: none;">
+        <div class="card central-card">
+            <h1 class="screen-title" style="margin-bottom: 6px;">Новий пароль</h1>
+            <p class="admin-card-sub" style="margin-bottom: 24px;">Придумайте пароль щонайменше з 6 символів</p>
+            <input type="hidden" id="hiddenAptInput">
+
+            <div class="field">
+                <label class="field-label" for="newPass">Новий пароль</label>
+                <div class="password-wrapper">
+                    <input type="password" id="newPass" class="field-input" placeholder="Мінімум 6 символів">
+                    <button class="toggle-password" data-target="newPass" type="button" aria-label="Показати пароль">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="confirmPass">Повторіть пароль</label>
+                <input type="password" id="confirmPass" class="field-input" placeholder="Ще раз">
+            </div>
+
+            <button id="savePassBtn" class="btn-primary">Зберегти пароль</button>
+            <button id="cancelPassBtn" class="btn-ghost" style="margin-top: 8px;">Скасувати</button>
+            <p id="passError" class="error-text" style="display: none;"></p>
+        </div>
+    </div>
+
+    <!-- ============ КАБІНЕТ МЕШКАНЦЯ ============ -->
+    <div id="dataSection" style="display: none;">
+
+        <div class="hero-card">
+            <div class="hero-glow"></div>
+            <div class="hero-top">
+                <div class="hero-apt">
+                    <span class="hero-apt-label">Квартира</span>
+                    <span class="hero-apt-num" id="displayAptNum">--</span>
+                </div>
+                <div class="hero-address">
+                    <svg class="hero-pin" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    <div>
+                        <span class="hero-street">вул. Інглезі, 3/3</span>
+                        <span class="hero-city">м. Одеса</span>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <span class="hero-stat-label">Парадна</span>
+                    <span class="hero-stat-value" id="displayEntranceNum">--</span>
+                </div>
+                <div class="hero-stat-divider"></div>
+                <div class="hero-stat">
+                    <span class="hero-stat-label">Загальна площа</span>
+                    <span class="hero-stat-value"><span id="displayAreaVal">--</span><small>м²</small></span>
+                </div>
+                <div class="hero-stat-divider"></div>
+                <div class="hero-stat">
+                    <span class="hero-stat-label">Співвласників</span>
+                    <span class="hero-stat-value" id="displayOwnersCount">—</span>
+                </div>
+            </div>
         </div>
 
-        <!-- ЕКРАН АВТОРИЗАЦІЇ -->
-        <div id="loginSection" class="card central-card" style="display: none; padding-top: 40px; padding-bottom: 40px; margin-top: 10vh; background: #FFF; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.04);">
-            
-            <div style="text-align: center; margin-bottom: 24px;">
-                <div style="display: inline-flex; align-items: center; justify-content: center; width: 88px; height: 88px; background: #FFFFFF; border-radius: 22px; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08), inset 0 1px 3px rgba(0, 0, 0, 0.04); border: 1px solid #F0F0F0;">
-                    <svg viewBox="0 0 100 100" width="60" height="60">
-                        <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
-                        <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
-                        <rect x="50" y="30" width="6" height="60" fill="#BDC4C9"/>
-                        <line x1="40" y1="5" x2="40" y2="15" stroke="#7A8B99" stroke-width="1.5"/>
-                        <line x1="65" y1="20" x2="65" y2="30" stroke="#7A8B99" stroke-width="1.5"/>
-                        <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
-                        <rect x="25" y="15" width="6" height="75" fill="#CED3D7"/>
-                        <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="58" y="85" width="14" height="5" fill="#5C6B77"/>
-                        <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
-                        <path d="M18 55 Q 16 75 18 90" stroke="#6D5A50" stroke-width="2" fill="none"/>
-                        <path d="M18 65 Q 22 70 24 65" stroke="#6D5A50" stroke-width="1" fill="none"/>
-                        <circle cx="18" cy="55" r="10" fill="#83B799"/>
-                        <circle cx="12" cy="62" r="8" fill="#83B799"/>
-                        <circle cx="24" cy="60" r="7" fill="#83B799"/>
-                        <circle cx="15" cy="68" r="7" fill="#83B799"/>
-                        <circle cx="21" cy="72" r="6" fill="#83B799"/>
-                        <circle cx="18" cy="48" r="7" fill="#83B799"/>
-                        <circle cx="14" cy="87" r="5" fill="#83B799"/>
-                        <circle cx="21" cy="88" r="4" fill="#83B799"/>
-                    </svg>
+        <div class="power-card" id="powerCard">
+            <div class="power-card-inner">
+                <div class="power-icon-circle" id="powerIconCircle"></div>
+                <div class="power-info">
+                    <span class="power-status-label" id="powerStatusText">--</span>
+                    <span class="power-since-label" id="powerSinceText"></span>
+                    <span class="power-duration-label" id="powerDurationText"></span>
                 </div>
             </div>
-
-            <h1 style="text-align: center; color: var(--text-main); font-size: 26px; margin: 0 0 6px 0; font-weight: 800; letter-spacing: -0.5px;">ОСББ «УСПІХ-25»</h1>
-            <h2 style="text-align: center; font-size: 18px; color: var(--text-muted); font-weight: 600; margin-bottom: 30px;">Вхід у кабінет</h2>
-            
-            <form id="loginForm" onsubmit="return false;" style="padding: 0 20px;">
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Номер квартири</label>
-                    <input type="number" id="aptInput" autocomplete="username" placeholder="Наприклад: 45">
-                </div>
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Пароль</label>
-                    <div class="password-wrapper" style="position: relative; display: flex; align-items: center;">
-                        <input type="password" id="passInput" autocomplete="current-password" placeholder="Введіть пароль" style="padding-right: 45px;">
-                        <button type="button" class="toggle-password" data-target="passInput" style="position: absolute; right: 10px; background: none; border: none; padding: 5px; cursor: pointer; color: var(--text-muted);">
-                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        </button>
-                    </div>
-                </div>
-                <button type="button" id="loginBtn" class="btn btn-primary" style="margin-top: 10px;">Увійти</button>
-                <p id="loginError" class="error-text" style="display: none;"></p>
-            </form>
         </div>
 
-        <!-- БЛОК ЗМІНИ ПАРОЛЯ -->
-        <div id="passwordSection" class="card central-card" style="display: none; padding: 30px 20px; margin-top: 10vh; background: #FFF; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.04);">
-            <h2 style="text-align: center; font-size: 24px; font-weight: 700; margin: 0 0 5px 0;">Безпека</h2>
-            <p style="text-align: center; color: var(--text-muted); font-size: 15px; margin-bottom: 25px;">Будь ласка, встановіть власний надійний пароль.</p>
-            
-            <form id="passwordForm" onsubmit="return false;">
-                <input type="number" id="hiddenAptInput" autocomplete="username" style="display:none;">
-                
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Новий пароль</label>
-                    <div class="password-wrapper" style="position: relative; display: flex; align-items: center;">
-                        <input type="password" id="newPass" autocomplete="new-password" placeholder="Мінімум 6 символів" style="padding-right: 45px;">
-                        <button type="button" class="toggle-password" data-target="newPass" style="position: absolute; right: 10px; background: none; border: none; padding: 5px; cursor: pointer; color: var(--text-muted);">
-                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Повторіть новий пароль</label>
-                    <div class="password-wrapper" style="position: relative; display: flex; align-items: center;">
-                        <input type="password" id="confirmPass" autocomplete="new-password" placeholder="Повторіть пароль" style="padding-right: 45px;">
-                        <button type="button" class="toggle-password" data-target="confirmPass" style="position: absolute; right: 10px; background: none; border: none; padding: 5px; cursor: pointer; color: var(--text-muted);">
-                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        </button>
-                    </div>
-                </div>
-                <button type="button" id="savePassBtn" class="btn btn-primary">Зберегти пароль</button>
-                <button type="button" id="cancelPassBtn" class="btn btn-secondary" style="margin-top: 10px; display: none;">Скасувати</button>
-                <p id="passError" class="error-text" style="display: none; color: var(--apple-red); text-align: center; margin-top: 15px; font-weight: 500;"></p>
-            </form>
-        </div>
-        
-        <!-- ========================================== -->
-        <!-- ЕКРАН АДМІНІСТРАТОРА (ПАНЕЛЬ ПРАВЛІННЯ) -->
-        <!-- ========================================== -->
-        <div id="adminDashboardSection" style="display: none;">
-
-            <!-- Шапка Адміна -->
-            <div class="admin-header">
-                <div>
-                    <span class="admin-eyebrow">Панель керування</span>
-                    <h1 class="admin-title">Правління</h1>
-                </div>
-                <button id="adminLogoutBtn" class="admin-logout-btn" aria-label="Вийти">
-                    <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                </button>
+        <div class="section-head">
+            <div class="section-head-text">
+                <h2 class="section-head-title">Співвласники</h2>
+                <span class="section-head-sub">Частки власності та документи</span>
             </div>
+            <button id="addOwnerBtn" class="btn-add-round" type="button" aria-label="Додати співвласника">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+        </div>
 
-            <!-- Керування електропостачанням (тумблер) -->
-            <div class="power-card admin-power-compact" id="adminPowerCard">
-                <div class="power-card-inner">
-                    <div class="power-icon-circle" id="adminPowerIconWrap"></div>
-                    <div class="power-info">
-                        <span class="power-status-label" id="adminPowerStatusText">--</span>
-                        <span class="power-since-label" id="adminPowerSinceText"></span>
-                        <span class="power-duration-label" id="adminPowerDurationText"></span>
+        <div id="ownersContainer" class="owners-container"></div>
+    </div>
+
+    <!-- ============ АДМІН-ПАНЕЛЬ ============ -->
+    <div id="adminDashboardSection" style="display: none;">
+
+        <div class="admin-header">
+            <div>
+                <span class="eyebrow">Панель керування</span>
+                <h1 class="admin-title">Правління</h1>
+            </div>
+            <button id="adminLogoutBtn" class="icon-btn icon-btn-danger" type="button" aria-label="Вийти">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            </button>
+        </div>
+
+        <div class="power-card" id="adminPowerCard">
+            <div class="power-card-inner">
+                <div class="power-icon-circle" id="adminPowerIconWrap"></div>
+                <div class="power-info">
+                    <span class="power-status-label" id="adminPowerStatusText">--</span>
+                    <span class="power-since-label" id="adminPowerSinceText"></span>
+                    <span class="power-duration-label" id="adminPowerDurationText"></span>
+                </div>
+                <label class="power-toggle-switch">
+                    <input type="checkbox" id="powerToggleInput">
+                    <span class="power-toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="admin-tabs" id="adminTabs">
+            <button class="admin-tab active" data-tab="send" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                <span>Розсилка</span>
+            </button>
+            <button class="admin-tab" data-tab="requests" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                <span>Звернення</span>
+                <span class="admin-tab-badge" id="adminReqBadge" style="display:none;">0</span>
+            </button>
+            <button class="admin-tab" data-tab="docs" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <span>База</span>
+            </button>
+            <button class="admin-tab" data-tab="history" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                <span>Історія</span>
+            </button>
+        </div>
+
+        <!-- Вкладка: розсилка -->
+        <div class="admin-panel active" data-panel="send">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Нове повідомлення</h2>
+                    <span class="admin-card-sub">Дійде всім обраним мешканцям одразу</span>
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="adminMsgTitle">Заголовок</label>
+                    <input type="text" id="adminMsgTitle" class="field-input" placeholder="Наприклад: Ремонт ліфта">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="adminMsgBody">Текст повідомлення</label>
+                    <textarea id="adminMsgBody" class="field-input" rows="5" placeholder="Деталі, дати, що потрібно зробити мешканцям…"></textarea>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Кому надіслати</span>
+                    <div class="segmented" id="adminTargetSegmented">
+                        <button type="button" class="segmented-item active" data-target="all">Весь будинок</button>
+                        <button type="button" class="segmented-item" data-target="entrance">Парадна</button>
+                        <button type="button" class="segmented-item" data-target="apartment">Квартири</button>
                     </div>
-                    <label class="power-toggle-switch">
-                        <input type="checkbox" id="powerToggleInput">
-                        <span class="power-toggle-slider"></span>
+                    <select id="adminMsgTargetType" hidden>
+                        <option value="all">Усьому будинку</option>
+                        <option value="entrance">Конкретній парадній</option>
+                        <option value="apartment">Конкретній квартирі</option>
+                    </select>
+                </div>
+
+                <div class="field" id="adminMsgTargetValueGroup" hidden>
+                    <label class="field-label" id="adminTargetValueLabel" for="adminMsgTargetValue">Номери квартир через кому</label>
+                    <input type="text" id="adminMsgTargetValue" class="field-input" placeholder="Наприклад: 45, 46">
+                    <span class="field-hint">Можна вказати кілька значень через кому.</span>
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="adminMsgLinkedDoc">Документ з Бази ОСББ</label>
+                    <select id="adminMsgLinkedDoc" class="field-input field-select">
+                        <option value="">Не прикріплювати</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Вкладення</span>
+                    <label class="dropzone" for="adminMsgFiles">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Додати фото або документи</span>
+                        <span class="dropzone-hint">PDF, Word, Excel, PowerPoint, зображення</span>
                     </label>
+                    <input type="file" id="adminMsgFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" class="hidden-file-input">
+                    <div id="adminMsgFilesPreview" class="file-chips"></div>
                 </div>
-            </div>
 
-            <!-- Вкладки (мобільна навігація) -->
-            <div class="admin-tabs" id="adminTabs">
-                <button class="admin-tab active" data-tab="send">
-                    <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                    <span>Розсилка</span>
-                </button>
-                <button class="admin-tab" data-tab="requests">
-                    <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                    <span>Звернення</span>
-                    <span class="admin-tab-badge" id="adminReqBadge" style="display:none;">0</span>
-                </button>
-                <button class="admin-tab" data-tab="docs">
-                    <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                    <span>База</span>
-                </button>
-                <button class="admin-tab" data-tab="history">
-                    <svg viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>
-                    <span>Історія</span>
+                <button id="adminSendMsgBtn" class="btn-primary" type="button">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    Надіслати повідомлення
                 </button>
             </div>
+        </div>
 
-            <!-- ВКЛАДКА 1: РОЗСИЛКА -->
-            <div class="admin-panel active" data-panel="send">
-                <div class="admin-card">
-                    <div class="admin-card-head">
-                        <h2 class="admin-card-title">Нове повідомлення</h2>
-                        <span class="admin-card-sub">Дійде всім обраним мешканцям одразу</span>
-                    </div>
-
-                    <div class="field">
-                        <label class="field-label" for="adminMsgTitle">Заголовок</label>
-                        <input type="text" id="adminMsgTitle" class="field-input" placeholder="Наприклад: Ремонт ліфта">
-                    </div>
-
-                    <div class="field">
-                        <label class="field-label" for="adminMsgBody">Текст повідомлення</label>
-                        <textarea id="adminMsgBody" class="field-input field-textarea" rows="5" placeholder="Деталі, дати, що потрібно зробити мешканцям..."></textarea>
-                    </div>
-
-                    <div class="field">
-                        <span class="field-label">Кому надіслати</span>
-                        <div class="segmented" id="adminTargetSegmented">
-                            <button type="button" class="segmented-item active" data-target="all">Весь будинок</button>
-                            <button type="button" class="segmented-item" data-target="entrance">Парадна</button>
-                            <button type="button" class="segmented-item" data-target="apartment">Квартири</button>
-                        </div>
-                        <select id="adminMsgTargetType" class="visually-hidden-select">
-                            <option value="all">Усьому будинку</option>
-                            <option value="entrance">Конкретній парадній</option>
-                            <option value="apartment">Конкретній квартирі (або кільком)</option>
-                        </select>
-                    </div>
-
-                    <div class="field" id="adminMsgTargetValueGroup" style="display: none;">
-                        <label class="field-label" for="adminMsgTargetValue">Номери через кому</label>
-                        <input type="text" id="adminMsgTargetValue" class="field-input" placeholder="Наприклад: 1, 3 або 45, 46">
-                        <span class="field-hint">Можна вказати кілька значень через кому.</span>
-                    </div>
-
-                    <div class="field">
-                        <label class="field-label" for="adminMsgLinkedDoc">Посилання на документ з Бази</label>
-                        <select id="adminMsgLinkedDoc" class="field-input field-select">
-                            <option value="">Не прикріплювати</option>
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <span class="field-label">Вкладення</span>
-                        <label class="dropzone" for="adminMsgFiles">
-                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                            <span class="dropzone-text">Додати фото або документи</span>
-                            <span class="dropzone-hint">PDF, Word, Excel, PowerPoint, зображення</span>
-                        </label>
-                        <input type="file" id="adminMsgFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" class="hidden-file-input">
-                        <div id="adminMsgFilesPreview" class="file-chips"></div>
-                    </div>
-
-                    <button id="adminSendMsgBtn" class="btn-cta">
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                        Надіслати повідомлення
-                    </button>
+        <!-- Вкладка: звернення -->
+        <div class="admin-panel" data-panel="requests">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Звернення мешканців</h2>
+                    <span class="admin-card-sub">Питання та скарги від квартир</span>
                 </div>
-            </div>
-
-            <!-- ВКЛАДКА 2: ЗВЕРНЕННЯ -->
-            <div class="admin-panel" data-panel="requests">
-                <div class="admin-card">
-                    <div class="admin-card-head">
-                        <h2 class="admin-card-title">Звернення мешканців</h2>
-                        <span class="admin-card-sub">Питання та скарги від квартир</span>
-                    </div>
-                    <div id="adminRequestsContainer" class="admin-scroll-list">
-                        <p class="list-empty">Завантаження...</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ВКЛАДКА 3: БАЗА ДОКУМЕНТІВ -->
-            <div class="admin-panel" data-panel="docs">
-                <div class="admin-card">
-                    <div class="admin-card-head">
-                        <h2 class="admin-card-title">Додати документ у Базу</h2>
-                        <span class="admin-card-sub">Буде доступний усім мешканцям</span>
-                    </div>
-
-                    <div class="field">
-                        <label class="field-label" for="osbbDocTitle">Назва документа</label>
-                        <input type="text" id="osbbDocTitle" class="field-input" placeholder="Напр. Протокол зборів №5">
-                    </div>
-
-                    <div class="field">
-                        <label class="field-label" for="osbbDocCategory">Категорія</label>
-                        <select id="osbbDocCategory" class="field-input field-select">
-                            <option value="Установчі документи">Установчі документи (Статут тощо)</option>
-                            <option value="Протоколи правління">Протоколи зборів та правління</option>
-                            <option value="Звіти та кошториси">Фінансові звіти та кошториси</option>
-                            <option value="Інше">Інші документи</option>
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <span class="field-label">Файл</span>
-                        <label class="dropzone" for="osbbDocFile">
-                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
-                            <span class="dropzone-text">Обрати файл</span>
-                            <span class="dropzone-hint">PDF, Word або Excel</span>
-                        </label>
-                        <input type="file" id="osbbDocFile" accept="application/pdf,.doc,.docx,.xls,.xlsx" class="hidden-file-input">
-                        <div id="osbbDocFilePreview" class="file-chips"></div>
-                    </div>
-
-                    <button id="uploadOsbbDocBtn" class="btn-cta">
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        Завантажити в Базу
-                    </button>
-                </div>
-            </div>
-
-            <!-- ВКЛАДКА 4: ІСТОРІЯ -->
-            <div class="admin-panel" data-panel="history">
-                <div class="admin-card">
-                    <div class="admin-card-head admin-card-head-row">
-                        <div>
-                            <h2 class="admin-card-title">Історія розсилок</h2>
-                            <span class="admin-card-sub">Хто і коли прочитав</span>
-                        </div>
-                        <button id="refreshHistoryBtn" class="btn-ghost-small">Оновити</button>
-                    </div>
-                    <div id="adminMsgHistoryContainer" class="admin-scroll-list">
-                        <p class="list-empty">Історія порожня.</p>
-                    </div>
+                <div id="adminRequestsContainer" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
                 </div>
             </div>
         </div>
 
-        
-        <!-- ========================================== -->
-        <!-- ГОЛОВНИЙ КАБІНЕТ (ДАНІ) -->
-        <div id="dataSection" style="display: none;">
-            
-            <!-- ГЕРОЙ-КАРТКА: квартира, адреса, парадна, площа -->
-            <div class="hero-card" id="areaCard">
-                <div class="hero-glow"></div>
-
-                <div class="hero-top">
-                    <div class="hero-apt">
-                        <span class="hero-apt-label">Квартира</span>
-                        <span class="hero-apt-num" id="displayAptNum">--</span>
-                    </div>
-                    <div class="hero-address">
-                        <svg class="hero-pin" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                        <div>
-                            <span class="hero-street">вул. Інглезі, 3/3</span>
-                            <span class="hero-city">м. Одеса</span>
-                        </div>
-                    </div>
+        <!-- Вкладка: база документів -->
+        <div class="admin-panel" data-panel="docs">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Додати документ у Базу</h2>
+                    <span class="admin-card-sub">Буде доступний усім мешканцям</span>
                 </div>
 
-                <div class="hero-stats">
-                    <div class="hero-stat">
-                        <span class="hero-stat-label">Парадна</span>
-                        <span class="hero-stat-value" id="displayEntranceNum">--</span>
-                    </div>
-                    <div class="hero-stat-divider"></div>
-                    <div class="hero-stat">
-                        <span class="hero-stat-label">Загальна площа</span>
-                        <span class="hero-stat-value"><span id="displayAreaVal">--</span><small>м²</small></span>
-                    </div>
-                    <div class="hero-stat-divider"></div>
-                    <div class="hero-stat">
-                        <span class="hero-stat-label">Співвласників</span>
-                        <span class="hero-stat-value" id="displayOwnersCount">--</span>
-                    </div>
+                <div class="field">
+                    <label class="field-label" for="osbbDocTitle">Назва документа</label>
+                    <input type="text" id="osbbDocTitle" class="field-input" placeholder="Напр. Протокол зборів №5">
                 </div>
-            </div>
+                <div class="field">
+                    <label class="field-label" for="osbbDocCategory">Категорія</label>
+                    <select id="osbbDocCategory" class="field-input field-select">
+                        <option value="Установчі документи">Установчі документи</option>
+                        <option value="Протоколи правління">Протоколи зборів та правління</option>
+                        <option value="Звіти та кошториси">Фінансові звіти та кошториси</option>
+                        <option value="Інше">Інші документи</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <span class="field-label">Файл</span>
+                    <label class="dropzone" for="osbbDocFile">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span class="dropzone-text">Обрати файл</span>
+                        <span class="dropzone-hint">PDF, Word або Excel</span>
+                    </label>
+                    <input type="file" id="osbbDocFile" accept="application/pdf,.doc,.docx,.xls,.xlsx" class="hidden-file-input">
+                    <div id="osbbDocFilePreview" class="file-chips"></div>
+                </div>
 
-            
-            <!-- Віджет статусу електроенергії -->
-            <div class="card premium-widget-card power-card" id="powerCard" style="border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 24px;">
-                <div class="power-card-inner">
-                    <div class="power-icon-circle" id="powerIconCircle"></div>
-                    <div class="power-info">
-                        <span class="power-status-label" id="powerStatusText">--</span>
-                        <span class="power-since-label" id="powerSinceText"></span>
-                        <span class="power-duration-label" id="powerDurationText"></span>
-                    </div>
-                </div>
+                <button id="uploadOsbbDocBtn" class="btn-primary" type="button">Завантажити в Базу</button>
             </div>
-            
-            <!-- Заголовок блоку співвласників -->
-            <div class="section-head">
-                <div class="section-head-text">
-                    <h2 class="section-head-title">Співвласники</h2>
-                    <span class="section-head-sub">Частки власності та документи</span>
-                </div>
-                <button id="addOwnerBtn" class="btn-add-round" aria-label="Додати співвласника">
-                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                </button>
-            </div>
-            
-            <!-- Контейнер для карток власників -->
-            <div id="ownersContainer" class="owners-container"></div>
-            
         </div>
 
-    <!-- ========================================== -->
-    <!-- ЕКРАН БАЗИ ДОКУМЕНТІВ ОСББ -->
-    <!-- ========================================== -->
-    <div id="docsSection" style="display: none; padding-bottom: 40px;">
-        
-        <div style="display: flex; align-items: center; margin: 0 0 20px 0;">
-            <button id="backFromDocsBtn" style="background: none; border: none; color: var(--apple-blue); font-size: 17px; font-weight: 500; display: flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; margin-right: 12px; margin-left: -4px;">
-                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                Назад
-            </button>
-            <h1 style="font-size: 26px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Документи ОСББ</h1>
-        </div>
-    
-        <!-- Контейнер, куди завантажаться файли з бази -->
-        <div id="osbbDocsContainer" style="display: flex; flex-direction: column; gap: 20px;">
-            <p style="text-align: center; color: var(--text-muted); font-size: 14px;">Завантаження документів...</p>
+        <!-- Вкладка: історія -->
+        <div class="admin-panel" data-panel="history">
+            <div class="card">
+                <div class="admin-card-head admin-card-head-row">
+                    <div>
+                        <h2 class="admin-card-title">Історія розсилок</h2>
+                        <span class="admin-card-sub">Хто і коли прочитав</span>
+                    </div>
+                    <button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button>
+                </div>
+                <div id="adminMsgHistoryContainer" class="admin-scroll-list">
+                    <p class="list-empty">Історія порожня</p>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- ========================================== -->
-    <!-- ЕКРАН ПРАВЛІННЯ ТА КОНТАКТІВ -->
-    <!-- ========================================== -->
-    <div id="boardSection" style="display: none; padding-bottom: 40px;">
-        
-        <div style="display: flex; align-items: center; margin: 0 0 20px 0;">
-            <button id="backFromBoardBtn" style="background: none; border: none; color: var(--apple-blue); font-size: 17px; font-weight: 500; display: flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; margin-right: 12px; margin-left: -4px;">
-                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    <!-- ============ БАЗА ДОКУМЕНТІВ (МЕШКАНЕЦЬ) ============ -->
+    <div id="docsSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromDocsBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 Назад
             </button>
-            <h1 style="font-size: 26px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Правління</h1>
         </div>
-    
-        <!-- Картка: Голова Правління -->
-        <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 16px;">
-            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 20px;">
-                
-                <!-- Аватар (або Фото) -->
-                <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, #007AFF, #0056B3); display: flex; align-items: center; justify-content: center; color: white; font-size: 22px; font-weight: bold; flex-shrink: 0; overflow: hidden; box-shadow: 0 4px 10px rgba(0,122,255,0.3);">
-                    ОС
-                    <!-- Щоб додати реальне фото, замініть текст "ОС" на: <img src="посилання_на_фото.jpg" style="width:100%; height:100%; object-fit:cover;"> -->
-                </div>
-                
+        <h1 class="screen-title" style="margin-bottom: 18px;">База документів</h1>
+        <div id="osbbDocsContainer">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
+    <!-- ============ ЗВЕРНЕННЯ (МЕШКАНЕЦЬ) ============ -->
+    <div id="requestsSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromRequestsBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+        </div>
+        <h1 class="screen-title" style="margin-bottom: 18px;">Звернення</h1>
+
+        <div class="card">
+            <div class="admin-card-head">
+                <h2 class="admin-card-title">Нове звернення</h2>
+                <span class="admin-card-sub">Правління відповість у застосунку</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="userReqBody">Ваше питання</label>
+                <textarea id="userReqBody" class="field-input" rows="4" placeholder="Опишіть проблему або питання…"></textarea>
+            </div>
+            <div class="field">
+                <span class="field-label">Фото або документи</span>
+                <label class="dropzone" for="userReqFiles">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span class="dropzone-text">Додати файли</span>
+                    <span class="dropzone-hint">Фото або PDF</span>
+                </label>
+                <input type="file" id="userReqFiles" multiple accept="image/*,application/pdf" class="hidden-file-input">
+                <div id="userReqFilesPreview" class="file-chips"></div>
+            </div>
+            <button id="sendUserReqBtn" class="btn-primary" type="button">Надіслати звернення</button>
+        </div>
+
+        <div class="section-head">
+            <div class="section-head-text">
+                <h2 class="section-head-title">Мої звернення</h2>
+            </div>
+        </div>
+        <div id="userRequestsContainer" class="owners-container">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
+    <!-- ============ КОНТАКТИ ПРАВЛІННЯ ============ -->
+    <div id="boardSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromBoardBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+        </div>
+        <h1 class="screen-title" style="margin-bottom: 18px;">Правління</h1>
+
+        <div class="card">
+            <div class="person-card">
+                <div class="person-avatar" style="background: linear-gradient(135deg, #4FA3FF, #007AFF);">ГП</div>
                 <div>
-                    <span style="font-size: 11px; font-weight: 800; color: var(--apple-blue); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; display: block;">Голова правління</span>
-                    <h3 style="margin: 0; font-size: 18px; color: var(--text-main); font-weight: 700; line-height: 1.2;">Савельєв Юрій Дмитрійович</h3>
+                    <span class="eyebrow">Голова правління</span>
+                    <h3 class="person-name">Правління ОСББ «Успіх-25»</h3>
                 </div>
             </div>
-            
-            <div style="display: flex; gap: 10px;">
-                <!-- Вставте свій номер телефону замість нулів -->
-                <a href="tel:+380675575341" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--apple-green); color: white; text-decoration: none; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 15px; transition: 0.2s;">
-                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                    Дзвінок
-                </a>
-                <!-- Вставте свою пошту замість osbb@uspih25.com -->
-                <a href="mailto:osbb.uspeh25@gmail.com?subject=Звернення%20від%20мешканця" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; background: #F2F2F7; color: var(--apple-blue); text-decoration: none; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 15px; transition: 0.2s;">
-                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                    Написати
+            <div class="contact-actions">
+                <a href="tel:+380000000000" class="contact-btn contact-btn-call">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                    Зателефонувати
                 </a>
             </div>
         </div>
-        
-        <!-- Картка: Бухгалтер (Приклад) -->
-        <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 16px;">
-            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 20px;">
-                <div style="width: 64px; height: 64px; border-radius: 50%; background: #F2F2F7; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 22px; font-weight: bold; flex-shrink: 0; overflow: hidden;">
-                    БХ
-                </div>
-                <div>
-                    <span style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; display: block;">Бухгалтер</span>
-                    <h3 style="margin: 0; font-size: 18px; color: var(--text-main); font-weight: 700; line-height: 1.2;">Надія Адамова</h3>
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 10px;">
-                <a href="tel:+380970721234" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; background: #F2F2F7; color: var(--text-main); text-decoration: none; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 15px; transition: 0.2s;">
-                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                    Подзвонити
-                </a>
-            </div>
-        </div>
-    
-    </div>
-    </div>
-    <!-- кінець .container -->
 
-    <!-- Модальне вікно перегляду повідомлення -->
-    <div id="msgModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(5px); z-index: 1000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
-        <div style="background: white; width: 100%; max-width: 440px; border-radius: 20px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column;">
-            
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                <h3 id="modalMsgTitle" style="margin: 0; font-size: 20px; color: var(--text-main); font-weight: 700;"></h3>
-                <button id="closeMsgModal" style="background: #F2F2F7; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-weight: bold; color: var(--text-muted); display: flex; align-items: center; justify-content: center;">✕</button>
-            </div>
-            
-            <span id="modalMsgDate" style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px; display: block;"></span>
-            
-            <!-- Текст з підтримкою абзаців, пробілів та смайликів -->
-            <div id="modalMsgBody" style="font-size: 15px; color: var(--text-main); line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-bottom: 20px;"></div>
-            
-            <!-- Контейнер для вкладених файлів/документів -->
-            <div id="modalMsgAttachments" style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #E5E5EA; padding-top: 15px; margin-top: auto;"></div>
-        </div>
-    </div>
-    
-    <!-- Повноекранна галерея фото (свайп + зум) -->
-    <div id="imageGalleryModal" class="gallery-modal">
-        <button id="galleryCloseBtn" class="gallery-close-btn" aria-label="Закрити">✕</button>
-        <span id="galleryCounter" class="gallery-counter"></span>
-        <div id="galleryTrack" class="gallery-track"></div>
-        <button id="galleryPrevBtn" class="gallery-nav-btn gallery-prev" aria-label="Попереднє фото">
-            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="15 18 9 12 15 6"></polyline></svg>
-        </button>
-        <button id="galleryNextBtn" class="gallery-nav-btn gallery-next" aria-label="Наступне фото">
-            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </button>
-    </div>
-
-    <!-- Повноекранний перегляд документів (PDF / Word / Excel / PowerPoint) -->
-    <div id="docViewerModal" class="doc-viewer-modal">
-        <div class="doc-viewer-header">
-            <span id="docViewerTitle" class="doc-viewer-title"></span>
-            <div class="doc-viewer-actions">
-                <a id="docViewerOpenExternal" href="#" target="_blank" class="doc-viewer-action-btn" aria-label="Відкрити у застосунку">
-                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                </a>
-                <button id="docViewerCloseBtn" class="doc-viewer-close-btn" aria-label="Закрити">✕</button>
-            </div>
-        </div>
-        <div id="docViewerBody" class="doc-viewer-body"></div>
-    </div>
-
-    <!-- Модальне вікно: Відповідь Адміна на звернення -->
-    <div id="adminReplyModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(5px); z-index: 2000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
-        <div style="background: white; width: 100%; max-width: 440px; border-radius: 20px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); display: flex; flex-direction: column;">
-            
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-                <h3 id="replyModalTitle" style="margin: 0; font-size: 18px; color: var(--text-main); font-weight: 700;">Відповідь квартирі</h3>
-                <button id="closeReplyModalBtn" style="background: #F2F2F7; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-weight: bold; color: var(--text-muted); display: flex; align-items: center; justify-content: center;">✕</button>
-            </div>
-            
-            <!-- Текст оригінального повідомлення (щоб бачити, на що відповідаємо) -->
-            <div style="background: #F9F9FB; border-left: 3px solid var(--apple-blue); padding: 10px 14px; border-radius: 0 10px 10px 0; margin-bottom: 16px;">
-                <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-bottom: 4px; display: block;">Питання мешканця:</span>
-                <p id="replyModalOriginalText" style="margin: 0; font-size: 14px; color: var(--text-main); font-style: italic; white-space: pre-wrap; word-break: break-word;"></p>
-            </div>
-
-            <input type="hidden" id="replyModalReqId">
-            <input type="hidden" id="replyModalReqApt">
-
-            <div class="form-group" style="margin-bottom: 12px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Ваша відповідь</label>
-                <textarea id="replyModalBody" rows="4" placeholder="Напишіть відповідь..." style="width: 100%; box-sizing: border-box; background: #F2F2F7; border: none; border-radius: 12px; padding: 14px; font-size: 15px; resize: none; font-family: inherit; outline: none;"></textarea>
-            </div>
-
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Прикріпити файли/фото (необов'язково)</label>
-                <input type="file" id="replyModalFiles" multiple accept="image/*,application/pdf" style="background: #F2F2F7; border: 1px dashed #ccc; padding: 10px; border-radius: 12px; width: 100%; box-sizing: border-box; font-size: 14px;">
-            </div>
-
-            <button id="sendReplyBtn" class="btn btn-primary" style="width: 100%;">Надіслати відповідь</button>
+        <div class="card">
+            <span class="eyebrow">Адреса</span>
+            <p class="owner-doc-value">м. Одеса, вул. Інглезі, буд. 3/3</p>
         </div>
     </div>
 
-    <!-- ========================================== -->
-    <!-- ЕКРАН ЗВЕРНЕНЬ ЖИЛЬЦЯ ДО ПРАВЛІННЯ -->
-    <!-- ========================================== -->
-    <div id="requestsSection" style="display: none; padding-bottom: 40px;">
-        
-        <div style="display: flex; align-items: center; margin: 0 0 20px 0;">
-            <button id="backFromRequestsBtn" style="background: none; border: none; color: var(--apple-blue); font-size: 17px; font-weight: 500; display: flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; margin-right: 12px; margin-left: -4px;">
-                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                Назад
-            </button>
-            <h1 style="font-size: 26px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Мої звернення</h1>
+</div>
+
+<!-- ============ МОДАЛКА: ПОВІДОМЛЕННЯ ============ -->
+<div id="msgModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="modalMsgTitle"></h3>
+            <button id="closeMsgModal" class="sheet-close" type="button" aria-label="Закрити">✕</button>
         </div>
-    
-        <!-- Форма створення нового звернення -->
-        <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 24px;">
-            <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 16px 0; color: var(--apple-blue);">Нове звернення</h2>
-            
-            <div class="form-group" style="margin-bottom: 12px;">
-                <textarea id="userReqBody" rows="3" placeholder="Опишіть ваше питання або проблему..." style="width: 100%; box-sizing: border-box; background: #F2F2F7; border: none; border-radius: 12px; padding: 14px; font-size: 15px; resize: none; font-family: inherit; outline: none;"></textarea>
-            </div>
-            <div class="form-group" style="margin-bottom: 16px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Прикріпити фото / файли</label>
-                <input type="file" id="userReqFiles" multiple accept="image/*,application/pdf" style="background: #F2F2F7; border: 1px dashed #ccc; padding: 10px; border-radius: 12px; width: 100%; box-sizing: border-box; font-size: 14px;">
-            </div>
-            <button id="sendUserReqBtn" class="btn btn-primary" style="width: 100%; font-size: 15px;">Надіслати Правлінню</button>
+        <span class="modal-date" id="modalMsgDate"></span>
+        <p class="modal-body" id="modalMsgBody"></p>
+        <div id="modalMsgAttachments" class="attach-block"></div>
+        <div id="modalMsgLinkedDoc" class="attach-block"></div>
+    </div>
+</div>
+
+<!-- ============ МОДАЛКА: ВІДПОВІДЬ АДМІНА ============ -->
+<div id="adminReplyModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="replyModalTitle"></h3>
+            <button id="closeReplyModalBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
         </div>
-    
-        <!-- Історія звернень жильця -->
-        <h3 style="font-size: 18px; font-weight: 700; margin: 0 0 16px 0; color: var(--text-main);">Історія звернень</h3>
-        <div id="userRequestsContainer" style="display: flex; flex-direction: column; gap: 16px;">
-            <p style="text-align: center; color: var(--text-muted); font-size: 14px;">Немає звернень.</p>
+        <input type="hidden" id="replyModalReqId">
+        <input type="hidden" id="replyModalReqApt">
+
+        <div class="quote-block">
+            <p class="quote-text" id="replyModalOriginalText"></p>
+        </div>
+
+        <div class="field">
+            <label class="field-label" for="replyModalBody">Ваша відповідь</label>
+            <textarea id="replyModalBody" class="field-input" rows="4" placeholder="Напишіть відповідь мешканцю…"></textarea>
+        </div>
+        <div class="field">
+            <span class="field-label">Вкладення</span>
+            <label class="dropzone" for="replyModalFiles">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span class="dropzone-text">Додати файли</span>
+            </label>
+            <input type="file" id="replyModalFiles" multiple accept="image/*,application/pdf" class="hidden-file-input">
+            <div id="replyModalFilesPreview" class="file-chips"></div>
+        </div>
+
+        <button id="sendReplyBtn" class="btn-primary" type="button">Надіслати відповідь</button>
+    </div>
+</div>
+
+<!-- ============ ГАЛЕРЕЯ ФОТО ============ -->
+<div id="imageGalleryModal" class="gallery-modal">
+    <button id="galleryCloseBtn" class="gallery-close-btn" type="button" aria-label="Закрити">✕</button>
+    <span id="galleryCounter" class="gallery-counter"></span>
+    <div id="galleryTrack" class="gallery-track"></div>
+    <button id="galleryPrevBtn" class="gallery-nav-btn gallery-prev" type="button" aria-label="Попереднє">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <button id="galleryNextBtn" class="gallery-nav-btn gallery-next" type="button" aria-label="Наступне">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>
+</div>
+
+<!-- ============ ПЕРЕГЛЯДАЧ ДОКУМЕНТІВ ============ -->
+<div id="docViewerModal" class="doc-viewer-modal">
+    <div class="doc-viewer-header">
+        <span id="docViewerTitle" class="doc-viewer-title"></span>
+        <div class="doc-viewer-actions">
+            <a id="docViewerOpenExternal" href="#" target="_blank" class="icon-btn" aria-label="Відкрити у застосунку">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </a>
+            <button id="docViewerCloseBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
         </div>
     </div>
-    <script type="module" src="app.js?v=11"></script>
-    
+    <div id="docViewerBody" class="doc-viewer-body"></div>
+</div>
+
+<script type="module" src="js/app.js?v=1"></script>
 </body>
 </html>

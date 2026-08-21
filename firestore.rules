@@ -1,0 +1,91 @@
+rules_version = '2';
+
+// ============================================================
+// ПРАВИЛА ДОСТУПУ ОСББ «Успіх-25»
+//
+// ВАЖЛИВО: саме ці правила, а не код у браузері, реально
+// захищають дані. JavaScript можна обійти через DevTools;
+// правила — ні. Скопіюйте цей файл у:
+//   Firebase Console → Firestore Database → Rules → Publish
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Номер квартири поточного користувача (з email виду "45@uspih25.com")
+    function myApt() {
+      return request.auth.token.email.split('@')[0];
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/apartments/$(myApt()))
+        && get(/databases/$(database)/documents/apartments/$(myApt())).data.isAdmin == true;
+    }
+
+    // ---------- КВАРТИРИ ----------
+    // Мешканець бачить і редагує ТІЛЬКИ свою квартиру.
+    match /apartments/{apt} {
+      allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+      // Мешканець не може сам призначити себе адміном
+      allow update: if isSignedIn() && apt == myApt()
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin']);
+      allow create: if isSignedIn() && apt == myApt()
+                    && request.resource.data.isAdmin == false;
+      allow write: if isAdmin();
+
+      // Співвласники — тільки власник квартири або адмін
+      match /owners/{ownerId} {
+        allow read, write: if isSignedIn() && (apt == myApt() || isAdmin());
+      }
+    }
+
+    // ---------- ПОВІДОМЛЕННЯ ----------
+    // Читати можна лише те, де ти є серед адресатів.
+    // Саме тому клієнт робить запит array-contains-any по recipients.
+    match /messages/{msgId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && (
+              'all' in resource.data.recipients
+              || ('apt:' + myApt()) in resource.data.recipients
+              || resource.data.recipients.hasAny(['ent:' + string(
+                   get(/databases/$(database)/documents/apartments/$(myApt())).data.entrance)])
+           ));
+
+      allow create, delete: if isAdmin();
+
+      // Мешканець може лише позначити прочитання своєї квартири
+      allow update: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+            && request.resource.data.readBy.diff(resource.data.readBy)
+                 .affectedKeys().hasOnly([myApt()]));
+    }
+
+    // ---------- ЗВЕРНЕННЯ ----------
+    match /requests/{reqId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
+      allow create: if isSignedIn()
+                    && request.resource.data.apt == myApt()
+                    && request.resource.data.status == 'new';
+      // Відповідати може лише правління
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- БАЗА ДОКУМЕНТІВ ОСББ ----------
+    match /osbb_documents/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- СТАТУС СВІТЛА ----------
+    match /status/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
