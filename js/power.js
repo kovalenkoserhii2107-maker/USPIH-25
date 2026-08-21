@@ -12,6 +12,10 @@ let unsubscribe = null;
 let durationTimer = null;
 let changedAtMs = null;
 let isOn = true;
+// Стан, який щойно обрав адмін, поки сервер не підтвердив запис.
+// Firestore шле знімок двічі — спершу локально, потім з відповіддю сервера.
+// Без цього прапорця відповідь на ПОПЕРЕДНІЙ запис перекидала тумблер назад.
+let pendingState = null;
 
 function bulbSvg(on) {
     const base = '<path d="M9 18h6"></path><path d="M10 22h4"></path>';
@@ -59,8 +63,10 @@ function render(on, changedAt) {
         if (icon) icon.innerHTML = bulbSvg(on);
     });
 
+    // Поки власний запис не підтверджено — тумблер не чіпаємо, інакше
+    // відповідь на попередній запис перекине його на старе значення.
     const toggle = document.getElementById('powerToggleInput');
-    if (toggle) toggle.checked = on;
+    if (toggle && pendingState === null) toggle.checked = on;
 
     updateDuration();
 }
@@ -68,12 +74,22 @@ function render(on, changedAt) {
 export function startPowerListener() {
     if (unsubscribe) return;
     unsubscribe = onSnapshot(doc(db, 'status', 'power'), (snap) => {
-        if (snap.exists()) {
-            const data = snap.data();
-            render(data.isOn !== false, data.changedAt ? data.changedAt.toDate() : null);
-        } else {
-            render(true, null);
-        }
+        // hasPendingWrites === true означає, що це наш власний ще не
+        // підтверджений запис, а не дані з сервера.
+        const isLocal = snap.metadata.hasPendingWrites;
+        if (!isLocal) pendingState = null;
+
+        if (!snap.exists()) { render(true, null); return; }
+
+        const data = snap.data();
+        // У локальному знімку serverTimestamp() ще не обчислений і дає null.
+        // Підставляємо поточний час, інакше підписи «з …» і «Вже …»
+        // на мить зникають і повертаються — це й виглядало як смикання.
+        const changedAt = data.changedAt
+            ? data.changedAt.toDate()
+            : (isLocal ? new Date() : null);
+
+        render(data.isOn !== false, changedAt);
     }, (error) => console.error('Статус світла:', error));
 
     if (!durationTimer) durationTimer = setInterval(updateDuration, 30000);
@@ -87,13 +103,16 @@ export function stopPowerListener() {
 export function initPowerToggle() {
     document.getElementById('powerToggleInput')?.addEventListener('change', async function () {
         const newState = this.checked;
+        pendingState = newState;
         this.disabled = true;
         try {
-            await setDoc(doc(db, 'status', 'power'), { isOn: newState, changedAt: serverTimestamp() });
+            await setDoc(doc(db, 'status', 'power'),
+                { isOn: newState, changedAt: serverTimestamp() }, { merge: true });
             toast(newState ? 'Позначено: світло є' : 'Позначено: світла немає', 'success');
         } catch (error) {
             console.error(error);
             toast('Не вдалося оновити статус', 'error');
+            pendingState = null;
             this.checked = !newState;
         } finally {
             this.disabled = false;
