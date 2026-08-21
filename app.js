@@ -303,8 +303,6 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
 
     try {
         // ДОДАЄМО ДОКУМЕНТ В НОВУ КОЛЕКЦІЮ "messages"
-        // (Для цього ми імпортували serverTimestamp на початку файлу)
-        import { serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         
         await addDoc(collection(db, "messages"), {
             title: title,
