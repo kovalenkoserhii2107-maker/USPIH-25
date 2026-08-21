@@ -12,6 +12,10 @@
     --border-radius-lg: 16px;
     --border-radius-sm: 10px;
 }
+/* Правильна математика розмірів для всіх елементів */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
 
 /* ЗАГАЛЬНІ СТИЛІ СТОРІНКИ */
 body {
