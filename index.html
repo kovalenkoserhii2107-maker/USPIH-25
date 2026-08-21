@@ -46,33 +46,60 @@
         <div id="loginSection" class="card central-card">
             <h1 class="apple-title">Вхід у кабінет</h1>
             <p class="subtitle">Введіть дані вашої квартири</p>
-            <div class="form-group">
-                <label>Номер квартири</label>
-                <input type="number" id="aptInput" placeholder="Наприклад: 45">
-            </div>
-            <div class="form-group">
-                <label>Пароль</label>
-                <input type="password" id="passInput" placeholder="Введіть пароль">
-            </div>
-            <button id="loginBtn" class="btn btn-primary">Увійти</button>
-            <p id="loginError" class="error-text" style="display: none;"></p>
+            
+            <form id="loginForm" onsubmit="return false;">
+                <div class="form-group">
+                    <label>Номер квартири</label>
+                    <!-- Атрибут username підказує телефону, що це логін -->
+                    <input type="number" id="aptInput" autocomplete="username" placeholder="Наприклад: 45">
+                </div>
+                <div class="form-group">
+                    <label>Пароль</label>
+                    <div class="password-wrapper">
+                        <!-- Атрибут current-password -->
+                        <input type="password" id="passInput" autocomplete="current-password" placeholder="Введіть пароль">
+                        <button type="button" class="toggle-password" data-target="passInput">
+                            <!-- Іконка ока -->
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
+                </div>
+                <button type="button" id="loginBtn" class="btn btn-primary">Увійти</button>
+                <p id="loginError" class="error-text" style="display: none;"></p>
+            </form>
         </div>
 
         <!-- Блок зміни пароля -->
         <div id="passwordSection" class="card central-card" style="display: none;">
             <h2 class="apple-title">Безпека</h2>
             <p class="subtitle">Будь ласка, встановіть власний надійний пароль.</p>
-            <div class="form-group">
-                <label>Новий пароль</label>
-                <input type="password" id="newPass" placeholder="Мінімум 4 символи">
-            </div>
-            <div class="form-group">
-                <label>Повторіть новий пароль</label>
-                <input type="password" id="confirmPass" placeholder="Повторіть пароль">
-            </div>
-            <button id="savePassBtn" class="btn btn-primary">Зберегти пароль</button>
-            <button id="cancelPassBtn" class="btn btn-secondary" style="margin-top: 10px; display: none;">Скасувати</button>
-            <p id="passError" class="error-text" style="display: none;"></p>
+            
+            <form id="passwordForm" onsubmit="return false;">
+                <!-- Приховане поле логіну потрібне для Apple/Google, щоб вони зрозуміли, до якого акаунту прив'язати новий пароль -->
+                <input type="number" id="hiddenAptInput" autocomplete="username" style="display:none;">
+                
+                <div class="form-group">
+                    <label>Новий пароль</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="newPass" autocomplete="new-password" placeholder="Мінімум 4 символи">
+                        <button type="button" class="toggle-password" data-target="newPass">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Повторіть новий пароль</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="confirmPass" autocomplete="new-password" placeholder="Повторіть пароль">
+                        <button type="button" class="toggle-password" data-target="confirmPass">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
+                </div>
+                <button type="button" id="savePassBtn" class="btn btn-primary">Зберегти пароль</button>
+                <button type="button" id="cancelPassBtn" class="btn btn-secondary" style="margin-top: 10px; display: none;">Скасувати</button>
+                <p id="passError" class="error-text" style="display: none;"></p>
+            </form>
         </div>
 
         <!-- Головний кабінет (Блок даних) -->
