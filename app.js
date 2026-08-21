@@ -831,6 +831,8 @@ function renderAttachments(container, files) {
         return;
     }
     container.style.display = 'flex';
+    container.style.flexDirection = 'column'; // ДОДАНО: Розміщує елементи чітко зверху вниз
+    container.style.gap = '8px';              // ДОДАНО: Акуратний відступ між підписом і фото
 
     const images = files.filter(isImageFile);
     const docs = files.filter(f => !isImageFile(f));
@@ -1400,25 +1402,25 @@ async function loadUserRequestsHistory(apt) {
         requests.forEach(req => {
             const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
             
-            // Бульбашка жильця
-            html += `<div style="background: #F9F9FB; border: 1px solid #E5E5EA; border-radius: 16px; padding: 16px; margin-bottom: ${req.status === 'replied' ? '8px' : '20px'};">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Ваше звернення</span>
-                    <span style="font-size: 11px; color: #A1A1A6;">${dateStr}</span>
+            // Бульбашка жильця (Дизайн преміум-картки як на головному екрані)
+            html += `<div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.03); margin-bottom: ${req.status === 'replied' ? '12px' : '24px'}; border: 1px solid #E5E5EA;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Ваше звернення</span>
+                    <span style="font-size: 12px; color: #A1A1A6;">${dateStr}</span>
                 </div>
-                <p style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main); white-space: pre-wrap; word-break: break-word;">${escapeHtml(req.text)}</p>
+                <p style="margin: 0 0 12px 0; font-size: 16px; color: var(--text-main); white-space: pre-wrap; word-break: break-word; line-height: 1.4;">${escapeHtml(req.text)}</p>
                 <div class="user-req-attach" data-req-id="${req.id}"></div>
             </div>`;
 
             // Відповідь адміна (якщо є)
             if (req.status === 'replied') {
                 const replyDateStr = req.repliedAt ? new Date(req.repliedAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
-                html += `<div style="background: #E5F0FF; border: 1px solid rgba(0, 122, 255, 0.1); border-radius: 16px; padding: 16px; margin-bottom: 20px; margin-left: 20px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="font-size: 12px; font-weight: 700; color: var(--apple-blue); text-transform: uppercase;">Відповідь Правління</span>
-                        <span style="font-size: 11px; color: var(--apple-blue); opacity: 0.7;">${replyDateStr}</span>
+                html += `<div class="card premium-widget-card" style="background: #F0F8FF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.03); margin-bottom: 24px; margin-left: 20px; border: 1px solid rgba(0, 122, 255, 0.1);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="font-size: 11px; font-weight: 700; color: var(--apple-blue); text-transform: uppercase; letter-spacing: 0.5px;">Відповідь Правління</span>
+                        <span style="font-size: 12px; color: var(--apple-blue); opacity: 0.7;">${replyDateStr}</span>
                     </div>
-                    <p style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main); white-space: pre-wrap; word-break: break-word;">${escapeHtml(req.replyText)}</p>
+                    <p style="margin: 0 0 12px 0; font-size: 16px; color: var(--text-main); white-space: pre-wrap; word-break: break-word; line-height: 1.4;">${escapeHtml(req.replyText)}</p>
                     <div class="user-req-reply-attach" data-req-id="${req.id}"></div>
                 </div>`;
             }
