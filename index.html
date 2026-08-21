@@ -223,8 +223,19 @@
             </div>
             
             <!-- Місце для майбутніх модулів (Реєстр, Статистика тощо) -->
-            <div style="text-align: center; margin-top: 30px;">
-                <p style="color: var(--text-muted); font-size: 14px;">Інші модулі управління будуть додані сюди згодом.</p>
+            <!-- Історія повідомлень -->
+            <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
+                <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 20px 0; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <svg viewBox="0 0 24 24" width="22" height="22" stroke="var(--apple-blue)" stroke-width="2" fill="none"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path></svg>
+                        Історія розсилок
+                    </div>
+                    <button id="refreshHistoryBtn" class="btn btn-secondary btn-small" style="padding: 6px 12px; font-size: 13px;">Оновити</button>
+                </h2>
+                
+                <div id="adminMsgHistoryContainer" style="display: flex; flex-direction: column; gap: 15px; max-height: 500px; overflow-y: auto;">
+                    <p style="color: var(--text-muted); font-size: 14px; text-align: center;">Історія порожня.</p>
+                </div>
             </div>
         </div>
         
