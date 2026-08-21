@@ -1,6 +1,6 @@
 // 1. ПІДКЛЮЧЕННЯ FIREBASE
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, query, orderBy, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, updatePassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -42,12 +42,14 @@ onAuthStateChanged(auth, async (user) => {
         localStorage.setItem('session_timestamp', Date.now());
         const apt = user.email.split('@')[0];
         await loadCabinetData(apt);
+        startPowerStatusListener();
     } else {
         appLoader.style.display = 'none'; 
         loginSection.style.display = 'block'; 
         dataSection.style.display = 'none';
         topNav.style.display = 'none';
         passwordSection.style.display = 'none';
+        stopPowerStatusListener();
     }
 });
 
@@ -1004,5 +1006,131 @@ function closeDocViewer() {
 }
 
 document.getElementById('docViewerCloseBtn').addEventListener('click', closeDocViewer);
+
+// ==========================================
+// СТАТУС ЕЛЕКТРОПОСТАЧАННЯ (ТУМБЛЕР АДМІНА + ЖИВЕ ОНОВЛЕННЯ)
+// ==========================================
+let powerUnsubscribe = null;
+let powerChangedAtMs = null;
+let powerIsOn = true;
+let powerDurationInterval = null;
+
+function bulbSvg(isOn) {
+    if (isOn) {
+        return `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18h6"></path>
+            <path d="M10 22h4"></path>
+            <path d="M12 2a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 2z" fill="currentColor" fill-opacity="0.18"></path>
+            <line x1="12" y1="0.5" x2="12" y2="2"></line>
+            <line x1="20" y1="4" x2="18.5" y2="5.5"></line>
+            <line x1="4" y1="4" x2="5.5" y2="5.5"></line>
+        </svg>`;
+    }
+    return `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18h6"></path>
+        <path d="M10 22h4"></path>
+        <path d="M12 2a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 2z"></path>
+    </svg>`;
+}
+
+function formatDateTimeUk(date) {
+    return date.toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatElapsed(ms) {
+    if (ms < 0) ms = 0;
+    const totalMin = Math.floor(ms / 60000);
+    const days = Math.floor(totalMin / 1440);
+    const hours = Math.floor((totalMin % 1440) / 60);
+    const mins = totalMin % 60;
+    if (days > 0) return `${days} дн. ${hours} год.`;
+    if (hours > 0) return `${hours} год. ${mins} хв.`;
+    return `${mins} хв.`;
+}
+
+function updatePowerDuration() {
+    if (powerChangedAtMs == null) return;
+    const elapsed = formatElapsed(Date.now() - powerChangedAtMs);
+    const label = powerIsOn ? `Вже ${elapsed}` : `Вже ${elapsed} без світла`;
+    const durationText = document.getElementById('powerDurationText');
+    const adminDurationText = document.getElementById('adminPowerDurationText');
+    if (durationText) durationText.innerText = label;
+    if (adminDurationText) adminDurationText.innerText = label;
+}
+
+function renderPowerStatus(isOn, changedAtDate) {
+    powerIsOn = isOn;
+    powerChangedAtMs = changedAtDate ? changedAtDate.getTime() : null;
+    const sinceStr = changedAtDate ? `з ${formatDateTimeUk(changedAtDate)}` : '';
+
+    // Картка мешканця
+    const card = document.getElementById('powerCard');
+    const statusText = document.getElementById('powerStatusText');
+    const sinceText = document.getElementById('powerSinceText');
+    const iconWrap = document.getElementById('powerIconCircle');
+
+    if (card) { card.classList.toggle('power-card-on', isOn); card.classList.toggle('power-card-off', !isOn); }
+    if (statusText) statusText.innerText = isOn ? 'Є світло' : 'Немає світла';
+    if (sinceText) sinceText.innerText = sinceStr;
+    if (iconWrap) iconWrap.innerHTML = bulbSvg(isOn);
+
+    // Картка адміна + тумблер
+    const adminCard = document.getElementById('adminPowerCard');
+    const adminStatusText = document.getElementById('adminPowerStatusText');
+    const adminSinceText = document.getElementById('adminPowerSinceText');
+    const adminIconWrap = document.getElementById('adminPowerIconWrap');
+    const toggleInput = document.getElementById('powerToggleInput');
+
+    if (adminCard) { adminCard.classList.toggle('power-card-on', isOn); adminCard.classList.toggle('power-card-off', !isOn); }
+    if (adminStatusText) adminStatusText.innerText = isOn ? 'Світло є' : 'Світла немає';
+    if (adminSinceText) adminSinceText.innerText = sinceStr;
+    if (adminIconWrap) adminIconWrap.innerHTML = bulbSvg(isOn);
+    if (toggleInput) toggleInput.checked = isOn;
+
+    updatePowerDuration();
+}
+
+function startPowerStatusListener() {
+    if (powerUnsubscribe) return; // вже слухаємо
+    powerUnsubscribe = onSnapshot(doc(db, "status", "power"), (snap) => {
+        if (snap.exists()) {
+            const data = snap.data();
+            const changedAtDate = data.changedAt ? data.changedAt.toDate() : null;
+            renderPowerStatus(data.isOn !== false, changedAtDate);
+        } else {
+            renderPowerStatus(true, null);
+        }
+    }, (error) => {
+        console.error("Помилка стеження за статусом електропостачання:", error);
+    });
+
+    if (!powerDurationInterval) {
+        powerDurationInterval = setInterval(updatePowerDuration, 30000);
+    }
+}
+
+function stopPowerStatusListener() {
+    if (powerUnsubscribe) { powerUnsubscribe(); powerUnsubscribe = null; }
+    if (powerDurationInterval) { clearInterval(powerDurationInterval); powerDurationInterval = null; }
+}
+
+// Тумблер адміна: вмикає/вимикає світло для всіх користувачів одразу
+document.getElementById('powerToggleInput')?.addEventListener('change', async function() {
+    const newState = this.checked;
+    this.disabled = true;
+    try {
+        await setDoc(doc(db, "status", "power"), {
+            isOn: newState,
+            changedAt: serverTimestamp()
+        });
+        // Оновлення інтерфейсу прилетить автоматично через onSnapshot
+    } catch (error) {
+        console.error("Помилка оновлення статусу електропостачання:", error);
+        alert("Не вдалося оновити статус світла. Перевірте інтернет-з'єднання.");
+        this.checked = !newState;
+    } finally {
+        this.disabled = false;
+    }
+});
 
 
