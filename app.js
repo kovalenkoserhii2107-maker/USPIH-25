@@ -1249,7 +1249,7 @@ async function loadOsbbDocsBase() {
                         <div class="doc-attach-list">`;
             
             docs.forEach((d, idx) => {
-                const kind = getDocKind(d); // Використовуємо існуючу функцію Клода
+                const kind = getDocKind({ name: d.fileName, type: d.type }); // Виправлено пошук розширення
                 const docDataStr = encodeURIComponent(JSON.stringify({url: d.url, name: d.title, type: d.type}));
                 
                 html += `<div class="doc-attach-row btn-open-osbb-doc" data-doc="${docDataStr}" style="background: #F9F9FB; border: 1px solid #E5E5EA;">
