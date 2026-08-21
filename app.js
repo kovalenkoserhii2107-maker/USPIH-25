@@ -144,6 +144,14 @@ async function loadCabinetData(apt) {
         document.getElementById('displayEntranceNum').innerText = entranceVal;
         document.getElementById('displayAreaVal').innerText = areaVal;
 
+        // Контекст у шапці: одразу видно, чий це кабінет
+        const navMeta = document.getElementById('navAptMeta');
+        if (navMeta) {
+            navMeta.innerText = entranceVal && entranceVal !== '--'
+                ? `Квартира ${apt} · Парадна ${entranceVal}`
+                : `Квартира ${apt}`;
+        }
+
         // Завантажуємо співвласників
         ownersContainer.innerHTML = "";
         const ownersRef = collection(db, "apartments", apt, "owners");
@@ -223,19 +231,42 @@ const notifPopup = document.getElementById('notifPopup');
 const menuBtn = document.getElementById('menuBtn');
 const menuPopup = document.getElementById('menuPopup');
 
+const navBackdrop = document.getElementById('navBackdrop');
+
+function syncNavBackdrop() {
+    const anyOpen = notifPopup.style.display === 'block' || menuPopup.style.display === 'block';
+    navBackdrop.style.display = anyOpen ? 'block' : 'none';
+    document.body.style.overflow = anyOpen ? 'hidden' : '';
+}
+
+function closeAllSheets() {
+    notifPopup.style.display = 'none';
+    closeAllSheets();
+    syncNavBackdrop();
+}
+
 bellBtn.addEventListener('click', (e) => {
-    e.stopPropagation(); menuPopup.style.display = 'none';
-    notifPopup.style.display = notifPopup.style.display === 'none' ? 'block' : 'none';
+    e.stopPropagation();
+    const willOpen = notifPopup.style.display !== 'block';
+    closeAllSheets();
+    notifPopup.style.display = willOpen ? 'block' : 'none';
     document.getElementById('notifBadge').style.display = 'none';
+    syncNavBackdrop();
 });
 menuBtn.addEventListener('click', (e) => {
-    e.stopPropagation(); notifPopup.style.display = 'none';
-    menuPopup.style.display = menuPopup.style.display === 'none' ? 'block' : 'none';
+    e.stopPropagation();
+    const willOpen = menuPopup.style.display !== 'block';
+    notifPopup.style.display = 'none';
+    menuPopup.style.display = willOpen ? 'block' : 'none';
+    syncNavBackdrop();
 });
-document.addEventListener('click', (e) => {
-    if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) notifPopup.style.display = 'none';
-    if (!menuPopup.contains(e.target) && !menuBtn.contains(e.target)) menuPopup.style.display = 'none';
+
+// Закриття: тап по затемненню, по хрестику або клавіша Esc
+navBackdrop.addEventListener('click', closeAllSheets);
+document.querySelectorAll('[data-close-sheet]').forEach(btn => {
+    btn.addEventListener('click', closeAllSheets);
 });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllSheets(); });
 
 document.getElementById('menuLogoutBtn').addEventListener('click', async () => {
     localStorage.removeItem('session_timestamp'); 
@@ -359,6 +390,14 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
             fileInput.type = 'file'; // Технічний трюк для повного очищення вибору файлів у браузері
         }
 
+        // Скидаємо нові елементи інтерфейсу: сегментований вибір, превʼю файлів, документ з Бази
+        document.querySelectorAll('#adminTargetSegmented .segmented-item')
+            .forEach(i => i.classList.toggle('active', i.getAttribute('data-target') === 'all'));
+        const msgFilesPreview = document.getElementById('adminMsgFilesPreview');
+        if (msgFilesPreview) msgFilesPreview.innerHTML = '';
+        const linkedDocSelect = document.getElementById('adminMsgLinkedDoc');
+        if (linkedDocSelect) linkedDocSelect.value = '';
+
         loadAdminMessageHistory(); // Оновлюємо історію
         
     } catch (error) {
@@ -388,9 +427,32 @@ document.getElementById('addOwnerBtn').addEventListener('click', () => {
     renderOwnerCard(null, ownersContainer.children.length + 1, true, true);
 });
 
+function getInitials(fullName) {
+    if (!fullName) return '?';
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+}
+
+// Стабільний колір аватара за іменем (щоб співвласники візуально різнилися)
+const AVATAR_GRADIENTS = [
+    'linear-gradient(135deg, #007AFF, #0056B3)',
+    'linear-gradient(135deg, #34C759, #248A3D)',
+    'linear-gradient(135deg, #FF9500, #C93400)',
+    'linear-gradient(135deg, #AF52DE, #6C2BA0)',
+    'linear-gradient(135deg, #FF2D55, #C10E33)',
+    'linear-gradient(135deg, #5AC8FA, #0071A4)'
+];
+function avatarGradient(name) {
+    let sum = 0;
+    for (let i = 0; i < (name || '').length; i++) sum += name.charCodeAt(i);
+    return AVATAR_GRADIENTS[sum % AVATAR_GRADIENTS.length];
+}
+
 function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
     const card = document.createElement('div');
-    card.className = 'card owner-card';
+    card.className = 'owner-card';
     
     let isNew = !ownerData;
     let shareFrac = ownerData ? (ownerData.shareFrac || "") : "";
@@ -399,53 +461,99 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
     const docInfo = ownerData ? ownerData.docInfo : "";
     const fileUrls = ownerData ? ownerData.fileUrls : "";
 
-    let shareBarHtml = "";
-    if (sharePerc && !isNaN(parseFloat(sharePerc))) {
-        shareBarHtml = `<div class="share-bar-container"><div class="share-bar-fill" style="width: ${sharePerc}%;"></div></div>`;
-    }
+    const percNum = parseFloat(sharePerc);
+    const hasShare = sharePerc && !isNaN(percNum);
+    // Кільцева діаграма частки (SVG), радіус 20 -> довжина кола ≈ 125.66
+    const CIRC = 125.66;
+    const dash = hasShare ? (CIRC * Math.min(percNum, 100) / 100) : 0;
 
-    let docLinksHtml = "";
-    if (fileUrls && fileUrls.trim() !== "") {
-        let links = fileUrls.split(",");
-        docLinksHtml = `<div class="doc-links-container">`;
-        links.forEach((url, i) => {
-            if (url.trim() !== "") {
-                docLinksHtml += `<a href="${url.trim()}" target="_blank" class="btn-doc-view"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>Документ ${i+1}</a>`;
-            }
-        });
-        docLinksHtml += `</div>`;
+    const ringHtml = `
+        <div class="owner-ring">
+            <svg viewBox="0 0 48 48" width="48" height="48">
+                <circle cx="24" cy="24" r="20" fill="none" stroke="#E9E9EE" stroke-width="4"></circle>
+                <circle cx="24" cy="24" r="20" fill="none" stroke="var(--apple-blue)" stroke-width="4"
+                        stroke-linecap="round" stroke-dasharray="${dash} ${CIRC}"
+                        transform="rotate(-90 24 24)"></circle>
+            </svg>
+            <span class="owner-ring-text">${hasShare ? Math.round(percNum) + '%' : '—'}</span>
+        </div>`;
+
+    // Вкладені документи власника (використовуємо той самий переглядач, що й для повідомлень)
+    let attachHtml = '';
+    let ownerFiles = [];
+    if (fileUrls && String(fileUrls).trim() !== "") {
+        ownerFiles = String(fileUrls).split(",")
+            .map(u => u.trim())
+            .filter(u => u !== "")
+            .map((url, i) => {
+                let cleanName = '';
+                try {
+                    const decoded = decodeURIComponent(url.split('?')[0]);
+                    cleanName = decoded.substring(decoded.lastIndexOf('/') + 1).replace(/^\d+_/, '');
+                } catch (e) { cleanName = ''; }
+                return { name: cleanName || `Документ ${i + 1}`, url: url, type: '', size: 0 };
+            });
+        attachHtml = `<div class="owner-attachments"></div>`;
     }
 
     card.innerHTML = `
         <div class="view-mode" style="display: ${isEditMode ? 'none' : 'block'};">
-            <h3 class="card-title v-name" style="color: var(--apple-blue); font-size: 19px;">${name || 'Новий співвласник'}</h3>
-            <div class="owner-data-row">
-                <span class="owner-data-label">Частка власності</span>
-                <span class="owner-data-value v-share">${shareFrac ? `${shareFrac} (${sharePerc}%)` : '—'}</span>
-                ${shareBarHtml}
+            <div class="owner-head">
+                <div class="owner-avatar" style="background: ${avatarGradient(name)};">${getInitials(name)}</div>
+                <div class="owner-head-text">
+                    <span class="owner-eyebrow">Співвласник ${number}</span>
+                    <h3 class="owner-name v-name">${escapeHtml(name) || 'Новий співвласник'}</h3>
+                </div>
+                <button class="owner-menu-btn edit-btn" aria-label="Редагувати">
+                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                </button>
             </div>
-            <div class="owner-data-row">
-                <span class="owner-data-label">Дані документа</span>
-                <span class="owner-data-value v-doc">${docInfo || '—'}</span>
-                ${docLinksHtml}
+
+            <div class="owner-body">
+                <div class="owner-share-row">
+                    ${ringHtml}
+                    <div class="owner-share-text">
+                        <span class="owner-field-label">Частка власності</span>
+                        <span class="owner-share-value v-share">${shareFrac ? `${shareFrac}` : '—'}</span>
+                        <span class="owner-share-sub">${hasShare ? sharePerc + '% від квартири' : 'Не вказано'}</span>
+                    </div>
+                </div>
+
+                <div class="owner-doc-row">
+                    <span class="owner-field-label">Правовстановлюючий документ</span>
+                    <span class="owner-doc-value v-doc">${escapeHtml(docInfo) || '—'}</span>
+                </div>
+
+                ${attachHtml}
             </div>
-            <div class="action-group">
-                <button class="btn btn-secondary edit-btn">Редагувати</button>
-                <button class="btn btn-danger delete-btn">Видалити</button>
+
+            <div class="owner-actions">
+                <button class="owner-action-btn edit-btn">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                    Редагувати
+                </button>
+                <button class="owner-action-btn owner-action-danger delete-btn">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Видалити
+                </button>
             </div>
         </div>
+
         <div class="edit-mode" style="display: ${isEditMode ? 'block' : 'none'};">
             <input type="hidden" class="h-existing-files" value="${fileUrls}">
-            <h3 class="card-title">${name ? 'Редагування даних' : 'Новий співвласник'}</h3>
-            <div class="form-group">
-                <label>ПІБ співвласника</label>
-                <input type="text" class="i-name" value="${name}" placeholder="Іванов Іван Іванович">
+            <div class="owner-edit-head">
+                <h3 class="owner-edit-title">${name ? 'Редагування даних' : 'Новий співвласник'}</h3>
             </div>
-            <div class="form-group">
-                <label>Частка власності</label>
-                <select class="i-share-preset">
+
+            <div class="field">
+                <label class="field-label">ПІБ співвласника</label>
+                <input type="text" class="i-name field-input" value="${escapeHtml(name)}" placeholder="Іванов Іван Іванович">
+            </div>
+            <div class="field">
+                <label class="field-label">Частка власності</label>
+                <select class="i-share-preset field-input field-select">
                     <option value="">Оберіть зі списку...</option>
-                    <option value="1/1|100" ${shareFrac === '1/1' ? 'selected' : ''}>1/1 (100%) - Одноосібна</option>
+                    <option value="1/1|100" ${shareFrac === '1/1' ? 'selected' : ''}>1/1 (100%) — Одноосібна</option>
                     <option value="1/2|50" ${shareFrac === '1/2' ? 'selected' : ''}>1/2 (50%)</option>
                     <option value="1/3|33.33" ${shareFrac === '1/3' ? 'selected' : ''}>1/3 (33.33%)</option>
                     <option value="1/4|25" ${shareFrac === '1/4' ? 'selected' : ''}>1/4 (25%)</option>
@@ -453,19 +561,25 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
                     <option value="1/5|20" ${shareFrac === '1/5' ? 'selected' : ''}>1/5 (20%)</option>
                     <option value="custom" ${shareFrac && !['1/1','1/2','1/3','1/4','2/3','1/5'].includes(shareFrac) ? 'selected' : ''}>Інше (ввести вручну)...</option>
                 </select>
-                <input type="text" class="custom-share-input i-share-custom" style="display: ${shareFrac && !['1/1','1/2','1/3','1/4','2/3','1/5'].includes(shareFrac) ? 'block' : 'none'};" placeholder="Введіть дріб (1/6) або відсоток (15)" value="${shareFrac}">
+                <input type="text" class="custom-share-input i-share-custom field-input" style="display: ${shareFrac && !['1/1','1/2','1/3','1/4','2/3','1/5'].includes(shareFrac) ? 'block' : 'none'};" placeholder="Дріб (1/6) або відсоток (15)" value="${shareFrac}">
             </div>
-            <div class="form-group">
-                <label>Дані документа</label>
-                <input type="text" class="i-doc" value="${docInfo}" placeholder="Договір купівлі-продажу №123">
+            <div class="field">
+                <label class="field-label">Дані документа</label>
+                <input type="text" class="i-doc field-input" value="${escapeHtml(docInfo)}" placeholder="Договір купівлі-продажу №123">
             </div>
-            <div class="form-group">
-                <label>Завантажити скан/фото</label>
-                <input type="file" class="i-files" multiple accept="image/*,application/pdf" style="background: white; border: 1px dashed #ccc;">
+            <div class="field">
+                <span class="field-label">Скан або фото документа</span>
+                <label class="dropzone owner-dropzone">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span class="dropzone-text">Додати файли</span>
+                    <input type="file" class="i-files hidden-file-input" multiple accept="image/*,application/pdf">
+                </label>
+                <div class="file-chips owner-file-chips"></div>
             </div>
-            <div class="action-group">
-                <button class="btn btn-success save-ok-btn">Зберегти</button>
-                <button class="btn btn-secondary cancel-btn">Скасувати</button>
+
+            <div class="owner-actions">
+                <button class="owner-action-btn owner-action-primary save-ok-btn">Зберегти</button>
+                <button class="owner-action-btn cancel-btn">Скасувати</button>
             </div>
         </div>
     `;
@@ -478,14 +592,31 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
         if (e.target.value === 'custom') { customInput.style.display = 'block'; customInput.value = ''; } else { customInput.style.display = 'none'; }
     });
 
-    card.querySelector('.edit-btn').addEventListener('click', () => {
-        card.querySelector('.view-mode').style.display = 'none'; card.querySelector('.edit-mode').style.display = 'block';
+    // Кнопок редагування дві (іконка вгорі + кнопка внизу) — вішаємо на обидві
+    card.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            card.querySelector('.view-mode').style.display = 'none';
+            card.querySelector('.edit-mode').style.display = 'block';
+        });
     });
     card.querySelector('.cancel-btn').addEventListener('click', () => {
         if (isNew) card.remove(); else {
             card.querySelector('.edit-mode').style.display = 'none'; card.querySelector('.view-mode').style.display = 'block';
         }
     });
+
+    // Документи власника відкриваються тим самим повноекранним переглядачем
+    const attachHolder = card.querySelector('.owner-attachments');
+    if (attachHolder && ownerFiles.length > 0) {
+        renderAttachments(attachHolder, ownerFiles);
+    }
+
+    // Показуємо назви обраних файлів (щоб було видно, що саме прикріплено)
+    const ownerFileInput = card.querySelector('.i-files');
+    const ownerChips = card.querySelector('.owner-file-chips');
+    if (ownerFileInput && ownerChips) {
+        ownerFileInput.addEventListener('change', () => renderFileChips(ownerFileInput, ownerChips));
+    }
     card.querySelector('.delete-btn').addEventListener('click', async () => {
         if (confirm("Точно видалити цього співвласника?")) {
             card.remove();
@@ -524,7 +655,7 @@ document.querySelectorAll('.toggle-password').forEach(btn => {
 });
 
 document.getElementById('menuChangePassBtn').addEventListener('click', () => {
-    menuPopup.style.display = 'none';
+    closeAllSheets();
     document.getElementById('dataSection').style.display = 'none';
     document.getElementById('hiddenAptInput').value = document.getElementById('displayAptNum').innerText;
     document.getElementById('newPass').value = ''; document.getElementById('confirmPass').value = '';
@@ -642,7 +773,8 @@ async function loadUserMessages(apt, entrance) {
         });
 
         list.innerHTML = count > 0 ? html : '<p style="font-size: 14px; color: var(--text-muted); text-align: center;">Немає нових повідомлень.</p>';
-        badge.style.display = unreadMsgIds.length > 0 ? 'block' : 'none';
+        badge.innerText = unreadMsgIds.length > 9 ? '9+' : unreadMsgIds.length;
+        badge.style.display = unreadMsgIds.length > 0 ? 'flex' : 'none';
 
     } catch(e) {
         console.error("Помилка завантаження новин:", e);
@@ -1154,7 +1286,7 @@ document.getElementById('powerToggleInput')?.addEventListener('change', async fu
 
 // Перемикання екранів
 document.getElementById('menuDocsBtn').addEventListener('click', () => {
-    document.getElementById('menuPopup').style.display = 'none';
+    closeAllSheets();
     document.getElementById('dataSection').style.display = 'none';
     document.getElementById('adminDashboardSection').style.display = 'none';
     document.getElementById('docsSection').style.display = 'block';
@@ -1208,6 +1340,8 @@ if (uploadDocBtn) {
             alert('Документ успішно додано до бази ОСББ!');
             document.getElementById('osbbDocTitle').value = '';
             fileInput.type = 'text'; fileInput.type = 'file';
+            const docPreview = document.getElementById('osbbDocFilePreview');
+            if (docPreview) docPreview.innerHTML = '';
             
             // Оновлюємо випадаючий список у новинах
             populateAdminDocsDropdown();
@@ -1303,7 +1437,7 @@ document.addEventListener('click', function(e) {
 
 // --- НАВІГАЦІЯ ---
 document.getElementById('menuRequestsBtn')?.addEventListener('click', () => {
-    document.getElementById('menuPopup').style.display = 'none';
+    closeAllSheets();
     document.getElementById('dataSection').style.display = 'none';
     document.getElementById('adminDashboardSection').style.display = 'none';
     document.getElementById('docsSection').style.display = 'none';
@@ -1455,12 +1589,16 @@ async function loadAdminRequests() {
         const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
         const snap = await getDocs(q);
         
+        const reqBadge = document.getElementById('adminReqBadge');
+
         if (snap.empty) {
-            return container.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 14px;">Немає нових звернень.</p>';
+            if (reqBadge) reqBadge.style.display = 'none';
+            return container.innerHTML = '<p class="list-empty">Немає звернень від мешканців.</p>';
         }
 
         let html = '';
         let requestsData = [];
+        let pendingCount = 0;
 
         snap.forEach(d => {
             const req = d.data();
@@ -1468,24 +1606,34 @@ async function loadAdminRequests() {
             
             const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
             const isReplied = req.status === 'replied';
+            if (!isReplied) pendingCount++;
 
-            html += `<div style="background: ${isReplied ? '#F9F9FB' : '#FFFDF2'}; border: 1px solid ${isReplied ? '#E5E5EA' : '#FFE066'}; border-radius: 16px; padding: 16px; margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <strong style="font-size: 16px; color: var(--apple-blue);">Квартира ${req.apt}</strong>
-                    <span style="font-size: 11px; color: var(--text-muted);">${dateStr}</span>
+            html += `<div class="req-card ${isReplied ? 'req-done' : 'req-pending'}">
+                <div class="req-head">
+                    <div class="req-apt-badge">${escapeHtml(String(req.apt))}</div>
+                    <div class="req-head-text">
+                        <span class="req-apt-label">Квартира ${escapeHtml(String(req.apt))}</span>
+                        <span class="req-date">${dateStr}</span>
+                    </div>
+                    <span class="req-status ${isReplied ? 'req-status-done' : 'req-status-new'}">${isReplied ? 'Відповіли' : 'Нове'}</span>
                 </div>
-                <p style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-main); white-space: pre-wrap; word-break: break-word;">${escapeHtml(req.text)}</p>
-                <div class="admin-req-attach" data-req-id="${d.id}" style="margin-bottom: 12px;"></div>
-                
-                ${isReplied ? 
-                `<div style="border-top: 1px dashed #ccc; padding-top: 10px;">
-                    <span style="font-size: 11px; color: var(--apple-green); font-weight: 700; text-transform: uppercase;">Відповідь надано</span>
-                </div>` : 
-                `<button class="btn btn-primary btn-small btn-open-reply" data-id="${d.id}" data-apt="${req.apt}" data-text="${encodeURIComponent(req.text)}" style="width: 100%;">Відповісти</button>`}
+                <p class="req-text">${escapeHtml(req.text)}</p>
+                <div class="admin-req-attach" data-req-id="${d.id}"></div>
+                ${isReplied ? '' :
+                `<button class="btn-cta btn-cta-compact btn-open-reply" data-id="${d.id}" data-apt="${req.apt}" data-text="${encodeURIComponent(req.text)}">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
+                    Відповісти
+                </button>`}
             </div>`;
         });
 
         container.innerHTML = html;
+
+        // Лічильник неопрацьованих звернень на вкладці
+        if (reqBadge) {
+            reqBadge.innerText = pendingCount;
+            reqBadge.style.display = pendingCount > 0 ? 'flex' : 'none';
+        }
 
         // Рендеримо вкладення
         requestsData.forEach(req => {
@@ -1583,7 +1731,7 @@ document.getElementById('closeReplyModalBtn')?.addEventListener('click', () => {
 
 document.getElementById('menuBoardBtn')?.addEventListener('click', () => {
     // Ховаємо всі інші екрани
-    document.getElementById('menuPopup').style.display = 'none';
+    closeAllSheets();
     document.getElementById('dataSection').style.display = 'none';
     document.getElementById('adminDashboardSection').style.display = 'none';
     if(document.getElementById('docsSection')) document.getElementById('docsSection').style.display = 'none';
@@ -1607,3 +1755,97 @@ document.getElementById('backFromBoardBtn')?.addEventListener('click', async () 
         document.getElementById('dataSection').style.display = 'block';
     }
 });
+
+// ==========================================
+// ІНТЕРФЕЙС: ЧІПИ ОБРАНИХ ФАЙЛІВ
+// ==========================================
+function renderFileChips(input, holder) {
+    if (!holder) return;
+    holder.innerHTML = '';
+    if (!input || !input.files || input.files.length === 0) return;
+
+    Array.from(input.files).forEach((file, idx) => {
+        const isImg = file.type && file.type.startsWith('image/');
+        const kind = isImg ? 'image' : getDocKind({ name: file.name, type: file.type });
+        const chip = document.createElement('div');
+        chip.className = 'file-chip';
+        chip.innerHTML = `
+            <span class="file-chip-icon doc-icon-${isImg ? 'file' : kind}">
+                ${isImg ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>' : docIconSvg(kind)}
+            </span>
+            <span class="file-chip-name">${escapeHtml(file.name)}</span>
+            <span class="file-chip-size">${formatFileSize(file.size)}</span>`;
+        holder.appendChild(chip);
+    });
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'file-chip-clear';
+    clearBtn.innerText = 'Очистити список';
+    clearBtn.addEventListener('click', () => { input.value = ''; holder.innerHTML = ''; });
+    holder.appendChild(clearBtn);
+}
+
+// Прив'язуємо превʼю до полів завантаження в адмінці
+const adminMsgFilesInput = document.getElementById('adminMsgFiles');
+const adminMsgFilesPreview = document.getElementById('adminMsgFilesPreview');
+if (adminMsgFilesInput && adminMsgFilesPreview) {
+    adminMsgFilesInput.addEventListener('change', () => renderFileChips(adminMsgFilesInput, adminMsgFilesPreview));
+}
+const osbbDocFileInput = document.getElementById('osbbDocFile');
+const osbbDocFilePreview = document.getElementById('osbbDocFilePreview');
+if (osbbDocFileInput && osbbDocFilePreview) {
+    osbbDocFileInput.addEventListener('change', () => renderFileChips(osbbDocFileInput, osbbDocFilePreview));
+}
+
+// ==========================================
+// АДМІНКА: ВКЛАДКИ (мобільна навігація)
+// ==========================================
+document.querySelectorAll('.admin-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        const target = tab.getAttribute('data-tab');
+        document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t === tab));
+        document.querySelectorAll('.admin-panel').forEach(p => {
+            p.classList.toggle('active', p.getAttribute('data-panel') === target);
+        });
+        // Прокручуємо до початку вкладки, щоб не губитися на мобільному
+        const tabsEl = document.getElementById('adminTabs');
+        if (tabsEl) window.scrollTo({ top: Math.max(0, tabsEl.offsetTop - 70), behavior: 'smooth' });
+    });
+});
+
+// ==========================================
+// АДМІНКА: СЕГМЕНТОВАНИЙ ВИБІР ОДЕРЖУВАЧІВ
+// ==========================================
+document.querySelectorAll('#adminTargetSegmented .segmented-item').forEach(item => {
+    item.addEventListener('click', () => {
+        const value = item.getAttribute('data-target');
+        document.querySelectorAll('#adminTargetSegmented .segmented-item')
+            .forEach(i => i.classList.toggle('active', i === item));
+
+        // Синхронізуємо прихований <select>, на який спирається логіка відправки
+        const select = document.getElementById('adminMsgTargetType');
+        select.value = value;
+        select.dispatchEvent(new Event('change'));
+    });
+});
+
+// ==========================================
+// ЛІЧИЛЬНИК СПІВВЛАСНИКІВ У ГЕРОЙ-КАРТЦІ
+// ==========================================
+function updateOwnersCount() {
+    const el = document.getElementById('displayOwnersCount');
+    if (!el || !ownersContainer) return;
+    const filled = Array.from(ownersContainer.querySelectorAll('.owner-card'))
+        .filter(c => {
+            const nameEl = c.querySelector('.v-name');
+            const text = nameEl ? nameEl.innerText.trim() : '';
+            return text && text !== 'Новий співвласник';
+        }).length;
+    el.innerText = filled > 0 ? filled : '—';
+}
+
+// Слідкуємо за змінами списку співвласників, щоб лічильник завжди був актуальним
+if (ownersContainer) {
+    new MutationObserver(updateOwnersCount).observe(ownersContainer, { childList: true, subtree: true });
+}
