@@ -211,10 +211,22 @@ document.getElementById('cancelAreaBtn').addEventListener('click', () => {
 document.getElementById('saveAreaBtn').addEventListener('click', async () => {
     const btn = document.getElementById('saveAreaBtn');
     btn.innerText = "⏳..."; btn.disabled = true;
+    
     try {
-        await saveAllDataToFirebase();
-        await loadCabinetData(document.getElementById('displayAptNum').innerText); // Тихе оновлення!
+        const apt = document.getElementById('displayAptNum').innerText;
+        const newArea = document.getElementById('aptArea').value;
+        
+        // Зберігаємо ТІЛЬКИ площу напряму в базу (не чіпаючи власників)
+        const aptRef = doc(db, "apartments", apt);
+        await setDoc(aptRef, { area: newArea, lastUpdate: new Date() }, { merge: true });
+        
+        // Оновлюємо інтерфейс
+        document.getElementById('displayAreaVal').innerText = newArea || "--";
+        document.getElementById('areaEditMode').style.display = 'none';
+        document.getElementById('areaViewMode').style.display = 'flex';
+        
     } catch(e) {
+        console.error(e);
         alert("Помилка збереження площі.");
     } finally {
         btn.innerText = "Зберегти"; btn.disabled = false;
