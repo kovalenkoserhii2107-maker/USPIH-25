@@ -19,7 +19,6 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
 
-// Елементи інтерфейсу
 const appLoader = document.getElementById('appLoader');
 const loginSection = document.getElementById('loginSection');
 const passwordSection = document.getElementById('passwordSection');
@@ -29,46 +28,35 @@ const ownersContainer = document.getElementById('ownersContainer');
 const aptInput = document.getElementById('aptInput');
 const passInput = document.getElementById('passInput');
 
-// ==========================================
-// ЛОГІКА СЕСІЇ ТА АВТОРИЗАЦІЇ
-// ==========================================
-const SESSION_TIMEOUT = 60 * 60 * 1000; // 1 година (в мілісекундах)
+const SESSION_TIMEOUT = 60 * 60 * 1000; 
 
 onAuthStateChanged(auth, async (user) => {
     if (user) {
-        // Перевіряємо, коли була остання активність
         const lastActive = localStorage.getItem('session_timestamp');
         if (lastActive && (Date.now() - parseInt(lastActive)) > SESSION_TIMEOUT) {
-            // Якщо пройшло більше години - примусово розлогінюємо
             await signOut(auth);
             localStorage.removeItem('session_timestamp');
-            return; // Спрацює гілка else нижче
+            return; 
         }
         
-        // Якщо сесія жива - оновлюємо час і тихо завантажуємо кабінет
         localStorage.setItem('session_timestamp', Date.now());
         const apt = user.email.split('@')[0];
         await loadCabinetData(apt);
     } else {
-        // Користувач не авторизований або сесія закінчилась
-        appLoader.style.display = 'none'; // Ховаємо завантаження
-        loginSection.style.display = 'block'; // Показуємо форму
+        appLoader.style.display = 'none'; 
+        loginSection.style.display = 'block'; 
         dataSection.style.display = 'none';
         topNav.style.display = 'none';
         passwordSection.style.display = 'none';
     }
 });
 
-// Слухачі активності: будь-який клік або натискання клавіші обнуляє таймер на 1 годину
 ['click', 'keypress', 'touchstart'].forEach(evt => {
     document.addEventListener(evt, () => {
-        if (auth.currentUser) {
-            localStorage.setItem('session_timestamp', Date.now());
-        }
+        if (auth.currentUser) localStorage.setItem('session_timestamp', Date.now());
     });
 });
 
-// 2. КНОПКА УВІЙТИ
 document.getElementById('loginBtn').addEventListener('click', async () => {
     const apt = aptInput.value.trim();
     const pass = passInput.value;
@@ -82,7 +70,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
     try {
         await signInWithEmailAndPassword(auth, email, pass);
-        localStorage.setItem('session_timestamp', Date.now()); // Запускаємо таймер сесії
+        localStorage.setItem('session_timestamp', Date.now()); 
     } catch (error) {
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
             showError("Невірний номер квартири або пароль.");
@@ -105,24 +93,27 @@ async function loadCabinetData(apt) {
     const aptSnap = await getDoc(aptRef);
     
     let isFirstLogin = true;
-    let areaVal = "";
+    let areaVal = "--";
+    let entranceVal = "--"; // Нове поле: Парадна
 
     if (aptSnap.exists()) {
         const data = aptSnap.data();
         isFirstLogin = !data.passwordChanged; 
-        areaVal = data.area || "";
+        areaVal = data.area || "--";
+        entranceVal = data.entrance || "--"; // Читаємо парадну з бази
         
         if (data.adminMessage) {
             document.getElementById('adminMessageText').innerText = data.adminMessage;
             document.getElementById('notifBadge').style.display = "block";
         }
     } else {
-        await setDoc(aptRef, { passwordChanged: false, area: "", lastLogin: new Date() });
+        await setDoc(aptRef, { passwordChanged: false, area: "", entrance: "", lastLogin: new Date() });
     }
 
+    // Відображаємо фіксовані дані
     document.getElementById('displayAptNum').innerText = apt;
-    document.getElementById('aptArea').value = areaVal;
-    document.getElementById('displayAreaVal').innerText = areaVal || "--";
+    document.getElementById('displayEntranceNum').innerText = entranceVal;
+    document.getElementById('displayAreaVal').innerText = areaVal;
 
     ownersContainer.innerHTML = "";
     const ownersRef = collection(db, "apartments", apt, "owners");
@@ -137,8 +128,7 @@ async function loadCabinetData(apt) {
         renderOwnerCard(null, 1, true);
     }
 
-    // МИГТЬОВЕ ПЕРЕМИКАННЯ ЕКРАНІВ
-    appLoader.style.display = 'none'; // Ховаємо екран "Завантаження..."
+    appLoader.style.display = 'none'; 
     loginSection.style.display = "none";
     if (isFirstLogin) {
         document.getElementById('hiddenAptInput').value = apt;
@@ -150,7 +140,7 @@ async function loadCabinetData(apt) {
     }
 }
 
-// 4. ОНОВЛЕННЯ ДАНИХ У БАЗІ ТА STORAGE
+// 4. ОНОВЛЕННЯ ДАНИХ СВІВВЛАСНИКІВ У БАЗІ (Площа більше не зберігається звідси)
 async function saveAllDataToFirebase() {
     const apt = document.getElementById('displayAptNum').innerText;
     if (!apt || apt === "--") throw new Error("Квартира не визначена");
@@ -205,7 +195,7 @@ async function saveAllDataToFirebase() {
     }
 }
 
-// 5. ЛОГІКА МЕНЮ, ДЗВІНОЧКА ТА ПЛОЩІ
+// 5. ЛОГІКА МЕНЮ ТА ДЗВІНОЧКА
 const bellBtn = document.getElementById('bellBtn');
 const notifPopup = document.getElementById('notifPopup');
 const menuBtn = document.getElementById('menuBtn');
@@ -225,39 +215,10 @@ document.addEventListener('click', (e) => {
     if (!menuPopup.contains(e.target) && !menuBtn.contains(e.target)) menuPopup.style.display = 'none';
 });
 
-// Кнопка ВИХІД
 document.getElementById('menuLogoutBtn').addEventListener('click', async () => {
-    localStorage.removeItem('session_timestamp'); // Очищаємо пам'ять сесії
-    await signOut(auth); // Виходимо з Firebase
-    location.reload(); // Оновлюємо інтерфейс
-});
-
-// Кнопки ПЛОЩІ
-document.getElementById('editAreaBtn').addEventListener('click', () => {
-    document.getElementById('areaViewMode').style.display = 'none';
-    document.getElementById('areaEditMode').style.display = 'block';
-});
-document.getElementById('cancelAreaBtn').addEventListener('click', () => {
-    document.getElementById('aptArea').value = document.getElementById('displayAreaVal').innerText.replace('--','');
-    document.getElementById('areaEditMode').style.display = 'none';
-    document.getElementById('areaViewMode').style.display = 'flex';
-});
-document.getElementById('saveAreaBtn').addEventListener('click', async () => {
-    const btn = document.getElementById('saveAreaBtn');
-    btn.innerText = "⏳..."; btn.disabled = true;
-    try {
-        const apt = document.getElementById('displayAptNum').innerText;
-        const newArea = document.getElementById('aptArea').value;
-        await setDoc(doc(db, "apartments", apt), { area: newArea, lastUpdate: new Date() }, { merge: true });
-        
-        document.getElementById('displayAreaVal').innerText = newArea || "--";
-        document.getElementById('areaEditMode').style.display = 'none';
-        document.getElementById('areaViewMode').style.display = 'flex';
-    } catch(e) {
-        console.error(e); alert("Помилка збереження площі.");
-    } finally {
-        btn.innerText = "Зберегти"; btn.disabled = false;
-    }
+    localStorage.removeItem('session_timestamp'); 
+    await signOut(auth); 
+    location.reload(); 
 });
 
 // 6. МАЛЮВАННЯ КАРТОК СВІВВЛАСНИКІВ
