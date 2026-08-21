@@ -42,9 +42,27 @@
     </header>
 
     <div class="container">
-        <!-- НОВИЙ БЛОК ЗАВАНТАЖЕННЯ -->
-        <div id="appLoader" style="text-align: center; margin-top: 30vh; color: var(--text-muted);">
-            <p style="font-size: 18px; font-weight: 600;">Завантаження...</p>
+        <!-- БЛОК ЗАВАНТАЖЕННЯ З ЧЕРЕПАХОЮ -->
+        <div id="appLoader" class="loader-container">
+            <div class="turtle-loader">
+                <!-- Мінімалістична SVG черепаха у стилі Apple -->
+                <svg viewBox="0 0 120 120" width="80" height="80">
+                    <g fill="var(--apple-green)">
+                        <!-- Голова -->
+                        <circle cx="90" cy="60" r="12" />
+                        <!-- Панцир -->
+                        <circle cx="55" cy="60" r="28" fill="#30D158" />
+                        <circle cx="55" cy="60" r="22" fill="#E8F5E9" />
+                        <!-- Передні ласти -->
+                        <ellipse cx="65" cy="25" rx="8" ry="16" transform="rotate(45 65 25)" />
+                        <ellipse cx="65" cy="95" rx="8" ry="16" transform="rotate(-45 65 95)" />
+                        <!-- Задні ласти -->
+                        <ellipse cx="30" cy="30" rx="6" ry="12" transform="rotate(-45 30 30)" />
+                        <ellipse cx="30" cy="90" rx="6" ry="12" transform="rotate(45 30 90)" />
+                    </g>
+                </svg>
+            </div>
+            <p class="loader-text">Завантаження даних...</p>
         </div>
 
         <!-- Блок авторизації (ТЕПЕР ПРИХОВАНИЙ ЗА ЗАМОВЧУВАННЯМ) -->
