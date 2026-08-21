@@ -28,7 +28,7 @@ const ownersContainer = document.getElementById('ownersContainer');
 const aptInput = document.getElementById('aptInput');
 const passInput = document.getElementById('passInput');
 
-const SESSION_TIMEOUT = 60 * 60 * 1000; 
+const SESSION_TIMEOUT = 60 * 60 * 1000;
 
 onAuthStateChanged(auth, async (user) => {
     if (user) {
@@ -36,16 +36,16 @@ onAuthStateChanged(auth, async (user) => {
         if (lastActive && (Date.now() - parseInt(lastActive)) > SESSION_TIMEOUT) {
             await signOut(auth);
             localStorage.removeItem('session_timestamp');
-            return; 
+            return;
         }
-        
+
         localStorage.setItem('session_timestamp', Date.now());
         const apt = user.email.split('@')[0];
         await loadCabinetData(apt);
         startPowerStatusListener();
     } else {
-        appLoader.style.display = 'none'; 
-        loginSection.style.display = 'block'; 
+        appLoader.style.display = 'none';
+        loginSection.style.display = 'block';
         dataSection.style.display = 'none';
         topNav.style.display = 'none';
         passwordSection.style.display = 'none';
@@ -72,7 +72,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
     try {
         await signInWithEmailAndPassword(auth, email, pass);
-        localStorage.setItem('session_timestamp', Date.now()); 
+        localStorage.setItem('session_timestamp', Date.now());
     } catch (error) {
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
             showError("Невірний номер квартири або пароль.");
@@ -93,17 +93,17 @@ function showError(msg) {
 async function loadCabinetData(apt) {
     const aptRef = doc(db, "apartments", apt);
     const aptSnap = await getDoc(aptRef);
-    
+
     let isFirstLogin = true;
     let areaVal = "--";
-    let entranceVal = "--"; 
+    let entranceVal = "--";
     let isAdmin = false; // Новий прапорець для перевірки ролі
 
     if (aptSnap.exists()) {
         const data = aptSnap.data();
-        isFirstLogin = !data.passwordChanged; 
+        isFirstLogin = !data.passwordChanged;
         areaVal = data.area || "--";
-        entranceVal = data.entrance || "--"; 
+        entranceVal = data.entrance || "--";
         isAdmin = data.isAdmin === true; // Перевіряємо, чи це адмінський акаунт (напр. логін 777)
     } else {
         // Якщо квартири немає, створюємо її базовий профіль
@@ -111,7 +111,7 @@ async function loadCabinetData(apt) {
     }
 
     // МИГТЬОВЕ ПЕРЕМИКАННЯ ЕКРАНІВ (Ховаємо логін і завантаження)
-    appLoader.style.display = 'none'; 
+    appLoader.style.display = 'none';
     loginSection.style.display = "none";
     topNav.style.display = "none";
     dataSection.style.display = "none";
@@ -131,14 +131,14 @@ async function loadCabinetData(apt) {
         document.getElementById('adminDashboardSection').style.display = "block";
         await loadAdminMessageHistory();
         await populateAdminDocsDropdown();
-        
+
         // Тут ми пізніше додамо завантаження статистики або історії надісланих повідомлень
-        
+
     } else {
         // ШЛЯХ Б: Це звичайний мешканець
         topNav.style.display = "block";
         dataSection.style.display = "block";
-        
+
         // Заповнюємо дані картки мешканця
         document.getElementById('displayAptNum').innerText = apt;
         document.getElementById('displayEntranceNum').innerText = entranceVal;
@@ -156,7 +156,7 @@ async function loadCabinetData(apt) {
         ownersContainer.innerHTML = "";
         const ownersRef = collection(db, "apartments", apt, "owners");
         const ownersSnap = await getDocs(ownersRef);
-        
+
         if (!ownersSnap.empty) {
             let count = 1;
             ownersSnap.forEach(doc => {
@@ -185,13 +185,13 @@ async function saveAllDataToFirebase() {
 
     for (let card of ownerCards) {
         const name = card.querySelector('.i-name').value;
-        if (!name) continue; 
-        
+        if (!name) continue;
+
         const presetSelect = card.querySelector('.i-share-preset').value;
         const customInput = card.querySelector('.i-share-custom').value;
         const fileInput = card.querySelector('.i-files');
         const existingFilesInput = card.querySelector('.h-existing-files');
-        
+
         let shareFrac = "", sharePerc = "";
         if (presetSelect === 'custom') {
             const calc = calculateShares(customInput);
@@ -241,7 +241,6 @@ function syncNavBackdrop() {
 
 function closeAllSheets() {
     notifPopup.style.display = 'none';
-    closeAllSheets();
     syncNavBackdrop();
 }
 
@@ -269,20 +268,20 @@ document.querySelectorAll('[data-close-sheet]').forEach(btn => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllSheets(); });
 
 document.getElementById('menuLogoutBtn').addEventListener('click', async () => {
-    localStorage.removeItem('session_timestamp'); 
-    await signOut(auth); 
-    location.reload(); 
+    localStorage.removeItem('session_timestamp');
+    await signOut(auth);
+    location.reload();
 });
 
 // Кнопка ВИХІД для Адміна
 document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
-    localStorage.removeItem('session_timestamp'); 
-    await signOut(auth); 
-    location.reload(); 
+    localStorage.removeItem('session_timestamp');
+    await signOut(auth);
+    location.reload();
 });
 
 // Логіка перемикання "Кому надіслати" в панелі адміна
-document.getElementById('adminMsgTargetType').addEventListener('change', function() {
+document.getElementById('adminMsgTargetType').addEventListener('change', function () {
     const targetValueGroup = document.getElementById('adminMsgTargetValueGroup');
     if (this.value === 'all') {
         targetValueGroup.style.display = 'none';
@@ -298,14 +297,14 @@ document.getElementById('adminMsgTargetType').addEventListener('change', functio
 // 1. Автоматичне розширення текстового поля
 const adminMsgBody = document.getElementById('adminMsgBody');
 if (adminMsgBody) {
-    adminMsgBody.addEventListener('input', function() {
+    adminMsgBody.addEventListener('input', function () {
         this.style.height = 'auto'; // Скидаємо висоту
         this.style.height = (this.scrollHeight) + 'px'; // Встановлюємо нову висоту за контентом
     });
 }
 
 // 2. Логіка перемикання "Кому надіслати"
-document.getElementById('adminMsgTargetType').addEventListener('change', function() {
+document.getElementById('adminMsgTargetType').addEventListener('change', function () {
     const targetValueGroup = document.getElementById('adminMsgTargetValueGroup');
     if (this.value === 'all') {
         targetValueGroup.style.display = 'none';
@@ -341,7 +340,7 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
     try {
         let fileUrls = [];
         let failedFiles = [];
-        
+
         // Надійно завантажуємо кожен файл у Firebase Storage (окремо, щоб один "зламаний" файл не зривав всю відправку)
         if (fileInput && fileInput.files && fileInput.files.length > 0) {
             for (let i = 0; i < fileInput.files.length; i++) {
@@ -376,7 +375,7 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
         });
 
         alert('Повідомлення успішно надіслано!');
-        
+
         // Повне очищення форми (включно з правильним скиданням файлового інпуту)
         document.getElementById('adminMsgTitle').value = '';
         document.getElementById('adminMsgBody').value = '';
@@ -384,7 +383,7 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
         document.getElementById('adminMsgTargetValue').value = '';
         document.getElementById('adminMsgTargetType').value = 'all';
         document.getElementById('adminMsgTargetValueGroup').style.display = 'none';
-        
+
         if (fileInput) {
             fileInput.type = 'text';
             fileInput.type = 'file'; // Технічний трюк для повного очищення вибору файлів у браузері
@@ -399,7 +398,7 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
         if (linkedDocSelect) linkedDocSelect.value = '';
 
         loadAdminMessageHistory(); // Оновлюємо історію
-        
+
     } catch (error) {
         console.error("Помилка відправки:", error);
         alert('Виникла помилка. Перевірте підключення до інтернету.');
@@ -418,7 +417,7 @@ function calculateShares(val) {
         if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { frac: frac, perc: ((parseFloat(parts[0]) / parseFloat(parts[1])) * 100).toFixed(2).replace('.00', '') };
     } else if (!isNaN(parseFloat(val))) {
         let perc = parseFloat(val); let num = Math.round(perc * 100); let den = 10000; let div = gcd(num, den);
-        return { frac: `${num/div}/${den/div}`, perc: perc.toString() };
+        return { frac: `${num / div}/${den / div}`, perc: perc.toString() };
     }
     return { frac: val, perc: val };
 }
@@ -453,7 +452,7 @@ function avatarGradient(name) {
 function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
     const card = document.createElement('div');
     card.className = 'owner-card';
-    
+
     let isNew = !ownerData;
     let shareFrac = ownerData ? (ownerData.shareFrac || "") : "";
     let sharePerc = ownerData ? (ownerData.sharePerc || "") : "";
@@ -559,9 +558,9 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
                     <option value="1/4|25" ${shareFrac === '1/4' ? 'selected' : ''}>1/4 (25%)</option>
                     <option value="2/3|66.67" ${shareFrac === '2/3' ? 'selected' : ''}>2/3 (66.67%)</option>
                     <option value="1/5|20" ${shareFrac === '1/5' ? 'selected' : ''}>1/5 (20%)</option>
-                    <option value="custom" ${shareFrac && !['1/1','1/2','1/3','1/4','2/3','1/5'].includes(shareFrac) ? 'selected' : ''}>Інше (ввести вручну)...</option>
+                    <option value="custom" ${shareFrac && !['1/1', '1/2', '1/3', '1/4', '2/3', '1/5'].includes(shareFrac) ? 'selected' : ''}>Інше (ввести вручну)...</option>
                 </select>
-                <input type="text" class="custom-share-input i-share-custom field-input" style="display: ${shareFrac && !['1/1','1/2','1/3','1/4','2/3','1/5'].includes(shareFrac) ? 'block' : 'none'};" placeholder="Дріб (1/6) або відсоток (15)" value="${shareFrac}">
+                <input type="text" class="custom-share-input i-share-custom field-input" style="display: ${shareFrac && !['1/1', '1/2', '1/3', '1/4', '2/3', '1/5'].includes(shareFrac) ? 'block' : 'none'};" placeholder="Дріб (1/6) або відсоток (15)" value="${shareFrac}">
             </div>
             <div class="field">
                 <label class="field-label">Дані документа</label>
@@ -620,15 +619,15 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
     card.querySelector('.delete-btn').addEventListener('click', async () => {
         if (confirm("Точно видалити цього співвласника?")) {
             card.remove();
-            try { await saveAllDataToFirebase(); } catch(e) { alert("Помилка видалення"); }
+            try { await saveAllDataToFirebase(); } catch (e) { alert("Помилка видалення"); }
         }
     });
 
-    card.querySelector('.save-ok-btn').addEventListener('click', async function() {
+    card.querySelector('.save-ok-btn').addEventListener('click', async function () {
         const btn = this; btn.innerText = "⏳..."; btn.disabled = true;
         try {
             await saveAllDataToFirebase();
-            await loadCabinetData(document.getElementById('displayAptNum').innerText); 
+            await loadCabinetData(document.getElementById('displayAptNum').innerText);
         } catch (error) {
             console.error(error);
             alert("Помилка збереження. Перевірте інтернет.");
@@ -640,7 +639,7 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
 
 // 7. РОБОТА З ПАРОЛЕМ
 document.querySelectorAll('.toggle-password').forEach(btn => {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', function () {
         const input = document.getElementById(this.getAttribute('data-target'));
         if (input.type === 'password') {
             input.type = 'text';
@@ -680,7 +679,7 @@ document.getElementById('savePassBtn').addEventListener('click', async () => {
         await updatePassword(auth.currentUser, newPass);
         const apt = document.getElementById('hiddenAptInput').value || document.getElementById('displayAptNum').innerText;
         await setDoc(doc(db, "apartments", apt), { passwordChanged: true }, { merge: true });
-        
+
         alert("Пароль успішно змінено!");
         passwordSection.style.display = "none";
         topNav.style.display = "block";
@@ -704,22 +703,22 @@ async function loadUserMessages(apt, entrance) {
     currentAptForMessages = apt;
     const list = document.getElementById('messagesList'); // Знаходимо стрічку у дзвіночку
     const badge = document.getElementById('notifBadge');
-    
+
     if (!list) return; // Якщо HTML ще не оновлений, ігноруємо
     list.innerHTML = '<p style="text-align:center; color:#888;">Завантаження...</p>';
     unreadMsgIds = [];
-    
+
     try {
         const q = query(collection(db, "messages"), orderBy("createdAt", "desc"));
         const snap = await getDocs(q);
-        
+
         let html = '';
         let count = 0;
 
         snap.forEach(d => {
             const msg = d.data();
             let isTarget = false;
-            
+
             // Броньована фільтрація: Кому призначена новина? (захист від типів даних та зайвих пробілів)
             const safeApt = String(apt).trim();
             const safeEntrance = String(entrance).trim();
@@ -737,9 +736,9 @@ async function loadUserMessages(apt, entrance) {
                 count++;
                 const isRead = msg.readBy && msg.readBy[apt]; // Чи читала це квартира?
                 if (!isRead) unreadMsgIds.push(d.id); // Записуємо ID непрочитаних
-                
-                const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
-                
+
+                const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Нещодавно';
+
                 // Індикатор наявності файлів (окремо фото, окремо документи)
                 let hasFilesIcon = '';
                 if (msg.attachments && msg.attachments.length > 0) {
@@ -776,7 +775,7 @@ async function loadUserMessages(apt, entrance) {
         badge.innerText = unreadMsgIds.length > 9 ? '9+' : unreadMsgIds.length;
         badge.style.display = unreadMsgIds.length > 0 ? 'flex' : 'none';
 
-    } catch(e) {
+    } catch (e) {
         console.error("Помилка завантаження новин:", e);
     }
 }
@@ -786,17 +785,17 @@ document.getElementById('bellBtn').addEventListener('click', async (e) => {
     // Якщо меню відкрито і є непрочитані - маркуємо їх
     if (document.getElementById('notifPopup').style.display === 'block' && unreadMsgIds.length > 0) {
         document.getElementById('notifBadge').style.display = 'none';
-        
+
         // Генеруємо поточний час (наприклад: 21.08.2026, 14:30)
-        const now = new Date().toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
-        
+        const now = new Date().toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
         // Відправляємо відмітки в базу даних
         for (let id of unreadMsgIds) {
             try {
                 await updateDoc(doc(db, "messages", id), {
                     [`readBy.${currentAptForMessages}`]: now
                 });
-            } catch(error) { console.error("Помилка оновлення статусу:", error); }
+            } catch (error) { console.error("Помилка оновлення статусу:", error); }
         }
         unreadMsgIds = []; // Очищаємо чергу
     }
@@ -805,13 +804,13 @@ document.getElementById('bellBtn').addEventListener('click', async (e) => {
 // 3. Завантаження історії для Адміністратора
 async function loadAdminMessageHistory() {
     const container = document.getElementById('adminMsgHistoryContainer');
-    if(!container) return;
+    if (!container) return;
     container.innerHTML = '<p style="text-align: center; color:#888;">Завантаження історії...</p>';
-    
+
     try {
         const q = query(collection(db, "messages"), orderBy("createdAt", "desc"));
         const snap = await getDocs(q);
-        
+
         if (snap.empty) {
             container.innerHTML = '<p style="color: var(--text-muted); font-size: 14px; text-align: center;">Історія порожня.</p>';
             return;
@@ -821,8 +820,8 @@ async function loadAdminMessageHistory() {
         const attachmentsMap = [];
         snap.forEach(d => {
             const msg = d.data();
-            const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
-            
+            const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Нещодавно';
+
             // Формуємо красивий текст одержувачів
             let targetText = "Усьому будинку";
             if (msg.targetType === 'entrance') targetText = `Парадні: ${msg.targetValue}`;
@@ -867,7 +866,7 @@ async function loadAdminMessageHistory() {
                 if (holder) renderAttachments(holder, item.files);
             }
         });
-    } catch(e) {
+    } catch (e) {
         console.error("Помилка завантаження історії:", e);
         container.innerHTML = '<p style="color: var(--apple-red); font-size: 14px; text-align: center;">Помилка завантаження.</p>';
     }
@@ -877,7 +876,7 @@ async function loadAdminMessageHistory() {
 document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminMessageHistory);
 
 // Логіка відкриття модального вікна при кліку на повідомлення
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const card = e.target.closest('.message-card-item');
     if (card) {
         const title = decodeURIComponent(card.getAttribute('data-title'));
@@ -1263,7 +1262,7 @@ function stopPowerStatusListener() {
 }
 
 // Тумблер адміна: вмикає/вимикає світло для всіх користувачів одразу
-document.getElementById('powerToggleInput')?.addEventListener('change', async function() {
+document.getElementById('powerToggleInput')?.addEventListener('change', async function () {
     const newState = this.checked;
     this.disabled = true;
     try {
@@ -1295,7 +1294,7 @@ document.getElementById('menuDocsBtn').addEventListener('click', () => {
 
 document.getElementById('backFromDocsBtn').addEventListener('click', async () => {
     document.getElementById('docsSection').style.display = 'none';
-    
+
     // Перевіряємо, куди повертатися
     const aptRef = doc(db, "apartments", document.getElementById('displayAptNum').innerText || document.getElementById('hiddenAptInput').value);
     const snap = await getDoc(aptRef);
@@ -1342,10 +1341,10 @@ if (uploadDocBtn) {
             fileInput.type = 'text'; fileInput.type = 'file';
             const docPreview = document.getElementById('osbbDocFilePreview');
             if (docPreview) docPreview.innerHTML = '';
-            
+
             // Оновлюємо випадаючий список у новинах
             populateAdminDocsDropdown();
-            
+
         } catch (e) {
             console.error(e);
             alert("Помилка завантаження.");
@@ -1360,11 +1359,11 @@ if (uploadDocBtn) {
 async function loadOsbbDocsBase() {
     const container = document.getElementById('osbbDocsContainer');
     container.innerHTML = '<p style="text-align:center; color:#888;">Завантаження документів...</p>';
-    
+
     try {
         const q = query(collection(db, "osbb_documents"), orderBy("createdAt", "desc"));
         const snap = await getDocs(q);
-        
+
         if (snap.empty) {
             return container.innerHTML = '<p style="text-align:center; color: var(--text-muted);">База документів порожня.</p>';
         }
@@ -1381,11 +1380,11 @@ async function loadOsbbDocsBase() {
             html += `<div style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04);">
                         <h3 style="margin: 0 0 15px 0; font-size: 18px; color: var(--apple-blue); border-bottom: 1px solid #eee; padding-bottom: 10px;">${cat}</h3>
                         <div class="doc-attach-list">`;
-            
+
             docs.forEach((d, idx) => {
                 const kind = getDocKind({ name: d.fileName, type: d.type }); // Виправлено пошук розширення
-                const docDataStr = encodeURIComponent(JSON.stringify({url: d.url, name: d.title, type: d.type}));
-                
+                const docDataStr = encodeURIComponent(JSON.stringify({ url: d.url, name: d.title, type: d.type }));
+
                 html += `<div class="doc-attach-row btn-open-osbb-doc" data-doc="${docDataStr}" style="background: #F9F9FB; border: 1px solid #E5E5EA;">
                             <div class="doc-attach-icon doc-icon-${kind}">${docIconSvg(kind)}</div>
                             <div class="doc-attach-info">
@@ -1415,7 +1414,7 @@ async function populateAdminDocsDropdown() {
         let options = '<option value="">Не прикріплювати</option>';
         snap.forEach(d => {
             const data = d.data();
-            const docDataStr = encodeURIComponent(JSON.stringify({url: data.url, name: data.title, type: data.type}));
+            const docDataStr = encodeURIComponent(JSON.stringify({ url: data.url, name: data.title, type: data.type }));
             options += `<option value="${docDataStr}">${data.category}: ${data.title}</option>`;
         });
         select.innerHTML = options;
@@ -1423,7 +1422,7 @@ async function populateAdminDocsDropdown() {
 }
 
 // Слухач для відкриття документів ОСББ (як із бази, так і з посилання в новинах)
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const docBtn = e.target.closest('.btn-open-osbb-doc');
     if (docBtn) {
         e.stopPropagation(); // Щоб не відкривалась модалка повідомлення, якщо клікнули в новинах
@@ -1442,16 +1441,16 @@ document.getElementById('menuRequestsBtn')?.addEventListener('click', () => {
     document.getElementById('adminDashboardSection').style.display = 'none';
     document.getElementById('docsSection').style.display = 'none';
     document.getElementById('requestsSection').style.display = 'block';
-    
+
     // Автоматично підлаштовуємо висоту textarea
     const reqBody = document.getElementById('userReqBody');
     if (reqBody) {
-        reqBody.addEventListener('input', function() {
+        reqBody.addEventListener('input', function () {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
     }
-    
+
     const apt = document.getElementById('displayAptNum').innerText;
     loadUserRequestsHistory(apt);
 });
@@ -1502,7 +1501,7 @@ document.getElementById('sendUserReqBtn')?.addEventListener('click', async () =>
         document.getElementById('userReqBody').value = '';
         document.getElementById('userReqBody').style.height = 'auto';
         if (fileInput) { fileInput.type = 'text'; fileInput.type = 'file'; }
-        
+
         loadUserRequestsHistory(apt);
     } catch (e) {
         console.error(e);
@@ -1522,7 +1521,7 @@ async function loadUserRequestsHistory(apt) {
     try {
         const q = query(collection(db, "requests"), where("apt", "==", apt));
         const snap = await getDocs(q);
-        
+
         // Сортуємо локально, щоб не створювати композитні індекси в Firebase
         let requests = [];
         snap.forEach(d => requests.push({ id: d.id, ...d.data() }));
@@ -1534,8 +1533,8 @@ async function loadUserRequestsHistory(apt) {
 
         let html = '';
         requests.forEach(req => {
-            const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
-            
+            const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Нещодавно';
+
             // Бульбашка жильця (Дизайн преміум-картки як на головному екрані)
             html += `<div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.03); margin-bottom: ${req.status === 'replied' ? '12px' : '24px'}; border: 1px solid #E5E5EA;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -1548,7 +1547,7 @@ async function loadUserRequestsHistory(apt) {
 
             // Відповідь адміна (якщо є)
             if (req.status === 'replied') {
-                const replyDateStr = req.repliedAt ? new Date(req.repliedAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+                const replyDateStr = req.repliedAt ? new Date(req.repliedAt.toMillis()).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
                 html += `<div class="card premium-widget-card" style="background: #F0F8FF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.03); margin-bottom: 24px; margin-left: 20px; border: 1px solid rgba(0, 122, 255, 0.1);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                         <span style="font-size: 11px; font-weight: 700; color: var(--apple-blue); text-transform: uppercase; letter-spacing: 0.5px;">Відповідь Правління</span>
@@ -1559,7 +1558,7 @@ async function loadUserRequestsHistory(apt) {
                 </div>`;
             }
         });
-        
+
         container.innerHTML = html;
 
         // Рендеринг вкладень
@@ -1588,7 +1587,7 @@ async function loadAdminRequests() {
     try {
         const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
         const snap = await getDocs(q);
-        
+
         const reqBadge = document.getElementById('adminReqBadge');
 
         if (snap.empty) {
@@ -1603,8 +1602,8 @@ async function loadAdminRequests() {
         snap.forEach(d => {
             const req = d.data();
             requestsData.push({ id: d.id, ...req });
-            
-            const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
+
+            const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Нещодавно';
             const isReplied = req.status === 'replied';
             if (!isReplied) pendingCount++;
 
@@ -1620,7 +1619,7 @@ async function loadAdminRequests() {
                 <p class="req-text">${escapeHtml(req.text)}</p>
                 <div class="admin-req-attach" data-req-id="${d.id}"></div>
                 ${isReplied ? '' :
-                `<button class="btn-cta btn-cta-compact btn-open-reply" data-id="${d.id}" data-apt="${req.apt}" data-text="${encodeURIComponent(req.text)}">
+                    `<button class="btn-cta btn-cta-compact btn-open-reply" data-id="${d.id}" data-apt="${req.apt}" data-text="${encodeURIComponent(req.text)}">
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
                     Відповісти
                 </button>`}
@@ -1647,14 +1646,14 @@ async function loadAdminRequests() {
                 const id = btn.getAttribute('data-id');
                 const apt = btn.getAttribute('data-apt');
                 const text = decodeURIComponent(btn.getAttribute('data-text'));
-                
+
                 document.getElementById('replyModalReqId').value = id;
                 document.getElementById('replyModalReqApt').value = apt;
                 document.getElementById('replyModalTitle').innerText = `Відповідь кв. ${apt}`;
                 document.getElementById('replyModalOriginalText').innerText = text;
                 document.getElementById('replyModalBody').value = '';
                 const fileInp = document.getElementById('replyModalFiles');
-                if(fileInp) { fileInp.type = 'text'; fileInp.type = 'file'; }
+                if (fileInp) { fileInp.type = 'text'; fileInp.type = 'file'; }
 
                 document.getElementById('adminReplyModal').style.display = 'flex';
             });
@@ -1668,7 +1667,7 @@ async function loadAdminRequests() {
 
 // Щоб адмін бачив звернення при вході
 const originalLoadAdminMessageHistory = loadAdminMessageHistory;
-loadAdminMessageHistory = async function() {
+loadAdminMessageHistory = async function () {
     await originalLoadAdminMessageHistory();
     await loadAdminRequests(); // Додаємо завантаження звернень
 };
@@ -1709,7 +1708,7 @@ document.getElementById('sendReplyBtn')?.addEventListener('click', async () => {
 
         alert("Відповідь успішно надіслано!");
         document.getElementById('adminReplyModal').style.display = 'none';
-        
+
         loadAdminRequests(); // Оновлюємо список
     } catch (e) {
         console.error(e);
@@ -1734,21 +1733,21 @@ document.getElementById('menuBoardBtn')?.addEventListener('click', () => {
     closeAllSheets();
     document.getElementById('dataSection').style.display = 'none';
     document.getElementById('adminDashboardSection').style.display = 'none';
-    if(document.getElementById('docsSection')) document.getElementById('docsSection').style.display = 'none';
-    if(document.getElementById('requestsSection')) document.getElementById('requestsSection').style.display = 'none';
-    
+    if (document.getElementById('docsSection')) document.getElementById('docsSection').style.display = 'none';
+    if (document.getElementById('requestsSection')) document.getElementById('requestsSection').style.display = 'none';
+
     // Показуємо екран Правління
     document.getElementById('boardSection').style.display = 'block';
 });
 
 document.getElementById('backFromBoardBtn')?.addEventListener('click', async () => {
     document.getElementById('boardSection').style.display = 'none';
-    
+
     // Перевіряємо, куди повертатися (до кабінету адміна чи звичайного мешканця)
     const aptNum = document.getElementById('displayAptNum').innerText || document.getElementById('hiddenAptInput').value;
     const aptRef = doc(db, "apartments", aptNum);
     const snap = await getDoc(aptRef);
-    
+
     if (snap.exists() && snap.data().isAdmin) {
         document.getElementById('adminDashboardSection').style.display = 'block';
     } else {
