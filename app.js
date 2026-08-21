@@ -287,8 +287,8 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
     const body = document.getElementById('adminMsgBody').value.trim();
     const targetType = document.getElementById('adminMsgTargetType').value;
     const targetValue = document.getElementById('adminMsgTargetValue').value.trim();
+    const fileInput = document.getElementById('adminMsgFiles');
 
-    // Перевірка на порожні поля
     if (!title || !body) {
         alert('Будь ласка, заповніть заголовок та текст повідомлення.');
         return;
@@ -299,33 +299,44 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
     }
 
     const btn = document.getElementById('adminSendMsgBtn');
-    btn.innerText = 'Відправка...';
+    btn.innerText = 'Відправка та завантаження файлів...';
     btn.disabled = true;
 
     try {
-        // ДОДАЄМО ДОКУМЕНТ В НОВУ КОЛЕКЦІЮ "messages"
+        let fileUrls = [];
         
+        // Завантажуємо файли у Firebase Storage, якщо вони вибрані
+        if (fileInput && fileInput.files.length > 0) {
+            for (let file of fileInput.files) {
+                const fileRef = sRef(storage, `messages/${Date.now()}_${file.name}`);
+                await uploadBytes(fileRef, file);
+                const url = await getDownloadURL(fileRef);
+                fileUrls.push({ name: file.name, url: url });
+            }
+        }
+
         await addDoc(collection(db, "messages"), {
             title: title,
-            body: body,
-            targetType: targetType,     // 'all', 'entrance', 'apartment'
-            targetValue: targetValue,   // '1, 3' або '45, 298'
+            body: body,              // Зберігає всі пробіли, переноси рядків та емодзі
+            targetType: targetType,
+            targetValue: targetValue,
             createdAt: serverTimestamp(),
             author: "Правління ОСББ",
-            readBy: {}                  
+            attachments: fileUrls,   // Массив файлів
+            readBy: {}
         });
 
-        loadAdminMessageHistory(); // ДОДАНО: Миттєво оновити історію після надсилання
-
-        // Показуємо успіх і очищаємо форму
+        loadAdminMessageHistory();
         alert('Повідомлення успішно надіслано!');
         
+        // Очищення форми
         document.getElementById('adminMsgTitle').value = '';
         document.getElementById('adminMsgBody').value = '';
-        document.getElementById('adminMsgBody').style.height = 'auto'; // Повертаємо початкову висоту
+        document.getElementById('adminMsgBody').style.height = 'auto';
         document.getElementById('adminMsgTargetValue').value = '';
         document.getElementById('adminMsgTargetType').value = 'all';
         document.getElementById('adminMsgTargetValueGroup').style.display = 'none';
+        if(fileInput) fileInput.value = '';
         
     } catch (error) {
         console.error("Помилка відправки:", error);
@@ -575,13 +586,16 @@ async function loadUserMessages(apt, entrance) {
                 
                 const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
                 
+                // Індикатор наявності файлів
+                let hasFilesIcon = msg.attachments && msg.attachments.length > 0 ? `<span style="font-size: 12px; color: var(--apple-blue); margin-left: 6px;">📎 Файли (${msg.attachments.length})</span>` : '';
+
                 html += `
-                    <div style="border-bottom: 1px solid #F0F0F0; padding-bottom: 12px; margin-bottom: 12px;">
+                    <div class="message-card-item" data-id="${d.id}" data-title="${encodeURIComponent(msg.title)}" data-body="${encodeURIComponent(msg.body)}" data-date="${dateStr}" data-files='${encodeURIComponent(JSON.stringify(msg.attachments || []))}' style="border-bottom: 1px solid #F0F0F0; padding-bottom: 12px; margin-bottom: 12px; cursor: pointer;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-                            <strong style="font-size: 15px; color: ${isRead ? 'var(--text-main)' : 'var(--apple-blue)'};">${msg.title}</strong>
+                            <strong style="font-size: 15px; color: ${isRead ? 'var(--text-main)' : 'var(--apple-blue)'};">${msg.title} ${hasFilesIcon}</strong>
                             <span style="font-size: 11px; color: #A1A1A6; white-space: nowrap;">${dateStr}</span>
                         </div>
-                        <p style="margin: 0; font-size: 14px; color: var(--text-main); line-height: 1.4;">${msg.body}</p>
+                        <p style="margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${msg.body}</p>
                     </div>`;
             }
         });
@@ -675,3 +689,43 @@ async function loadAdminMessageHistory() {
 
 // Прив'язуємо кнопку оновлення історії
 document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminMessageHistory);
+
+// Логіка відкриття модального вікна при кліку на повідомлення
+document.addEventListener('click', function(e) {
+    const card = e.target.closest('.message-card-item');
+    if (card) {
+        const title = decodeURIComponent(card.getAttribute('data-title'));
+        const body = decodeURIComponent(card.getAttribute('data-body'));
+        const date = card.getAttribute('data-date');
+        const files = JSON.parse(decodeURIComponent(card.getAttribute('data-files')));
+
+        document.getElementById('modalMsgTitle').innerText = title;
+        document.getElementById('modalMsgDate').innerText = date;
+        document.getElementById('modalMsgBody').innerText = body; // Зберігає повне форматування (пробіли, абзаци)
+
+        // Рендеримо вкладені файли
+        const attachContainer = document.getElementById('modalMsgAttachments');
+        attachContainer.innerHTML = '';
+        if (files && files.length > 0) {
+            let filesHtml = '<span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Додатки:</span>';
+            files.forEach((f, idx) => {
+                filesHtml += `<a href="${f.url}" target="_blank" class="btn-doc-view" style="margin-top: 4px;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>${f.name || 'Документ ' + (idx + 1)}</a>`;
+            });
+            attachContainer.innerHTML = filesHtml;
+            attachContainer.style.display = 'block';
+        } else {
+            attachContainer.style.display = 'none';
+        }
+
+        document.getElementById('msgModal').style.display = 'flex';
+    }
+});
+
+// Закриття модального вікна
+document.getElementById('closeMsgModal').addEventListener('click', () => {
+    document.getElementById('msgModal').style.display = 'none';
+});
+window.addEventListener('click', (e) => {
+    const modal = document.getElementById('msgModal');
+    if (e.target === modal) modal.style.display = 'none';
+});
