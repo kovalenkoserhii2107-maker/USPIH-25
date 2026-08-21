@@ -1,7 +1,8 @@
 // 1. ПІДКЛЮЧЕННЯ FIREBASE
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+// ДОДАНО: onAuthStateChanged (для пам'яті сесії) та signOut (для виходу)
+import { getAuth, signInWithEmailAndPassword, updatePassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -28,7 +29,23 @@ const ownersContainer = document.getElementById('ownersContainer');
 const aptInput = document.getElementById('aptInput');
 const passInput = document.getElementById('passInput');
 
-// 2. АВТОРИЗАЦІЯ
+// ==========================================
+// НОВЕ: СЛУХАЧ АВТОРИЗАЦІЇ (Пам'ять сесії)
+// ==========================================
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        // Якщо користувач вже входив раніше, відразу вантажимо кабінет
+        const apt = user.email.split('@')[0];
+        loadCabinetData(apt);
+    } else {
+        // Якщо не входив або натиснув "Вийти" - показуємо логін
+        loginSection.style.display = 'block';
+        dataSection.style.display = 'none';
+        topNav.style.display = 'none';
+    }
+});
+
+// 2. АВТОРИЗАЦІЯ (Кнопка Увійти)
 document.getElementById('loginBtn').addEventListener('click', async () => {
     const apt = aptInput.value.trim();
     const pass = passInput.value;
@@ -38,12 +55,11 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     btn.innerText = "Перевірка..."; btn.disabled = true;
     document.getElementById('loginError').style.display = "none";
 
-    // Секретна склейка: перетворюємо номер квартири на email
     const email = `${apt}@uspih-25.com`;
 
     try {
         await signInWithEmailAndPassword(auth, email, pass);
-        await loadCabinetData(apt); // Завантажуємо дані з Firestore
+        // Після успішного входу onAuthStateChanged спрацює автоматично!
     } catch (error) {
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
             showError("Невірний номер квартири або пароль.");
@@ -70,25 +86,21 @@ async function loadCabinetData(apt) {
 
     if (aptSnap.exists()) {
         const data = aptSnap.data();
-        isFirstLogin = !data.passwordChanged; // Якщо пароль не міняли - значить перший вхід
+        isFirstLogin = !data.passwordChanged; 
         areaVal = data.area || "";
         
-        // Повідомлення від адміністратора
         if (data.adminMessage) {
             document.getElementById('adminMessageText').innerText = data.adminMessage;
             document.getElementById('notifBadge').style.display = "block";
         }
     } else {
-        // Якщо квартири ще немає в базі, створюємо її базовий профіль
         await setDoc(aptRef, { passwordChanged: false, area: "", lastLogin: new Date() });
     }
 
-    // Відображення площі та номера
     document.getElementById('displayAptNum').innerText = apt;
     document.getElementById('aptArea').value = areaVal;
     document.getElementById('displayAreaVal').innerText = areaVal || "--";
 
-    // Завантажуємо співвласників
     ownersContainer.innerHTML = "";
     const ownersRef = collection(db, "apartments", apt, "owners");
     const ownersSnap = await getDocs(ownersRef);
@@ -99,10 +111,9 @@ async function loadCabinetData(apt) {
             renderOwnerCard(doc.data(), count++, false);
         });
     } else {
-        renderOwnerCard(null, 1, true); // Пуста картка
+        renderOwnerCard(null, 1, true);
     }
 
-    // Логіка екранів
     loginSection.style.display = "none";
     if (isFirstLogin) {
         document.getElementById('hiddenAptInput').value = apt;
@@ -120,18 +131,15 @@ async function saveAllDataToFirebase() {
     if (!apt || apt === "--") throw new Error("Квартира не визначена");
 
     const ownerCards = document.querySelectorAll('.owner-card');
-    const aptRef = doc(db, "apartments", apt);
     const ownersCollectionRef = collection(db, "apartments", apt, "owners");
 
-    // 4.1. Зберігаємо площу
-    let currentArea = document.getElementById('aptArea').value || document.getElementById('displayAreaVal').innerText.replace('--', '');
-    await setDoc(aptRef, { area: currentArea, lastUpdate: new Date() }, { merge: true });
-
-    // 4.2. Очищаємо старих власників, щоб записати нових без дублів
+    // ВИПРАВЛЕНО: Строге почерегове видалення старих записів, щоб вони не затерли нові
     const oldOwners = await getDocs(ownersCollectionRef);
-    oldOwners.forEach(async (d) => { await deleteDoc(d.ref); });
+    for (let d of oldOwners.docs) {
+        await deleteDoc(d.ref);
+    }
 
-    // 4.3. Обробляємо та зберігаємо нові картки
+    // Обробляємо та зберігаємо нові картки
     for (let card of ownerCards) {
         const name = card.querySelector('.i-name').value;
         if (!name) continue; 
@@ -150,16 +158,13 @@ async function saveAllDataToFirebase() {
             shareFrac = parts[0]; sharePerc = parts[1];
         }
 
-        // Збираємо старі файли
         let allFileUrls = [];
         if (existingFilesInput && existingFilesInput.value) {
             allFileUrls.push(...existingFilesInput.value.split(',').filter(u => u.trim() !== ''));
         }
 
-        // Завантажуємо нові файли у Firebase Storage
-        if (fileInput.files.length > 0) {
+        if (fileInput && fileInput.files.length > 0) {
             for (let file of fileInput.files) {
-                // Шлях у сховищі: apartments/45/16900000_doc.pdf
                 const fileRef = sRef(storage, `apartments/${apt}/${Date.now()}_${file.name}`);
                 await uploadBytes(fileRef, file);
                 const url = await getDownloadURL(fileRef);
@@ -167,7 +172,6 @@ async function saveAllDataToFirebase() {
             }
         }
 
-        // Записуємо власника у Firestore
         await addDoc(ownersCollectionRef, {
             name: name,
             docInfo: card.querySelector('.i-doc').value,
@@ -178,7 +182,7 @@ async function saveAllDataToFirebase() {
     }
 }
 
-// 5. ЛОГІКА МЕНЮ, ДЗВІНОЧКА ТА ПЛОЩІ (Залишається як було)
+// 5. ЛОГІКА МЕНЮ, ДЗВІНОЧКА ТА ПЛОЩІ
 const bellBtn = document.getElementById('bellBtn');
 const notifPopup = document.getElementById('notifPopup');
 const menuBtn = document.getElementById('menuBtn');
@@ -197,8 +201,14 @@ document.addEventListener('click', (e) => {
     if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) notifPopup.style.display = 'none';
     if (!menuPopup.contains(e.target) && !menuBtn.contains(e.target)) menuPopup.style.display = 'none';
 });
-document.getElementById('menuLogoutBtn').addEventListener('click', () => location.reload());
 
+// ВИПРАВЛЕНО: Правильний вихід з акаунту Firebase
+document.getElementById('menuLogoutBtn').addEventListener('click', async () => {
+    await signOut(auth);
+    location.reload(); 
+});
+
+// Кнопки площі
 document.getElementById('editAreaBtn').addEventListener('click', () => {
     document.getElementById('areaViewMode').style.display = 'none';
     document.getElementById('areaEditMode').style.display = 'block';
@@ -211,29 +221,22 @@ document.getElementById('cancelAreaBtn').addEventListener('click', () => {
 document.getElementById('saveAreaBtn').addEventListener('click', async () => {
     const btn = document.getElementById('saveAreaBtn');
     btn.innerText = "⏳..."; btn.disabled = true;
-    
     try {
         const apt = document.getElementById('displayAptNum').innerText;
         const newArea = document.getElementById('aptArea').value;
+        await setDoc(doc(db, "apartments", apt), { area: newArea, lastUpdate: new Date() }, { merge: true });
         
-        // Зберігаємо ТІЛЬКИ площу напряму в базу (не чіпаючи власників)
-        const aptRef = doc(db, "apartments", apt);
-        await setDoc(aptRef, { area: newArea, lastUpdate: new Date() }, { merge: true });
-        
-        // Оновлюємо інтерфейс
         document.getElementById('displayAreaVal').innerText = newArea || "--";
         document.getElementById('areaEditMode').style.display = 'none';
         document.getElementById('areaViewMode').style.display = 'flex';
-        
     } catch(e) {
-        console.error(e);
-        alert("Помилка збереження площі.");
+        console.error(e); alert("Помилка збереження площі.");
     } finally {
         btn.innerText = "Зберегти"; btn.disabled = false;
     }
 });
 
-// 6. МАЛЮВАННЯ КАРТОК (Функції calculateShares та renderOwnerCard)
+// 6. МАЛЮВАННЯ КАРТОК
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 function calculateShares(val) {
     val = val.replace(',', '.');
@@ -323,7 +326,7 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
                 <input type="text" class="i-doc" value="${docInfo}" placeholder="Договір купівлі-продажу №123">
             </div>
             <div class="form-group">
-                <label>Завантажити скан/фото (додасться до існуючих)</label>
+                <label>Завантажити скан/фото</label>
                 <input type="file" class="i-files" multiple accept="image/*,application/pdf" style="background: white; border: 1px dashed #ccc;">
             </div>
             <div class="action-group">
@@ -362,13 +365,15 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
             await saveAllDataToFirebase();
             await loadCabinetData(document.getElementById('displayAptNum').innerText); // Тихе перемальовування
         } catch (error) {
+            console.error(error);
             alert("Помилка збереження. Перевірте інтернет.");
+        } finally {
             btn.innerText = "Зберегти"; btn.disabled = false;
-        } 
+        }
     });
 }
 
-// 7. РОБОТА З ПАРОЛЕМ (ОКО ТА ЗМІНА)
+// 7. РОБОТА З ПАРОЛЕМ
 document.querySelectorAll('.toggle-password').forEach(btn => {
     btn.addEventListener('click', function() {
         const input = document.getElementById(this.getAttribute('data-target'));
@@ -403,14 +408,11 @@ document.getElementById('savePassBtn').addEventListener('click', async () => {
         document.getElementById('passError').innerText = "Паролі не співпадають або коротші 6 символів";
         document.getElementById('passError').style.display = "block"; return;
     }
-
     const btn = document.getElementById('savePassBtn');
     btn.innerText = "⏳..."; btn.disabled = true;
 
     try {
         await updatePassword(auth.currentUser, newPass);
-        
-        // Відмічаємо в базі, що пароль змінено
         const apt = document.getElementById('hiddenAptInput').value || document.getElementById('displayAptNum').innerText;
         await setDoc(doc(db, "apartments", apt), { passwordChanged: true }, { merge: true });
         
