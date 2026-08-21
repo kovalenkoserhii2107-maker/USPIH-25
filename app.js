@@ -130,6 +130,7 @@ async function loadCabinetData(apt) {
         // ШЛЯХ А: Це Адміністратор
         document.getElementById('adminDashboardSection').style.display = "block";
         await loadAdminMessageHistory();
+        await populateAdminDocsDropdown();
         
         // Тут ми пізніше додамо завантаження статистики або історії надісланих повідомлень
         
@@ -290,6 +291,8 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
     const targetType = document.getElementById('adminMsgTargetType').value;
     const targetValue = document.getElementById('adminMsgTargetValue').value.trim();
     const fileInput = document.getElementById('adminMsgFiles');
+    const linkedDocStr = document.getElementById('adminMsgLinkedDoc').value;
+    const linkedDoc = linkedDocStr ? JSON.parse(decodeURIComponent(linkedDocStr)) : null;
 
     if (!title || !body) {
         alert('Будь ласка, заповніть заголовок та текст повідомлення.');
@@ -337,6 +340,7 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
             createdAt: serverTimestamp(),
             author: "Правління ОСББ",
             attachments: fileUrls,   // Масив файлів
+            linkedDoc: linkedDoc, // ДОДАНО: Внутрішнє посилання на базу
             readBy: {}
         });
 
@@ -615,7 +619,16 @@ async function loadUserMessages(apt, entrance) {
                     if (docCount > 0) parts.push(`📎 ${docCount}`);
                     hasFilesIcon = `<span style="font-size: 12px; color: var(--apple-blue); margin-left: 6px; white-space: nowrap;">${parts.join(' ')}</span>`;
                 }
-
+                let linkedDocBtnHtml = '';
+                if (msg.linkedDoc) {
+                    const docDataStr = encodeURIComponent(JSON.stringify(msg.linkedDoc));
+                    linkedDocBtnHtml = `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #E5E5EA;">
+                        <button class="btn-open-osbb-doc" data-doc="${docDataStr}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; background: #E5F0FF; color: var(--apple-blue); border: none; padding: 10px; border-radius: 12px; font-weight: 600; font-size: 14px; cursor: pointer;">
+                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            Ознайомитись: ${escapeHtml(msg.linkedDoc.name)}
+                        </button>
+                    </div>`;
+                }
                 html += `
                     <div class="message-card-item" data-id="${d.id}" data-title="${encodeURIComponent(msg.title)}" data-body="${encodeURIComponent(msg.body)}" data-date="${dateStr}" data-files='${encodeURIComponent(JSON.stringify(msg.attachments || []))}' style="border-bottom: 1px solid #F0F0F0; padding-bottom: 12px; margin-bottom: 12px; cursor: pointer;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
@@ -623,6 +636,7 @@ async function loadUserMessages(apt, entrance) {
                             <span style="font-size: 11px; color: #A1A1A6; white-space: nowrap;">${dateStr}</span>
                         </div>
                         <p style="margin: 0; font-size: 14px; color: var(--text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${msg.body}</p>
+                        ${linkedDocBtnHtml}
                     </div>`;
             }
         });
@@ -1132,5 +1146,153 @@ document.getElementById('powerToggleInput')?.addEventListener('change', async fu
         this.disabled = false;
     }
 });
+// ==========================================
+// БАЗА ДОКУМЕНТІВ ОСББ
+// ==========================================
 
+// Перемикання екранів
+document.getElementById('menuDocsBtn').addEventListener('click', () => {
+    document.getElementById('menuPopup').style.display = 'none';
+    document.getElementById('dataSection').style.display = 'none';
+    document.getElementById('adminDashboardSection').style.display = 'none';
+    document.getElementById('docsSection').style.display = 'block';
+    loadOsbbDocsBase(); // Завантажуємо документи при відкритті
+});
+
+document.getElementById('backFromDocsBtn').addEventListener('click', async () => {
+    document.getElementById('docsSection').style.display = 'none';
+    
+    // Перевіряємо, куди повертатися
+    const aptRef = doc(db, "apartments", document.getElementById('displayAptNum').innerText || document.getElementById('hiddenAptInput').value);
+    const snap = await getDoc(aptRef);
+    if (snap.exists() && snap.data().isAdmin) {
+        document.getElementById('adminDashboardSection').style.display = 'block';
+    } else {
+        document.getElementById('dataSection').style.display = 'block';
+    }
+});
+
+// Завантаження документів у базу (Дія Адміна)
+const uploadDocBtn = document.getElementById('uploadOsbbDocBtn');
+if (uploadDocBtn) {
+    uploadDocBtn.addEventListener('click', async () => {
+        const title = document.getElementById('osbbDocTitle').value.trim();
+        const category = document.getElementById('osbbDocCategory').value;
+        const fileInput = document.getElementById('osbbDocFile');
+
+        if (!title || !fileInput.files || fileInput.files.length === 0) {
+            return alert('Будь ласка, введіть назву та оберіть файл.');
+        }
+
+        uploadDocBtn.innerText = 'Завантаження...';
+        uploadDocBtn.disabled = true;
+
+        try {
+            const file = fileInput.files[0];
+            const fileRef = sRef(storage, `osbb_docs/${Date.now()}_${file.name}`);
+            await uploadBytes(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+
+            await addDoc(collection(db, "osbb_documents"), {
+                title: title,
+                category: category,
+                fileName: file.name,
+                url: url,
+                size: file.size,
+                type: file.type || '',
+                createdAt: serverTimestamp()
+            });
+
+            alert('Документ успішно додано до бази ОСББ!');
+            document.getElementById('osbbDocTitle').value = '';
+            fileInput.type = 'text'; fileInput.type = 'file';
+            
+            // Оновлюємо випадаючий список у новинах
+            populateAdminDocsDropdown();
+            
+        } catch (e) {
+            console.error(e);
+            alert("Помилка завантаження.");
+        } finally {
+            uploadDocBtn.innerText = 'Завантажити в Базу';
+            uploadDocBtn.disabled = false;
+        }
+    });
+}
+
+// Завантаження списку для перегляду
+async function loadOsbbDocsBase() {
+    const container = document.getElementById('osbbDocsContainer');
+    container.innerHTML = '<p style="text-align:center; color:#888;">Завантаження документів...</p>';
+    
+    try {
+        const q = query(collection(db, "osbb_documents"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            return container.innerHTML = '<p style="text-align:center; color: var(--text-muted);">База документів порожня.</p>';
+        }
+
+        const grouped = {};
+        snap.forEach(d => {
+            const data = d.data();
+            if (!grouped[data.category]) grouped[data.category] = [];
+            grouped[data.category].push(data);
+        });
+
+        let html = '';
+        for (const [cat, docs] of Object.entries(grouped)) {
+            html += `<div style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04);">
+                        <h3 style="margin: 0 0 15px 0; font-size: 18px; color: var(--apple-blue); border-bottom: 1px solid #eee; padding-bottom: 10px;">${cat}</h3>
+                        <div class="doc-attach-list">`;
+            
+            docs.forEach((d, idx) => {
+                const kind = getDocKind(d); // Використовуємо існуючу функцію Клода
+                const docDataStr = encodeURIComponent(JSON.stringify({url: d.url, name: d.title, type: d.type}));
+                
+                html += `<div class="doc-attach-row btn-open-osbb-doc" data-doc="${docDataStr}" style="background: #F9F9FB; border: 1px solid #E5E5EA;">
+                            <div class="doc-attach-icon doc-icon-${kind}">${docIconSvg(kind)}</div>
+                            <div class="doc-attach-info">
+                                <span class="doc-attach-name" style="font-size: 15px;">${escapeHtml(d.title)}</span>
+                                <span class="doc-attach-meta">${formatDateTimeUk(d.createdAt ? d.createdAt.toDate() : new Date())} • ${formatFileSize(d.size)}</span>
+                            </div>
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="var(--apple-blue)" stroke-width="2" fill="none"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                         </div>`;
+            });
+            html += `</div></div>`;
+        }
+        container.innerHTML = html;
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p style="text-align:center; color: var(--apple-red);">Помилка завантаження бази.</p>';
+    }
+}
+
+// Заповнення випадаючого списку для розсилки (Адмін)
+async function populateAdminDocsDropdown() {
+    const select = document.getElementById('adminMsgLinkedDoc');
+    if (!select) return;
+    try {
+        const q = query(collection(db, "osbb_documents"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        let options = '<option value="">Не прикріплювати</option>';
+        snap.forEach(d => {
+            const data = d.data();
+            const docDataStr = encodeURIComponent(JSON.stringify({url: data.url, name: data.title, type: data.type}));
+            options += `<option value="${docDataStr}">${data.category}: ${data.title}</option>`;
+        });
+        select.innerHTML = options;
+    } catch (e) { console.error("Помилка завантаження списку доків", e); }
+}
+
+// Слухач для відкриття документів ОСББ (як із бази, так і з посилання в новинах)
+document.addEventListener('click', function(e) {
+    const docBtn = e.target.closest('.btn-open-osbb-doc');
+    if (docBtn) {
+        e.stopPropagation(); // Щоб не відкривалась модалка повідомлення, якщо клікнули в новинах
+        const docData = JSON.parse(decodeURIComponent(docBtn.getAttribute('data-doc')));
+        openDocViewer(docData); // Викликаємо ідеальний переглядач Клода
+    }
+});
 
