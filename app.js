@@ -1,7 +1,6 @@
 // 1. ПІДКЛЮЧЕННЯ FIREBASE
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-// ДОДАНО: onAuthStateChanged (для пам'яті сесії) та signOut (для виходу)
 import { getAuth, signInWithEmailAndPassword, updatePassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -21,6 +20,7 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 
 // Елементи інтерфейсу
+const appLoader = document.getElementById('appLoader');
 const loginSection = document.getElementById('loginSection');
 const passwordSection = document.getElementById('passwordSection');
 const dataSection = document.getElementById('dataSection');
@@ -30,22 +30,45 @@ const aptInput = document.getElementById('aptInput');
 const passInput = document.getElementById('passInput');
 
 // ==========================================
-// НОВЕ: СЛУХАЧ АВТОРИЗАЦІЇ (Пам'ять сесії)
+// ЛОГІКА СЕСІЇ ТА АВТОРИЗАЦІЇ
 // ==========================================
-onAuthStateChanged(auth, (user) => {
+const SESSION_TIMEOUT = 60 * 60 * 1000; // 1 година (в мілісекундах)
+
+onAuthStateChanged(auth, async (user) => {
     if (user) {
-        // Якщо користувач вже входив раніше, відразу вантажимо кабінет
+        // Перевіряємо, коли була остання активність
+        const lastActive = localStorage.getItem('session_timestamp');
+        if (lastActive && (Date.now() - parseInt(lastActive)) > SESSION_TIMEOUT) {
+            // Якщо пройшло більше години - примусово розлогінюємо
+            await signOut(auth);
+            localStorage.removeItem('session_timestamp');
+            return; // Спрацює гілка else нижче
+        }
+        
+        // Якщо сесія жива - оновлюємо час і тихо завантажуємо кабінет
+        localStorage.setItem('session_timestamp', Date.now());
         const apt = user.email.split('@')[0];
-        loadCabinetData(apt);
+        await loadCabinetData(apt);
     } else {
-        // Якщо не входив або натиснув "Вийти" - показуємо логін
-        loginSection.style.display = 'block';
+        // Користувач не авторизований або сесія закінчилась
+        appLoader.style.display = 'none'; // Ховаємо завантаження
+        loginSection.style.display = 'block'; // Показуємо форму
         dataSection.style.display = 'none';
         topNav.style.display = 'none';
+        passwordSection.style.display = 'none';
     }
 });
 
-// 2. АВТОРИЗАЦІЯ (Кнопка Увійти)
+// Слухачі активності: будь-який клік або натискання клавіші обнуляє таймер на 1 годину
+['click', 'keypress', 'touchstart'].forEach(evt => {
+    document.addEventListener(evt, () => {
+        if (auth.currentUser) {
+            localStorage.setItem('session_timestamp', Date.now());
+        }
+    });
+});
+
+// 2. КНОПКА УВІЙТИ
 document.getElementById('loginBtn').addEventListener('click', async () => {
     const apt = aptInput.value.trim();
     const pass = passInput.value;
@@ -59,7 +82,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
     try {
         await signInWithEmailAndPassword(auth, email, pass);
-        // Після успішного входу onAuthStateChanged спрацює автоматично!
+        localStorage.setItem('session_timestamp', Date.now()); // Запускаємо таймер сесії
     } catch (error) {
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
             showError("Невірний номер квартири або пароль.");
@@ -114,6 +137,8 @@ async function loadCabinetData(apt) {
         renderOwnerCard(null, 1, true);
     }
 
+    // МИГТЬОВЕ ПЕРЕМИКАННЯ ЕКРАНІВ
+    appLoader.style.display = 'none'; // Ховаємо екран "Завантаження..."
     loginSection.style.display = "none";
     if (isFirstLogin) {
         document.getElementById('hiddenAptInput').value = apt;
@@ -125,7 +150,7 @@ async function loadCabinetData(apt) {
     }
 }
 
-// 4. ОНОВЛЕННЯ ДАНИХ ТА ЗАВАНТАЖЕННЯ ФАЙЛІВ У STORAGE
+// 4. ОНОВЛЕННЯ ДАНИХ У БАЗІ ТА STORAGE
 async function saveAllDataToFirebase() {
     const apt = document.getElementById('displayAptNum').innerText;
     if (!apt || apt === "--") throw new Error("Квартира не визначена");
@@ -133,13 +158,11 @@ async function saveAllDataToFirebase() {
     const ownerCards = document.querySelectorAll('.owner-card');
     const ownersCollectionRef = collection(db, "apartments", apt, "owners");
 
-    // ВИПРАВЛЕНО: Строге почерегове видалення старих записів, щоб вони не затерли нові
     const oldOwners = await getDocs(ownersCollectionRef);
     for (let d of oldOwners.docs) {
         await deleteDoc(d.ref);
     }
 
-    // Обробляємо та зберігаємо нові картки
     for (let card of ownerCards) {
         const name = card.querySelector('.i-name').value;
         if (!name) continue; 
@@ -202,13 +225,14 @@ document.addEventListener('click', (e) => {
     if (!menuPopup.contains(e.target) && !menuBtn.contains(e.target)) menuPopup.style.display = 'none';
 });
 
-// ВИПРАВЛЕНО: Правильний вихід з акаунту Firebase
+// Кнопка ВИХІД
 document.getElementById('menuLogoutBtn').addEventListener('click', async () => {
-    await signOut(auth);
-    location.reload(); 
+    localStorage.removeItem('session_timestamp'); // Очищаємо пам'ять сесії
+    await signOut(auth); // Виходимо з Firebase
+    location.reload(); // Оновлюємо інтерфейс
 });
 
-// Кнопки площі
+// Кнопки ПЛОЩІ
 document.getElementById('editAreaBtn').addEventListener('click', () => {
     document.getElementById('areaViewMode').style.display = 'none';
     document.getElementById('areaEditMode').style.display = 'block';
@@ -236,7 +260,7 @@ document.getElementById('saveAreaBtn').addEventListener('click', async () => {
     }
 });
 
-// 6. МАЛЮВАННЯ КАРТОК
+// 6. МАЛЮВАННЯ КАРТОК СВІВВЛАСНИКІВ
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 function calculateShares(val) {
     val = val.replace(',', '.');
@@ -363,7 +387,7 @@ function renderOwnerCard(ownerData, number, isEditMode, isNewAtTop = false) {
         const btn = this; btn.innerText = "⏳..."; btn.disabled = true;
         try {
             await saveAllDataToFirebase();
-            await loadCabinetData(document.getElementById('displayAptNum').innerText); // Тихе перемальовування
+            await loadCabinetData(document.getElementById('displayAptNum').innerText); 
         } catch (error) {
             console.error(error);
             alert("Помилка збереження. Перевірте інтернет.");
