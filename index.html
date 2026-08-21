@@ -66,30 +66,46 @@
         </div>
 
         <!-- Блок авторизації (ТЕПЕР ПРИХОВАНИЙ ЗА ЗАМОВЧУВАННЯМ) -->
-        <div id="loginSection" class="card central-card" style="display: none;">
-            <!-- Новий заголовок ОСББ -->
-            <h2 style="text-align: center; color: var(--apple-blue); font-size: 22px; margin: 0 0 5px 0; font-weight: 800; letter-spacing: 0.5px;">ОСББ «УСПІХ-25»</h2>
-            <h1 class="apple-title">Вхід у кабінет</h1>
-            <p class="subtitle">Введіть дані вашої квартири</p>
+        <div id="loginSection" class="card central-card" style="display: none; padding-top: 40px; padding-bottom: 40px;">
+            
+            <!-- Логотип ОСББ (Стиль Apple App Icon) -->
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 88px; height: 88px; background: linear-gradient(135deg, #007AFF 0%, #0056B3 100%); border-radius: 22px; box-shadow: 0 12px 24px rgba(0, 122, 255, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.3);">
+                    <!-- Векторна іконка будинку -->
+                    <svg viewBox="0 0 24 24" width="46" height="46" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 21h18"></path>
+                        <path d="M9 8h1"></path>
+                        <path d="M9 12h1"></path>
+                        <path d="M9 16h1"></path>
+                        <path d="M14 8h1"></path>
+                        <path d="M14 12h1"></path>
+                        <path d="M14 16h1"></path>
+                        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Новий заголовок ОСББ (Збільшений шрифт) -->
+            <h1 style="text-align: center; color: var(--text-main); font-size: 26px; margin: 0 0 6px 0; font-weight: 800; letter-spacing: -0.5px;">ОСББ «УСПІХ-25»</h1>
+            
+            <!-- Підзаголовок (Вхід у кабінет) -->
+            <h2 class="apple-title" style="font-size: 18px; color: var(--text-muted); font-weight: 600; margin-bottom: 30px;">Вхід у кабінет</h2>
             
             <form id="loginForm" onsubmit="return false;">
                 <div class="form-group">
                     <label>Номер квартири</label>
-                    <!-- Атрибут username підказує телефону, що це логін -->
                     <input type="number" id="aptInput" autocomplete="username" placeholder="Наприклад: 45">
                 </div>
                 <div class="form-group">
                     <label>Пароль</label>
                     <div class="password-wrapper">
-                        <!-- Атрибут current-password -->
                         <input type="password" id="passInput" autocomplete="current-password" placeholder="Введіть пароль">
                         <button type="button" class="toggle-password" data-target="passInput">
-                            <!-- Іконка ока -->
                             <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         </button>
                     </div>
                 </div>
-                <button type="button" id="loginBtn" class="btn btn-primary">Увійти</button>
+                <button type="button" id="loginBtn" class="btn btn-primary" style="margin-top: 10px;">Увійти</button>
                 <p id="loginError" class="error-text" style="display: none;"></p>
             </form>
         </div>
