@@ -87,56 +87,74 @@ function showError(msg) {
     err.innerText = msg; err.style.display = "block";
 }
 
-// 3. ЗАВАНТАЖЕННЯ ДАНИХ З FIRESTORE
+// 3. ЗАВАНТАЖЕННЯ ДАНИХ З FIRESTORE (РОЗПОДІЛЬНИК)
 async function loadCabinetData(apt) {
     const aptRef = doc(db, "apartments", apt);
     const aptSnap = await getDoc(aptRef);
     
     let isFirstLogin = true;
     let areaVal = "--";
-    let entranceVal = "--"; // Нове поле: Парадна
+    let entranceVal = "--"; 
+    let isAdmin = false; // Новий прапорець для перевірки ролі
 
     if (aptSnap.exists()) {
         const data = aptSnap.data();
         isFirstLogin = !data.passwordChanged; 
         areaVal = data.area || "--";
-        entranceVal = data.entrance || "--"; // Читаємо парадну з бази
-        
-        if (data.adminMessage) {
-            document.getElementById('adminMessageText').innerText = data.adminMessage;
-            document.getElementById('notifBadge').style.display = "block";
-        }
+        entranceVal = data.entrance || "--"; 
+        isAdmin = data.isAdmin === true; // Перевіряємо, чи це адмінський акаунт (напр. логін 777)
     } else {
-        await setDoc(aptRef, { passwordChanged: false, area: "", entrance: "", lastLogin: new Date() });
+        // Якщо квартири немає, створюємо її базовий профіль
+        await setDoc(aptRef, { passwordChanged: false, area: "", entrance: "", isAdmin: false, lastLogin: new Date() });
     }
 
-    // Відображаємо фіксовані дані
-    document.getElementById('displayAptNum').innerText = apt;
-    document.getElementById('displayEntranceNum').innerText = entranceVal;
-    document.getElementById('displayAreaVal').innerText = areaVal;
-
-    ownersContainer.innerHTML = "";
-    const ownersRef = collection(db, "apartments", apt, "owners");
-    const ownersSnap = await getDocs(ownersRef);
-    
-    if (!ownersSnap.empty) {
-        let count = 1;
-        ownersSnap.forEach(doc => {
-            renderOwnerCard(doc.data(), count++, false);
-        });
-    } else {
-        renderOwnerCard(null, 1, true);
-    }
-
+    // МИГТЬОВЕ ПЕРЕМИКАННЯ ЕКРАНІВ (Ховаємо логін і завантаження)
     appLoader.style.display = 'none'; 
     loginSection.style.display = "none";
+    topNav.style.display = "none";
+    dataSection.style.display = "none";
+    document.getElementById('adminDashboardSection').style.display = "none";
+
     if (isFirstLogin) {
+        // Якщо перший вхід — змушуємо змінити пароль (працює і для адміна, і для мешканця)
         document.getElementById('hiddenAptInput').value = apt;
         document.getElementById('cancelPassBtn').style.display = 'none';
         passwordSection.style.display = "block";
+        return; // Зупиняємо функцію тут
+    }
+
+    // РОЗПОДІЛ МАРШРУТІВ:
+    if (isAdmin) {
+        // ШЛЯХ А: Це Адміністратор
+        document.getElementById('adminDashboardSection').style.display = "block";
+        
+        // Тут ми пізніше додамо завантаження статистики або історії надісланих повідомлень
+        
     } else {
+        // ШЛЯХ Б: Це звичайний мешканець
         topNav.style.display = "block";
         dataSection.style.display = "block";
+        
+        // Заповнюємо дані картки мешканця
+        document.getElementById('displayAptNum').innerText = apt;
+        document.getElementById('displayEntranceNum').innerText = entranceVal;
+        document.getElementById('displayAreaVal').innerText = areaVal;
+
+        // Завантажуємо співвласників
+        ownersContainer.innerHTML = "";
+        const ownersRef = collection(db, "apartments", apt, "owners");
+        const ownersSnap = await getDocs(ownersRef);
+        
+        if (!ownersSnap.empty) {
+            let count = 1;
+            ownersSnap.forEach(doc => {
+                renderOwnerCard(doc.data(), count++, false);
+            });
+        } else {
+            renderOwnerCard(null, 1, true);
+        }
+        
+        // Тут ми пізніше викличемо функцію завантаження вхідних новин для мешканця
     }
 }
 
@@ -219,6 +237,23 @@ document.getElementById('menuLogoutBtn').addEventListener('click', async () => {
     localStorage.removeItem('session_timestamp'); 
     await signOut(auth); 
     location.reload(); 
+});
+
+// Кнопка ВИХІД для Адміна
+document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
+    localStorage.removeItem('session_timestamp'); 
+    await signOut(auth); 
+    location.reload(); 
+});
+
+// Логіка перемикання "Кому надіслати" в панелі адміна
+document.getElementById('adminMsgTargetType').addEventListener('change', function() {
+    const targetValueGroup = document.getElementById('adminMsgTargetValueGroup');
+    if (this.value === 'all') {
+        targetValueGroup.style.display = 'none';
+    } else {
+        targetValueGroup.style.display = 'block';
+    }
 });
 
 // 6. МАЛЮВАННЯ КАРТОК СВІВВЛАСНИКІВ
