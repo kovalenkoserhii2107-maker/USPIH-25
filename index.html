@@ -386,17 +386,17 @@
             
         </div>
 
-        <!-- ========================================== -->
-        <!-- ЕКРАН БАЗИ ДОКУМЕНТІВ ОСББ -->
-        <!-- ========================================== -->
-        <div id="docsSection" style="display: none; padding-bottom: 40px;">
-            <div style="display: flex; align-items: center; margin: 20px 0 24px 0;">
-                <button id="backFromDocsBtn" style="background: #F2F2F7; color: var(--apple-blue); border: none; padding: 8px 16px; border-radius: 20px; font-weight: 600; font-size: 14px; cursor: pointer; margin-right: 15px; transition: 0.2s;">← Назад</button>
-                <h1 style="font-size: 26px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Документи ОСББ</h1>
-            </div>
-            <div id="osbbDocsContainer" style="display: flex; flex-direction: column; gap: 20px;">
-                <p style="text-align: center; color: var(--text-muted);">Завантаження...</p>
-            </div>
+    <!-- ========================================== -->
+    <!-- ЕКРАН БАЗИ ДОКУМЕНТІВ ОСББ -->
+    <!-- ========================================== -->
+    <div id="docsSection" style="display: none; padding-bottom: 40px;">
+        
+        <div style="display: flex; align-items: center; margin: 0 0 20px 0;">
+            <button id="backFromDocsBtn" style="background: none; border: none; color: var(--apple-blue); font-size: 17px; font-weight: 500; display: flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; margin-right: 12px; margin-left: -4px;">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+            <h1 style="font-size: 26px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Документи ОСББ</h1>
         </div>
     </div>
 
@@ -482,30 +482,19 @@
     <!-- ЕКРАН ЗВЕРНЕНЬ ЖИЛЬЦЯ ДО ПРАВЛІННЯ -->
     <!-- ========================================== -->
     <div id="requestsSection" style="display: none; padding-bottom: 40px;">
-        <div style="display: flex; align-items: center; margin: 20px 0 24px 0;">
-            <button id="backFromRequestsBtn" style="background: #F2F2F7; color: var(--apple-blue); border: none; padding: 8px 16px; border-radius: 20px; font-weight: 600; font-size: 14px; cursor: pointer; margin-right: 15px; transition: 0.2s;">← Назад</button>
-            <h1 style="font-size: 24px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Мої звернення</h1>
+        
+        <!-- Вирівняно висоту (margin: 0) та оновлено кнопку Назад під стиль iOS -->
+        <div style="display: flex; align-items: center; margin: 0 0 20px 0;">
+            <button id="backFromRequestsBtn" style="background: none; border: none; color: var(--apple-blue); font-size: 17px; font-weight: 500; display: flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; margin-right: 12px; margin-left: -4px;">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+            <h1 style="font-size: 26px; font-weight: 800; color: var(--text-main); margin: 0; letter-spacing: -0.5px;">Мої звернення</h1>
         </div>
     
-        <!-- Форма створення нового звернення -->
-        <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); margin-bottom: 24px;">
+        <!-- Форма створення нового звернення (вирівняно padding до 20px) -->
+        <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 24px;">
             <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 16px 0; color: var(--apple-blue);">Нове звернення</h2>
-            <div class="form-group" style="margin-bottom: 12px;">
-                <textarea id="userReqBody" rows="3" placeholder="Опишіть ваше питання або проблему..." style="width: 100%; box-sizing: border-box; background: #F2F2F7; border: none; border-radius: 12px; padding: 14px; font-size: 15px; resize: none; font-family: inherit; outline: none;"></textarea>
-            </div>
-            <div class="form-group" style="margin-bottom: 16px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Прикріпити фото / файли</label>
-                <input type="file" id="userReqFiles" multiple accept="image/*,application/pdf" style="background: #F2F2F7; border: 1px dashed #ccc; padding: 10px; border-radius: 12px; width: 100%; box-sizing: border-box; font-size: 14px;">
-            </div>
-            <button id="sendUserReqBtn" class="btn btn-primary" style="width: 100%; font-size: 15px;">Надіслати Правлінню</button>
-        </div>
-    
-        <!-- Історія звернень жильця -->
-        <h3 style="font-size: 18px; font-weight: 700; margin: 0 0 16px 0; color: var(--text-main);">Історія звернень</h3>
-        <div id="userRequestsContainer" style="display: flex; flex-direction: column; gap: 16px;">
-            <p style="text-align: center; color: var(--text-muted); font-size: 14px;">Немає звернень.</p>
-        </div>
-    </div>
 
     <script type="module" src="app.js?v=6"></script>
     
