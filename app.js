@@ -1,5 +1,25 @@
-// URL вашего будущего веб-приложения Google (заполним позже)
-const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbxff531zYaHcDTiI8W6XR16VjkFp96sAfqqUVl7NzqH1V1pno-Z6t3KlngcZqicOeIVsA/exec";
+// Підключення модулів Firebase
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+
+// Ваші ключі доступу
+const firebaseConfig = {
+  apiKey: "AIzaSyAtNW2KCzP0Xn6vy6h77-ABUJEkcum8rCE",
+  authDomain: "uspih-25.firebaseapp.com",
+  projectId: "uspih-25",
+  storageBucket: "uspih-25.firebasestorage.app",
+  messagingSenderId: "56244989310",
+  appId: "1:56244989310:web:69c3779936387888d6172f",
+  measurementId: "G-FCD4GREECY"
+};
+
+// Запуск Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
 
 const loginSection = document.getElementById('loginSection');
 const passwordSection = document.getElementById('passwordSection');
