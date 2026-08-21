@@ -312,7 +312,7 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
                 const fileRef = sRef(storage, `messages/${Date.now()}_${file.name}`);
                 await uploadBytes(fileRef, file);
                 const url = await getDownloadURL(fileRef);
-                fileUrls.push({ name: file.name, url: url });
+                fileUrls.push({ name: file.name, url: url, type: file.type || '', size: file.size || 0 });
             }
         }
 
@@ -593,8 +593,16 @@ async function loadUserMessages(apt, entrance) {
                 
                 const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
                 
-                // Індикатор наявності файлів
-                let hasFilesIcon = msg.attachments && msg.attachments.length > 0 ? `<span style="font-size: 12px; color: var(--apple-blue); margin-left: 6px;">📎 Файли (${msg.attachments.length})</span>` : '';
+                // Індикатор наявності файлів (окремо фото, окремо документи)
+                let hasFilesIcon = '';
+                if (msg.attachments && msg.attachments.length > 0) {
+                    const imgCount = msg.attachments.filter(isImageFile).length;
+                    const docCount = msg.attachments.length - imgCount;
+                    let parts = [];
+                    if (imgCount > 0) parts.push(`🖼️ ${imgCount}`);
+                    if (docCount > 0) parts.push(`📎 ${docCount}`);
+                    hasFilesIcon = `<span style="font-size: 12px; color: var(--apple-blue); margin-left: 6px; white-space: nowrap;">${parts.join(' ')}</span>`;
+                }
 
                 html += `
                     <div class="message-card-item" data-id="${d.id}" data-title="${encodeURIComponent(msg.title)}" data-body="${encodeURIComponent(msg.body)}" data-date="${dateStr}" data-files='${encodeURIComponent(JSON.stringify(msg.attachments || []))}' style="border-bottom: 1px solid #F0F0F0; padding-bottom: 12px; margin-bottom: 12px; cursor: pointer;">
@@ -710,19 +718,8 @@ document.addEventListener('click', function(e) {
         document.getElementById('modalMsgDate').innerText = date;
         document.getElementById('modalMsgBody').innerText = body; // Зберігає повне форматування (пробіли, абзаци)
 
-        // Рендеримо вкладені файли
-        const attachContainer = document.getElementById('modalMsgAttachments');
-        attachContainer.innerHTML = '';
-        if (files && files.length > 0) {
-            let filesHtml = '<span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Додатки:</span>';
-            files.forEach((f, idx) => {
-                filesHtml += `<a href="${f.url}" target="_blank" class="btn-doc-view" style="margin-top: 4px;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>${f.name || 'Документ ' + (idx + 1)}</a>`;
-            });
-            attachContainer.innerHTML = filesHtml;
-            attachContainer.style.display = 'block';
-        } else {
-            attachContainer.style.display = 'none';
-        }
+        // Рендеримо вкладені файли (фото окремо, документи окремо)
+        renderAttachments(document.getElementById('modalMsgAttachments'), files);
 
         document.getElementById('msgModal').style.display = 'flex';
     }
@@ -736,3 +733,251 @@ window.addEventListener('click', (e) => {
     const modal = document.getElementById('msgModal');
     if (e.target === modal) modal.style.display = 'none';
 });
+
+// ==========================================
+// ВКЛАДЕННЯ: ВИЗНАЧЕННЯ ТИПУ ФАЙЛУ
+// ==========================================
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function getFileExt(name) {
+    if (!name) return '';
+    const parts = name.split('.');
+    return parts.length > 1 ? parts.pop().toLowerCase() : '';
+}
+
+function isImageFile(att) {
+    if (att.type && att.type.startsWith('image/')) return true;
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'].includes(getFileExt(att.name));
+}
+
+function getDocKind(att) {
+    const ext = getFileExt(att.name);
+    if (ext === 'pdf' || (att.type === 'application/pdf')) return 'pdf';
+    if (['doc', 'docx'].includes(ext)) return 'word';
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return 'excel';
+    if (['ppt', 'pptx'].includes(ext)) return 'powerpoint';
+    if (['zip', 'rar', '7z'].includes(ext)) return 'archive';
+    return 'file';
+}
+
+function formatFileSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    if (bytes < 1024) return bytes + ' Б';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' КБ';
+    return (bytes / 1024 / 1024).toFixed(1) + ' МБ';
+}
+
+function docIconSvg(kind) {
+    const icons = {
+        pdf: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="15" x2="15" y2="15"></line><line x1="9" y1="11" x2="12" y2="11"></line></svg>',
+        word: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="10" y2="17"></line><line x1="10" y1="17" x2="12" y2="13"></line><line x1="12" y1="13" x2="14" y2="17"></line><line x1="14" y1="17" x2="16" y2="13"></line></svg>',
+        excel: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="19"></line><line x1="16" y1="13" x2="8" y2="19"></line></svg>',
+        powerpoint: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><rect x="8" y="12" width="5" height="6" rx="1"></rect></svg>',
+        archive: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"></path><path d="M1 3h22v5H1z"></path><line x1="10" y1="12" x2="14" y2="12"></line></svg>',
+        file: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>'
+    };
+    return icons[kind] || icons.file;
+}
+
+// Головна функція рендеру вкладень: фото — сіткою, документи — картками
+function renderAttachments(container, files) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!files || files.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'flex';
+
+    const images = files.filter(isImageFile);
+    const docs = files.filter(f => !isImageFile(f));
+
+    let html = '';
+
+    if (images.length > 0) {
+        html += `<span class="attach-label">Фото (${images.length})</span>`;
+        html += `<div class="image-attach-grid">`;
+        images.forEach((img, idx) => {
+            html += `<div class="image-attach-thumb" data-gallery-index="${idx}">
+                        <img src="${img.url}" loading="lazy" alt="${escapeHtml(img.name)}">
+                     </div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (docs.length > 0) {
+        html += `<span class="attach-label" style="margin-top: ${images.length ? '14px' : '0'};">Документи (${docs.length})</span>`;
+        html += `<div class="doc-attach-list">`;
+        docs.forEach((d, idx) => {
+            const kind = getDocKind(d);
+            html += `<div class="doc-attach-row" data-doc-index="${idx}">
+                        <div class="doc-attach-icon doc-icon-${kind}">${docIconSvg(kind)}</div>
+                        <div class="doc-attach-info">
+                            <span class="doc-attach-name">${escapeHtml(d.name || 'Документ')}</span>
+                            <span class="doc-attach-meta">${formatFileSize(d.size)}</span>
+                        </div>
+                        <svg class="doc-attach-chevron" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                     </div>`;
+        });
+        html += `</div>`;
+    }
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('.image-attach-thumb').forEach(el => {
+        el.addEventListener('click', () => openGallery(images, parseInt(el.getAttribute('data-gallery-index'))));
+    });
+    container.querySelectorAll('.doc-attach-row').forEach(el => {
+        el.addEventListener('click', () => openDocViewer(docs[parseInt(el.getAttribute('data-doc-index'))]));
+    });
+}
+
+// ==========================================
+// ПОВНОЕКРАННА ГАЛЕРЕЯ ФОТО (СВАЙП + ЗУМ)
+// ==========================================
+let galleryImages = [];
+let galleryIndex = 0;
+
+function openGallery(images, startIndex) {
+    if (!images || images.length === 0) return;
+    galleryImages = images;
+    galleryIndex = startIndex || 0;
+
+    const track = document.getElementById('galleryTrack');
+    track.innerHTML = galleryImages.map(img => `<div class="gallery-slide"><img src="${img.url}" alt="${escapeHtml(img.name)}"></div>`).join('');
+    track.style.transition = 'none';
+    track.style.transform = `translateX(-${galleryIndex * 100}%)`;
+    requestAnimationFrame(() => { track.style.transition = 'transform 0.3s ease'; });
+
+    updateGalleryCounter();
+    const multi = galleryImages.length > 1;
+    document.getElementById('galleryPrevBtn').style.display = multi ? 'flex' : 'none';
+    document.getElementById('galleryNextBtn').style.display = multi ? 'flex' : 'none';
+
+    document.getElementById('imageGalleryModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function updateGalleryCounter() {
+    document.getElementById('galleryCounter').innerText = galleryImages.length > 1 ? `${galleryIndex + 1} / ${galleryImages.length}` : '';
+}
+
+function updateGalleryTransform() {
+    document.getElementById('galleryTrack').style.transform = `translateX(-${galleryIndex * 100}%)`;
+    updateGalleryCounter();
+}
+
+function goToSlide(newIndex) {
+    newIndex = Math.max(0, Math.min(newIndex, galleryImages.length - 1));
+    if (newIndex !== galleryIndex) {
+        document.querySelectorAll('#galleryTrack img.zoomed').forEach(img => img.classList.remove('zoomed'));
+    }
+    galleryIndex = newIndex;
+    document.getElementById('galleryTrack').style.transition = 'transform 0.3s ease';
+    updateGalleryTransform();
+}
+
+function closeGallery() {
+    document.getElementById('imageGalleryModal').classList.remove('active');
+    document.getElementById('galleryTrack').innerHTML = '';
+    document.body.style.overflow = '';
+}
+
+document.getElementById('galleryCloseBtn').addEventListener('click', closeGallery);
+document.getElementById('galleryPrevBtn').addEventListener('click', () => goToSlide(galleryIndex - 1));
+document.getElementById('galleryNextBtn').addEventListener('click', () => goToSlide(galleryIndex + 1));
+document.getElementById('imageGalleryModal').addEventListener('click', (e) => {
+    if (e.target.id === 'imageGalleryModal') closeGallery();
+});
+
+// Свайп-жести для гортання фото
+let galleryTouchStartX = 0;
+let galleryTouchCurrentX = 0;
+let galleryDragging = false;
+const galleryTrackEl = document.getElementById('galleryTrack');
+
+galleryTrackEl.addEventListener('touchstart', (e) => {
+    galleryTouchStartX = e.touches[0].clientX;
+    galleryTouchCurrentX = galleryTouchStartX;
+    galleryDragging = true;
+    galleryTrackEl.style.transition = 'none';
+});
+
+galleryTrackEl.addEventListener('touchmove', (e) => {
+    if (!galleryDragging) return;
+    galleryTouchCurrentX = e.touches[0].clientX;
+    const delta = galleryTouchCurrentX - galleryTouchStartX;
+    galleryTrackEl.style.transform = `translateX(calc(-${galleryIndex * 100}% + ${delta}px))`;
+});
+
+galleryTrackEl.addEventListener('touchend', () => {
+    galleryDragging = false;
+    const delta = galleryTouchCurrentX - galleryTouchStartX;
+    galleryTrackEl.style.transition = 'transform 0.3s ease';
+
+    if (Math.abs(delta) > 60) {
+        goToSlide(delta < 0 ? galleryIndex + 1 : galleryIndex - 1);
+    } else if (Math.abs(delta) < 10) {
+        // Це був тап, а не свайп — перемикаємо зум поточного фото
+        const currentImg = galleryTrackEl.children[galleryIndex]?.querySelector('img');
+        if (currentImg) currentImg.classList.toggle('zoomed');
+        updateGalleryTransform();
+    } else {
+        updateGalleryTransform();
+    }
+    galleryTouchStartX = 0;
+    galleryTouchCurrentX = 0;
+});
+
+// Клавіатура (для десктопу/тестування)
+document.addEventListener('keydown', (e) => {
+    if (!document.getElementById('imageGalleryModal').classList.contains('active')) return;
+    if (e.key === 'ArrowLeft') goToSlide(galleryIndex - 1);
+    if (e.key === 'ArrowRight') goToSlide(galleryIndex + 1);
+    if (e.key === 'Escape') closeGallery();
+});
+
+// ==========================================
+// ПОВНОЕКРАННИЙ ПЕРЕГЛЯДАЧ ДОКУМЕНТІВ
+// ==========================================
+function openDocViewer(docFile) {
+    if (!docFile) return;
+    const kind = getDocKind(docFile);
+
+    document.getElementById('docViewerTitle').innerText = docFile.name || 'Документ';
+    document.getElementById('docViewerOpenExternal').href = docFile.url;
+
+    const body = document.getElementById('docViewerBody');
+
+    if (kind === 'pdf') {
+        body.innerHTML = `<iframe src="${docFile.url}" class="doc-viewer-iframe"></iframe>`;
+    } else if (['word', 'excel', 'powerpoint'].includes(kind)) {
+        const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(docFile.url)}&embedded=true`;
+        body.innerHTML = `
+            <iframe src="${viewerUrl}" class="doc-viewer-iframe"></iframe>
+            <p class="doc-viewer-fallback-note">Якщо файл не відкрився — натисніть кнопку "стрілка" вгорі, щоб відкрити його у відповідному застосунку.</p>`;
+    } else {
+        body.innerHTML = `
+            <div class="doc-viewer-generic">
+                <div class="doc-attach-icon doc-icon-${kind}" style="width: 72px; height: 72px;">${docIconSvg(kind)}</div>
+                <p>Перегляд цього типу файлів недоступний прямо в застосунку.</p>
+                <a href="${docFile.url}" target="_blank" class="btn btn-primary" style="width: auto; padding: 12px 24px; display: inline-block; text-decoration: none; text-align: center;">Відкрити файл</a>
+            </div>`;
+    }
+
+    document.getElementById('docViewerModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeDocViewer() {
+    document.getElementById('docViewerModal').classList.remove('active');
+    document.getElementById('docViewerBody').innerHTML = '';
+    document.body.style.overflow = '';
+}
+
+document.getElementById('docViewerCloseBtn').addEventListener('click', closeDocViewer);
+
