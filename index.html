@@ -68,20 +68,57 @@
         <!-- Блок авторизації (ТЕПЕР ПРИХОВАНИЙ ЗА ЗАМОВЧУВАННЯМ) -->
         <div id="loginSection" class="card central-card" style="display: none; padding-top: 40px; padding-bottom: 40px;">
             
-            <!-- Логотип ОСББ (Стиль Apple App Icon) -->
+            <!-- Логотип ОСББ (Векторна графіка змальована з вашого зображення) -->
             <div style="text-align: center; margin-bottom: 24px;">
-                <div style="display: inline-flex; align-items: center; justify-content: center; width: 88px; height: 88px; background: linear-gradient(135deg, #007AFF 0%, #0056B3 100%); border-radius: 22px; box-shadow: 0 12px 24px rgba(0, 122, 255, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.3);">
-                    <!-- Векторна іконка будинку -->
-                    <svg viewBox="0 0 24 24" width="46" height="46" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 21h18"></path>
-                        <path d="M9 8h1"></path>
-                        <path d="M9 12h1"></path>
-                        <path d="M9 16h1"></path>
-                        <path d="M14 8h1"></path>
-                        <path d="M14 12h1"></path>
-                        <path d="M14 16h1"></path>
-                        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 88px; height: 88px; background: #FFFFFF; border-radius: 22px; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08), inset 0 1px 3px rgba(0, 0, 0, 0.04); border: 1px solid #F0F0F0;">
+                    
+                    <!-- SVG Малюнок двох будинків з деревом -->
+                    <svg viewBox="0 0 100 100" width="60" height="60">
+                        <!-- Земля / Основа -->
+                        <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
+                        
+                        <!-- Права будівля -->
+                        <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
+                        <!-- Легка тінь для об'єму правої будівлі -->
+                        <rect x="50" y="30" width="6" height="60" fill="#BDC4C9"/>
+                        
+                        <!-- Антени -->
+                        <line x1="40" y1="5" x2="40" y2="15" stroke="#7A8B99" stroke-width="1.5"/>
+                        <line x1="65" y1="20" x2="65" y2="30" stroke="#7A8B99" stroke-width="1.5"/>
+                        
+                        <!-- Ліва (вища) будівля -->
+                        <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
+                        <!-- Легка тінь для об'єму лівої будівлі -->
+                        <rect x="25" y="15" width="6" height="75" fill="#CED3D7"/>
+                        
+                        <!-- Вікна правої будівлі -->
+                        <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
+                        <!-- Вхід правої будівлі -->
+                        <rect x="58" y="85" width="14" height="5" fill="#5C6B77"/>
+                        
+                        <!-- Вікна лівої будівлі -->
+                        <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
+                        <!-- Вхід лівої будівлі -->
+                        <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
+                        
+                        <!-- Стовбур дерева -->
+                        <path d="M18 55 Q 16 75 18 90" stroke="#6D5A50" stroke-width="2" fill="none"/>
+                        <!-- Гілочка -->
+                        <path d="M18 65 Q 22 70 24 65" stroke="#6D5A50" stroke-width="1" fill="none"/>
+                        
+                        <!-- Крона дерева (сплетіння овалів, як на картинці) -->
+                        <circle cx="18" cy="55" r="10" fill="#83B799"/>
+                        <circle cx="12" cy="62" r="8" fill="#83B799"/>
+                        <circle cx="24" cy="60" r="7" fill="#83B799"/>
+                        <circle cx="15" cy="68" r="7" fill="#83B799"/>
+                        <circle cx="21" cy="72" r="6" fill="#83B799"/>
+                        <circle cx="18" cy="48" r="7" fill="#83B799"/>
+                        
+                        <!-- Кущик біля підніжжя дерева -->
+                        <circle cx="14" cy="87" r="5" fill="#83B799"/>
+                        <circle cx="21" cy="88" r="4" fill="#83B799"/>
                     </svg>
+
                 </div>
             </div>
 
