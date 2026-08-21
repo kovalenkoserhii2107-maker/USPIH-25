@@ -522,3 +522,40 @@ select {
 .toggle-password:focus {
     outline: none;
 }
+/* ========================================== */
+/* АНІМАЦІЯ ЗАВАНТАЖЕННЯ (ЧЕРЕПАХА) */
+/* ========================================== */
+
+.loader-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 60vh; /* Розташовуємо по центру екрану */
+}
+
+.turtle-loader {
+    /* Плавна анімація "плавання" */
+    animation: swim-turtle 2.5s infinite ease-in-out;
+}
+
+@keyframes swim-turtle {
+    0% { transform: translateY(0px) scale(1); }
+    50% { transform: translateY(-15px) scale(1.03); }
+    100% { transform: translateY(0px) scale(1); }
+}
+
+.loader-text {
+    margin-top: 20px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    /* Анімація пульсації тексту */
+    animation: pulse-text 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-text {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
