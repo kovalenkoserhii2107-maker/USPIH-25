@@ -305,9 +305,10 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
     try {
         let fileUrls = [];
         
-        // Завантажуємо файли у Firebase Storage, якщо вони вибрані
-        if (fileInput && fileInput.files.length > 0) {
-            for (let file of fileInput.files) {
+        // Надійно завантажуємо кожен файл у Firebase Storage
+        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+            for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
                 const fileRef = sRef(storage, `messages/${Date.now()}_${file.name}`);
                 await uploadBytes(fileRef, file);
                 const url = await getDownloadURL(fileRef);
@@ -315,28 +316,34 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
             }
         }
 
+        // Записуємо в базу разом із масивом вкладень
         await addDoc(collection(db, "messages"), {
             title: title,
-            body: body,              // Зберігає всі пробіли, переноси рядків та емодзі
+            body: body,
             targetType: targetType,
             targetValue: targetValue,
             createdAt: serverTimestamp(),
             author: "Правління ОСББ",
-            attachments: fileUrls,   // Массив файлів
+            attachments: fileUrls,   // Масив файлів
             readBy: {}
         });
 
-        loadAdminMessageHistory();
         alert('Повідомлення успішно надіслано!');
         
-        // Очищення форми
+        // Повне очищення форми (включно з правильним скиданням файлового інпуту)
         document.getElementById('adminMsgTitle').value = '';
         document.getElementById('adminMsgBody').value = '';
         document.getElementById('adminMsgBody').style.height = 'auto';
         document.getElementById('adminMsgTargetValue').value = '';
         document.getElementById('adminMsgTargetType').value = 'all';
         document.getElementById('adminMsgTargetValueGroup').style.display = 'none';
-        if(fileInput) fileInput.value = '';
+        
+        if (fileInput) {
+            fileInput.type = 'text';
+            fileInput.type = 'file'; // Технічний трюк для повного очищення вибору файлів у браузері
+        }
+
+        loadAdminMessageHistory(); // Оновлюємо історію
         
     } catch (error) {
         console.error("Помилка відправки:", error);
