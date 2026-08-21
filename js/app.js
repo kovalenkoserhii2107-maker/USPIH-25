@@ -1,7 +1,7 @@
 // ============================================================
 // Точка входу: автентифікація, маршрутизація екранів, навігація.
 // ============================================================
-import { db, auth, session, currentApt, resetSession } from './firebase.js';
+import { db, auth, session, currentApt, resetSession, aptToEmail } from './firebase.js';
 import {
     doc, getDoc, setDoc, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -39,11 +39,20 @@ async function handleLogin() {
 
     setBusy(btn, true, 'Вхід…');
     try {
-        await signInWithEmailAndPassword(auth, `${apt}@uspih25.com`, pass);
+        await signInWithEmailAndPassword(auth, aptToEmail(apt), pass);
         localStorage.setItem('session_timestamp', Date.now());
     } catch (error) {
-        console.error(error);
-        errorEl.textContent = 'Невірний номер квартири або пароль';
+        console.error('Помилка входу:', error.code, error.message);
+        // Розрізняємо причини, щоб не маскувати технічну проблему під "невірний пароль"
+        const messages = {
+            'auth/user-not-found': 'Такої квартири немає в системі. Зверніться до правління.',
+            'auth/invalid-credential': 'Невірний номер квартири або пароль',
+            'auth/wrong-password': 'Невірний пароль',
+            'auth/invalid-email': 'Невірний номер квартири',
+            'auth/too-many-requests': 'Забагато спроб. Спробуйте за кілька хвилин.',
+            'auth/network-request-failed': 'Немає зв\'язку з сервером. Перевірте інтернет.'
+        };
+        errorEl.textContent = messages[error.code] || 'Не вдалося увійти. Спробуйте пізніше.';
         errorEl.style.display = 'block';
         setBusy(btn, false);
     }

@@ -26,6 +26,16 @@ export const storage = getStorage(app);
 // (displayAptNum.innerText), тому будь-хто міг це підмінити
 // через DevTools. Тепер єдине джерело істини — сам Firebase Auth.
 // ------------------------------------------------------------
+// Домен службових email-адрес мешканців. Реальної пошти не існує —
+// це технічний спосіб входу за номером квартири. Формат: "45@uspih-25.com".
+// Тримаємо в одному місці: зміна цього рядка ламає вхід усім користувачам.
+export const AUTH_DOMAIN = 'uspih-25.com';
+
+/** Будує email для входу з номера квартири. */
+export function aptToEmail(apt) {
+    return `${String(apt).trim()}@${AUTH_DOMAIN}`;
+}
+
 export const session = {
     apt: null,        // номер квартири (з email користувача)
     entrance: null,   // парадна
