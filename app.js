@@ -555,10 +555,18 @@ async function loadUserMessages(apt, entrance) {
             const msg = d.data();
             let isTarget = false;
             
-            // Фільтрація: Кому призначена новина?
-            if (msg.targetType === 'all') isTarget = true;
-            else if (msg.targetType === 'entrance' && msg.targetValue.split(',').map(s=>s.trim()).includes(entrance)) isTarget = true;
-            else if (msg.targetType === 'apartment' && msg.targetValue.split(',').map(s=>s.trim()).includes(apt)) isTarget = true;
+            // Броньована фільтрація: Кому призначена новина? (захист від типів даних та зайвих пробілів)
+            const safeApt = String(apt).trim();
+            const safeEntrance = String(entrance).trim();
+            const targetsArr = msg.targetValue ? msg.targetValue.split(',').map(s => String(s).trim()) : [];
+
+            if (msg.targetType === 'all') {
+                isTarget = true;
+            } else if (msg.targetType === 'entrance' && targetsArr.includes(safeEntrance)) {
+                isTarget = true;
+            } else if (msg.targetType === 'apartment' && targetsArr.includes(safeApt)) {
+                isTarget = true;
+            }
 
             if (isTarget) {
                 count++;
