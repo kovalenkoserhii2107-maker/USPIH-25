@@ -1,6 +1,6 @@
 // 1. ПІДКЛЮЧЕННЯ FIREBASE
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, updatePassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -253,6 +253,85 @@ document.getElementById('adminMsgTargetType').addEventListener('change', functio
         targetValueGroup.style.display = 'none';
     } else {
         targetValueGroup.style.display = 'block';
+    }
+});
+
+// ==========================================
+// ЛОГІКА ПАНЕЛІ ПРАВЛІННЯ (АДМІН)
+// ==========================================
+
+// 1. Автоматичне розширення текстового поля
+const adminMsgBody = document.getElementById('adminMsgBody');
+if (adminMsgBody) {
+    adminMsgBody.addEventListener('input', function() {
+        this.style.height = 'auto'; // Скидаємо висоту
+        this.style.height = (this.scrollHeight) + 'px'; // Встановлюємо нову висоту за контентом
+    });
+}
+
+// 2. Логіка перемикання "Кому надіслати"
+document.getElementById('adminMsgTargetType').addEventListener('change', function() {
+    const targetValueGroup = document.getElementById('adminMsgTargetValueGroup');
+    if (this.value === 'all') {
+        targetValueGroup.style.display = 'none';
+        document.getElementById('adminMsgTargetValue').value = ''; // Очищаємо, якщо вибрали "Усім"
+    } else {
+        targetValueGroup.style.display = 'block';
+    }
+});
+
+// 3. Відправка повідомлення в базу даних Firebase
+document.getElementById('adminSendMsgBtn').addEventListener('click', async () => {
+    const title = document.getElementById('adminMsgTitle').value.trim();
+    const body = document.getElementById('adminMsgBody').value.trim();
+    const targetType = document.getElementById('adminMsgTargetType').value;
+    const targetValue = document.getElementById('adminMsgTargetValue').value.trim();
+
+    // Перевірка на порожні поля
+    if (!title || !body) {
+        alert('Будь ласка, заповніть заголовок та текст повідомлення.');
+        return;
+    }
+    if (targetType !== 'all' && !targetValue) {
+        alert('Будь ласка, вкажіть номери квартир або парадних для відправки.');
+        return;
+    }
+
+    const btn = document.getElementById('adminSendMsgBtn');
+    btn.innerText = 'Відправка...';
+    btn.disabled = true;
+
+    try {
+        // ДОДАЄМО ДОКУМЕНТ В НОВУ КОЛЕКЦІЮ "messages"
+        // (Для цього ми імпортували serverTimestamp на початку файлу)
+        import { serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        
+        await addDoc(collection(db, "messages"), {
+            title: title,
+            body: body,
+            targetType: targetType,     // 'all', 'entrance', 'apartment'
+            targetValue: targetValue,   // '1, 3' або '45, 298'
+            createdAt: serverTimestamp(),
+            author: "Правління ОСББ",
+            readBy: []                  // Поки порожній масив (сюди записуватимемо, хто прочитав)
+        });
+
+        // Показуємо успіх і очищаємо форму
+        alert('Повідомлення успішно надіслано!');
+        
+        document.getElementById('adminMsgTitle').value = '';
+        document.getElementById('adminMsgBody').value = '';
+        document.getElementById('adminMsgBody').style.height = 'auto'; // Повертаємо початкову висоту
+        document.getElementById('adminMsgTargetValue').value = '';
+        document.getElementById('adminMsgTargetType').value = 'all';
+        document.getElementById('adminMsgTargetValueGroup').style.display = 'none';
+        
+    } catch (error) {
+        console.error("Помилка відправки:", error);
+        alert('Виникла помилка. Перевірте підключення до інтернету.');
+    } finally {
+        btn.innerText = 'Надіслати повідомлення';
+        btn.disabled = false;
     }
 });
 
