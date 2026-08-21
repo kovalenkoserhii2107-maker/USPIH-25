@@ -304,16 +304,26 @@ document.getElementById('adminSendMsgBtn').addEventListener('click', async () =>
 
     try {
         let fileUrls = [];
+        let failedFiles = [];
         
-        // Надійно завантажуємо кожен файл у Firebase Storage
+        // Надійно завантажуємо кожен файл у Firebase Storage (окремо, щоб один "зламаний" файл не зривав всю відправку)
         if (fileInput && fileInput.files && fileInput.files.length > 0) {
             for (let i = 0; i < fileInput.files.length; i++) {
                 const file = fileInput.files[i];
-                const fileRef = sRef(storage, `messages/${Date.now()}_${file.name}`);
-                await uploadBytes(fileRef, file);
-                const url = await getDownloadURL(fileRef);
-                fileUrls.push({ name: file.name, url: url, type: file.type || '', size: file.size || 0 });
+                try {
+                    const fileRef = sRef(storage, `messages/${Date.now()}_${file.name}`);
+                    await uploadBytes(fileRef, file);
+                    const url = await getDownloadURL(fileRef);
+                    fileUrls.push({ name: file.name, url: url, type: file.type || '', size: file.size || 0 });
+                } catch (fileError) {
+                    console.error(`Помилка завантаження файлу "${file.name}":`, fileError);
+                    failedFiles.push(file.name);
+                }
             }
+        }
+
+        if (failedFiles.length > 0) {
+            alert(`Увага! Не вдалося завантажити файл(и): ${failedFiles.join(', ')}.\nПовідомлення буде надіслано без них. Перевірте формат/розмір файлу та інтернет-з'єднання.`);
         }
 
         // Записуємо в базу разом із масивом вкладень
@@ -660,6 +670,7 @@ async function loadAdminMessageHistory() {
         }
 
         let html = '';
+        const attachmentsMap = [];
         snap.forEach(d => {
             const msg = d.data();
             const dateStr = msg.createdAt ? new Date(msg.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
@@ -679,6 +690,8 @@ async function loadAdminMessageHistory() {
                 readHtml = '<span style="font-size: 12px; color: var(--text-muted);">Ще ніхто не прочитав</span>';
             }
 
+            attachmentsMap.push({ id: d.id, files: msg.attachments || [] });
+
             html += `
                 <div style="background: #F2F2F7; padding: 16px; border-radius: 14px;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
@@ -687,6 +700,8 @@ async function loadAdminMessageHistory() {
                     </div>
                     <p style="font-size: 12px; color: var(--apple-blue); margin: 0 0 8px 0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Кому: ${targetText}</p>
                     <p style="font-size: 14px; color: var(--text-main); margin: 0 0 12px 0; line-height: 1.4;">${msg.body}</p>
+
+                    <div class="hist-attach-container" data-hist-id="${d.id}" style="display: none; flex-direction: column; margin-bottom: 12px;"></div>
                     
                     <div style="border-top: 1px solid #E5E5EA; padding-top: 10px;">
                         <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">Прочитали:</span>
@@ -696,6 +711,14 @@ async function loadAdminMessageHistory() {
             `;
         });
         container.innerHTML = html;
+
+        // Рендеримо вкладення (фото/документи) для кожного повідомлення в історії
+        attachmentsMap.forEach(item => {
+            if (item.files && item.files.length > 0) {
+                const holder = container.querySelector(`.hist-attach-container[data-hist-id="${item.id}"]`);
+                if (holder) renderAttachments(holder, item.files);
+            }
+        });
     } catch(e) {
         console.error("Помилка завантаження історії:", e);
         container.innerHTML = '<p style="color: var(--apple-red); font-size: 14px; text-align: center;">Помилка завантаження.</p>';
@@ -953,9 +976,10 @@ function openDocViewer(docFile) {
 
     const body = document.getElementById('docViewerBody');
 
-    if (kind === 'pdf') {
-        body.innerHTML = `<iframe src="${docFile.url}" class="doc-viewer-iframe"></iframe>`;
-    } else if (['word', 'excel', 'powerpoint'].includes(kind)) {
+    if (kind === 'pdf' || ['word', 'excel', 'powerpoint'].includes(kind)) {
+        // Google Docs Viewer рендерить документ як звичайну веб-сторінку (з гортанням усіх сторінок),
+        // тому працює однаково надійно в будь-якому мобільному браузері/вбудованому вікні —
+        // на відміну від прямого iframe на PDF, який в деяких webview показує лише 1-шу сторінку.
         const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(docFile.url)}&embedded=true`;
         body.innerHTML = `
             <iframe src="${viewerUrl}" class="doc-viewer-iframe"></iframe>
@@ -980,4 +1004,5 @@ function closeDocViewer() {
 }
 
 document.getElementById('docViewerCloseBtn').addEventListener('click', closeDocViewer);
+
 
