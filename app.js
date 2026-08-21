@@ -1295,4 +1295,282 @@ document.addEventListener('click', function(e) {
         openDocViewer(docData); // Викликаємо ідеальний переглядач Клода
     }
 });
+// ==========================================
+// СИСТЕМА ЗВЕРНЕНЬ ЖИЛЬЦІВ (ТИКЕТИ)
+// ==========================================
 
+// --- НАВІГАЦІЯ ---
+document.getElementById('menuRequestsBtn')?.addEventListener('click', () => {
+    document.getElementById('menuPopup').style.display = 'none';
+    document.getElementById('dataSection').style.display = 'none';
+    document.getElementById('adminDashboardSection').style.display = 'none';
+    document.getElementById('docsSection').style.display = 'none';
+    document.getElementById('requestsSection').style.display = 'block';
+    
+    // Автоматично підлаштовуємо висоту textarea
+    const reqBody = document.getElementById('userReqBody');
+    if (reqBody) {
+        reqBody.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+    }
+    
+    const apt = document.getElementById('displayAptNum').innerText;
+    loadUserRequestsHistory(apt);
+});
+
+document.getElementById('backFromRequestsBtn')?.addEventListener('click', async () => {
+    document.getElementById('requestsSection').style.display = 'none';
+    document.getElementById('dataSection').style.display = 'block';
+});
+
+// --- СТВОРЕННЯ ЗВЕРНЕННЯ ЖИЛЬЦЕМ ---
+document.getElementById('sendUserReqBtn')?.addEventListener('click', async () => {
+    const text = document.getElementById('userReqBody').value.trim();
+    const fileInput = document.getElementById('userReqFiles');
+    const apt = document.getElementById('displayAptNum').innerText;
+
+    if (!text && (!fileInput.files || fileInput.files.length === 0)) {
+        return alert("Будь ласка, напишіть текст або прикріпіть файл.");
+    }
+
+    const btn = document.getElementById('sendUserReqBtn');
+    btn.innerText = 'Надсилання...';
+    btn.disabled = true;
+
+    try {
+        let fileUrls = [];
+        if (fileInput && fileInput.files.length > 0) {
+            for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
+                const fileRef = sRef(storage, `requests/${Date.now()}_${file.name}`);
+                await uploadBytes(fileRef, file);
+                const url = await getDownloadURL(fileRef);
+                fileUrls.push({ name: file.name, url: url, type: file.type || '', size: file.size || 0 });
+            }
+        }
+
+        await addDoc(collection(db, "requests"), {
+            apt: apt,
+            text: text,
+            attachments: fileUrls,
+            createdAt: serverTimestamp(),
+            status: 'new', // 'new' або 'replied'
+            replyText: null,
+            replyAttachments: [],
+            repliedAt: null
+        });
+
+        alert("Ваше звернення успішно надіслано Правлінню!");
+        document.getElementById('userReqBody').value = '';
+        document.getElementById('userReqBody').style.height = 'auto';
+        if (fileInput) { fileInput.type = 'text'; fileInput.type = 'file'; }
+        
+        loadUserRequestsHistory(apt);
+    } catch (e) {
+        console.error(e);
+        alert("Помилка надсилання звернення.");
+    } finally {
+        btn.innerText = 'Надіслати Правлінню';
+        btn.disabled = false;
+    }
+});
+
+// --- ВІДОБРАЖЕННЯ ЗВЕРНЕНЬ ДЛЯ ЖИЛЬЦЯ ---
+async function loadUserRequestsHistory(apt) {
+    const container = document.getElementById('userRequestsContainer');
+    if (!container) return;
+    container.innerHTML = '<p style="text-align:center; color:#888;">Завантаження...</p>';
+
+    try {
+        const q = query(collection(db, "requests"), where("apt", "==", apt));
+        const snap = await getDocs(q);
+        
+        // Сортуємо локально, щоб не створювати композитні індекси в Firebase
+        let requests = [];
+        snap.forEach(d => requests.push({ id: d.id, ...d.data() }));
+        requests.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+
+        if (requests.length === 0) {
+            return container.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 14px;">Немає звернень.</p>';
+        }
+
+        let html = '';
+        requests.forEach(req => {
+            const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
+            
+            // Бульбашка жильця
+            html += `<div style="background: #F9F9FB; border: 1px solid #E5E5EA; border-radius: 16px; padding: 16px; margin-bottom: ${req.status === 'replied' ? '8px' : '20px'};">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Ваше звернення</span>
+                    <span style="font-size: 11px; color: #A1A1A6;">${dateStr}</span>
+                </div>
+                <p style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main); white-space: pre-wrap; word-break: break-word;">${escapeHtml(req.text)}</p>
+                <div class="user-req-attach" data-req-id="${req.id}"></div>
+            </div>`;
+
+            // Відповідь адміна (якщо є)
+            if (req.status === 'replied') {
+                const replyDateStr = req.repliedAt ? new Date(req.repliedAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+                html += `<div style="background: #E5F0FF; border: 1px solid rgba(0, 122, 255, 0.1); border-radius: 16px; padding: 16px; margin-bottom: 20px; margin-left: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-size: 12px; font-weight: 700; color: var(--apple-blue); text-transform: uppercase;">Відповідь Правління</span>
+                        <span style="font-size: 11px; color: var(--apple-blue); opacity: 0.7;">${replyDateStr}</span>
+                    </div>
+                    <p style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main); white-space: pre-wrap; word-break: break-word;">${escapeHtml(req.replyText)}</p>
+                    <div class="user-req-reply-attach" data-req-id="${req.id}"></div>
+                </div>`;
+            }
+        });
+        
+        container.innerHTML = html;
+
+        // Рендеринг вкладень
+        requests.forEach(req => {
+            const attContainer = container.querySelector(`.user-req-attach[data-req-id="${req.id}"]`);
+            if (attContainer) renderAttachments(attContainer, req.attachments);
+
+            if (req.status === 'replied') {
+                const repContainer = container.querySelector(`.user-req-reply-attach[data-req-id="${req.id}"]`);
+                if (repContainer) renderAttachments(repContainer, req.replyAttachments);
+            }
+        });
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p style="text-align:center; color: var(--apple-red);">Помилка завантаження.</p>';
+    }
+}
+
+// --- ВІДОБРАЖЕННЯ ЗВЕРНЕНЬ ДЛЯ АДМІНА ---
+async function loadAdminRequests() {
+    const container = document.getElementById('adminRequestsContainer');
+    if (!container) return;
+    container.innerHTML = '<p style="text-align: center; color:#888;">Завантаження...</p>';
+
+    try {
+        const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            return container.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 14px;">Немає нових звернень.</p>';
+        }
+
+        let html = '';
+        let requestsData = [];
+
+        snap.forEach(d => {
+            const req = d.data();
+            requestsData.push({ id: d.id, ...req });
+            
+            const dateStr = req.createdAt ? new Date(req.createdAt.toMillis()).toLocaleString('uk-UA', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'Нещодавно';
+            const isReplied = req.status === 'replied';
+
+            html += `<div style="background: ${isReplied ? '#F9F9FB' : '#FFFDF2'}; border: 1px solid ${isReplied ? '#E5E5EA' : '#FFE066'}; border-radius: 16px; padding: 16px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong style="font-size: 16px; color: var(--apple-blue);">Квартира ${req.apt}</strong>
+                    <span style="font-size: 11px; color: var(--text-muted);">${dateStr}</span>
+                </div>
+                <p style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-main); white-space: pre-wrap; word-break: break-word;">${escapeHtml(req.text)}</p>
+                <div class="admin-req-attach" data-req-id="${d.id}" style="margin-bottom: 12px;"></div>
+                
+                ${isReplied ? 
+                `<div style="border-top: 1px dashed #ccc; padding-top: 10px;">
+                    <span style="font-size: 11px; color: var(--apple-green); font-weight: 700; text-transform: uppercase;">Відповідь надано</span>
+                </div>` : 
+                `<button class="btn btn-primary btn-small btn-open-reply" data-id="${d.id}" data-apt="${req.apt}" data-text="${encodeURIComponent(req.text)}" style="width: 100%;">Відповісти</button>`}
+            </div>`;
+        });
+
+        container.innerHTML = html;
+
+        // Рендеримо вкладення
+        requestsData.forEach(req => {
+            const attContainer = container.querySelector(`.admin-req-attach[data-req-id="${req.id}"]`);
+            if (attContainer) renderAttachments(attContainer, req.attachments);
+        });
+
+        // Вішаємо слухачі на кнопки відповіді
+        container.querySelectorAll('.btn-open-reply').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = btn.getAttribute('data-id');
+                const apt = btn.getAttribute('data-apt');
+                const text = decodeURIComponent(btn.getAttribute('data-text'));
+                
+                document.getElementById('replyModalReqId').value = id;
+                document.getElementById('replyModalReqApt').value = apt;
+                document.getElementById('replyModalTitle').innerText = `Відповідь кв. ${apt}`;
+                document.getElementById('replyModalOriginalText').innerText = text;
+                document.getElementById('replyModalBody').value = '';
+                const fileInp = document.getElementById('replyModalFiles');
+                if(fileInp) { fileInp.type = 'text'; fileInp.type = 'file'; }
+
+                document.getElementById('adminReplyModal').style.display = 'flex';
+            });
+        });
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p style="text-align:center; color: var(--apple-red);">Помилка завантаження звернень.</p>';
+    }
+}
+
+// Щоб адмін бачив звернення при вході
+const originalLoadAdminMessageHistory = loadAdminMessageHistory;
+loadAdminMessageHistory = async function() {
+    await originalLoadAdminMessageHistory();
+    await loadAdminRequests(); // Додаємо завантаження звернень
+};
+
+// --- НАДСИЛАННЯ ВІДПОВІДІ АДМІНОМ ---
+document.getElementById('sendReplyBtn')?.addEventListener('click', async () => {
+    const id = document.getElementById('replyModalReqId').value;
+    const text = document.getElementById('replyModalBody').value.trim();
+    const fileInput = document.getElementById('replyModalFiles');
+
+    if (!text && (!fileInput.files || fileInput.files.length === 0)) {
+        return alert("Напишіть текст відповіді або прикріпіть файл.");
+    }
+
+    const btn = document.getElementById('sendReplyBtn');
+    btn.innerText = 'Надсилання...';
+    btn.disabled = true;
+
+    try {
+        let fileUrls = [];
+        if (fileInput && fileInput.files.length > 0) {
+            for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
+                const fileRef = sRef(storage, `requests_replies/${Date.now()}_${file.name}`);
+                await uploadBytes(fileRef, file);
+                const url = await getDownloadURL(fileRef);
+                fileUrls.push({ name: file.name, url: url, type: file.type || '', size: file.size || 0 });
+            }
+        }
+
+        // Оновлюємо документ тикета
+        await updateDoc(doc(db, "requests", id), {
+            status: 'replied',
+            replyText: text,
+            replyAttachments: fileUrls,
+            repliedAt: serverTimestamp()
+        });
+
+        alert("Відповідь успішно надіслано!");
+        document.getElementById('adminReplyModal').style.display = 'none';
+        
+        loadAdminRequests(); // Оновлюємо список
+    } catch (e) {
+        console.error(e);
+        alert("Помилка надсилання відповіді.");
+    } finally {
+        btn.innerText = 'Надіслати відповідь';
+        btn.disabled = false;
+    }
+});
+
+// Закриття модалки відповіді
+document.getElementById('closeReplyModalBtn')?.addEventListener('click', () => {
+    document.getElementById('adminReplyModal').style.display = 'none';
+});
