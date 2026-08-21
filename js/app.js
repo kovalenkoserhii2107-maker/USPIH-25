@@ -18,6 +18,7 @@ import {
     initRequests, loadUserRequests, loadAdminRequests,
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
+import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
 
@@ -93,7 +94,7 @@ async function loadCabinet(apt) {
     if (session.isAdmin) {
         showScreen('adminDashboardSection');
         document.getElementById('topNav').style.display = 'none';
-        await Promise.all([loadAdminHistory(), loadAdminRequests(), populateDocsDropdown()]);
+        await Promise.all([loadAdminHistory(), loadAdminRequests(), populateDocsDropdown(), loadAdminBoard()]);
         backfillRecipients(); // тиха міграція старих повідомлень
     } else {
         showScreen('dataSection');
@@ -193,7 +194,7 @@ function initNavigation() {
 
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
-    document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', null));
+    document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
 
     document.getElementById('menuChangePassBtn').addEventListener('click', () => {
         closeAllSheets();
@@ -250,6 +251,7 @@ function init() {
     initPowerToggle();
     initMessages();
     initRequests();
+    initBoard();
     initNavigation();
     initAdminTabs();
 

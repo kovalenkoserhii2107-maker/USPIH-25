@@ -435,6 +435,7 @@ select.field-input {
     margin-bottom: var(--gap);
 }
 .central-card { margin-top: 8vh; padding: 32px 22px; }
+.central-card .screen-title, .central-card .admin-card-sub { text-align: center; }
 
 .section-head {
     display: flex;
@@ -1234,21 +1235,40 @@ select.field-input {
     flex-shrink: 0;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
 }
+.person-avatar-photo { padding: 0; overflow: hidden; background: var(--surface-3); }
+.person-avatar-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .person-name { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); line-height: 1.25; }
-.contact-actions { display: flex; gap: 10px; }
+.contact-actions { display: flex; gap: 8px; }
 .contact-btn {
     flex: 1;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
     text-decoration: none;
-    padding: 12px;
+    padding: 12px 6px;
     border-radius: var(--r-md);
-    font-weight: 600; font-size: 15px;
+    font-weight: 600; font-size: 14px;
     background: var(--surface-3);
     color: var(--blue);
     transition: transform 0.15s ease;
+    white-space: nowrap;
 }
 .contact-btn:active { transform: scale(0.97); }
 .contact-btn-call { background: var(--green); color: #fff; }
+.contact-btn-viber { background: #7360F2; color: #fff; }
+
+/* Редагування контактів правління (адмін) */
+.board-photo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.board-photo-preview {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 20px; font-weight: 700;
+    flex-shrink: 0;
+    background: var(--surface-3);
+}
+.board-photo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.board-photo-drop { flex: 1; padding: 12px 10px; }
+.board-form-divider { height: 0.5px; background: var(--line); margin: 22px 0; border: none; }
 
 /* ---------- ВУЗЬКІ ЕКРАНИ ---------- */
 @media (max-width: 360px) {
@@ -1257,4 +1277,5 @@ select.field-input {
     .admin-tab > span:not(.admin-tab-badge) { font-size: 10px; }
     .segmented-item { font-size: 12px; }
     .image-attach-grid { gap: 5px; }
+    .contact-btn { font-size: 12px; padding: 10px 4px; gap: 4px; }
 }
