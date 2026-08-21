@@ -192,6 +192,28 @@
                 <button id="adminLogoutBtn" class="btn btn-secondary btn-small" style="background: #FFF; color: var(--apple-red); border: 1px solid rgba(255,59,48,0.2);">Вийти</button>
             </div>
 
+            <!-- Керування електропостачанням (тумблер) -->
+            <div class="card premium-widget-card power-card" id="adminPowerCard" style="border-radius: 20px; padding: 20px 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                    <h2 style="font-size: 18px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; color: var(--text-main);">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="var(--apple-blue)" stroke-width="2" fill="none"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"></path></svg>
+                        Електропостачання
+                    </h2>
+                    <label class="power-toggle-switch">
+                        <input type="checkbox" id="powerToggleInput">
+                        <span class="power-toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="power-card-inner">
+                    <div class="power-icon-circle" id="adminPowerIconWrap"></div>
+                    <div class="power-info">
+                        <span class="power-status-label" id="adminPowerStatusText">--</span>
+                        <span class="power-since-label" id="adminPowerSinceText"></span>
+                        <span class="power-duration-label" id="adminPowerDurationText"></span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Інструмент: Нове повідомлення -->
             <div class="card premium-widget-card" style="background: #FFF; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); margin-bottom: 20px;">
                 <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 20px 0; display: flex; align-items: center; gap: 8px;">
@@ -297,20 +319,13 @@
             </div>
             
             <!-- Віджет статусу електроенергії -->
-            <div class="card premium-widget-card" id="powerCard" style="background: #FFF; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 24px;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%); color: var(--apple-green); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                        </div>
-                        <div>
-                            <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Електропостачання</span>
-                            <span id="powerStatusText" style="font-size: 18px; font-weight: 700; color: var(--text-main);">Є світло</span>
-                        </div>
-                    </div>
-                    <div style="text-align: right;">
-                        <span style="font-size: 11px; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Оновлено</span>
-                        <span id="powerLastUpdated" style="font-size: 14px; font-weight: 700; color: var(--text-main);">14:20</span>
+            <div class="card premium-widget-card power-card" id="powerCard" style="border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); margin-bottom: 24px;">
+                <div class="power-card-inner">
+                    <div class="power-icon-circle" id="powerIconCircle"></div>
+                    <div class="power-info">
+                        <span class="power-status-label" id="powerStatusText">--</span>
+                        <span class="power-since-label" id="powerSinceText"></span>
+                        <span class="power-duration-label" id="powerDurationText"></span>
                     </div>
                 </div>
             </div>
