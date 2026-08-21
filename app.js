@@ -1576,3 +1576,34 @@ document.getElementById('sendReplyBtn')?.addEventListener('click', async () => {
 document.getElementById('closeReplyModalBtn')?.addEventListener('click', () => {
     document.getElementById('adminReplyModal').style.display = 'none';
 });
+
+// ==========================================
+// НАВІГАЦІЯ: ПРАВЛІННЯ ТА КОНТАКТИ
+// ==========================================
+
+document.getElementById('menuBoardBtn')?.addEventListener('click', () => {
+    // Ховаємо всі інші екрани
+    document.getElementById('menuPopup').style.display = 'none';
+    document.getElementById('dataSection').style.display = 'none';
+    document.getElementById('adminDashboardSection').style.display = 'none';
+    if(document.getElementById('docsSection')) document.getElementById('docsSection').style.display = 'none';
+    if(document.getElementById('requestsSection')) document.getElementById('requestsSection').style.display = 'none';
+    
+    // Показуємо екран Правління
+    document.getElementById('boardSection').style.display = 'block';
+});
+
+document.getElementById('backFromBoardBtn')?.addEventListener('click', async () => {
+    document.getElementById('boardSection').style.display = 'none';
+    
+    // Перевіряємо, куди повертатися (до кабінету адміна чи звичайного мешканця)
+    const aptNum = document.getElementById('displayAptNum').innerText || document.getElementById('hiddenAptInput').value;
+    const aptRef = doc(db, "apartments", aptNum);
+    const snap = await getDoc(aptRef);
+    
+    if (snap.exists() && snap.data().isAdmin) {
+        document.getElementById('adminDashboardSection').style.display = 'block';
+    } else {
+        document.getElementById('dataSection').style.display = 'block';
+    }
+});
