@@ -2326,3 +2326,106 @@ select.field-input {
     text-decoration: none;
 }
 .pay-portmone:active { opacity: 0.5; }
+
+/* ---------- ЧАТ БУДИНКУ ---------- */
+.chat-sub { margin: 0 0 14px 0; font-size: 12.5px; color: var(--ink-2); }
+.chat-list {
+    display: flex; flex-direction: column; gap: 8px;
+    /* Місце під поле вводу, яке приклеєне знизу */
+    padding-bottom: 12px;
+    min-height: 40vh;
+}
+.chat-list-inline { min-height: 0; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; }
+
+.chat-msg { display: flex; }
+.chat-mine { justify-content: flex-end; }
+.chat-bubble {
+    position: relative;
+    max-width: 82%;
+    background: var(--surface);
+    border: 0.5px solid rgba(0, 0, 0, 0.05);
+    border-radius: 16px;
+    padding: 9px 12px 7px 12px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+.chat-mine .chat-bubble { background: #EAF3FF; border-color: rgba(0, 122, 255, 0.14); }
+/* Правління виділяємо: мешканцю важливо бачити, що це офіційна відповідь */
+.chat-board .chat-bubble { background: #FFF9E8; border-color: rgba(255, 195, 0, 0.35); }
+
+.chat-author {
+    display: block;
+    font-size: 11px; font-weight: 700;
+    color: var(--blue);
+    margin-bottom: 2px;
+}
+.chat-board .chat-author { color: #8A6D00; }
+.chat-text {
+    margin: 0;
+    font-size: 15px; color: var(--ink); line-height: 1.4;
+    white-space: pre-wrap; word-break: break-word;
+}
+.chat-time { display: block; font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
+.chat-attach.has-content { margin-top: 8px; }
+
+.chat-del {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(120, 120, 128, 0.14);
+    color: var(--ink-3);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.chat-bubble:hover .chat-del, .chat-msg:active .chat-del { opacity: 1; }
+/* На дотику наведення не буває — тримаємо кнопку завжди видимою */
+@media (hover: none) { .chat-del { opacity: 0.45; } }
+
+.chat-compose {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom)) 0;
+}
+.chat-row { display: flex; align-items: flex-end; gap: 8px; }
+.chat-input {
+    flex: 1; min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: 20px;
+    padding: 10px 14px;
+    font-family: var(--font);
+    font-size: 16px; color: var(--ink);
+    line-height: 1.35;
+    resize: none;
+    outline: none;
+    max-height: 120px;
+}
+.chat-input:focus { border-color: var(--blue); }
+.chat-send, .chat-attach-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+}
+.chat-send { background: var(--blue); color: #fff; }
+.chat-send:active { transform: scale(0.92); }
+.chat-attach-btn { background: rgba(120, 120, 128, 0.12); color: var(--ink-2); }
+
+/* Обговорення під оголошенням */
+.msg-comments {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+.comments-title {
+    display: block;
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
+    margin-bottom: 10px;
+}
+.msg-comments .chat-bubble { max-width: 100%; }

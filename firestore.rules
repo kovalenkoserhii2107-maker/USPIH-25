@@ -77,6 +77,45 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
             && request.resource.data.readBy.diff(resource.data.readBy)
                  .affectedKeys().hasOnly([myApt()]));
+
+      // Коментарі — лише під оголошеннями для всього будинку.
+      // Під адресним повідомленням вони відкрили б чужу переписку
+      // тим, кому саме оголошення не призначалося.
+      match /comments/{commentId} {
+        allow read: if isSignedIn()
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients;
+
+        allow create: if isSignedIn()
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients
+          && request.resource.data.apt == myApt()
+          && request.resource.data.isBoard == isAdmin()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+
+        allow update: if false;
+        allow delete: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
+      }
+    }
+
+    // ---------- ЧАТ БУДИНКУ ----------
+    match /chat/{msgId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        // писати можна лише від своєї квартири
+        && request.resource.data.apt == myApt()
+        // позначка «від правління» має відповідати дійсності, інакше
+        // через DevTools можна було б видати себе за правління
+        && request.resource.data.isBoard == isAdmin()
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
+
+      // Написане не редагується: інакше можна змінити слова заднім числом
+      allow update: if false;
+      // Прибрати може автор або правління
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
     }
 
     // ---------- ЗВЕРНЕННЯ ----------

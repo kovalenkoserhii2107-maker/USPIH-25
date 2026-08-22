@@ -17,6 +17,7 @@ import { initOwners, loadOwners } from './owners.js';
 import { initPowerToggle, startPowerListener, stopPowerListener } from './power.js';
 import { initPowerStats } from './power-stats.js';
 import { initFaq, loadFaq } from './faq.js';
+import { initChat, loadChat, stopChat, refreshChatBadge } from './chat.js';
 import { initMessages, loadUserMessages, loadAdminHistory, backfillRecipients } from './messages.js';
 import {
     initRequests, loadUserRequests, loadAdminRequests,
@@ -136,6 +137,7 @@ async function loadCabinet(apt) {
             loadReceipts();
         });
         refreshPollsBadge();          // без await: значок не має затримувати кабінет
+        refreshChatBadge();
         showInstallHint();
     }
 }
@@ -156,7 +158,8 @@ const SCREEN_RELOADERS = {
     boardSection: loadBoardContacts,
     servicesSection: loadServices,
     receiptsSection: loadReceipts,
-    faqSection: loadFaq
+    faqSection: loadFaq,
+    chatSection: loadChat
 };
 
 async function refreshCurrentScreen() {
@@ -194,6 +197,7 @@ onAuthStateChanged(auth, async (user) => {
     } else {
         resetSession();
         stopPowerListener();
+        stopChat();
         closeAllSheets();
         document.getElementById('topNav').style.display = 'none';
         showScreen('loginSection');
@@ -254,6 +258,7 @@ function initNavigation() {
 
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
     document.getElementById('menuFaqBtn').addEventListener('click', () => go('faqSection', loadFaq));
+    document.getElementById('menuChatBtn').addEventListener('click', () => go('chatSection', loadChat));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
     document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
@@ -280,8 +285,8 @@ function initNavigation() {
         location.reload();
     });
 
-    const back = () => loadCabinet(session.apt);
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn'].forEach(id => {
+    const back = () => { stopChat(); return loadCabinet(session.apt); };
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
@@ -314,6 +319,7 @@ function init() {
     initPowerToggle();
     initPowerStats();
     initFaq();
+    initChat();
     initMessages();
     initRequests();
     initContacts();

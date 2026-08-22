@@ -195,7 +195,21 @@ export function initSheets() {
 // ------------------------------------------------------------
 const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
-                 'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection'];
+                 'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection', 'chatSection'];
+
+/**
+ * Значок у шапці — сума всіх значків у меню. Так мешканець бачить,
+ * що всередині щось нове, не відкриваючи меню, а кожен розділ
+ * керує лише своїм числом і нічого не знає про решту.
+ */
+export function updateNavBadge() {
+    const total = [...document.querySelectorAll('.menu-badge')]
+        .reduce((s, el) => s + (parseInt(el.textContent, 10) || 0), 0);
+    const nav = document.getElementById('pollsNavBadge');
+    if (!nav) return;
+    nav.textContent = total > 99 ? '99+' : total;
+    nav.style.display = total ? 'flex' : 'none';
+}
 
 /** Який екран зараз відкрито — потрібно, щоб оновлення не скидало його. */
 export function currentScreen() {

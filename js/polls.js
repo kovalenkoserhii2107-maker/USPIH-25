@@ -259,12 +259,12 @@ export async function refreshPollsBadge() {
             d => getDoc(doc(db, 'polls', d.id, 'votes', String(session.apt)))
         ));
         const pending = mine.filter(v => !v.exists()).length;
-        setBadge('pollsNavBadge', pending);
         setBadge('pollsMenuBadge', pending);
+        const { updateNavBadge } = await import('./ui.js');
+        updateNavBadge();
     } catch (e) {
         // Правила ще не опубліковані або немає звʼязку — просто без лічильника
         console.warn('Лічильник опитувань:', e);
-        setBadge('pollsNavBadge', 0);
         setBadge('pollsMenuBadge', 0);
     }
 }

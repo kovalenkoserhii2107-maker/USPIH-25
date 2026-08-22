@@ -189,6 +189,9 @@ function openMessageModal(msg) {
             url: msg.linkedDoc.url, type: msg.linkedDoc.type || '', size: msg.linkedDoc.size || 0
         }]);
     }
+    // Коментарі — лише під оголошеннями для всього будинку
+    import('./chat.js').then(c => c.openComments(msg.id, (msg.recipients || []).includes('all')));
+
     document.getElementById('msgModal').classList.add('is-open');
     lockScroll();
 }
@@ -340,6 +343,7 @@ export function initMessages() {
 }
 
 function closeMessageModal() {
+    import('./chat.js').then(c => c.stopComments());
     document.getElementById('msgModal').classList.remove('is-open');
     unlockScroll();
 }
