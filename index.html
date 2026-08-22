@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=18">
+    <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -1166,6 +1166,31 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=18"></script>
+<script>
+// Рятівний механізм. Якщо оболонка не піднялася — найімовірніше,
+// Service Worker віддає несумісну суміш старих і нових модулів, і
+// сам застосунок уже нічого про це сказати не може: його код не
+// виконався. Тоді скидаємо воркер із кешем і перезавантажуємось
+// рівно один раз за сеанс, щоб не зациклитись.
+(function () {
+    var KEY = 'sw_recovery_done';
+    setTimeout(function () {
+        var loader = document.getElementById('appLoader');
+        if (!loader || getComputedStyle(loader).display === 'none') return;
+        if (sessionStorage.getItem(KEY)) return;
+        try { sessionStorage.setItem(KEY, '1'); } catch (e) { return; }
+
+        var reload = function () { location.reload(); };
+        if (!('serviceWorker' in navigator)) return reload();
+
+        navigator.serviceWorker.getRegistrations()
+            .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+            .then(function () { return caches.keys(); })
+            .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+            .then(reload, reload);
+    }, 8000);
+})();
+</script>
+<script type="module" src="js/app.js?v=19"></script>
 </body>
 </html>

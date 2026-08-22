@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '18';
+const VERSION = '19';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -83,39 +83,26 @@ self.addEventListener('fetch', (event) => {
     // втручання в потокові запити Firestore ламає онлайн-оновлення.
     if (url.origin !== self.location.origin) return;
 
-    // Перехід між сторінками: спершу мережа, щоб не показувати
-    // стару оболонку; без зв'язку віддаємо збережену копію.
-    if (req.mode === 'navigate') {
-        event.respondWith(networkFirst(req));
-        return;
-    }
-
-    event.respondWith(cacheFirst(req));
+    // Мережа-перша для ВСЬОГО свого домену, а не лише для сторінок.
+    //
+    // Раніше модулі віддавалися з кешу. Але «?v=» стоїть тільки біля
+    // app.js і style.css, а решта модулів кешуються без версії. Тому
+    // після оновлення виходила суміш: свіжий app.js і старий ui.js із
+    // кешу — імпорт не резолвився, і застосунок вічно висів на
+    // завантаженні. Кеш тепер потрібен лише для роботи без мережі.
+    event.respondWith(networkFirst(req));
 });
 
 async function networkFirst(req) {
     const cache = await caches.open(CACHE);
     try {
         const fresh = await fetch(req);
-        cache.put(req, fresh.clone());
-        return fresh;
-    } catch (e) {
-        return (await cache.match(req))
-            || (await cache.match('./index.html'))
-            || Response.error();
-    }
-}
-
-async function cacheFirst(req) {
-    const cache = await caches.open(CACHE);
-    const hit = await cache.match(req);
-    if (hit) return hit;
-    try {
-        const fresh = await fetch(req);
         // Кешуємо лише вдалі відповіді свого походження
         if (fresh && fresh.ok && fresh.type === 'basic') cache.put(req, fresh.clone());
         return fresh;
     } catch (e) {
-        return Response.error();
+        return (await cache.match(req))
+            || (req.mode === 'navigate' ? await cache.match('./index.html') : null)
+            || Response.error();
     }
 }
