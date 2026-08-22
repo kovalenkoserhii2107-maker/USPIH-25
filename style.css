@@ -1383,3 +1383,94 @@ select.field-input {
     .image-attach-grid { gap: 5px; }
     .contact-btn { font-size: 12px; padding: 10px 4px; gap: 4px; }
 }
+/* ---------- ПІДКАЗКА ПРО ВСТАНОВЛЕННЯ (PWA) ---------- */
+/* z-index нижчий за підкладку панелей (200): коли мешканець
+   відкриває меню, банер ховається за нею, а не лізе поверх. */
+.install-banner {
+    position: fixed;
+    left: 50%;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 150;
+    width: calc(100% - 24px);
+    max-width: 440px;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px 12px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border: 0.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-raised);
+    padding: 13px 14px;
+    animation: install-in 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes install-in {
+    from { opacity: 0; transform: translate(-50%, 18px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+.install-banner-out { animation: install-out 0.26s ease forwards; }
+@keyframes install-out {
+    to { opacity: 0; transform: translate(-50%, 18px); }
+}
+
+.install-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px; height: 40px;
+    background: var(--surface);
+    border-radius: var(--r-sm);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+    flex-shrink: 0;
+}
+.install-text { display: flex; flex-direction: column; min-width: 0; }
+.install-text strong { font-size: 14.5px; font-weight: 600; color: var(--ink); letter-spacing: -0.2px; }
+.install-text small { font-size: 11.5px; color: var(--ink-2); margin-top: 1px; line-height: 1.3; }
+
+.install-close {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: rgba(120, 120, 128, 0.12);
+    border: none;
+    color: var(--ink-2);
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    align-self: flex-start;
+}
+
+/* Дія займає весь рядок під текстом — на вузьких екранах
+   кнопка поруч із написом не вміщалася. */
+.install-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+    border: none;
+    border-radius: var(--r-md);
+    background: var(--blue);
+    color: #fff;
+    padding: 11px;
+    font-family: var(--font);
+    font-size: 15px; font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.install-btn:active { transform: scale(0.98); opacity: 0.9; }
+
+/* Саме block, а не flex: у flex іконка стає окремим елементом
+   і рве рядок навпіл замість того, щоб текти всередині тексту. */
+.install-steps {
+    grid-column: 1 / -1;
+    display: block;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    line-height: 1.5;
+    background: var(--surface-2);
+    border-radius: var(--r-sm);
+    padding: 9px 11px;
+}
+.install-steps svg { vertical-align: -3px; color: var(--blue); margin: 0 1px; }

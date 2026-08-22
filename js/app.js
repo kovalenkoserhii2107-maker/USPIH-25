@@ -19,6 +19,7 @@ import {
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
 import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
+import { registerServiceWorker, initInstallPrompt, showInstallHint } from './install.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
 
@@ -109,6 +110,7 @@ async function loadCabinet(apt) {
 
         await loadOwners(apt);
         await loadUserMessages(apt, session.entrance);
+        showInstallHint();
     }
 }
 
@@ -253,6 +255,8 @@ function init() {
     initRequests();
     initBoard();
     initNavigation();
+    registerServiceWorker();
+    initInstallPrompt();
     initAdminTabs();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
