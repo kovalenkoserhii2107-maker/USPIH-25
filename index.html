@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=19">
+    <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -118,6 +118,18 @@
                 <span class="menu-row-text"><strong>Вийти з кабінету</strong></span>
             </button>
         </div>
+    </div>
+</div>
+
+<!-- ============ СТАТИСТИКА ВІДКЛЮЧЕНЬ ============ -->
+<div id="powerStatsPopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Відключення світла</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body" id="powerStatsBody">
+        <p class="list-empty">Завантаження…</p>
     </div>
 </div>
 
@@ -308,6 +320,9 @@
                     <span class="power-since-label" id="powerSinceText"></span>
                     <span class="power-duration-label" id="powerDurationText"></span>
                 </div>
+                <button type="button" class="power-stats-btn" id="powerStatsBtn" aria-label="Статистика відключень">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                </button>
             </div>
         </div>
 
@@ -349,6 +364,9 @@
                     <span class="power-since-label" id="adminPowerSinceText"></span>
                     <span class="power-duration-label" id="adminPowerDurationText"></span>
                 </div>
+                <button type="button" class="power-stats-btn" id="adminPowerStatsBtn" aria-label="Статистика відключень">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                </button>
                 <label class="power-toggle-switch">
                     <input type="checkbox" id="powerToggleInput">
                     <span class="power-toggle-slider"></span>
@@ -1191,6 +1209,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=19"></script>
+<script type="module" src="js/app.js?v=20"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    doc, setDoc, onSnapshot, serverTimestamp
+    doc, setDoc, addDoc, collection, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { formatElapsed, toast } from './ui.js';
 
@@ -108,6 +108,20 @@ export function initPowerToggle() {
         try {
             await setDoc(doc(db, 'status', 'power'),
                 { isOn: newState, changedAt: serverTimestamp() }, { merge: true });
+
+            // Журнал ведемо окремо: у status/power лежить лише поточний
+            // стан, і без цього запису історія відключень зникала б
+            // разом із кожним перемиканням.
+            try {
+                await addDoc(collection(db, 'power_log'), {
+                    isOn: newState,
+                    at: serverTimestamp()
+                });
+            } catch (e) {
+                // Журнал — не привід зривати саме перемикання
+                console.error('Журнал світла:', e);
+            }
+
             toast(newState ? 'Позначено: світло є' : 'Позначено: світла немає', 'success');
         } catch (error) {
             console.error(error);

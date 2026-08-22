@@ -2187,3 +2187,87 @@ select.field-input {
     font-size: 11.5px; color: var(--ink-3);
 }
 .funds-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* ---------- СТАТИСТИКА ВІДКЛЮЧЕНЬ ---------- */
+.power-stats-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(120, 120, 128, 0.14);
+    color: var(--ink-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+.power-stats-btn:active { transform: scale(0.9); background: rgba(120, 120, 128, 0.22); }
+.power-on .power-stats-btn { background: rgba(138, 109, 0, 0.12); color: #8A6D00; }
+.power-off .power-stats-btn { background: rgba(255, 59, 48, 0.12); color: var(--red); }
+
+.pw-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.pw-tile {
+    display: flex; flex-direction: column; gap: 2px;
+    background: var(--surface-2);
+    border-radius: var(--r-md);
+    padding: 12px 10px;
+    min-width: 0;
+}
+/* 16px, а не 20: значення на кшталт «1 дн. 11 год.» довші за
+   голе число й на 20px розповзалися на два рядки. */
+.pw-value {
+    font-size: 16px; font-weight: 800;
+    color: var(--ink); letter-spacing: -0.4px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    margin-bottom: 2px;
+}
+.pw-value-off { color: var(--red); }
+.pw-label { font-size: 10.5px; font-weight: 600; color: var(--ink-2); line-height: 1.25; }
+
+.pw-longest {
+    font-size: 13px; color: var(--ink-2);
+    background: var(--surface-2);
+    border-radius: var(--r-sm);
+    padding: 10px 12px;
+    margin-bottom: 18px;
+}
+.pw-longest b { color: var(--ink); font-weight: 700; }
+
+.pw-chart-title {
+    display: block;
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
+    margin-bottom: 10px;
+}
+.pw-chart {
+    display: grid;
+    grid-template-columns: repeat(14, 1fr);
+    gap: 3px;
+    align-items: end;
+    margin-bottom: 10px;
+}
+.pw-col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+/* Фіксована висота-доріжка: без неї стовпчики в один відсоток
+   перетворювали б рядок дат на «сходи». */
+.pw-bar-wrap {
+    display: flex; align-items: flex-end;
+    width: 100%; height: 96px;
+    background: var(--surface-2);
+    border-radius: 5px;
+    overflow: hidden;
+}
+.pw-bar {
+    width: 100%;
+    background: linear-gradient(180deg, #FF7A73, var(--red));
+    border-radius: 5px;
+    transition: height 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pw-bar-empty { background: rgba(120, 120, 128, 0.22); }
+.pw-day { font-size: 9px; color: var(--ink-2); font-weight: 600; }
+.pw-date { font-size: 8px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pw-note { display: block; font-size: 12.5px; color: var(--ink-2); }

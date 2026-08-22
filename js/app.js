@@ -15,6 +15,7 @@ import {
 import { initAttachmentViewers } from './attachments.js';
 import { initOwners, loadOwners } from './owners.js';
 import { initPowerToggle, startPowerListener, stopPowerListener } from './power.js';
+import { initPowerStats } from './power-stats.js';
 import { initMessages, loadUserMessages, loadAdminHistory, backfillRecipients } from './messages.js';
 import {
     initRequests, loadUserRequests, loadAdminRequests,
@@ -308,6 +309,7 @@ function init() {
     initAttachmentViewers();
     initOwners();
     initPowerToggle();
+    initPowerStats();
     initMessages();
     initRequests();
     initContacts();
