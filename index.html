@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -322,6 +322,10 @@
             </div>
         </div>
 
+        <div id="adminDashboard" class="dash">
+            <p class="list-empty">Завантаження зведення…</p>
+        </div>
+
         <div class="admin-tabs" id="adminTabs">
             <button class="admin-tab active" data-tab="send" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -343,6 +347,10 @@
             <button class="admin-tab" data-tab="polls" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
                 <span>Опитування</span>
+            </button>
+            <button class="admin-tab" data-tab="directory" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v15"></path><path d="M12 11h7a1 1 0 0 1 1 1v9"></path><line x1="2" y1="21" x2="22" y2="21"></line><line x1="7" y1="9" x2="9" y2="9"></line><line x1="7" y1="13" x2="9" y2="13"></line><line x1="15" y1="15" x2="17" y2="15"></line></svg>
+                <span>Квартири</span>
             </button>
             <button class="admin-tab" data-tab="board" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
@@ -502,6 +510,28 @@
                     </button>
                 </div>
 
+                <div class="field">
+                    <span class="field-label">Строк голосування</span>
+                    <div class="poll-terms" id="pollQuickTerms">
+                        <button type="button" class="poll-term" data-days="7">Тиждень</button>
+                        <button type="button" class="poll-term" data-days="14">2 тижні</button>
+                        <button type="button" class="poll-term" data-days="30">Місяць</button>
+                    </div>
+                    <input type="datetime-local" id="pollDeadline" class="field-input poll-deadline-input">
+                    <span class="field-hint">Можна не вказувати — тоді опитування триватиме, доки не завершите вручну.</span>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Матеріали до голосування</span>
+                    <label class="dropzone" for="pollFiles">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Додати фото або документи</span>
+                        <span class="dropzone-hint">Кошториси, схеми, комерційні пропозиції</span>
+                    </label>
+                    <input type="file" id="pollFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" class="hidden-file-input">
+                    <div id="pollFilesPreview" class="file-chips"></div>
+                </div>
+
                 <button type="button" id="createPollBtn" class="btn-primary">Опублікувати опитування</button>
             </div>
 
@@ -511,6 +541,28 @@
                     <span class="admin-card-sub">Результати в реальному часі</span>
                 </div>
                 <div id="adminPollsContainer" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вкладка: довідник квартир -->
+        <div class="admin-panel" data-panel="directory">
+            <div class="card">
+                <div class="admin-card-head admin-card-head-row">
+                    <div>
+                        <h2 class="admin-card-title">Довідник квартир</h2>
+                        <span class="admin-card-sub" id="directoryCount">Завантаження…</span>
+                    </div>
+                    <button id="directoryRefreshBtn" class="btn-ghost-small" type="button">Оновити</button>
+                </div>
+
+                <div class="field">
+                    <input type="search" id="directorySearch" class="field-input"
+                           placeholder="Номер квартири, прізвище або документ">
+                </div>
+
+                <div id="directoryList" class="admin-scroll-list">
                     <p class="list-empty">Завантаження…</p>
                 </div>
             </div>
@@ -758,6 +810,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=8"></script>
+<script type="module" src="js/app.js?v=9"></script>
 </body>
 </html>

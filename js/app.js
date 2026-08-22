@@ -20,6 +20,8 @@ import {
 } from './requests.js';
 import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
 import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
+import { loadDashboard } from './dashboard.js';
+import { initDirectory, loadDirectory } from './directory.js';
 import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
@@ -100,7 +102,10 @@ async function loadCabinet(apt) {
         showScreen('adminDashboardSection');
         document.getElementById('topNav').style.display = 'none';
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
-                           populateDocsDropdown(), loadAdminBoard(), loadAdminPolls()]);
+                           populateDocsDropdown(), loadAdminBoard(), loadAdminPolls(),
+                           loadDirectory()]);
+        // Дашборд рахує вже закриті прострочені опитування, тому — після них
+        await loadDashboard();
         backfillRecipients(); // тиха міграція старих повідомлень
     } else {
         showScreen('dataSection');
@@ -262,6 +267,7 @@ function init() {
     initRequests();
     initBoard();
     initPolls();
+    initDirectory();
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();

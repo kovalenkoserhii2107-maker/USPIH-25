@@ -44,6 +44,13 @@ service cloud.firestore {
       }
     }
 
+    // Правління читає всіх співвласників одним collectionGroup-запитом
+    // для довідника квартир. Мешканців це не стосується: їхній доступ
+    // до власної квартири лишається правилом вище.
+    match /{path=**}/owners/{ownerId} {
+      allow read: if isAdmin();
+    }
+
     // ---------- ПОВІДОМЛЕННЯ ----------
     // Читати можна лише те, де ти є серед адресатів.
     // Саме тому клієнт робить запит array-contains-any по recipients.
@@ -104,6 +111,11 @@ service cloud.firestore {
           && voteId == myApt()
           // тільки поки опитування триває
           && get(/databases/$(database)/documents/polls/$(pollId)).data.status == 'active'
+          // і поки не минув строк. Сервера, який закрив би опитування
+          // за розкладом, немає, тож саме ця перевірка реально
+          // зупиняє голосування в потрібну мить.
+          && (get(/databases/$(database)/documents/polls/$(pollId)).data.deadline == null
+              || request.time < get(/databases/$(database)/documents/polls/$(pollId)).data.deadline)
           // і тільки один із запропонованих варіантів, інакше через
           // DevTools можна було б вписати будь-який рядок і зіпсувати підрахунок
           && request.resource.data.option
