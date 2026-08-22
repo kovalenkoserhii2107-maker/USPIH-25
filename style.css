@@ -2342,18 +2342,26 @@ select.field-input {
 @supports not (height: 100svh) {
     .chat-body { min-height: calc(100vh - 190px); }
 }
+/* Повідомлення йдуть згори вниз. flex-end притискав їх до низу, і
+   на майже порожньому екрані все виглядало зсунутим. Поле вводу
+   тримає низ саме воно, через margin-top: auto. */
 .chat-list {
     display: flex; flex-direction: column; gap: 8px;
-    flex: 1;
     padding-bottom: 12px;
-    justify-content: flex-end;
 }
 .chat-list-inline { min-height: 0; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; }
 
 .chat-msg { display: flex; }
 .chat-mine { justify-content: flex-end; }
+/* -webkit-touch-callout вимикає рідне меню iOS «Копіювати / Знайти»,
+   яке зʼявлялося на утриманні поверх нашого й виділяло текст. */
 .chat-bubble {
     position: relative;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+    transition: transform 0.12s ease, filter 0.12s ease;
     max-width: 82%;
     background: var(--surface);
     border: 0.5px solid rgba(0, 0, 0, 0.05);
@@ -2396,6 +2404,7 @@ select.field-input {
 @media (hover: none) { .chat-del { opacity: 0.45; } }
 
 .chat-compose {
+    margin-top: auto;
     position: sticky;
     bottom: 0;
     background: var(--bg);
@@ -2560,4 +2569,47 @@ select.field-input {
     justify-content: center;
     border-bottom: none;
     font-weight: 600; color: var(--blue);
+}
+
+/* Відгук на утримання — видно одразу, ще до появи меню */
+.chat-pressed { transform: scale(0.97); filter: brightness(0.96); }
+
+/* Мітка редагування — окремим знаком, а не хвостиком у часі */
+.chat-edited {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.3px;
+    color: var(--ink-2);
+    background: rgba(120, 120, 128, 0.14);
+    padding: 1px 5px; border-radius: 5px;
+    vertical-align: 1px;
+}
+
+/* Фото в бульбашці */
+.chat-photos {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+    margin-bottom: 6px;
+}
+.chat-photos-one { grid-template-columns: 1fr; }
+.chat-photo {
+    border: none; padding: 0;
+    background: var(--surface-3);
+    border-radius: 10px;
+    overflow: hidden;
+    aspect-ratio: 1 / 1;
+    cursor: pointer;
+}
+.chat-photos-one .chat-photo { aspect-ratio: 4 / 3; }
+.chat-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Меню приймає натискання лише після короткої паузи */
+.action-sheet .action-row { pointer-events: none; }
+.action-sheet.action-armed .action-row { pointer-events: auto; }
+.action-sheet, .action-backdrop {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }

@@ -17,7 +17,7 @@ import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
-import { renderAttachments, renderFileManager } from './attachments.js';
+import { renderFileManager, openGallery, isImageFile } from './attachments.js';
 
 /**
  * Пояснює причину відмови. Загальне «не вдалося» не дає ні мешканцю,
@@ -93,6 +93,18 @@ export async function refreshChatBadge() {
 // ------------------------------------------------------------
 // МАЛЮВАННЯ
 // ------------------------------------------------------------
+/** Фото в бульбашці: квадратні мініатюри без підписів і рамок. */
+function chatPhotos(files, id) {
+    const imgs = (files || []).filter(isImageFile);
+    if (!imgs.length) return '';
+    const cls = imgs.length === 1 ? 'chat-photos-one' : '';
+    return `<div class="chat-photos ${cls}" data-photos="${id}">
+        ${imgs.map((f, i) => `<button type="button" class="chat-photo" data-i="${i}">
+            <img src="${escapeHtml(f.url)}" loading="lazy" alt="">
+        </button>`).join('')}
+    </div>`;
+}
+
 function quoteBlock(r) {
     if (!r) return '';
     const who = r.isBoard ? 'Правління' : `Кв. ${escapeHtml(String(r.apt))}`;
@@ -120,9 +132,9 @@ function bubble(m, id) {
         <div class="chat-bubble" data-menu="${id}">
             <span class="chat-author">${author}</span>
             ${quoteBlock(m.replyTo)}
-            <p class="chat-text">${escapeHtml(m.text || '')}</p>
-            <div class="attach-block chat-attach" data-att="${id}"></div>
-            <span class="chat-time">${escapeHtml(formatDateTime(m.createdAt))}${m.editedAt ? ' · змінено' : ''}</span>
+            ${chatPhotos(m.attachments, id)}
+            ${m.text ? `<p class="chat-text">${escapeHtml(m.text)}</p>` : ''}
+            <span class="chat-time">${escapeHtml(formatDateTime(m.createdAt))}${m.editedAt ? '<span class="chat-edited">змінено</span>' : ''}</span>
         </div>
     </div>`;
 }
@@ -144,10 +156,16 @@ function renderList(host, items, ctx) {
     }
     host.innerHTML = items.map(i => bubble(i.data, i.id)).join('');
 
+    // Фото відкриваються повноекранною галереєю
     items.forEach(i => {
-        if (i.data.attachments?.length && !i.data.deleted) {
-            renderAttachments(host.querySelector(`.chat-attach[data-att="${i.id}"]`), i.data.attachments);
-        }
+        const imgs = (i.data.attachments || []).filter(isImageFile);
+        if (!imgs.length || i.data.deleted) return;
+        host.querySelectorAll(`.chat-photos[data-photos="${i.id}"] .chat-photo`).forEach(b => {
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openGallery(imgs, parseInt(b.dataset.i, 10));
+            });
+        });
     });
 
     host.querySelectorAll('.chat-quote').forEach(q => {
@@ -168,28 +186,35 @@ function renderList(host, items, ctx) {
 // викликається утриманням. Рух пальцем скасовує: інакше меню
 // вискакувало б посеред прокрутки.
 // ------------------------------------------------------------
-const HOLD_MS = 450;
+const HOLD_MS = 330;
 
 function attachLongPress(el, onHold) {
     let timer = null, startY = 0, fired = false;
 
-    const cancel = () => { clearTimeout(timer); timer = null; };
+    const release = () => {
+        clearTimeout(timer);
+        timer = null;
+        el.classList.remove('chat-pressed');
+    };
 
     el.addEventListener('touchstart', (e) => {
         fired = false;
         startY = e.touches[0].clientY;
-        timer = setTimeout(() => { fired = true; onHold(); }, HOLD_MS);
+        el.classList.add('chat-pressed');       // видимий відгук одразу
+        timer = setTimeout(() => {
+            fired = true;
+            el.classList.remove('chat-pressed');
+            if (navigator.vibrate) navigator.vibrate(8);
+            onHold();
+        }, HOLD_MS);
     }, { passive: true });
 
     el.addEventListener('touchmove', (e) => {
-        if (Math.abs(e.touches[0].clientY - startY) > 10) cancel();
+        if (Math.abs(e.touches[0].clientY - startY) > 8) release();
     }, { passive: true });
 
-    el.addEventListener('touchend', (e) => {
-        cancel();
-        // Після спрацювання не даємо натисканню піти далі
-        if (fired) e.preventDefault();
-    });
+    el.addEventListener('touchend', release);
+    el.addEventListener('touchcancel', release);
 
     // На комп'ютері звичний шлях — права кнопка
     el.addEventListener('contextmenu', (e) => { e.preventDefault(); onHold(); });
@@ -235,9 +260,16 @@ function openActions(item, ctx) {
         <button type="button" class="action-row action-cancel" data-act="cancel">Скасувати</button>`;
     document.body.appendChild(sheet);
 
-    back.addEventListener('click', closeActions);
+    // Меню зʼявляється, поки палець ще на екрані. Без цієї паузи
+    // те саме відпускання пальця одразу натискало б на пункт, що
+    // опинився під ним, — і дія виконувалася б випадково.
+    let armed = false;
+    setTimeout(() => { armed = true; sheet.classList.add('action-armed'); }, 260);
+
+    back.addEventListener('click', () => { if (armed) closeActions(); });
     sheet.querySelectorAll('.action-row').forEach(btn => {
         btn.addEventListener('click', () => {
+            if (!armed) return;
             const act = btn.dataset.act;
             closeActions();
             if (act === 'reply') startReply(item, ctx);
