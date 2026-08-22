@@ -16,6 +16,7 @@ import { initAttachmentViewers } from './attachments.js';
 import { initOwners, loadOwners } from './owners.js';
 import { initPowerToggle, startPowerListener, stopPowerListener } from './power.js';
 import { initPowerStats } from './power-stats.js';
+import { initFaq, loadFaq } from './faq.js';
 import { initMessages, loadUserMessages, loadAdminHistory, backfillRecipients } from './messages.js';
 import {
     initRequests, loadUserRequests, loadAdminRequests,
@@ -154,7 +155,8 @@ const SCREEN_RELOADERS = {
     pollsSection: loadUserPolls,
     boardSection: loadBoardContacts,
     servicesSection: loadServices,
-    receiptsSection: loadReceipts
+    receiptsSection: loadReceipts,
+    faqSection: loadFaq
 };
 
 async function refreshCurrentScreen() {
@@ -251,6 +253,7 @@ function initNavigation() {
     };
 
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
+    document.getElementById('menuFaqBtn').addEventListener('click', () => go('faqSection', loadFaq));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
     document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
@@ -278,7 +281,7 @@ function initNavigation() {
     });
 
     const back = () => loadCabinet(session.apt);
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
@@ -310,6 +313,7 @@ function init() {
     initOwners();
     initPowerToggle();
     initPowerStats();
+    initFaq();
     initMessages();
     initRequests();
     initContacts();

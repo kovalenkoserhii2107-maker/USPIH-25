@@ -195,7 +195,7 @@ export function initSheets() {
 // ------------------------------------------------------------
 const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
-                 'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection'];
+                 'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection'];
 
 /** Який екран зараз відкрито — потрібно, щоб оновлення не скидало його. */
 export function currentScreen() {

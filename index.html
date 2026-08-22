@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=20">
+    <link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -80,6 +80,11 @@
             <button id="menuDocsBtn" class="menu-row" type="button">
                 <span class="menu-row-icon mi-blue"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span>
                 <span class="menu-row-text"><strong>База документів</strong><small>Статут, протоколи, звіти</small></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuFaqBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-teal"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12" y2="17"></line></svg></span>
+                <span class="menu-row-text"><strong>Часті запитання</strong><small>Відповіді за Статутом ОСББ</small></span>
                 <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <button id="menuRequestsBtn" class="menu-row" type="button">
@@ -1060,6 +1065,29 @@
         </div>
     </div>
 
+    <!-- ============ ЧАСТІ ЗАПИТАННЯ ============ -->
+    <div id="faqSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromFaqBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+        </div>
+        <h1 class="screen-title" style="margin-bottom: 4px;">Часті запитання</h1>
+        <p class="faq-sub" id="faqCount">Відповіді за Статутом ОСББ</p>
+
+        <div class="field">
+            <input type="search" id="faqSearch" class="field-input"
+                   placeholder="Пошук: внески, збори, борг, ревізія…">
+        </div>
+
+        <div id="faqContainer"></div>
+
+        <p class="faq-footer">Відповіді ґрунтуються на Статуті ОСББ «Успіх-25»
+            (нова редакція), затвердженому протоколом № 12 загальних зборів
+            від 27 червня 2021 року. Повний текст — у Базі документів.</p>
+    </div>
+
     <!-- ============ КВИТАНЦІЇ ============ -->
     <div id="receiptsSection" style="display: none;">
         <div class="screen-head">
@@ -1209,6 +1237,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=20"></script>
+<script type="module" src="js/app.js?v=21"></script>
 </body>
 </html>

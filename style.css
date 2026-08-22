@@ -2271,3 +2271,69 @@ select.field-input {
 .pw-day { font-size: 9px; color: var(--ink-2); font-weight: 600; }
 .pw-date { font-size: 8px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .pw-note { display: block; font-size: 12.5px; color: var(--ink-2); }
+
+/* ---------- ЧАСТІ ЗАПИТАННЯ ---------- */
+.faq-sub { margin: 0 0 16px 0; font-size: 13px; color: var(--ink-2); }
+.faq-group { margin-bottom: 22px; }
+.faq-group-title {
+    font-size: 12.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
+    margin: 0 0 10px 2px;
+}
+.faq-item {
+    background: var(--surface);
+    border-radius: var(--r-md);
+    border: 0.5px solid rgba(0, 0, 0, 0.05);
+    box-shadow: var(--sh-card);
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+.faq-q {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; box-sizing: border-box;
+    background: none; border: none;
+    padding: 14px 15px;
+    cursor: pointer; text-align: left;
+    font-family: var(--font);
+}
+.faq-q-text {
+    flex: 1; min-width: 0;
+    font-size: 15px; font-weight: 600;
+    color: var(--ink); line-height: 1.35;
+}
+.faq-chevron {
+    color: #C7C7CC; flex-shrink: 0;
+    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.faq-open .faq-chevron { transform: rotate(90deg); }
+.faq-a {
+    padding: 0 15px 14px 15px;
+    border-top: 0.5px solid var(--line);
+    margin-top: -0.5px; padding-top: 12px;
+}
+.faq-a-text {
+    margin: 0 0 10px 0;
+    font-size: 14.5px; color: var(--ink);
+    line-height: 1.5;
+}
+/* Посилання на пункт — головне, що відрізняє відповідь за Статутом
+   від переказу своїми словами: його завжди можна перевірити. */
+.faq-ref {
+    display: inline-block;
+    font-size: 11px; font-weight: 700;
+    color: var(--blue);
+    background: rgba(0, 122, 255, 0.1);
+    padding: 4px 9px; border-radius: 7px;
+}
+.faq-q mark, .faq-a mark {
+    background: rgba(255, 195, 0, 0.4);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 1px;
+}
+.faq-footer {
+    font-size: 11.5px; color: var(--ink-3);
+    line-height: 1.5;
+    margin: 4px 0 0 0;
+}

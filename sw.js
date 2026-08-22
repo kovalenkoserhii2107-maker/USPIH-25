@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '20';
+const VERSION = '21';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -36,7 +36,8 @@ const SHELL = [
     './js/dashboard.js',
     './js/directory.js',
     './js/finance.js',
-    './js/power-stats.js'
+    './js/power-stats.js',
+    './js/faq.js'
 ];
 
 // ------------------------------------------------------------
