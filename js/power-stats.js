@@ -9,7 +9,7 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, query, where, orderBy, getDocs
+    collection, doc, query, where, orderBy, getDocs, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { formatElapsed, escapeHtml } from './ui.js';
 
@@ -70,6 +70,25 @@ export function summarize(entries, now = Date.now()) {
 
 const WEEKDAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
+/** Перелік останніх подій — щоб статистику можна було перевірити очима. */
+function renderLog(entries) {
+    const last = entries.slice(-12).reverse();
+    if (!last.length) return '';
+    const fmt = (ms) => new Date(ms).toLocaleString('uk-UA', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+    return `<details class="pw-log">
+        <summary>Журнал перемикань</summary>
+        <div class="pw-log-list">
+            ${last.map(e => `<div class="pw-log-row">
+                <span class="pw-log-dot ${e.isOn ? 'pw-on' : 'pw-off'}"></span>
+                <span class="pw-log-what">${e.isOn ? 'Світло увімкнено' : 'Світло вимкнено'}</span>
+                <span class="pw-log-when">${escapeHtml(fmt(e.at))}</span>
+            </div>`).join('')}
+        </div>
+    </details>`;
+}
+
 function renderBars(days) {
     const max = Math.max(...days.map(d => d.offMs), 1);
     return `<div class="pw-chart">
@@ -89,7 +108,7 @@ function renderBars(days) {
     </div>`;
 }
 
-export function renderStats(s) {
+export function renderStats(s, patched = false, entries = []) {
     if (!s.hasData) {
         return `<p class="list-empty">Журнал відключень порожній.<br>
             Записи з'являтимуться з кожним перемиканням світла правлінням.</p>`;
@@ -116,9 +135,11 @@ export function renderStats(s) {
         </div>
         <span class="pw-chart-title">Годин без світла за добу</span>
         ${renderBars(s.days)}
+        ${patched ? `<p class="pw-warn">У журналі бракувало запису — його відновлено за поточним статусом. Якщо таке повторюється, перевірте звʼязок під час перемикання.</p>` : ''}
         <span class="pw-note">${worst
             ? `Найгірша доба — ${(worst / 3600000).toFixed(1)} год без світла`
-            : 'За два тижні відключень не було'}</span>`;
+            : 'За два тижні відключень не було'}</span>
+        ${renderLog(entries)}`;
 }
 
 export async function loadPowerStats() {
@@ -140,7 +161,37 @@ export async function loadPowerStats() {
             .filter(d => d.at)
             .map(d => ({ isOn: d.isOn !== false, at: d.at.toDate().getTime() }));
 
-        host.innerHTML = renderStats(summarize(entries));
+        // Звіряємо журнал із поточним статусом.
+        //
+        // Перемикання і запис у журнал — дві окремі операції. Якщо
+        // друга не пройшла (немає звʼязку, не опубліковані правила),
+        // світло перемкнулося, а подія в журнал не потрапила — і
+        // статистика мовчки її втрачала. Тепер відновлюємо її зі
+        // status/power, а мешканцю кажемо, що запис неповний.
+        let patched = false;
+        try {
+            const st = await getDoc(doc(db, 'status', 'power'));
+            if (st.exists() && st.data().changedAt) {
+                const stAt = st.data().changedAt.toDate().getTime();
+                const stOn = st.data().isOn !== false;
+                const last = entries[entries.length - 1];
+
+                // Статус новіший за журнал — журналу бракує запису
+                if (!last || stAt > last.at + 1000) {
+                    entries.push({ isOn: stOn, at: stAt });
+                    patched = Boolean(last);
+                } else if (last && last.isOn !== stOn) {
+                    // Стан розійшовся — віримо статусу, він джерело істини
+                    entries.push({ isOn: stOn, at: Math.max(stAt, last.at + 1000) });
+                    patched = true;
+                }
+            }
+        } catch (e) {
+            console.warn('Звірка зі статусом світла:', e);
+        }
+
+        entries.sort((a, b) => a.at - b.at);
+        host.innerHTML = renderStats(summarize(entries), patched, entries);
     } catch (e) {
         console.error('Статистика світла:', e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити статистику</p>';

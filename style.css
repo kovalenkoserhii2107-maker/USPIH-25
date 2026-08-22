@@ -2715,3 +2715,37 @@ select.field-input {
 .chat-msg:not(.chat-mine) .chat-grouped .chat-bubble,
 .chat-grouped:not(.chat-mine) .chat-bubble { border-top-left-radius: 7px; }
 .chat-grouped.chat-mine .chat-bubble { border-top-right-radius: 7px; }
+
+/* Журнал перемикань — згорнутий, щоб не заважав, але завжди під рукою */
+.pw-warn {
+    margin: 12px 0 0 0;
+    font-size: 12.5px; line-height: 1.45;
+    color: #C93400;
+    background: rgba(255, 149, 0, 0.12);
+    border-radius: var(--r-sm);
+    padding: 10px 12px;
+}
+.pw-log { margin-top: 16px; }
+.pw-log summary {
+    font-size: 13px; font-weight: 600;
+    color: var(--blue);
+    cursor: pointer;
+    padding: 8px 0;
+    list-style: none;
+}
+.pw-log summary::-webkit-details-marker { display: none; }
+.pw-log summary::before { content: '▸ '; }
+.pw-log[open] summary::before { content: '▾ '; }
+.pw-log-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+.pw-log-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    font-size: 13px;
+}
+.pw-log-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pw-on { background: var(--yellow); }
+.pw-off { background: var(--red); }
+.pw-log-what { flex: 1; color: var(--ink); }
+.pw-log-when { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
