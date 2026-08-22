@@ -144,18 +144,44 @@ export async function loadUserMessages(apt, entrance) {
 
             const imgCount = (msg.attachments || []).filter(isImageFile).length;
             const docCount = (msg.attachments || []).length - imgCount;
-            let chips = '';
-            if (imgCount) chips += `<span class="msg-chip">${imgCount} фото</span>`;
-            if (docCount) chips += `<span class="msg-chip">${docCount} док.</span>`;
-            if (msg.linkedDoc) chips += '<span class="msg-chip">документ ОСББ</span>';
 
-            html += `<button type="button" class="msg-row${isRead ? '' : ' msg-unread'}" data-msg-id="${d.id}">
-                <span class="msg-row-top">
-                    <span class="msg-title">${escapeHtml(msg.title)}</span>
-                    <span class="msg-date">${formatDateTime(msg.createdAt)}</span>
+            // Тип визначає, що мешканець побачить першим. Підсумки
+            // голосувань, документи й звичайні оголошення — різні за
+            // суттю речі, і однаковий вигляд змушував читати все.
+            const isPoll = /^Результати голосування/i.test(msg.title || '');
+            const kind = isPoll ? 'poll' : (msg.linkedDoc ? 'doc' : 'news');
+            const KIND = {
+                poll: { label: 'Підсумки голосування',
+                        icon: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>' },
+                doc:  { label: 'Документ ОСББ',
+                        icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline>' },
+                news: { label: 'Оголошення',
+                        icon: '<path d="M3 11l18-5v12L3 13v-2z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path>' }
+            }[kind];
+
+            // У підсумках голосування назва вже містить тип — не дублюємо
+            const title = isPoll
+                ? (msg.title || '').replace(/^Результати голосування:\s*/i, '')
+                : (msg.title || '');
+
+            const meta = [];
+            if (imgCount) meta.push(`${imgCount} фото`);
+            if (docCount) meta.push(`${docCount} док.`);
+
+            html += `<button type="button" class="msg-row msg-${kind}${isRead ? '' : ' msg-unread'}" data-msg-id="${d.id}">
+                <span class="msg-icon">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${KIND.icon}</svg>
                 </span>
-                <span class="msg-preview">${escapeHtml(msg.body)}</span>
-                ${chips ? `<span class="msg-chips">${chips}</span>` : ''}
+                <span class="msg-main">
+                    <span class="msg-kind">${KIND.label}</span>
+                    <span class="msg-title">${escapeHtml(title)}</span>
+                    <span class="msg-preview">${escapeHtml(msg.body)}</span>
+                    <span class="msg-meta">
+                        <span class="msg-date">${formatDateTime(msg.createdAt)}</span>
+                        ${meta.map(t => `<span class="msg-chip">${t}</span>`).join('')}
+                    </span>
+                </span>
+                ${isRead ? '' : '<span class="msg-dot"></span>'}
             </button>`;
         });
 

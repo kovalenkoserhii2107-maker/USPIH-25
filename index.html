@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=27">
+    <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
 
@@ -392,7 +392,7 @@
         <div class="admin-tabs" id="adminTabs">
             <button class="admin-tab active" data-tab="send" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                <span>Розсилка</span>
+                <span>Оголошення</span>
             </button>
             <button class="admin-tab" data-tab="requests" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
@@ -403,9 +403,10 @@
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                 <span>База</span>
             </button>
-            <button class="admin-tab" data-tab="history" type="button">
-                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>
-                <span>Історія</span>
+            <button class="admin-tab" data-tab="chat" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v10l-3-3H9a2 2 0 0 1-2-2v-1"></path><path d="M14 3H4a2 2 0 0 0-2 2v8l3-3h9a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"></path></svg>
+                <span>Чат</span>
+                <span class="admin-tab-badge" id="adminChatBadge" style="display:none;">0</span>
             </button>
             <button class="admin-tab" data-tab="polls" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
@@ -485,6 +486,18 @@
                     Надіслати повідомлення
                 </button>
             </div>
+            <div class="card">
+                <div class="admin-card-head admin-card-head-row">
+                    <div>
+                        <h2 class="admin-card-title">Історія розсилок</h2>
+                        <span class="admin-card-sub">Хто і коли прочитав</span>
+                    </div>
+                    <button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button>
+                </div>
+                <div id="adminMsgHistoryContainer" class="admin-scroll-list">
+                    <p class="list-empty">Історія порожня</p>
+                </div>
+            </div>
         </div>
 
         <!-- Вкладка: звернення -->
@@ -536,18 +549,29 @@
             </div>
         </div>
 
-        <!-- Вкладка: історія -->
-        <div class="admin-panel" data-panel="history">
+        <!-- Вкладка: чат правління -->
+        <div class="admin-panel" data-panel="chat">
             <div class="card">
-                <div class="admin-card-head admin-card-head-row">
-                    <div>
-                        <h2 class="admin-card-title">Історія розсилок</h2>
-                        <span class="admin-card-sub">Хто і коли прочитав</span>
-                    </div>
-                    <button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button>
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Чат будинку</h2>
+                    <span class="admin-card-sub">Ваші повідомлення підписуються «Правління ОСББ»</span>
                 </div>
-                <div id="adminMsgHistoryContainer" class="admin-scroll-list">
-                    <p class="list-empty">Історія порожня</p>
+                <div class="chat-body chat-body-admin">
+                    <div id="adminChatList" class="chat-list"></div>
+                    <div class="chat-compose">
+                        <div id="adminChatComposeCtx" class="compose-ctx" hidden></div>
+                        <div id="adminChatFilesPreview" class="file-chips"></div>
+                        <div class="chat-row">
+                            <label class="chat-attach-btn" for="adminChatFiles" aria-label="Додати файл">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                            </label>
+                            <input type="file" id="adminChatFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" class="hidden-file-input">
+                            <textarea id="adminChatInput" class="chat-input" rows="1" placeholder="Повідомлення від правління…"></textarea>
+                            <button type="button" id="adminChatSendBtn" class="chat-send" aria-label="Надіслати">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1286,6 +1310,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=27"></script>
+<script type="module" src="js/app.js?v=28"></script>
 </body>
 </html>

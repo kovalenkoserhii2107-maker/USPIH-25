@@ -36,16 +36,21 @@ export async function fetchDirectory() {
         (byApt[apt] ||= []).push(d.data());
     });
 
-    cache = aptSnap.docs.map(d => {
-        const data = d.data();
-        return {
-            apt: d.id,
-            entrance: data.entrance || '',
-            area: data.area || '',
-            isAdmin: data.isAdmin === true,
-            owners: byApt[d.id] || []
-        };
-    }).sort((a, b) => (parseInt(a.apt, 10) || 0) - (parseInt(b.apt, 10) || 0));
+    // Обліковий запис правління — службовий, а не квартира. Він не має
+    // потрапляти ні в довідник, ні в кворум, ні в лічильники: інакше
+    // будинок «набував» зайвого співвласника й зайвої площі.
+    cache = aptSnap.docs
+        .filter(d => d.data().isAdmin !== true)
+        .map(d => {
+            const data = d.data();
+            return {
+                apt: d.id,
+                entrance: data.entrance || '',
+                area: data.area || '',
+                owners: byApt[d.id] || []
+            };
+        })
+        .sort((a, b) => (parseInt(a.apt, 10) || 0) - (parseInt(b.apt, 10) || 0));
 
     return cache;
 }
@@ -85,7 +90,7 @@ function render(list) {
             <button type="button" class="dir-head">
                 <span class="dir-apt">${escapeHtml(e.apt)}</span>
                 <span class="dir-head-text">
-                    <span class="dir-title">Квартира ${escapeHtml(e.apt)}${e.isAdmin ? '<span class="dir-tag">правління</span>' : ''}</span>
+                    <span class="dir-title">Квартира ${escapeHtml(e.apt)}</span>
                     <span class="dir-meta">${e.entrance && e.entrance !== '--' ? `Парадна ${escapeHtml(String(e.entrance))}` : 'Парадна —'}
                         · ${e.area ? escapeHtml(String(e.area)) + ' м²' : 'площа —'}
                         · ${e.owners.length ? `співвласників: ${e.owners.length}` : 'без співвласників'}</span>

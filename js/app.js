@@ -117,6 +117,7 @@ async function loadCabinet(apt) {
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadAdminExpenses(), loadAdminRequisites(),
                            loadDirectory()]);
+        loadChat();                   // чат правління в його панелі
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
         backfillRecipients(); // тиха міграція старих повідомлень

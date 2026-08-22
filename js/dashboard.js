@@ -40,7 +40,8 @@ export async function loadDashboard() {
         // getCountFromServer рахує на сервері й коштує один читок,
         // а не стільки, скільки документів у колекції.
         const [apts, openReqs, activePolls, lastMsgSnap] = await Promise.all([
-            getCountFromServer(collection(db, 'apartments')),
+            // Службовий запис правління не рахуємо як квартиру
+            getCountFromServer(query(collection(db, 'apartments'), where('isAdmin', '==', false))),
             getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'new'))),
             getCountFromServer(query(collection(db, 'polls'), where('status', '==', 'active'))),
             getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(1)))

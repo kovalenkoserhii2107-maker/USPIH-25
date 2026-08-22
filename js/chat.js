@@ -48,6 +48,7 @@ function explain(e, action) {
 // ------------------------------------------------------------
 function syncChatHeight() {
     const body = document.querySelector('#chatSection .chat-body');
+    // Панель правління має власну фіксовану висоту — там підганяти нічого
     if (!body || body.offsetParent === null) return;
     const vv = window.visualViewport;
     const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
@@ -166,7 +167,7 @@ function chatDocs(files, id) {
 
 function quoteBlock(r) {
     if (!r) return '';
-    const who = r.isBoard ? 'Правління' : `Кв. ${escapeHtml(String(r.apt))}`;
+    const who = r.isBoard ? 'Правління ОСББ' : `Кв. ${escapeHtml(String(r.apt))}`;
     return `<button type="button" class="chat-quote" data-jump="${escapeHtml(r.id)}">
         <span class="chat-quote-who">${who}</span>
         <span class="chat-quote-text">${escapeHtml(r.text || 'вкладення')}</span>
@@ -175,7 +176,7 @@ function quoteBlock(r) {
 
 function bubble(m, id) {
     const mine = String(m.apt) === String(session.apt);
-    const author = m.isBoard ? 'Правління' : `Кв. ${escapeHtml(String(m.apt))}`;
+    const author = m.isBoard ? 'Правління ОСББ' : `Кв. ${escapeHtml(String(m.apt))}`;
 
     // Видалене лишається в стрічці міткою: інакше розмова, де хтось
     // прибрав свої слова, ставала б незрозумілою.
@@ -407,7 +408,7 @@ function renderComposeContext(ctx) {
     host.innerHTML = `
         <span class="compose-ctx-icon">${st.edit ? '✎' : '↩'}</span>
         <span class="compose-ctx-text">
-            <b>${st.edit ? 'Редагування' : (st.reply.isBoard ? 'Відповідь Правлінню' : 'Відповідь кв. ' + escapeHtml(String(st.reply.apt)))}</b>
+            <b>${st.edit ? 'Редагування' : (st.reply.isBoard ? 'Відповідь Правлінню ОСББ' : 'Відповідь кв. ' + escapeHtml(String(st.reply.apt)))}</b>
             <small>${escapeHtml(st.edit ? 'змініть текст і надішліть' : st.reply.text)}</small>
         </span>
         <button type="button" class="compose-ctx-close" aria-label="Скасувати">✕</button>`;
@@ -435,8 +436,18 @@ async function softDelete(item, ctx) {
 
 const CTX_CHAT = {
     key: 'chat', path: ['chat'],
-    input: 'chatInput', context: 'chatComposeCtx'
+    list: 'chatList', input: 'chatInput', context: 'chatComposeCtx',
+    files: 'chatFiles', preview: 'chatFilesPreview'
 };
+// Правління користується тим самим чатом, але зі своєї панелі, тож
+// елементи інші. Логіка спільна — дублювати її не було б за що.
+const CTX_ADMIN = {
+    key: 'chat', path: ['chat'],
+    list: 'adminChatList', input: 'adminChatInput', context: 'adminChatComposeCtx',
+    files: 'adminChatFiles', preview: 'adminChatFilesPreview'
+};
+const activeCtx = () =>
+    (document.getElementById('adminChatList')?.offsetParent ? CTX_ADMIN : CTX_CHAT);
 const ctxComments = (msgId) => ({
     key: 'comments', path: ['messages', msgId, 'comments'],
     input: 'commentInput', context: 'commentComposeCtx',
@@ -447,7 +458,8 @@ const ctxComments = (msgId) => ({
 // ЧАТ БУДИНКУ
 // ------------------------------------------------------------
 export function loadChat() {
-    const host = document.getElementById('chatList');
+    const ctx = activeCtx();
+    const host = document.getElementById(ctx.list);
     if (!host) return;
     host.innerHTML = '<p class="list-empty">Завантаження…</p>';
     stopChat();
@@ -461,7 +473,7 @@ export function loadChat() {
             // Читаємо згори вниз, показуємо знизу вгору — як у месенджерах
             lastRendered = snap.docs.map(d => ({ id: d.id, data: d.data() })).reverse();
             const atBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 120;
-            renderList(host, lastRendered, CTX_CHAT);
+            renderList(host, lastRendered, ctx);
             syncChatHeight();
 
             const newest = lastRendered.length
@@ -494,7 +506,7 @@ export function stopChat() {
 
 function refreshChips() {
     renderFileManager(
-        document.getElementById('chatFilesPreview'),
+        document.getElementById(activeCtx().preview),
         [], pendingFiles,
         () => {},
         (i) => { pendingFiles.splice(i, 1); refreshChips(); }
@@ -502,7 +514,8 @@ function refreshChips() {
 }
 
 async function sendChat(btn) {
-    const input = document.getElementById('chatInput');
+    const ctx = activeCtx();
+    const input = document.getElementById(ctx.input);
     const text = input.value.trim();
     const st = compose.chat;
 
@@ -536,7 +549,7 @@ async function sendChat(btn) {
         }
         pendingFiles = [];
         refreshChips();
-        cancelCompose(CTX_CHAT);
+        cancelCompose(ctx);
         playSend();
     } catch (e) {
         console.error('Надсилання в чат:', e.code, e);
@@ -642,15 +655,19 @@ export function initChat() {
     }
     window.addEventListener('resize', syncChatHeight);
 
-    document.getElementById('chatSendBtn')?.addEventListener('click', function () { sendChat(this); });
+    ['chatSendBtn', 'adminChatSendBtn'].forEach(id => {
+        document.getElementById(id)?.addEventListener('click', function () { sendChat(this); });
+    });
     document.getElementById('commentSendBtn')?.addEventListener('click', function () { sendComment(this); });
-    autoGrow(document.getElementById('chatInput'));
-    autoGrow(document.getElementById('commentInput'));
 
-    const files = document.getElementById('chatFiles');
-    files?.addEventListener('change', () => {
-        pendingFiles.push(...Array.from(files.files));
-        files.value = '';
-        refreshChips();
+    ['chatInput', 'adminChatInput', 'commentInput'].forEach(id => autoGrow(document.getElementById(id)));
+
+    ['chatFiles', 'adminChatFiles'].forEach(id => {
+        const files = document.getElementById(id);
+        files?.addEventListener('change', () => {
+            pendingFiles.push(...Array.from(files.files));
+            files.value = '';
+            refreshChips();
+        });
     });
 }
