@@ -26,7 +26,8 @@ import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './p
 import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import {
-    initFinance, loadBalance, loadExpenses, loadReceipts, loadAdminExpenses
+    initFinance, initPayments, loadBalance, loadExpenses, loadReceipts,
+    loadAdminExpenses, loadAdminRequisites
 } from './finance.js';
 import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
@@ -109,7 +110,7 @@ async function loadCabinet(apt) {
         document.getElementById('topNav').style.display = 'none';
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
-                           loadAdminExpenses(),
+                           loadAdminExpenses(), loadAdminRequisites(),
                            loadDirectory()]);
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
@@ -285,6 +286,7 @@ function init() {
     initPolls();
     initDirectory();
     initFinance();
+    initPayments();
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();

@@ -2064,3 +2064,71 @@ select.field-input {
     color: var(--ink-2);
     margin: 8px 0 12px 2px;
 }
+
+/* ---------- ПАНЕЛЬ ОПЛАТИ ---------- */
+.balance-pay { margin-top: 14px; }
+.pay-hint {
+    margin: 0 0 14px 0;
+    font-size: 13px; color: var(--ink-2); line-height: 1.45;
+}
+.pay-banks {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 16px;
+}
+.pay-bank {
+    border: none;
+    background: var(--surface-3);
+    color: var(--ink-2);
+    border-radius: var(--r-sm);
+    padding: 10px 4px;
+    font-family: var(--font);
+    font-size: 12.5px; font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+}
+.pay-bank.active { background: var(--blue); color: #fff; }
+
+.pay-fields { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+/* Сірі блоки на всю ширину: у них легко влучити пальцем */
+.pay-field {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; box-sizing: border-box;
+    background: var(--surface-2);
+    border: 1.5px solid transparent;
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    cursor: pointer; text-align: left;
+    font-family: var(--font);
+    transition: background 0.15s ease, border-color 0.2s ease;
+}
+.pay-field:active { background: var(--surface-3); }
+.pay-field-done { border-color: var(--green); background: rgba(52, 199, 89, 0.08); }
+.pay-field-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pay-field-label {
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--ink-2);
+}
+.pay-field-value {
+    font-size: 15px; font-weight: 600; color: var(--ink);
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+    /* anywhere, а не break-all: довгий IBAN переноситься, але
+       «кв. 298» не рветься навпіл посеред номера. */
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+.pay-copy {
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: rgba(120, 120, 128, 0.12);
+    color: var(--blue);
+    flex-shrink: 0;
+}
+.pay-field-done .pay-copy { background: rgba(52, 199, 89, 0.16); color: var(--green); }
+.pay-open { margin-bottom: 4px; }

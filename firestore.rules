@@ -131,6 +131,13 @@ service cloud.firestore {
       }
     }
 
+    // ---------- ПЛАТІЖНІ РЕКВІЗИТИ ОСББ ----------
+    // Читають усі мешканці — без реквізитів немає як заплатити.
+    match /osbb_settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // ---------- ЗВІТ ПРО ВИТРАТИ ----------
     // Публічний для мешканців: у цьому й сенс прозорості.
     match /finance/{docId} {

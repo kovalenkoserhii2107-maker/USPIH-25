@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=12">
+    <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -119,6 +119,31 @@
                 <span class="menu-row-text"><strong>Вийти з кабінету</strong></span>
             </button>
         </div>
+    </div>
+</div>
+
+<!-- ============ ПАНЕЛЬ ОПЛАТИ ============ -->
+<div id="paymentPopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Оплата</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body">
+        <p class="pay-hint">Оберіть банк — поля стануть у тому порядку, у якому їх запитує застосунок. Торкніться поля, щоб скопіювати.</p>
+
+        <div class="pay-banks" id="paymentBanks">
+            <button type="button" class="pay-bank active" data-bank="mono">Monobank</button>
+            <button type="button" class="pay-bank" data-bank="privat">Приват24</button>
+            <button type="button" class="pay-bank" data-bank="portmone">Portmone</button>
+            <button type="button" class="pay-bank" data-bank="other">Інший</button>
+        </div>
+
+        <div id="paymentFieldsContainer" class="pay-fields"></div>
+
+        <button type="button" id="openBankBtn" class="btn-primary pay-open">
+            Відкрити застосунок банку
+        </button>
     </div>
 </div>
 
@@ -585,16 +610,54 @@
         <div class="admin-panel" data-panel="finance">
             <div class="card">
                 <div class="admin-card-head">
+                    <h2 class="admin-card-title">Реквізити ОСББ</h2>
+                    <span class="admin-card-sub">Мешканці копіюють їх у застосунку свого банку</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqPayee">Одержувач</label>
+                    <input type="text" id="reqPayee" class="field-input" placeholder="ОСББ «Успіх-25»">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqEdrpou">ЄДРПОУ</label>
+                    <input type="text" id="reqEdrpou" class="field-input" inputmode="numeric" placeholder="12345678">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqIban">IBAN</label>
+                    <input type="text" id="reqIban" class="field-input" placeholder="UA000000000000000000000000000">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqPurpose">Шаблон призначення</label>
+                    <input type="text" id="reqPurpose" class="field-input" placeholder="Внески на утримання будинку, кв. {apt}">
+                    <span class="field-hint">Замість <code>{apt}</code> підставиться номер квартири мешканця.</span>
+                </div>
+                <button type="button" id="saveRequisitesBtn" class="btn-primary">Зберегти реквізити</button>
+            </div>
+
+            <div class="card">
+                <div class="admin-card-head">
                     <h2 class="admin-card-title">Баланси квартир</h2>
-                    <span class="admin-card-sub">Рядок на квартиру: номер і сума. Додатна — борг, від'ємна — переплата</span>
+                    <span class="admin-card-sub">Рядок на квартиру: номер і сума. Від'ємна — борг, додатна — переплата</span>
                 </div>
                 <div class="field">
                     <textarea id="balanceBulk" class="field-input" rows="6"
-                              placeholder="298 1250,40&#10;12 -300&#10;55 0"></textarea>
+                              placeholder="298 -1250,40&#10;12 300&#10;55 0"></textarea>
                     <span class="field-hint">Роздільник — пробіл, кома, крапка з комою або табуляція.</span>
                 </div>
                 <div id="balancePreview"></div>
                 <button type="button" id="applyBalancesBtn" class="btn-primary">Оновити баланси</button>
+
+                <hr class="board-form-divider">
+
+                <div class="field">
+                    <span class="field-label">Або файл CSV</span>
+                    <label class="dropzone" for="debtsCsvFile">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span class="dropzone-text">Обрати CSV</span>
+                        <span class="dropzone-hint">Два стовпці: квартира та сума</span>
+                    </label>
+                    <input type="file" id="debtsCsvFile" accept=".csv,text/csv" class="hidden-file-input">
+                </div>
+                <button type="button" id="uploadDebtsBtn" class="btn-soft">Оновити з файлу</button>
             </div>
 
             <div class="card">
@@ -1076,6 +1139,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=12"></script>
+<script type="module" src="js/app.js?v=13"></script>
 </body>
 </html>

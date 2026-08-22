@@ -40,6 +40,7 @@ export const session = {
     apt: null,        // номер квартири (з email користувача)
     entrance: null,   // парадна
     area: null,       // площа
+    balance: 0,       // від'ємне — борг, додатне — переплата
     isAdmin: false
 };
 
@@ -54,5 +55,6 @@ export function resetSession() {
     session.apt = null;
     session.entrance = null;
     session.area = null;
+    session.balance = 0;
     session.isAdmin = false;
 }

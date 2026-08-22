@@ -2,7 +2,8 @@
 // Фінанси: баланс квартири, квитанції та звіт про витрати ОСББ.
 //
 // Баланс лежить у самій квартирі (apartments/{apt}.balance):
-// додатне число — борг, від'ємне — переплата. Квитанції —
+// ВІД'ЄМНЕ число — борг, додатне — переплата (як на рахунку в
+// банку). Квитанції —
 // підколекція квартири, тож мешканець бачить лише свої.
 // Звіт про витрати спільний для всіх і лежить у finance/current.
 // ============================================================
@@ -49,8 +50,8 @@ export function formatMoney(n) {
 // ------------------------------------------------------------
 export function renderBalance(balance, updatedAt) {
     const n = parseMoney(balance);
-    const debt = n > 0.005;
-    const credit = n < -0.005;
+    const debt = n < -0.005;
+    const credit = n > 0.005;
     const state = debt ? 'debt' : credit ? 'credit' : 'zero';
     const label = debt ? 'До сплати' : credit ? 'Переплата' : 'Заборгованості немає';
 
@@ -60,6 +61,10 @@ export function renderBalance(balance, updatedAt) {
             <span class="balance-sum">${state === 'zero' ? '0,00' : formatMoney(n)}<small>грн</small></span>
             ${updatedAt ? `<span class="balance-date">Оновлено ${escapeHtml(formatDateTime(updatedAt))}</span>` : ''}
         </div>
+        <button type="button" class="btn-primary balance-pay" id="payBtn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+            ${debt ? 'Сплатити' : 'Реквізити для оплати'}
+        </button>
         <button type="button" class="balance-receipts" id="openReceiptsBtn">
             <span class="balance-receipts-text">Квитанції</span>
             <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -73,7 +78,10 @@ export async function loadBalance(apt) {
     try {
         const snap = await getDoc(doc(db, 'apartments', apt));
         const d = snap.exists() ? snap.data() : {};
+        session.balance = parseMoney(d.balance);
         host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt);
+
+        document.getElementById('payBtn')?.addEventListener('click', openPaymentSheet);
     } catch (e) {
         console.error('Баланс:', e);
         host.innerHTML = '';
@@ -267,7 +275,7 @@ function previewBalances() {
         <span class="bulk-ok">Розпізнано: ${rows.length}</span>
         ${errors.length ? `<span class="bulk-bad">Не розпізнано: ${errors.length}</span>` : ''}
         ${rows.slice(0, 4).map(r =>
-            `<span class="bulk-row">кв. ${escapeHtml(r.apt)} → ${r.balance > 0 ? 'борг ' : r.balance < 0 ? 'переплата ' : ''}${formatMoney(r.balance)} грн</span>`
+            `<span class="bulk-row">кв. ${escapeHtml(r.apt)} → ${r.balance < 0 ? 'борг ' : r.balance > 0 ? 'переплата ' : ''}${formatMoney(r.balance)} грн</span>`
         ).join('')}
         ${rows.length > 4 ? `<span class="bulk-row bulk-more">…і ще ${rows.length - 4}</span>` : ''}
     </div>`;
@@ -463,4 +471,319 @@ export function initFinance() {
 
     document.getElementById('addExpenseBtn')?.addEventListener('click', () => addExpenseRow());
     document.getElementById('saveExpensesBtn')?.addEventListener('click', function () { saveExpenses(this); });
+}
+
+// ============================================================
+// ПЛАТІЖНІ РЕКВІЗИТИ ТА ОПЛАТА
+//
+// Українські банки не приймають реквізити через посилання, тож
+// «оплатити одним дотиком» технічно неможливо. Робимо наступне
+// найкраще: показуємо поля в тому порядку, в якому їх питає
+// конкретний банк, і даємо кожне скопіювати одним дотиком.
+// ============================================================
+
+let requisites = null;
+
+/** Порядок полів у кожного банку — саме той, у якому банк їх питає. */
+const BANKS = {
+    mono: {
+        label: 'Monobank',
+        fields: ['iban', 'edrpou', 'amount', 'purpose'],
+        deep: 'monobank://',
+        web: 'https://api.monobank.ua/'
+    },
+    privat: {
+        label: 'Приват24',
+        fields: ['iban', 'amount', 'purpose'],
+        deep: 'privat24://',
+        web: 'https://next.privat24.ua'
+    },
+    portmone: {
+        label: 'Portmone',
+        fields: ['edrpou', 'payeeName', 'iban', 'purpose', 'amount'],
+        web: 'https://www.portmone.com.ua/r3/perekaz-dovilni-rekvizyty'
+    },
+    other: {
+        label: 'Інший банк',
+        fields: ['payeeName', 'edrpou', 'iban', 'amount', 'purpose']
+    }
+};
+
+const FIELD_LABELS = {
+    iban: 'IBAN',
+    edrpou: 'ЄДРПОУ / ІПН',
+    payeeName: 'Одержувач',
+    amount: 'Сума',
+    purpose: 'Призначення платежу'
+};
+
+let activeBank = 'mono';
+
+export async function loadRequisites() {
+    if (requisites) return requisites;
+    const snap = await getDoc(doc(db, 'osbb_settings', 'finance'));
+    requisites = snap.exists() ? snap.data() : {};
+    return requisites;
+}
+
+/** Підставляє номер квартири в шаблон призначення. */
+function buildPurpose(tpl, apt) {
+    const base = tpl || 'Внески на утримання будинку, кв. {apt}';
+    return base.replace(/\{apt\}/g, String(apt ?? ''));
+}
+
+function fieldValues(req, apt, balance) {
+    const debt = parseMoney(balance) < 0 ? Math.abs(parseMoney(balance)) : 0;
+    return {
+        iban: (req.iban || '').replace(/\s+/g, ''),
+        edrpou: req.edrpou || '',
+        payeeName: req.payeeName || '',
+        // Для копіювання — крапка: її розуміють усі банківські форми
+        amount: debt ? debt.toFixed(2) : '',
+        purpose: buildPurpose(req.purposeTemplate, apt)
+    };
+}
+
+const COPY_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+
+/** Клавіатура недоступна на iOS у не-secure контексті — тримаємо запасний шлях. */
+async function copyText(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (e) { /* пробуємо старий спосіб */ }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+export function renderPaymentSheet() {
+    const host = document.getElementById('paymentFieldsContainer');
+    if (!host) return;
+
+    const req = requisites || {};
+    const vals = fieldValues(req, session.apt, session.balance);
+    const bank = BANKS[activeBank] || BANKS.other;
+
+    if (!vals.iban) {
+        host.innerHTML = '<p class="list-empty">Правління ще не внесло платіжні реквізити</p>';
+        document.getElementById('openBankBtn')?.setAttribute('hidden', '');
+        return;
+    }
+    document.getElementById('openBankBtn')?.removeAttribute('hidden');
+
+    host.innerHTML = bank.fields
+        .filter(f => vals[f])
+        .map((f, i) => `
+            <button type="button" class="pay-field" data-value="${escapeHtml(vals[f])}">
+                <span class="pay-field-text">
+                    <span class="pay-field-label">${i + 1}. ${escapeHtml(FIELD_LABELS[f])}</span>
+                    <span class="pay-field-value">${escapeHtml(
+                        f === 'amount' ? formatMoney(parseMoney(vals[f])) + ' грн' : vals[f]
+                    )}</span>
+                </span>
+                <span class="pay-copy" aria-label="Копіювати">${COPY_ICON}</span>
+            </button>`).join('');
+
+    host.querySelectorAll('.pay-field').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const ok = await copyText(btn.dataset.value);
+            if (!ok) return toast('Не вдалося скопіювати', 'error');
+            toast('Скопійовано', 'success');
+            btn.classList.add('pay-field-done');
+            setTimeout(() => btn.classList.remove('pay-field-done'), 1200);
+        });
+    });
+
+    document.querySelectorAll('#paymentBanks .pay-bank').forEach(b => {
+        b.classList.toggle('active', b.dataset.bank === activeBank);
+    });
+}
+
+/**
+ * Схеми на кшталт monobank:// офіційно не задокументовані, тож
+ * діємо обережно: пробуємо відкрити застосунок, а якщо за секунду
+ * ми все ще на сторінці — відкриваємо веб-версію.
+ */
+function openBank() {
+    const bank = BANKS[activeBank] || BANKS.other;
+    if (!bank.deep && !bank.web) {
+        return toast('Скопіюйте реквізити та відкрийте свій банк', 'info');
+    }
+    if (!bank.deep) {
+        window.open(bank.web, '_blank', 'noopener');
+        return;
+    }
+    let left = false;
+    const mark = () => { left = true; };
+    document.addEventListener('visibilitychange', mark, { once: true });
+    window.location.href = bank.deep;
+    setTimeout(() => {
+        document.removeEventListener('visibilitychange', mark);
+        if (!left && !document.hidden && bank.web) {
+            window.open(bank.web, '_blank', 'noopener');
+        }
+    }, 1200);
+}
+
+export async function openPaymentSheet() {
+    const { openSheet } = await import('./ui.js');
+    try {
+        await loadRequisites();
+    } catch (e) {
+        console.error('Реквізити:', e);
+    }
+    renderPaymentSheet();
+    openSheet('paymentPopup');
+}
+
+// ------------------------------------------------------------
+// РЕКВІЗИТИ (адмін)
+// ------------------------------------------------------------
+export async function loadAdminRequisites() {
+    if (!document.getElementById('reqIban')) return;
+    try {
+        const snap = await getDoc(doc(db, 'osbb_settings', 'finance'));
+        const d = snap.exists() ? snap.data() : {};
+        document.getElementById('reqPayee').value = d.payeeName || '';
+        document.getElementById('reqEdrpou').value = d.edrpou || '';
+        document.getElementById('reqIban').value = d.iban || '';
+        document.getElementById('reqPurpose').value =
+            d.purposeTemplate || 'Внески на утримання будинку, кв. {apt}';
+    } catch (e) {
+        console.error('Завантаження реквізитів:', e);
+    }
+}
+
+export async function saveRequisites(btn) {
+    const payeeName = document.getElementById('reqPayee').value.trim();
+    const edrpou = document.getElementById('reqEdrpou').value.trim();
+    const iban = document.getElementById('reqIban').value.trim().replace(/\s+/g, '').toUpperCase();
+    const purposeTemplate = document.getElementById('reqPurpose').value.trim();
+
+    if (!iban) return toast('Вкажіть IBAN', 'error');
+    // Український IBAN: UA + 2 контрольні + 25 знаків = 29
+    if (!/^UA\d{27}$/.test(iban)) {
+        return toast('IBAN має вигляд UA та 27 цифр', 'error');
+    }
+    if (edrpou && !/^\d{8,10}$/.test(edrpou)) {
+        return toast('ЄДРПОУ — 8 цифр, ІПН — 10', 'error');
+    }
+
+    setBusy(btn, true, 'Збереження…');
+    try {
+        await setDoc(doc(db, 'osbb_settings', 'finance'),
+            { payeeName, edrpou, iban, purposeTemplate, updatedAt: serverTimestamp() },
+            { merge: true });
+        requisites = null;              // щоб мешканець побачив свіже
+        toast('Реквізити збережено', 'success');
+    } catch (e) {
+        console.error('Збереження реквізитів:', e);
+        toast('Не вдалося зберегти реквізити', 'error');
+    } finally {
+        setBusy(btn, false);
+    }
+}
+
+// ------------------------------------------------------------
+// CSV З БОРГАМИ
+// ------------------------------------------------------------
+/**
+ * Читає CSV «квартира;сума».
+ *
+ * Розбиваємо по ПЕРШОМУ роздільнику, а не по всіх: кома буває і
+ * роздільником стовпців, і десятковою. Розбиття по всіх комах
+ * перетворювало «298;-1250,40» на -1250 — сорок копійок зникали, —
+ * а «9 -640,20» на квартиру 9640.
+ */
+export function parseDebtsCSV(text) {
+    const rows = [], errors = [];
+    String(text || '').replace(/^\ufeff/, '').split(/\r?\n/).forEach((line, i) => {
+        const raw = line.trim();
+        if (!raw) return;
+
+        const m = raw.match(/^([^;,\t\s]+)\s*[;,\t]\s*(.+)$/)   // 298;-1250,40
+               || raw.match(/^(\S+)\s+(.+)$/);                    // 298 -1250,40
+        if (!m) { errors.push({ line: i + 1, raw }); return; }
+
+        const apt = m[1].replace(/\D/g, '');
+        const amount = m[2].trim().replace(/^"|"$/g, '');
+        if (!apt || !/^-?\s*[\d\s]*[.,]?\d+$/.test(amount)) {
+            errors.push({ line: i + 1, raw });
+            return;
+        }
+        rows.push({ apt, balance: parseMoney(amount) });
+    });
+    // Шапку таблиці («Квартира;Борг») відкидаємо мовчки
+    if (errors.length && /кварт|apt|№/i.test(errors[0].raw)) errors.shift();
+    return { rows, errors };
+}
+
+export async function uploadDebtsCSV(file, btn) {
+    if (!file) return toast('Оберіть файл CSV', 'error');
+    setBusy(btn, true, 'Читання файлу…');
+    try {
+        const text = await file.text();
+        const { rows, errors } = parseDebtsCSV(text);
+        if (!rows.length) {
+            toast('У файлі немає жодного коректного рядка', 'error');
+            return;
+        }
+
+        const known = await loadKnownApts();
+        const valid = known.size ? rows.filter(r => known.has(r.apt)) : rows;
+        const unknown = rows.length - valid.length;
+        if (!valid.length) {
+            toast('Жодна квартира з файлу не знайдена в базі', 'error');
+            return;
+        }
+
+        setBusy(btn, true, 'Збереження…');
+        for (let i = 0; i < valid.length; i += 400) {
+            const batch = writeBatch(db);
+            valid.slice(i, i + 400).forEach(r => {
+                batch.set(doc(db, 'apartments', r.apt),
+                    { balance: r.balance, balanceUpdatedAt: new Date() }, { merge: true });
+            });
+            await batch.commit();
+        }
+
+        const extra = [
+            unknown ? `невідомих квартир: ${unknown}` : '',
+            errors.length ? `нерозпізнаних рядків: ${errors.length}` : ''
+        ].filter(Boolean).join(', ');
+        toast(`Оновлено балансів: ${valid.length}${extra ? ` (${extra})` : ''}`,
+              extra ? 'info' : 'success');
+    } catch (e) {
+        console.error('CSV з боргами:', e);
+        toast('Не вдалося прочитати файл', 'error');
+    } finally {
+        setBusy(btn, false);
+    }
+}
+
+export function initPayments() {
+    document.querySelectorAll('#paymentBanks .pay-bank').forEach(b => {
+        b.addEventListener('click', () => { activeBank = b.dataset.bank; renderPaymentSheet(); });
+    });
+    document.getElementById('openBankBtn')?.addEventListener('click', openBank);
+    document.getElementById('saveRequisitesBtn')?.addEventListener('click', function () { saveRequisites(this); });
+
+    const csv = document.getElementById('debtsCsvFile');
+    document.getElementById('uploadDebtsBtn')?.addEventListener('click', function () {
+        uploadDebtsCSV(csv?.files?.[0], this);
+    });
 }
