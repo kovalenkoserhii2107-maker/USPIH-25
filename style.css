@@ -1920,3 +1920,12 @@ select.field-input {
 }
 /* Усередині адмінської картки фон уже сірий — беремо світліший */
 .poll-card-admin .quorum-facts { background: var(--surface); }
+
+/* Технічні служби */
+.mi-teal { background: linear-gradient(135deg, #5AD1C4, #14A79D); }
+.contact-btn-telegram { background: #229ED9; color: #fff; }
+.person-hours {
+    display: block;
+    font-size: 12px; color: var(--ink-2);
+    margin-top: 3px;
+}

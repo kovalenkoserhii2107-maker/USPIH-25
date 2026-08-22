@@ -18,7 +18,10 @@ import {
     initRequests, loadUserRequests, loadAdminRequests,
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
-import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
+import {
+    initContacts, loadBoardContacts, loadServices,
+    loadAdminBoard, loadAdminServices
+} from './contacts.js';
 import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
 import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
@@ -102,7 +105,7 @@ async function loadCabinet(apt) {
         showScreen('adminDashboardSection');
         document.getElementById('topNav').style.display = 'none';
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
-                           populateDocsDropdown(), loadAdminBoard(), loadAdminPolls(),
+                           populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadDirectory()]);
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
@@ -208,6 +211,7 @@ function initNavigation() {
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
+    document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
     document.getElementById('menuPollsBtn').addEventListener('click', () => go('pollsSection', loadUserPolls));
 
     document.getElementById('menuChangePassBtn').addEventListener('click', () => {
@@ -232,7 +236,7 @@ function initNavigation() {
     });
 
     const back = () => loadCabinet(session.apt);
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
@@ -265,7 +269,7 @@ function init() {
     initPowerToggle();
     initMessages();
     initRequests();
-    initBoard();
+    initContacts();
     initPolls();
     initDirectory();
     initNavigation();

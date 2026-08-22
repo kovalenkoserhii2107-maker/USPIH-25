@@ -125,6 +125,12 @@ service cloud.firestore {
       }
     }
 
+    // ---------- ТЕХНІЧНІ СЛУЖБИ ----------
+    match /services/{serviceId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // ---------- КОНТАКТИ ПРАВЛІННЯ ----------
     match /board_members/{memberId} {
       allow read: if isSignedIn();

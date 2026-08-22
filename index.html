@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=10">
+    <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -92,6 +92,11 @@
                 <span class="menu-row-icon mi-indigo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
                 <span class="menu-row-text"><strong>Голосування</strong><small>Опитування правління</small></span>
                 <span id="pollsMenuBadge" class="menu-badge" style="display:none;"></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuServicesBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-teal"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></span>
+                <span class="menu-row-text"><strong>Технічні служби</strong><small>Електрик, сантехнік, ліфтер, домофон</small></span>
                 <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <button id="menuBoardBtn" class="menu-row" type="button">
@@ -352,6 +357,10 @@
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v15"></path><path d="M12 11h7a1 1 0 0 1 1 1v9"></path><line x1="2" y1="21" x2="22" y2="21"></line><line x1="7" y1="9" x2="9" y2="9"></line><line x1="7" y1="13" x2="9" y2="13"></line><line x1="15" y1="15" x2="17" y2="15"></line></svg>
                 <span>Квартири</span>
             </button>
+            <button class="admin-tab" data-tab="services" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                <span>Служби</span>
+            </button>
             <button class="admin-tab" data-tab="board" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 <span>Правління</span>
@@ -568,6 +577,166 @@
             </div>
         </div>
 
+        <!-- Вкладка: технічні служби -->
+        <div class="admin-panel" data-panel="services">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Електрик</h2>
+                    <span class="admin-card-sub">Аварійні виклики, освітлення</span>
+                </div>
+
+                <div class="board-photo-row">
+                    <div class="board-photo-preview" id="servicePhotoPreview-electrician"></div>
+                    <label class="dropzone board-photo-drop" for="servicePhotoInput-electrician">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Змінити фото</span>
+                    </label>
+                    <input type="file" id="servicePhotoInput-electrician" accept="image/*" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="serviceName-electrician">Імʼя або назва служби</label>
+                    <input type="text" id="serviceName-electrician" class="field-input" placeholder="Прізвище Імʼя або назва підрядника">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="servicePhone-electrician">Телефон</label>
+                    <input type="tel" id="servicePhone-electrician" class="field-input" placeholder="+380XXXXXXXXX">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceViber-electrician">Viber</label>
+                    <input type="tel" id="serviceViber-electrician" class="field-input" placeholder="Якщо номер відрізняється від телефону">
+                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceTelegram-electrician">Telegram</label>
+                    <input type="text" id="serviceTelegram-electrician" class="field-input" placeholder="@nickname або номер">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceHours-electrician">Графік роботи</label>
+                    <input type="text" id="serviceHours-electrician" class="field-input" placeholder="Пн–Пт 8:00–17:00, аварійні — цілодобово">
+                </div>
+
+                <button type="button" class="btn-primary" id="serviceSaveBtn-electrician">Зберегти</button>
+            </div>
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Сантехнік</h2>
+                    <span class="admin-card-sub">Стояки, протікання, засмічення</span>
+                </div>
+
+                <div class="board-photo-row">
+                    <div class="board-photo-preview" id="servicePhotoPreview-plumber"></div>
+                    <label class="dropzone board-photo-drop" for="servicePhotoInput-plumber">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Змінити фото</span>
+                    </label>
+                    <input type="file" id="servicePhotoInput-plumber" accept="image/*" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="serviceName-plumber">Імʼя або назва служби</label>
+                    <input type="text" id="serviceName-plumber" class="field-input" placeholder="Прізвище Імʼя або назва підрядника">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="servicePhone-plumber">Телефон</label>
+                    <input type="tel" id="servicePhone-plumber" class="field-input" placeholder="+380XXXXXXXXX">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceViber-plumber">Viber</label>
+                    <input type="tel" id="serviceViber-plumber" class="field-input" placeholder="Якщо номер відрізняється від телефону">
+                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceTelegram-plumber">Telegram</label>
+                    <input type="text" id="serviceTelegram-plumber" class="field-input" placeholder="@nickname або номер">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceHours-plumber">Графік роботи</label>
+                    <input type="text" id="serviceHours-plumber" class="field-input" placeholder="Пн–Пт 8:00–17:00, аварійні — цілодобово">
+                </div>
+
+                <button type="button" class="btn-primary" id="serviceSaveBtn-plumber">Зберегти</button>
+            </div>
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Ліфтер</h2>
+                    <span class="admin-card-sub">Обслуговування та застрягання</span>
+                </div>
+
+                <div class="board-photo-row">
+                    <div class="board-photo-preview" id="servicePhotoPreview-elevator"></div>
+                    <label class="dropzone board-photo-drop" for="servicePhotoInput-elevator">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Змінити фото</span>
+                    </label>
+                    <input type="file" id="servicePhotoInput-elevator" accept="image/*" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="serviceName-elevator">Імʼя або назва служби</label>
+                    <input type="text" id="serviceName-elevator" class="field-input" placeholder="Прізвище Імʼя або назва підрядника">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="servicePhone-elevator">Телефон</label>
+                    <input type="tel" id="servicePhone-elevator" class="field-input" placeholder="+380XXXXXXXXX">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceViber-elevator">Viber</label>
+                    <input type="tel" id="serviceViber-elevator" class="field-input" placeholder="Якщо номер відрізняється від телефону">
+                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceTelegram-elevator">Telegram</label>
+                    <input type="text" id="serviceTelegram-elevator" class="field-input" placeholder="@nickname або номер">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceHours-elevator">Графік роботи</label>
+                    <input type="text" id="serviceHours-elevator" class="field-input" placeholder="Пн–Пт 8:00–17:00, аварійні — цілодобово">
+                </div>
+
+                <button type="button" class="btn-primary" id="serviceSaveBtn-elevator">Зберегти</button>
+            </div>
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Домофон</h2>
+                    <span class="admin-card-sub">Ключі, виклична панель</span>
+                </div>
+
+                <div class="board-photo-row">
+                    <div class="board-photo-preview" id="servicePhotoPreview-intercom"></div>
+                    <label class="dropzone board-photo-drop" for="servicePhotoInput-intercom">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Змінити фото</span>
+                    </label>
+                    <input type="file" id="servicePhotoInput-intercom" accept="image/*" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="serviceName-intercom">Імʼя або назва служби</label>
+                    <input type="text" id="serviceName-intercom" class="field-input" placeholder="Прізвище Імʼя або назва підрядника">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="servicePhone-intercom">Телефон</label>
+                    <input type="tel" id="servicePhone-intercom" class="field-input" placeholder="+380XXXXXXXXX">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceViber-intercom">Viber</label>
+                    <input type="tel" id="serviceViber-intercom" class="field-input" placeholder="Якщо номер відрізняється від телефону">
+                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceTelegram-intercom">Telegram</label>
+                    <input type="text" id="serviceTelegram-intercom" class="field-input" placeholder="@nickname або номер">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="serviceHours-intercom">Графік роботи</label>
+                    <input type="text" id="serviceHours-intercom" class="field-input" placeholder="Пн–Пт 8:00–17:00, аварійні — цілодобово">
+                </div>
+
+                <button type="button" class="btn-primary" id="serviceSaveBtn-intercom">Зберегти</button>
+            </div>
+        </div>
+
         <!-- Вкладка: контакти правління -->
         <div class="admin-panel" data-panel="board">
             <div class="card">
@@ -601,6 +770,10 @@
                     <label class="field-label" for="boardViber-chairman">Viber</label>
                     <input type="tel" id="boardViber-chairman" class="field-input" placeholder="Якщо номер відрізняється від телефону">
                     <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardTelegram-chairman">Telegram</label>
+                    <input type="text" id="boardTelegram-chairman" class="field-input" placeholder="@nickname або номер">
                 </div>
 
                 <button type="button" class="btn-primary" id="boardSaveBtn-chairman">Зберегти</button>
@@ -637,6 +810,10 @@
                     <label class="field-label" for="boardViber-accountant">Viber</label>
                     <input type="tel" id="boardViber-accountant" class="field-input" placeholder="Якщо номер відрізняється від телефону">
                     <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardTelegram-accountant">Telegram</label>
+                    <input type="text" id="boardTelegram-accountant" class="field-input" placeholder="@nickname або номер">
                 </div>
 
                 <button type="button" class="btn-primary" id="boardSaveBtn-accountant">Зберегти</button>
@@ -711,6 +888,21 @@
         <h1 class="screen-title" style="margin-bottom: 18px;">Голосування</h1>
 
         <div id="userPollsContainer">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
+    <!-- ============ ТЕХНІЧНІ СЛУЖБИ ============ -->
+    <div id="servicesSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromServicesBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+        </div>
+        <h1 class="screen-title" style="margin-bottom: 18px;">Технічні служби</h1>
+
+        <div id="servicesContainer">
             <p class="list-empty">Завантаження…</p>
         </div>
     </div>
@@ -810,6 +1002,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=10"></script>
+<script type="module" src="js/app.js?v=11"></script>
 </body>
 </html>
