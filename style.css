@@ -2153,16 +2153,6 @@ select.field-input {
 }
 
 
-/* Швидка дія на головному екрані — той самий вигляд, що й у меню */
-.quick-action {
-    background: var(--surface);
-    box-shadow: var(--sh-card);
-    border: 0.5px solid rgba(0, 0, 0, 0.04);
-    border-radius: var(--r-lg);
-    padding: 14px 16px;
-    margin-bottom: var(--gap);
-}
-.quick-action:active { background: var(--surface-2); }
 
 /* Залишок на рахунку ОСББ — угорі блоку витрат */
 .funds-row {

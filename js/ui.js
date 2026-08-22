@@ -197,6 +197,14 @@ const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
                  'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection'];
 
+/** Який екран зараз відкрито — потрібно, щоб оновлення не скидало його. */
+export function currentScreen() {
+    return SCREENS.find(id => {
+        const el = document.getElementById(id);
+        return el && el.style.display !== 'none';
+    }) || null;
+}
+
 export function showScreen(id) {
     SCREENS.forEach(s => {
         const el = document.getElementById(s);

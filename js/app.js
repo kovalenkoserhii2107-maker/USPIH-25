@@ -9,7 +9,9 @@ import {
     signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-import { toast, setBusy, showScreen, initSheets, toggleSheet, closeAllSheets } from './ui.js';
+import {
+    toast, setBusy, showScreen, currentScreen, initSheets, toggleSheet, closeAllSheets
+} from './ui.js';
 import { initAttachmentViewers } from './attachments.js';
 import { initOwners, loadOwners } from './owners.js';
 import { initPowerToggle, startPowerListener, stopPowerListener } from './power.js';
@@ -137,6 +139,37 @@ async function loadCabinet(apt) {
 }
 
 // ------------------------------------------------------------
+// ОНОВЛЕННЯ ЖЕСТОМ
+//
+// Перезавантажувати сторінку не можна: мешканця викидало б на
+// головний екран щоразу, коли він тягне вниз у зверненнях чи
+// квитанціях. Тому оновлюємо дані того екрана, що відкритий.
+// ------------------------------------------------------------
+const SCREEN_RELOADERS = {
+    dataSection: () => loadCabinet(session.apt),
+    adminDashboardSection: () => loadCabinet(session.apt),
+    docsSection: loadOsbbDocs,
+    requestsSection: loadUserRequests,
+    pollsSection: loadUserPolls,
+    boardSection: loadBoardContacts,
+    servicesSection: loadServices,
+    receiptsSection: loadReceipts
+};
+
+async function refreshCurrentScreen() {
+    if (!auth.currentUser) return;
+    const reloader = SCREEN_RELOADERS[currentScreen()];
+    // Невідомий екран — чесніше перезавантажити, ніж не зробити нічого
+    if (!reloader) { location.reload(); return; }
+    try {
+        await reloader();
+    } catch (e) {
+        console.error('Оновлення екрана:', e);
+        toast('Не вдалося оновити', 'error');
+    }
+}
+
+// ------------------------------------------------------------
 // СТАН АВТЕНТИФІКАЦІЇ
 // ------------------------------------------------------------
 onAuthStateChanged(auth, async (user) => {
@@ -218,7 +251,6 @@ function initNavigation() {
 
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
-    document.getElementById('quickRequestBtn')?.addEventListener('click', () => go('requestsSection', loadUserRequests));
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
     document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
     document.getElementById('menuPollsBtn').addEventListener('click', () => go('pollsSection', loadUserPolls));
@@ -287,7 +319,7 @@ function init() {
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();
-    initPullToRefresh();
+    initPullToRefresh(refreshCurrentScreen);
 
     // У вже встановленому застосунку пункт меню зайвий
     const installBtn = document.getElementById('menuInstallBtn');

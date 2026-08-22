@@ -17,7 +17,9 @@ const RESISTANCE = 0.5;
 let startY = 0;
 let pulling = false;
 let armed = false;
+let busy = false;
 let indicator = null;
+let onRefresh = null;
 
 function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches
@@ -64,11 +66,18 @@ function reset() {
     }, 260);
 }
 
-export function initPullToRefresh() {
+/**
+ * @param {Function} [refresh] що робити на оновлення. Без нього —
+ *   перезавантаження сторінки, але тоді мешканця викидає на
+ *   головний екран, тож застосунок передає сюди перезавантаження
+ *   даних поточного екрана.
+ */
+export function initPullToRefresh(refresh) {
+    onRefresh = typeof refresh === 'function' ? refresh : null;
     if (!isStandalone()) return;
 
     document.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1 || !canPull()) { pulling = false; return; }
+        if (busy || e.touches.length !== 1 || !canPull()) { pulling = false; return; }
         startY = e.touches[0].clientY;
         pulling = true;
         armed = false;
@@ -84,13 +93,23 @@ export function initPullToRefresh() {
         armed = move(delta) >= READY;
     }, { passive: false });
 
-    document.addEventListener('touchend', () => {
+    document.addEventListener('touchend', async () => {
         if (!pulling) return;
         pulling = false;
         if (!armed) { reset(); return; }
+
         indicator?.classList.add('ptr-loading');
-        // Повне перезавантаження, а не дозавантаження даних: мешканець
-        // може бути на будь-якому екрані, і так поводиться браузер.
-        location.reload();
+        if (!onRefresh) { location.reload(); return; }
+
+        busy = true;
+        try {
+            await onRefresh();
+        } catch (e) {
+            console.error('Оновлення:', e);
+        } finally {
+            busy = false;
+            indicator?.classList.remove('ptr-loading');
+            reset();
+        }
     }, { passive: true });
 }
