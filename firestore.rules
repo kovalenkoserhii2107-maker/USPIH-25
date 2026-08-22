@@ -93,8 +93,31 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000;
 
-        allow update: if false;
-        allow delete: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
+        // Видалення тепер мʼяке: документ лишається з міткою, щоб у
+        // розмові було видно, що тут щось було. Тому дозволяємо
+        // update, але суворо обмежуємо, ЩО саме можна змінити.
+        allow update: if isSignedIn()
+          && resource.data.get('deleted', false) == false
+          && (
+            // автор виправляє власний текст
+            (resource.data.apt == myApt()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 2000)
+            ||
+            // мʼяке видалення: автор або правління. Вміст затирається,
+            // лишається сама мітка.
+            ((resource.data.apt == myApt() || isAdmin())
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['deleted', 'deletedAt', 'deletedByBoard', 'text', 'attachments'])
+              && request.resource.data.deleted == true)
+          );
+
+        // Остаточно стерти може лише правління — на випадок,
+        // коли навіть мітка недоречна.
+        allow delete: if isAdmin();
       }
     }
 
@@ -114,10 +137,31 @@ service cloud.firestore {
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 2000;
 
-      // Написане не редагується: інакше можна змінити слова заднім числом
-      allow update: if false;
-      // Прибрати може автор або правління
-      allow delete: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
+        // Видалення тепер мʼяке: документ лишається з міткою, щоб у
+      // розмові було видно, що тут щось було. Тому дозволяємо
+      // update, але суворо обмежуємо, ЩО саме можна змінити.
+      allow update: if isSignedIn()
+        && resource.data.get('deleted', false) == false
+        && (
+          // автор виправляє власний текст
+          (resource.data.apt == myApt()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000)
+          ||
+          // мʼяке видалення: автор або правління. Вміст затирається,
+          // лишається сама мітка.
+          ((resource.data.apt == myApt() || isAdmin())
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['deleted', 'deletedAt', 'deletedByBoard', 'text', 'attachments'])
+            && request.resource.data.deleted == true)
+        );
+
+      // Остаточно стерти може лише правління — на випадок,
+      // коли навіть мітка недоречна.
+      allow delete: if isAdmin();
     }
 
     // ---------- ЗВЕРНЕННЯ ----------

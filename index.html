@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=24">
+    <link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 
@@ -1082,9 +1082,11 @@
         <h1 class="screen-title" style="margin-bottom: 4px;">Чат будинку</h1>
         <p class="chat-sub">Пишете від імені своєї квартири. Правління бачить усе.</p>
 
+        <div class="chat-body">
         <div id="chatList" class="chat-list"></div>
 
         <div class="chat-compose">
+            <div id="chatComposeCtx" class="compose-ctx" hidden></div>
             <div id="chatFilesPreview" class="file-chips"></div>
             <div class="chat-row">
                 <label class="chat-attach-btn" for="chatFiles" aria-label="Додати фото">
@@ -1096,6 +1098,7 @@
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                 </button>
             </div>
+        </div>
         </div>
     </div>
 
@@ -1188,6 +1191,7 @@
         <div id="msgComments" class="msg-comments" hidden>
             <span class="comments-title">Обговорення</span>
             <div id="commentsList" class="chat-list chat-list-inline"></div>
+            <div id="commentComposeCtx" class="compose-ctx" hidden></div>
             <div class="chat-row">
                 <textarea id="commentInput" class="chat-input" rows="1" placeholder="Написати коментар…"></textarea>
                 <button type="button" id="commentSendBtn" class="chat-send" aria-label="Надіслати">
@@ -1282,6 +1286,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=24"></script>
+<script type="module" src="js/app.js?v=25"></script>
 </body>
 </html>
