@@ -47,13 +47,19 @@ function explain(e, action) {
 // зараз видно, і ми підганяємо висоту чату під це.
 // ------------------------------------------------------------
 function syncChatHeight() {
-    const body = document.querySelector('#chatSection .chat-body');
-    // Панель правління має власну фіксовану висоту — там підганяти нічого
-    if (!body || body.offsetParent === null) return;
+    const sec = document.getElementById('chatSection');
+    if (!sec || sec.style.display === 'none') return;
+
+    // Задаємо висоту всьому екрану, а не стрічці всередині.
+    //
+    // Раніше висота рахувалася від getBoundingClientRect().top, який
+    // зменшується під час прокрутки: сторінка прокрутилася — верх
+    // «поповз» — висота зросла — сторінка стала вищою — можна
+    // прокрутити ще далі. Через це шапка з «Назад» їхала вгору й не
+    // поверталася. Тепер екран прикріплений до вікна й сторінка під
+    // ним не прокручується взагалі.
     const vv = window.visualViewport;
-    const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
-    const top = body.getBoundingClientRect().top + window.scrollY - window.scrollY;
-    body.style.height = Math.max(220, visibleBottom - top - 10) + 'px';
+    sec.style.height = (vv ? vv.height : window.innerHeight) + 'px';
 }
 
 /** Короткий сигнал надсилання. Синтезуємо, щоб не тягнути файл. */

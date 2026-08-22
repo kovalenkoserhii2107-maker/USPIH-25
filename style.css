@@ -2365,29 +2365,51 @@ select.field-input {
 .pay-portmone:active { opacity: 0.5; }
 
 /* ---------- ЧАТ БУДИНКУ ---------- */
-/* Заголовок в одному рядку з «Назад», праворуч: окремий великий
-   заголовок із підзаголовком з'їдали майже сотню пікселів висоти,
-   а в чаті кожен піксель — це видиме повідомлення. */
-.chat-head { justify-content: space-between; margin-bottom: 6px; }
-.chat-head-title {
+/* Заголовок в одному рядку з «Назад», праворуч. Окремий великий
+   заголовок під кнопкою з'їдав близько 60 px висоти на кожному
+   екрані — а це рядок таблиці, повідомлення або пункт списку. */
+.compact-head {
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.head-title {
     font-size: 17px; font-weight: 700;
     color: var(--ink); letter-spacing: -0.3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-left: 12px;
 }
+#chatSection .compact-head { margin-bottom: 6px; }
 /* Колонка на внутрішній обгортці, а не на самому екрані: showScreen
    ставить екранам display: block інлайном, і він перебив би flex.
    Точну висоту рахує syncChatHeight() за visualViewport — інакше при
    відкритій клавіатурі поле вводу висіло високо над нею. Значення
    тут лише запасне, поки скрипт не відпрацював. */
-/* Чат розсуваємо на всю ширину контейнера: бічні поля по 15 px
-   забирали в кожної бульбашки 30 px, які корисніше віддати тексту. */
+/* Екран чату прикріплений до вікна, а не до сторінки: інакше
+   прокрутка сторінки ламала розрахунок висоти й шапка їхала вгору
+   без вороття. Точну висоту під клавіатуру ставить syncChatHeight. */
+#chatSection {
+    position: fixed;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 100%; max-width: 480px;
+    height: 100svh;
+    box-sizing: border-box;
+    padding: max(10px, env(safe-area-inset-top)) 15px 0 15px;
+    overflow: hidden;
+    background: var(--bg);
+    z-index: 60;
+}
+@supports not (height: 100svh) {
+    #chatSection { height: 100vh; }
+}
+/* Чат розсуваємо на бічні поля контейнера: по 15 px з кожного боку
+   забирали в кожної бульбашки 30 px, корисніші для тексту. */
 .chat-body {
     display: flex;
     flex-direction: column;
-    height: calc(100svh - 118px);
+    height: calc(100% - 44px);
     margin: 0 -9px;
-}
-@supports not (height: 100svh) {
-    .chat-body { height: calc(100vh - 118px); }
 }
 /* Прокручується сама стрічка, а не сторінка: інакше після
    надсилання список змінював висоту і сторінка підстрибувала. */
