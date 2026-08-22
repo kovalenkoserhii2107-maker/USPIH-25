@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=21">
+    <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -146,21 +146,21 @@
         <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
     </div>
     <div class="sheet-body">
-        <p class="pay-hint">Оберіть банк — поля стануть у тому порядку, у якому їх запитує застосунок. Торкніться поля, щоб скопіювати.</p>
-
-        <div class="pay-banks" id="paymentBanks">
-            <button type="button" class="pay-bank active" data-bank="account">За рахунком</button>
-            <button type="button" class="pay-bank" data-bank="mono">Monobank</button>
-            <button type="button" class="pay-bank" data-bank="privat">Приват24</button>
-            <button type="button" class="pay-bank" data-bank="portmone">Portmone</button>
-            <button type="button" class="pay-bank" data-bank="other">Інший</button>
-        </div>
+        <p class="pay-hint">Скопіюйте реквізити та вставте їх у застосунку свого банку —
+            у розділі переказу за реквізитами.</p>
 
         <div id="paymentFieldsContainer" class="pay-fields"></div>
 
         <button type="button" id="openBankBtn" class="btn-primary pay-open">
-            Відкрити застосунок банку
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            Копіювати всі реквізити
         </button>
+
+        <a id="portmoneLink" href="https://www.portmone.com.ua/r3/perekaz-dovilni-rekvizyty"
+           target="_blank" rel="noopener" class="pay-portmone">
+            Переказ через Portmone
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
     </div>
 </div>
 
@@ -1237,6 +1237,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=21"></script>
+<script type="module" src="js/app.js?v=22"></script>
 </body>
 </html>

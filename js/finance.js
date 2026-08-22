@@ -506,36 +506,21 @@ export function initFinance() {
 
 let requisites = null;
 
-/** Порядок полів у кожного банку — саме той, у якому банк їх питає. */
-const BANKS = {
-    // ОСББ зареєстроване в банку як отримувач: там питають не IBAN,
-    // а особовий рахунок, ПІБ, адресу й період.
-    account: {
-        label: 'За рахунком',
-        fields: ['ownerName', 'address', 'personalAccount', 'period', 'amount']
-    },
-    mono: {
-        label: 'Monobank',
-        fields: ['iban', 'edrpou', 'amount', 'purpose'],
-        deep: 'monobank://',
-        web: 'https://api.monobank.ua/'
-    },
-    privat: {
-        label: 'Приват24',
-        fields: ['iban', 'amount', 'purpose'],
-        deep: 'privat24://',
-        web: 'https://next.privat24.ua'
-    },
-    portmone: {
-        label: 'Portmone',
-        fields: ['edrpou', 'payeeName', 'iban', 'purpose', 'amount'],
-        web: 'https://www.portmone.com.ua/r3/perekaz-dovilni-rekvizyty'
-    },
-    other: {
-        label: 'Інший банк',
-        fields: ['payeeName', 'edrpou', 'iban', 'amount', 'purpose']
-    }
-};
+/**
+ * Єдиний перелік реквізитів у зручному для заповнення порядку.
+ *
+ * Раніше тут були пресети під конкретні банки з посиланнями
+ * monobank:// і privat24://. Ці схеми ніде не задокументовані й на
+ * iOS не відкриваються — Safari показував «адрес недействителен».
+ * Обіцянка, якої застосунок не може дотримати, гірша за її
+ * відсутність, тож лишився один надійний шлях: скопіювати й
+ * вставити у своєму банку.
+ */
+const FIELDS = ['payeeName', 'edrpou', 'iban', 'purpose', 'personalAccount', 'amount'];
+
+// Portmone — звичайне https-посилання, воно працює скрізь,
+// на відміну від схем застосунків.
+const PORTMONE_URL = 'https://www.portmone.com.ua/r3/perekaz-dovilni-rekvizyty';
 
 const FIELD_LABELS = {
     iban: 'IBAN',
@@ -560,7 +545,6 @@ function previousPeriod() {
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-let activeBank = 'account';
 
 export async function loadRequisites() {
     if (requisites) return requisites;
@@ -569,10 +553,21 @@ export async function loadRequisites() {
     return requisites;
 }
 
-/** Підставляє номер квартири в шаблон призначення. */
-function buildPurpose(tpl, apt) {
-    const base = tpl || 'Внески на утримання будинку, кв. {apt}';
-    return base.replace(/\{apt\}/g, String(apt ?? ''));
+/**
+ * Складає призначення платежу. Підтримує {apt} і {account}.
+ * Якщо шаблон не згадує особовий рахунок, а він у квартири є —
+ * дописуємо його: без нього платіж може не знайти адресата.
+ */
+function buildPurpose(tpl, apt, account) {
+    const raw = tpl || 'Внески на утримання будинку, кв. {apt}';
+    let text = raw
+        .replace(/\{apt\}/g, String(apt ?? ''))
+        .replace(/\{account\}/g, String(account ?? ''));
+
+    if (account && !/\{account\}/.test(raw) && !text.includes(account)) {
+        text += `, особовий рахунок ${account}`;
+    }
+    return text.replace(/,\s*$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
 function fieldValues(req, apt, balance) {
@@ -584,7 +579,7 @@ function fieldValues(req, apt, balance) {
         payeeName: req.payeeName || '',
         // Для копіювання — крапка: її розуміють усі банківські форми
         amount: debt ? debt.toFixed(2) : '',
-        purpose: buildPurpose(req.purposeTemplate, apt),
+        purpose: buildPurpose(req.purposeTemplate, apt, session.personalAccount),
         ownerName: session.ownerName || '',
         address: `${house}, кв. ${apt ?? ''}`,
         personalAccount: session.personalAccount || '',
@@ -622,35 +617,33 @@ export function renderPaymentSheet() {
     const host = document.getElementById('paymentFieldsContainer');
     if (!host) return;
 
-    const req = requisites || {};
-    const vals = fieldValues(req, session.apt, session.balance);
-    const bank = BANKS[activeBank] || BANKS.other;
+    const vals = fieldValues(requisites || {}, session.apt, session.balance);
+    const shown = FIELDS.filter(f => vals[f]);
+    const copyAllBtn = document.getElementById('openBankBtn');
 
-    const shown = bank.fields.filter(f => vals[f]);
     if (!shown.length) {
-        host.innerHTML = '<p class="list-empty">Правління ще не внесло платіжні дані</p>';
-        document.getElementById('openBankBtn')?.setAttribute('hidden', '');
+        host.innerHTML = '<p class="list-empty">Правління ще не внесло платіжні реквізити</p>';
+        copyAllBtn?.setAttribute('hidden', '');
         return;
     }
-    document.getElementById('openBankBtn')?.toggleAttribute('hidden', !bank.web && !bank.deep);
+    copyAllBtn?.removeAttribute('hidden');
 
     // Чого бракує — кажемо прямо, щоб мешканець не гадав
-    const missing = bank.fields.filter(f => !vals[f] && f !== 'amount');
+    const missing = FIELDS.filter(f => !vals[f] && f !== 'amount');
     const note = missing.length
         ? `<p class="pay-missing">Не заповнено: ${missing.map(f => FIELD_LABELS[f]).join(', ')}. Зверніться до правління.</p>`
         : '';
 
-    host.innerHTML = note + shown
-        .map((f, i) => `
-            <button type="button" class="pay-field" data-value="${escapeHtml(vals[f])}">
-                <span class="pay-field-text">
-                    <span class="pay-field-label">${i + 1}. ${escapeHtml(FIELD_LABELS[f])}</span>
-                    <span class="pay-field-value">${escapeHtml(
-                        f === 'amount' ? formatMoney(parseMoney(vals[f])) + ' грн' : vals[f]
-                    )}</span>
-                </span>
-                <span class="pay-copy" aria-label="Копіювати">${COPY_ICON}</span>
-            </button>`).join('');
+    host.innerHTML = note + shown.map((f, i) => `
+        <button type="button" class="pay-field" data-value="${escapeHtml(vals[f])}">
+            <span class="pay-field-text">
+                <span class="pay-field-label">${i + 1}. ${escapeHtml(FIELD_LABELS[f])}</span>
+                <span class="pay-field-value">${escapeHtml(
+                    f === 'amount' ? formatMoney(parseMoney(vals[f])) + ' грн' : vals[f]
+                )}</span>
+            </span>
+            <span class="pay-copy" aria-label="Копіювати">${COPY_ICON}</span>
+        </button>`).join('');
 
     host.querySelectorAll('.pay-field').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -661,37 +654,25 @@ export function renderPaymentSheet() {
             setTimeout(() => btn.classList.remove('pay-field-done'), 1200);
         });
     });
-
-    document.querySelectorAll('#paymentBanks .pay-bank').forEach(b => {
-        b.classList.toggle('active', b.dataset.bank === activeBank);
-    });
 }
 
-/**
- * Схеми на кшталт monobank:// офіційно не задокументовані, тож
- * діємо обережно: пробуємо відкрити застосунок, а якщо за секунду
- * ми все ще на сторінці — відкриваємо веб-версію.
- */
-function openBank() {
-    const bank = BANKS[activeBank] || BANKS.other;
-    if (!bank.deep && !bank.web) {
-        return toast('Скопіюйте реквізити та відкрийте свій банк', 'info');
-    }
-    if (!bank.deep) {
-        window.open(bank.web, '_blank', 'noopener');
-        return;
-    }
-    let left = false;
-    const mark = () => { left = true; };
-    document.addEventListener('visibilitychange', mark, { once: true });
-    window.location.href = bank.deep;
-    setTimeout(() => {
-        document.removeEventListener('visibilitychange', mark);
-        if (!left && !document.hidden && bank.web) {
-            window.open(bank.web, '_blank', 'noopener');
-        }
-    }, 1200);
+/** Усі реквізити одним текстом — щоб вставити в нотатку чи месенджер. */
+function allRequisitesText() {
+    const vals = fieldValues(requisites || {}, session.apt, session.balance);
+    return FIELDS
+        .filter(f => vals[f])
+        .map(f => `${FIELD_LABELS[f]}: ${f === 'amount' ? formatMoney(parseMoney(vals[f])) + ' грн' : vals[f]}`)
+        .join('\n');
 }
+
+async function copyAll(btn) {
+    const text = allRequisitesText();
+    if (!text) return;
+    const ok = await copyText(text);
+    if (!ok) return toast('Не вдалося скопіювати', 'error');
+    toast('Усі реквізити скопійовано', 'success');
+}
+
 
 export async function openPaymentSheet() {
     const { openSheet } = await import('./ui.js');
@@ -842,10 +823,8 @@ export async function uploadDebtsCSV(file, btn) {
 }
 
 export function initPayments() {
-    document.querySelectorAll('#paymentBanks .pay-bank').forEach(b => {
-        b.addEventListener('click', () => { activeBank = b.dataset.bank; renderPaymentSheet(); });
-    });
-    document.getElementById('openBankBtn')?.addEventListener('click', openBank);
+    document.getElementById('openBankBtn')?.addEventListener('click', function () { copyAll(this); });
+    document.getElementById('portmoneLink')?.setAttribute('href', PORTMONE_URL);
     document.getElementById('saveRequisitesBtn')?.addEventListener('click', function () { saveRequisites(this); });
 
     const csv = document.getElementById('debtsCsvFile');
