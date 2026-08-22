@@ -2365,45 +2365,59 @@ select.field-input {
 .pay-portmone:active { opacity: 0.5; }
 
 /* ---------- ЧАТ БУДИНКУ ---------- */
-.chat-sub { margin: 0 0 14px 0; font-size: 12.5px; color: var(--ink-2); }
+/* Заголовок в одному рядку з «Назад», праворуч: окремий великий
+   заголовок із підзаголовком з'їдали майже сотню пікселів висоти,
+   а в чаті кожен піксель — це видиме повідомлення. */
+.chat-head { justify-content: space-between; margin-bottom: 6px; }
+.chat-head-title {
+    font-size: 17px; font-weight: 700;
+    color: var(--ink); letter-spacing: -0.3px;
+}
 /* Колонка на внутрішній обгортці, а не на самому екрані: showScreen
    ставить екранам display: block інлайном, і він перебив би flex.
    Точну висоту рахує syncChatHeight() за visualViewport — інакше при
    відкритій клавіатурі поле вводу висіло високо над нею. Значення
    тут лише запасне, поки скрипт не відпрацював. */
+/* Чат розсуваємо на всю ширину контейнера: бічні поля по 15 px
+   забирали в кожної бульбашки 30 px, які корисніше віддати тексту. */
 .chat-body {
     display: flex;
     flex-direction: column;
-    height: calc(100svh - 190px);
+    height: calc(100svh - 118px);
+    margin: 0 -9px;
 }
 @supports not (height: 100svh) {
-    .chat-body { height: calc(100vh - 190px); }
+    .chat-body { height: calc(100vh - 118px); }
 }
 /* Прокручується сама стрічка, а не сторінка: інакше після
    надсилання список змінював висоту і сторінка підстрибувала. */
 .chat-list {
-    display: flex; flex-direction: column; gap: 8px;
+    display: flex; flex-direction: column;
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    padding: 2px 2px 10px 2px;
+    padding: 2px 9px 10px 9px;
 }
 .chat-list-inline { min-height: 0; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; }
 
-.chat-msg { display: flex; }
+/* Підряд від одного відправника — щільно, між різними — вільніше.
+   Однаковий проміж усюди робив розмову розсипаною. */
+.chat-msg { display: flex; margin-top: 8px; }
+.chat-msg:first-child { margin-top: 0; }
+.chat-grouped { margin-top: 2px; }
 .chat-mine { justify-content: flex-end; }
 /* -webkit-touch-callout вимикає рідне меню iOS «Копіювати / Знайти»,
    яке зʼявлялося на утриманні поверх нашого й виділяло текст. */
 .chat-bubble {
     position: relative;
+    max-width: 88%;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;
     transition: transform 0.12s ease, filter 0.12s ease;
-    max-width: 82%;
     background: var(--surface);
     border: 0.5px solid rgba(0, 0, 0, 0.05);
     border-radius: 16px;
@@ -2673,3 +2687,9 @@ select.field-input {
 /* Чат у панелі правління живе всередині картки, а не на весь екран */
 .chat-body-admin { height: 58vh; }
 .chat-body-admin .chat-compose { padding-bottom: 0; }
+
+/* У серії кути з боку відправника менш округлі — видно, що це одна репліка */
+.chat-grouped .chat-bubble { border-radius: 16px; }
+.chat-msg:not(.chat-mine) .chat-grouped .chat-bubble,
+.chat-grouped:not(.chat-mine) .chat-bubble { border-top-left-radius: 7px; }
+.chat-grouped.chat-mine .chat-bubble { border-top-right-radius: 7px; }

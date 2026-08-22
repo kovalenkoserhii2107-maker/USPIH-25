@@ -174,23 +174,39 @@ function quoteBlock(r) {
     </button>`;
 }
 
-function bubble(m, id) {
+const GROUP_MS = 5 * 60 * 1000;
+
+/** Чи це продовження серії від того самого відправника. */
+function sameGroup(a, b) {
+    if (!a || !b) return false;
+    if (String(a.apt) !== String(b.apt)) return false;
+    if ((a.isBoard === true) !== (b.isBoard === true)) return false;
+    const ta = a.createdAt?.toDate?.().getTime() || 0;
+    const tb = b.createdAt?.toDate?.().getTime() || 0;
+    return ta && tb && Math.abs(tb - ta) < GROUP_MS;
+}
+
+function bubble(m, id, prev) {
     const mine = String(m.apt) === String(session.apt);
+    // Своє імʼя не підписуємо — сторона й колір і так кажуть, що це ви.
+    // Чуже показуємо лише на першому повідомленні серії, як у месенджерах.
+    const showAuthor = !mine && !sameGroup(prev, m);
+    const grouped = sameGroup(prev, m);
     const author = m.isBoard ? 'Правління ОСББ' : `Кв. ${escapeHtml(String(m.apt))}`;
 
     // Видалене лишається в стрічці міткою: інакше розмова, де хтось
     // прибрав свої слова, ставала б незрозумілою.
     if (m.deleted) {
-        return `<div class="chat-msg${mine ? ' chat-mine' : ''}" data-id="${id}">
+        return `<div class="chat-msg${mine ? ' chat-mine' : ''}${grouped ? ' chat-grouped' : ''}" data-id="${id}">
             <div class="chat-bubble chat-removed">
                 <p class="chat-text">${m.deletedByBoard ? 'Повідомлення видалено правлінням' : 'Повідомлення видалено'}</p>
             </div>
         </div>`;
     }
 
-    return `<div class="chat-msg${mine ? ' chat-mine' : ''}${m.isBoard ? ' chat-board' : ''}" data-id="${id}">
+    return `<div class="chat-msg${mine ? ' chat-mine' : ''}${m.isBoard ? ' chat-board' : ''}${grouped ? ' chat-grouped' : ''}" data-id="${id}">
         <div class="chat-bubble" data-menu="${id}">
-            <span class="chat-author">${author}</span>
+            ${showAuthor ? `<span class="chat-author">${author}</span>` : ''}
             ${quoteBlock(m.replyTo)}
             ${chatPhotos(m.attachments, id)}
             ${chatDocs(m.attachments, id)}
@@ -215,7 +231,7 @@ function renderList(host, items, ctx) {
         host.innerHTML = ctx.empty || '<p class="list-empty">Повідомлень ще немає.<br>Напишіть перший.</p>';
         return;
     }
-    host.innerHTML = items.map(i => bubble(i.data, i.id)).join('');
+    host.innerHTML = items.map((i, n) => bubble(i.data, i.id, items[n - 1]?.data)).join('');
 
     // Фото відкриваються повноекранною галереєю
     items.forEach(i => {
