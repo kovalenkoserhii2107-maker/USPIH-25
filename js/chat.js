@@ -17,7 +17,9 @@ import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
-import { renderFileManager, openGallery, isImageFile } from './attachments.js';
+import {
+    renderFileManager, openGallery, isImageFile, openDocViewer, getDocKind, docIconSvg
+} from './attachments.js';
 
 /**
  * Пояснює причину відмови. Загальне «не вдалося» не дає ні мешканцю,
@@ -34,6 +36,48 @@ function explain(e, action) {
         'resource-exhausted': 'Перевищено ліміт Firebase. Зверніться до правління.'
     };
     return known[code] || `${action} (${code})`;
+}
+
+// ------------------------------------------------------------
+// ВИСОТА ПІД КЛАВІАТУРУ
+//
+// Коли на iOS відкривається клавіатура, сторінка не стискається —
+// зменшується лише видима частина. Тому поле вводу опинялося високо над
+// клавіатурою з великим пробілом. visualViewport каже, що саме
+// зараз видно, і ми підганяємо висоту чату під це.
+// ------------------------------------------------------------
+function syncChatHeight() {
+    const body = document.querySelector('#chatSection .chat-body');
+    if (!body || body.offsetParent === null) return;
+    const vv = window.visualViewport;
+    const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+    const top = body.getBoundingClientRect().top + window.scrollY - window.scrollY;
+    body.style.height = Math.max(220, visibleBottom - top - 10) + 'px';
+}
+
+/** Короткий сигнал надсилання. Синтезуємо, щоб не тягнути файл. */
+let audioCtx = null;
+function playSend() {
+    try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        audioCtx = audioCtx || new Ctx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(680, t);
+        osc.frequency.exponentialRampToValueAtTime(1020, t + 0.07);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.09, t + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(t);
+        osc.stop(t + 0.18);
+    } catch (e) {
+        // Звук — не привід зривати надсилання
+    }
 }
 
 const LIMIT = 200;                      // скільки повідомлень тримаємо на екрані
@@ -105,6 +149,21 @@ function chatPhotos(files, id) {
     </div>`;
 }
 
+/** Документи в бульбашці — компактним рядком, без зайвих підписів. */
+function chatDocs(files, id) {
+    const docs = (files || []).filter(f => !isImageFile(f));
+    if (!docs.length) return '';
+    return `<div class="chat-docs" data-docs="${id}">
+        ${docs.map((d, i) => {
+            const kind = getDocKind(d);
+            return `<button type="button" class="chat-doc" data-i="${i}">
+                <span class="file-icon icon-${kind} file-icon-sm">${docIconSvg(kind)}</span>
+                <span class="chat-doc-name">${escapeHtml(d.name || 'Документ')}</span>
+            </button>`;
+        }).join('')}
+    </div>`;
+}
+
 function quoteBlock(r) {
     if (!r) return '';
     const who = r.isBoard ? 'Правління' : `Кв. ${escapeHtml(String(r.apt))}`;
@@ -133,6 +192,7 @@ function bubble(m, id) {
             <span class="chat-author">${author}</span>
             ${quoteBlock(m.replyTo)}
             ${chatPhotos(m.attachments, id)}
+            ${chatDocs(m.attachments, id)}
             ${m.text ? `<p class="chat-text">${escapeHtml(m.text)}</p>` : ''}
             <span class="chat-time">${escapeHtml(formatDateTime(m.createdAt))}${m.editedAt ? '<span class="chat-edited">змінено</span>' : ''}</span>
         </div>
@@ -164,6 +224,18 @@ function renderList(host, items, ctx) {
             b.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openGallery(imgs, parseInt(b.dataset.i, 10));
+            });
+        });
+    });
+
+    // Документи відкриваються переглядачем
+    items.forEach(i => {
+        const docs = (i.data.attachments || []).filter(f => !isImageFile(f));
+        if (!docs.length || i.data.deleted) return;
+        host.querySelectorAll(`.chat-docs[data-docs="${i.id}"] .chat-doc`).forEach(b => {
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openDocViewer(docs[parseInt(b.dataset.i, 10)]);
             });
         });
     });
@@ -379,6 +451,7 @@ export function loadChat() {
     if (!host) return;
     host.innerHTML = '<p class="list-empty">Завантаження…</p>';
     stopChat();
+    requestAnimationFrame(syncChatHeight);
 
     // onSnapshot, а не одноразове читання: нове повідомлення має
     // зʼявлятися в усіх відкритих застосунках одразу.
@@ -389,6 +462,7 @@ export function loadChat() {
             lastRendered = snap.docs.map(d => ({ id: d.id, data: d.data() })).reverse();
             const atBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 120;
             renderList(host, lastRendered, CTX_CHAT);
+            syncChatHeight();
 
             const newest = lastRendered.length
                 ? lastRendered[lastRendered.length - 1].data.createdAt?.toDate?.().getTime()
@@ -398,8 +472,12 @@ export function loadChat() {
             import('./ui.js').then(m => m.updateNavBadge());
 
             // Прокручуємо вниз лише якщо мешканець і так був унизу:
-            // інакше вирвали б його з середини читання
-            if (atBottom) host.scrollTop = host.scrollHeight;
+            // інакше вирвали б його з середини читання.
+            // Без rAF браузер ще не порахував нову висоту, і стрічка
+            // спершу підстрибувала, а тоді опускалася.
+            if (atBottom) {
+                requestAnimationFrame(() => { host.scrollTop = host.scrollHeight; });
+            }
         },
         (e) => {
             console.error('Чат:', e);
@@ -459,6 +537,7 @@ async function sendChat(btn) {
         pendingFiles = [];
         refreshChips();
         cancelCompose(CTX_CHAT);
+        playSend();
     } catch (e) {
         console.error('Надсилання в чат:', e.code, e);
         toast(explain(e, 'Не вдалося надіслати'), 'error');
@@ -534,6 +613,7 @@ async function sendComment(btn) {
             });
         }
         cancelCompose(ctx);
+        playSend();
     } catch (e) {
         console.error('Коментар:', e.code, e);
         toast(explain(e, 'Не вдалося надіслати коментар'), 'error');
@@ -553,6 +633,15 @@ function autoGrow(el) {
 }
 
 export function initChat() {
+    // Клавіатура змінює видиму частину, а не сторінку — тому слухаємо
+    // visualViewport, а не resize вікна.
+    const vv = window.visualViewport;
+    if (vv) {
+        vv.addEventListener('resize', syncChatHeight);
+        vv.addEventListener('scroll', syncChatHeight);
+    }
+    window.addEventListener('resize', syncChatHeight);
+
     document.getElementById('chatSendBtn')?.addEventListener('click', function () { sendChat(this); });
     document.getElementById('commentSendBtn')?.addEventListener('click', function () { sendComment(this); });
     autoGrow(document.getElementById('chatInput'));
