@@ -2152,31 +2152,38 @@ select.field-input {
     padding: 10px 12px;
 }
 
-/* Залишок на рахунку ОСББ — у куті звіту про витрати */
-.expenses-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 16px;
+
+/* Залишок на рахунку ОСББ — верхній рядок фінансового блоку */
+.balance-funds {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
 }
-.funds-badge {
-    display: flex; flex-direction: column;
-    align-items: flex-end;
-    flex-shrink: 0;
-    background: rgba(52, 199, 89, 0.1);
-    border-radius: var(--r-sm);
-    padding: 7px 11px;
+.balance-funds-label {
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
 }
-.funds-label {
-    font-size: 9.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    color: #248A3D;
-}
-.funds-sum {
+.balance-funds-sum {
     font-size: 17px; font-weight: 800;
     color: #248A3D; letter-spacing: -0.5px;
     font-variant-numeric: tabular-nums;
-    line-height: 1.15;
+    white-space: nowrap; flex-shrink: 0;
 }
-.funds-sum small { font-size: 10px; font-weight: 600; margin-left: 3px; }
+.balance-funds-sum small {
+    font-size: 10.5px; font-weight: 600;
+    margin-left: 3px; color: var(--ink-2);
+}
+
+/* Швидка дія на головному екрані — той самий вигляд, що й у меню */
+.quick-action {
+    background: var(--surface);
+    box-shadow: var(--sh-card);
+    border: 0.5px solid rgba(0, 0, 0, 0.04);
+    border-radius: var(--r-lg);
+    padding: 14px 16px;
+    margin-bottom: var(--gap);
+}
+.quick-action:active { background: var(--surface-2); }

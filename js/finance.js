@@ -48,14 +48,22 @@ export function formatMoney(n) {
 // ------------------------------------------------------------
 // БАЛАНС КВАРТИРИ (мешканець)
 // ------------------------------------------------------------
-export function renderBalance(balance, updatedAt) {
+export function renderBalance(balance, updatedAt, funds = null) {
     const n = parseMoney(balance);
     const debt = n < -0.005;
     const credit = n > 0.005;
     const state = debt ? 'debt' : credit ? 'credit' : 'zero';
     const label = debt ? 'До сплати' : credit ? 'Переплата' : 'Заборгованості немає';
 
+    // Спершу гроші будинку, потім свої: прозорість — головне, заради
+    // чого мешканець сюди дивиться.
+    const fundsRow = funds === null ? '' : `<div class="balance-funds">
+            <span class="balance-funds-label">На рахунку ОСББ</span>
+            <span class="balance-funds-sum">${formatMoney(funds)}<small>грн</small></span>
+        </div>`;
+
     return `<div class="balance-card balance-${state}">
+        ${fundsRow}
         <div class="balance-main">
             <span class="balance-label">${label}</span>
             <span class="balance-sum">${state === 'zero' ? '0,00' : formatMoney(n)}<small>грн</small></span>
@@ -76,11 +84,19 @@ export async function loadBalance(apt) {
     const host = document.getElementById('balanceHost');
     if (!host) return;
     try {
-        const snap = await getDoc(doc(db, 'apartments', apt));
+        // Залишок ОСББ лежить у звіті про витрати — читаємо разом
+        const [snap, fin] = await Promise.all([
+            getDoc(doc(db, 'apartments', apt)),
+            getDoc(doc(db, 'finance', 'current')).catch(() => null)
+        ]);
         const d = snap.exists() ? snap.data() : {};
+        const f = fin && fin.exists() ? fin.data() : {};
+        const funds = (f.funds === undefined || f.funds === null || f.funds === '')
+            ? null : parseMoney(f.funds);
+
         session.balance = parseMoney(d.balance);
         session.personalAccount = d.personalAccount || '';
-        host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt);
+        host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt, funds);
 
         document.getElementById('payBtn')?.addEventListener('click', openPaymentSheet);
     } catch (e) {
@@ -185,19 +201,12 @@ export async function loadExpenses() {
         const d = snap.data();
         const chart = renderDonut(d.items);
         if (!chart) { host.innerHTML = ''; return; }
-        const funds = d.funds !== undefined && d.funds !== null && d.funds !== ''
-            ? parseMoney(d.funds) : null;
-
+        // Залишок ОСББ показуємо лише у фінансовому блоці вгорі:
+        // двічі та сама сума на одному екрані — шум.
         host.innerHTML = `<div class="card">
-            <div class="expenses-head">
-                <div class="section-head-text">
-                    <h2 class="admin-card-title">Куди пішли гроші</h2>
-                    <span class="admin-card-sub">${escapeHtml(d.period || '')}</span>
-                </div>
-                ${funds !== null ? `<div class="funds-badge">
-                    <span class="funds-label">На рахунку ОСББ</span>
-                    <span class="funds-sum">${formatMoney(funds)}<small>грн</small></span>
-                </div>` : ''}
+            <div class="section-head-text" style="margin-bottom: 16px;">
+                <h2 class="admin-card-title">Куди пішли гроші</h2>
+                <span class="admin-card-sub">${escapeHtml(d.period || '')}</span>
             </div>
             ${chart}
         </div>`;

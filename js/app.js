@@ -218,6 +218,7 @@ function initNavigation() {
 
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
+    document.getElementById('quickRequestBtn')?.addEventListener('click', () => go('requestsSection', loadUserRequests));
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
     document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
     document.getElementById('menuPollsBtn').addEventListener('click', () => go('pollsSection', loadUserPolls));
