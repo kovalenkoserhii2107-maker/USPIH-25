@@ -689,38 +689,41 @@ select.field-input {
 }
 
 /* Частка власності — кільце в стилі iOS: число всередині,
-   дуга в барві аватара цього ж співвласника. */
+   дуга в барві аватара цього ж співвласника.
+   Кільце ліворуч, текст праворуч: так панель удвічі нижча,
+   і праворуч від кільця не лишається порожнього поля. */
 .share-panel {
+    display: flex;
+    align-items: center;
+    gap: 16px;
     background: var(--surface-2);
     border-radius: var(--r-md);
-    padding: 13px 15px 15px 15px;
+    padding: 14px 16px;
     margin-bottom: 4px;
 }
-.share-panel-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    gap: 10px;
-}
+.share-panel-text { display: flex; flex-direction: column; min-width: 0; }
 .share-caption {
     font-size: 10.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.7px;
     color: var(--ink-2);
+    margin-bottom: 2px;
 }
 .share-frac-top {
-    font-size: 20px; font-weight: 700;
-    color: var(--ink); letter-spacing: -0.6px;
+    font-size: 26px; font-weight: 700;
+    color: var(--ink); letter-spacing: -1px;
     font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
+    line-height: 1.1;
 }
 /* Заглушка — це текст, а не дріб: не роздуваємо її */
 .share-frac-empty {
-    font-size: 13px; font-weight: 600;
+    font-size: 15px; font-weight: 600;
     color: var(--ink-3); letter-spacing: 0;
 }
 
 .share-ring {
     position: relative;
-    width: 84px; height: 84px;
-    margin-top: 12px;
+    width: 64px; height: 64px;
+    flex-shrink: 0;
 }
 .share-ring svg { width: 100%; height: 100%; display: block; }
 .share-ring-track {
@@ -737,12 +740,12 @@ select.field-input {
 .share-ring-text {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    font-size: 27px; font-weight: 700;
-    color: var(--ink); letter-spacing: -1.2px;
+    font-size: 19px; font-weight: 700;
+    color: var(--ink); letter-spacing: -0.7px;
     font-variant-numeric: tabular-nums;
 }
 .share-ring-text small {
-    font-size: 13px; font-weight: 600;
+    font-size: 10px; font-weight: 600;
     color: var(--ink-2);
     letter-spacing: 0; margin-left: 1px;
 }
@@ -1106,6 +1109,7 @@ select.field-input {
 .mi-blue { background: linear-gradient(135deg, #4FA3FF, var(--blue)); }
 .mi-green { background: linear-gradient(135deg, #4CD97B, var(--green)); }
 .mi-orange { background: linear-gradient(135deg, #FFB157, var(--orange)); }
+.mi-purple { background: linear-gradient(135deg, #C77DFF, var(--purple)); }
 .mi-grey { background: linear-gradient(135deg, #B0B4BC, #86868B); }
 .mi-red { background: linear-gradient(135deg, #FF7A73, var(--red)); }
 .menu-row-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
@@ -1481,3 +1485,32 @@ select.field-input {
     padding: 9px 11px;
 }
 .install-steps svg { vertical-align: -3px; color: var(--blue); margin: 0 1px; }
+
+/* ---------- ПОТЯГНУТИ, ЩОБ ОНОВИТИ ---------- */
+/* z-index нижчий за підкладку панелей (200): індикатор не має
+   зʼявлятися поверх відкритого меню. */
+.ptr-indicator {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 6px);
+    left: 50%;
+    transform: translate(-50%, 0);
+    z-index: 150;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+}
+.ptr-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(120, 120, 128, 0.25);
+    border-top-color: var(--ink-3);
+    border-radius: 50%;
+    transition: border-top-color 0.2s ease;
+}
+/* Протягнуто достатньо — колір підказує, що можна відпускати */
+.ptr-ready .ptr-spinner { border-top-color: var(--blue); }
+.ptr-loading .ptr-spinner { animation: spin 0.7s linear infinite; }

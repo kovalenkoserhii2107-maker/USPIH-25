@@ -106,8 +106,9 @@ function hideBanner() {
  * Показує підказку. Викликається вже після входу в кабінет —
  * на екрані входу вона тільки заважала б.
  */
-export function showInstallHint() {
-    if (hintShown || isStandalone() || isInAppBrowser() || isDismissedRecently()) return;
+export function showInstallHint(force = false) {
+    if (isStandalone() || isInAppBrowser()) return;
+    if (!force && (hintShown || isDismissedRecently())) return;
 
     const ios = isIos();
     // На Android показуємо лише тоді, коли браузер підтвердив
@@ -138,7 +139,7 @@ export function showInstallHint() {
             // Подію можна використати лише один раз
             deferredPrompt = null;
         });
-    }, SHOW_DELAY);
+    }, force ? 0 : SHOW_DELAY);
 }
 
 // ------------------------------------------------------------
@@ -156,4 +157,35 @@ export function initInstallPrompt() {
         rememberDismiss();
         hideBanner();
     });
+}
+
+// ------------------------------------------------------------
+// ВИКЛИК ІЗ МЕНЮ
+// ------------------------------------------------------------
+/** Чи показувати пункт меню: у вже встановленому застосунку він зайвий. */
+export function canInstall() {
+    return !isStandalone() && !isInAppBrowser();
+}
+
+/**
+ * Натиснуто «Додати на екран» у меню.
+ * На Android одразу відкриваємо системний діалог, якщо браузер
+ * його дозволив; на iOS показуємо інструкцію, бо діалогу немає.
+ */
+export async function triggerInstall() {
+    if (isStandalone()) return 'installed';
+    if (deferredPrompt) {
+        const prompt = deferredPrompt;
+        deferredPrompt = null;          // подію можна використати лише раз
+        prompt.prompt();
+        try {
+            const { outcome } = await prompt.userChoice;
+            return outcome === 'accepted' ? 'accepted' : 'dismissed';
+        } catch (e) {
+            console.warn('Діалог встановлення:', e);
+            return 'dismissed';
+        }
+    }
+    showInstallHint(true);
+    return 'hint';
 }

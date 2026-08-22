@@ -19,7 +19,10 @@ import {
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
 import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
-import { registerServiceWorker, initInstallPrompt, showInstallHint } from './install.js';
+import {
+    registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
+} from './install.js';
+import { initPullToRefresh } from './pull-refresh.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
 
@@ -257,6 +260,21 @@ function init() {
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();
+    initPullToRefresh();
+
+    // У вже встановленому застосунку пункт меню зайвий
+    const installBtn = document.getElementById('menuInstallBtn');
+    if (installBtn) {
+        if (!canInstall()) {
+            installBtn.hidden = true;
+        } else {
+            installBtn.addEventListener('click', async () => {
+                closeAllSheets();
+                const result = await triggerInstall();
+                if (result === 'accepted') toast('Застосунок додано на екран', 'success');
+            });
+        }
+    }
     initAdminTabs();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);

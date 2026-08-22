@@ -138,10 +138,6 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
             </div>
 
             <div class="share-panel">
-                <div class="share-panel-head">
-                    <span class="share-caption">Частка власності</span>
-                    <span class="share-frac-top${shareFrac ? '' : ' share-frac-empty'}">${escapeHtml(shareFrac) || 'Не вказано'}</span>
-                </div>
                 <div class="share-ring" role="img"
                      aria-label="${hasShare ? percLabel + '% від квартири' : 'Частку не вказано'}">
                     <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -159,6 +155,10 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
                                 transform="rotate(-90 50 50)"></circle>
                     </svg>
                     <span class="share-ring-text">${hasShare ? percLabel + '<small>%</small>' : '—'}</span>
+                </div>
+                <div class="share-panel-text">
+                    <span class="share-caption">Частка власності</span>
+                    <span class="share-frac-top${shareFrac ? '' : ' share-frac-empty'}">${escapeHtml(shareFrac) || 'Не вказано'}</span>
                 </div>
             </div>
 
