@@ -2132,3 +2132,14 @@ select.field-input {
 }
 .pay-field-done .pay-copy { background: rgba(52, 199, 89, 0.16); color: var(--green); }
 .pay-open { margin-bottom: 4px; }
+
+/* Пʼять банків уже не влазять у ряд — переносимо в дві лінії */
+.pay-banks { grid-template-columns: repeat(3, 1fr); }
+.pay-missing {
+    margin: 0 0 12px 0;
+    font-size: 12.5px; line-height: 1.4;
+    color: #C93400;
+    background: rgba(255, 149, 0, 0.12);
+    border-radius: var(--r-sm);
+    padding: 10px 12px;
+}

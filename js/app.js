@@ -26,7 +26,7 @@ import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './p
 import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import {
-    initFinance, initPayments, loadBalance, loadExpenses, loadReceipts,
+    initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
     loadAdminExpenses, loadAdminRequisites
 } from './finance.js';
 import {
@@ -287,6 +287,7 @@ function init() {
     initDirectory();
     initFinance();
     initPayments();
+    initAccounts();
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();

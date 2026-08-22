@@ -79,6 +79,7 @@ export async function loadBalance(apt) {
         const snap = await getDoc(doc(db, 'apartments', apt));
         const d = snap.exists() ? snap.data() : {};
         session.balance = parseMoney(d.balance);
+        session.personalAccount = d.personalAccount || '';
         host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt);
 
         document.getElementById('payBtn')?.addEventListener('click', openPaymentSheet);
@@ -486,6 +487,12 @@ let requisites = null;
 
 /** Порядок полів у кожного банку — саме той, у якому банк їх питає. */
 const BANKS = {
+    // ОСББ зареєстроване в банку як отримувач: там питають не IBAN,
+    // а особовий рахунок, ПІБ, адресу й період.
+    account: {
+        label: 'За рахунком',
+        fields: ['ownerName', 'address', 'personalAccount', 'period', 'amount']
+    },
     mono: {
         label: 'Monobank',
         fields: ['iban', 'edrpou', 'amount', 'purpose'],
@@ -514,10 +521,25 @@ const FIELD_LABELS = {
     edrpou: 'ЄДРПОУ / ІПН',
     payeeName: 'Одержувач',
     amount: 'Сума',
-    purpose: 'Призначення платежу'
+    purpose: 'Призначення платежу',
+    ownerName: 'ПІБ',
+    address: 'Адреса',
+    personalAccount: 'Особовий рахунок',
+    period: 'Період'
 };
 
-let activeBank = 'mono';
+const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+                'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
+
+/** Платять за місяць, що завершився, тож беремо попередній. */
+function previousPeriod() {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+let activeBank = 'account';
 
 export async function loadRequisites() {
     if (requisites) return requisites;
@@ -534,13 +556,18 @@ function buildPurpose(tpl, apt) {
 
 function fieldValues(req, apt, balance) {
     const debt = parseMoney(balance) < 0 ? Math.abs(parseMoney(balance)) : 0;
+    const house = req.houseAddress || 'вул. Інглезі, 3/3, м. Одеса';
     return {
         iban: (req.iban || '').replace(/\s+/g, ''),
         edrpou: req.edrpou || '',
         payeeName: req.payeeName || '',
         // Для копіювання — крапка: її розуміють усі банківські форми
         amount: debt ? debt.toFixed(2) : '',
-        purpose: buildPurpose(req.purposeTemplate, apt)
+        purpose: buildPurpose(req.purposeTemplate, apt),
+        ownerName: session.ownerName || '',
+        address: `${house}, кв. ${apt ?? ''}`,
+        personalAccount: session.personalAccount || '',
+        period: previousPeriod()
     };
 }
 
@@ -578,15 +605,21 @@ export function renderPaymentSheet() {
     const vals = fieldValues(req, session.apt, session.balance);
     const bank = BANKS[activeBank] || BANKS.other;
 
-    if (!vals.iban) {
-        host.innerHTML = '<p class="list-empty">Правління ще не внесло платіжні реквізити</p>';
+    const shown = bank.fields.filter(f => vals[f]);
+    if (!shown.length) {
+        host.innerHTML = '<p class="list-empty">Правління ще не внесло платіжні дані</p>';
         document.getElementById('openBankBtn')?.setAttribute('hidden', '');
         return;
     }
-    document.getElementById('openBankBtn')?.removeAttribute('hidden');
+    document.getElementById('openBankBtn')?.toggleAttribute('hidden', !bank.web && !bank.deep);
 
-    host.innerHTML = bank.fields
-        .filter(f => vals[f])
+    // Чого бракує — кажемо прямо, щоб мешканець не гадав
+    const missing = bank.fields.filter(f => !vals[f] && f !== 'amount');
+    const note = missing.length
+        ? `<p class="pay-missing">Не заповнено: ${missing.map(f => FIELD_LABELS[f]).join(', ')}. Зверніться до правління.</p>`
+        : '';
+
+    host.innerHTML = note + shown
         .map((f, i) => `
             <button type="button" class="pay-field" data-value="${escapeHtml(vals[f])}">
                 <span class="pay-field-text">
@@ -646,6 +679,15 @@ export async function openPaymentSheet() {
     } catch (e) {
         console.error('Реквізити:', e);
     }
+    // Банк питає одну людину, тож беремо першого співвласника
+    if (!session.ownerName) {
+        try {
+            const owners = await getDocs(collection(db, 'apartments', String(session.apt), 'owners'));
+            session.ownerName = owners.empty ? '' : (owners.docs[0].data().name || '');
+        } catch (e) {
+            console.warn('ПІБ для платежу:', e);
+        }
+    }
     renderPaymentSheet();
     openSheet('paymentPopup');
 }
@@ -661,6 +703,8 @@ export async function loadAdminRequisites() {
         document.getElementById('reqPayee').value = d.payeeName || '';
         document.getElementById('reqEdrpou').value = d.edrpou || '';
         document.getElementById('reqIban').value = d.iban || '';
+        document.getElementById('reqHouse').value =
+            d.houseAddress || 'вул. Інглезі, 3/3, м. Одеса';
         document.getElementById('reqPurpose').value =
             d.purposeTemplate || 'Внески на утримання будинку, кв. {apt}';
     } catch (e) {
@@ -673,10 +717,11 @@ export async function saveRequisites(btn) {
     const edrpou = document.getElementById('reqEdrpou').value.trim();
     const iban = document.getElementById('reqIban').value.trim().replace(/\s+/g, '').toUpperCase();
     const purposeTemplate = document.getElementById('reqPurpose').value.trim();
+    const houseAddress = document.getElementById('reqHouse').value.trim();
 
-    if (!iban) return toast('Вкажіть IBAN', 'error');
-    // Український IBAN: UA + 2 контрольні + 25 знаків = 29
-    if (!/^UA\d{27}$/.test(iban)) {
+    // IBAN потрібен не всім: там, де ОСББ зареєстроване в банку
+    // як отримувач, платять за особовим рахунком без нього.
+    if (iban && !/^UA\d{27}$/.test(iban)) {
         return toast('IBAN має вигляд UA та 27 цифр', 'error');
     }
     if (edrpou && !/^\d{8,10}$/.test(edrpou)) {
@@ -686,7 +731,7 @@ export async function saveRequisites(btn) {
     setBusy(btn, true, 'Збереження…');
     try {
         await setDoc(doc(db, 'osbb_settings', 'finance'),
-            { payeeName, edrpou, iban, purposeTemplate, updatedAt: serverTimestamp() },
+            { payeeName, edrpou, iban, purposeTemplate, houseAddress, updatedAt: serverTimestamp() },
             { merge: true });
         requisites = null;              // щоб мешканець побачив свіже
         toast('Реквізити збережено', 'success');
@@ -786,4 +831,77 @@ export function initPayments() {
     document.getElementById('uploadDebtsBtn')?.addEventListener('click', function () {
         uploadDebtsCSV(csv?.files?.[0], this);
     });
+}
+
+// ------------------------------------------------------------
+// ОСОБОВІ РАХУНКИ
+// Той самий формат, що й баланси: «квартира рахунок».
+// ------------------------------------------------------------
+export function parseAccountLines(text) {
+    const rows = [], errors = [];
+    String(text || '').replace(/^\ufeff/, '').split(/\r?\n/).forEach((line, i) => {
+        const raw = line.trim();
+        if (!raw) return;
+        const m = raw.match(/^([^;,\t\s]+)\s*[;,\t]\s*(.+)$/) || raw.match(/^(\S+)\s+(.+)$/);
+        if (!m) { errors.push({ line: i + 1, raw }); return; }
+        const apt = m[1].replace(/\D/g, '');
+        const account = m[2].trim().replace(/^"|"$/g, '').replace(/\s+/g, '');
+        if (!apt || !account) { errors.push({ line: i + 1, raw }); return; }
+        rows.push({ apt, account });
+    });
+    if (errors.length && /кварт|apt|№|рахун/i.test(errors[0].raw)) errors.shift();
+    return { rows, errors };
+}
+
+export async function applyAccounts(btn) {
+    const { rows, errors } = parseAccountLines(document.getElementById('accountsBulk').value);
+    if (!rows.length) return toast('Немає жодного коректного рядка', 'error');
+
+    setBusy(btn, true, 'Збереження…');
+    try {
+        const known = await loadKnownApts();
+        const valid = known.size ? rows.filter(r => known.has(r.apt)) : rows;
+        const unknown = rows.length - valid.length;
+        if (!valid.length) {
+            toast('Жодна квартира з переліку не знайдена в базі', 'error');
+            return;
+        }
+        for (let i = 0; i < valid.length; i += 400) {
+            const batch = writeBatch(db);
+            valid.slice(i, i + 400).forEach(r => {
+                batch.set(doc(db, 'apartments', r.apt), { personalAccount: r.account }, { merge: true });
+            });
+            await batch.commit();
+        }
+        const extra = [
+            unknown ? `невідомих квартир: ${unknown}` : '',
+            errors.length ? `нерозпізнаних рядків: ${errors.length}` : ''
+        ].filter(Boolean).join(', ');
+        toast(`Внесено рахунків: ${valid.length}${extra ? ` (${extra})` : ''}`, extra ? 'info' : 'success');
+        document.getElementById('accountsBulk').value = '';
+        document.getElementById('accountsPreview').innerHTML = '';
+    } catch (e) {
+        console.error('Особові рахунки:', e);
+        toast('Не вдалося зберегти рахунки', 'error');
+    } finally {
+        setBusy(btn, false);
+    }
+}
+
+function previewAccounts() {
+    const host = document.getElementById('accountsPreview');
+    if (!host) return;
+    const { rows, errors } = parseAccountLines(document.getElementById('accountsBulk').value);
+    if (!rows.length && !errors.length) { host.innerHTML = ''; return; }
+    host.innerHTML = `<div class="bulk-preview">
+        <span class="bulk-ok">Розпізнано: ${rows.length}</span>
+        ${errors.length ? `<span class="bulk-bad">Не розпізнано: ${errors.length}</span>` : ''}
+        ${rows.slice(0, 4).map(r => `<span class="bulk-row">кв. ${escapeHtml(r.apt)} → ${escapeHtml(r.account)}</span>`).join('')}
+        ${rows.length > 4 ? `<span class="bulk-row bulk-more">…і ще ${rows.length - 4}</span>` : ''}
+    </div>`;
+}
+
+export function initAccounts() {
+    document.getElementById('accountsBulk')?.addEventListener('input', previewAccounts);
+    document.getElementById('applyAccountsBtn')?.addEventListener('click', function () { applyAccounts(this); });
 }
