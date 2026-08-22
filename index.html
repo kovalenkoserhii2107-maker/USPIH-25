@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=14">
+    <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -37,7 +37,6 @@
             </span>
             <span class="nav-brand-text">
                 <h2 class="nav-title">ОСББ «Успіх-25»</h2>
-                <span class="nav-subtitle" id="navAptMeta">Кабінет мешканця</span>
             </span>
         </div>
         <div class="nav-actions">
@@ -712,6 +711,11 @@
                     <input type="text" id="expensePeriod" class="field-input" placeholder="Серпень 2026">
                 </div>
                 <div class="field">
+                    <label class="field-label" for="expenseFunds">Залишок на рахунку ОСББ</label>
+                    <input type="text" id="expenseFunds" class="field-input" inputmode="decimal" placeholder="грн">
+                    <span class="field-hint">Показується у правому куті звіту. Порожньо — не показувати.</span>
+                </div>
+                <div class="field">
                     <span class="field-label">Статті витрат</span>
                     <div id="expenseRows" class="expense-rows"></div>
                     <button type="button" id="addExpenseBtn" class="btn-ghost-small poll-add-option">+ Додати статтю</button>
@@ -1159,6 +1163,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=14"></script>
+<script type="module" src="js/app.js?v=15"></script>
 </body>
 </html>

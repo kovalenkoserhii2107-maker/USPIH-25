@@ -8,7 +8,7 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { renderAttachments, renderFileManager, getDocKind, docIconSvg } from './attachments.js';
 
 let userReqFiles = [];
@@ -164,12 +164,12 @@ function openReplyModal(id, apt, text) {
     replyFiles = [];
     refreshReplyChips();
     document.getElementById('adminReplyModal').classList.add('is-open');
-    document.body.classList.add('no-scroll');
+    lockScroll();
 }
 
 function closeReplyModal() {
     document.getElementById('adminReplyModal').classList.remove('is-open');
-    document.body.classList.remove('no-scroll');
+    unlockScroll();
 }
 
 async function sendReply(btn) {

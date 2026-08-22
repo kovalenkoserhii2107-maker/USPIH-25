@@ -121,11 +121,6 @@ async function loadCabinet(apt) {
         document.getElementById('displayAptNum').textContent = apt;
         document.getElementById('displayEntranceNum').textContent = session.entrance;
         document.getElementById('displayAreaVal').textContent = session.area;
-        document.getElementById('navAptMeta').textContent =
-            session.entrance && session.entrance !== '--'
-                ? `Квартира ${apt} · Парадна ${session.entrance}`
-                : `Квартира ${apt}`;
-
         await loadOwners(apt);
         await loadUserMessages(apt, session.entrance);
         await Promise.all([loadBalance(apt), loadExpenses()]);

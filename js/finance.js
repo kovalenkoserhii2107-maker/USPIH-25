@@ -185,10 +185,19 @@ export async function loadExpenses() {
         const d = snap.data();
         const chart = renderDonut(d.items);
         if (!chart) { host.innerHTML = ''; return; }
+        const funds = d.funds !== undefined && d.funds !== null && d.funds !== ''
+            ? parseMoney(d.funds) : null;
+
         host.innerHTML = `<div class="card">
-            <div class="section-head-text" style="margin-bottom: 14px;">
-                <h2 class="admin-card-title">Куди пішли гроші</h2>
-                <span class="admin-card-sub">${escapeHtml(d.period || '')}</span>
+            <div class="expenses-head">
+                <div class="section-head-text">
+                    <h2 class="admin-card-title">Куди пішли гроші</h2>
+                    <span class="admin-card-sub">${escapeHtml(d.period || '')}</span>
+                </div>
+                ${funds !== null ? `<div class="funds-badge">
+                    <span class="funds-label">На рахунку ОСББ</span>
+                    <span class="funds-sum">${formatMoney(funds)}<small>грн</small></span>
+                </div>` : ''}
             </div>
             ${chart}
         </div>`;
@@ -414,6 +423,7 @@ function previewExpenses() {
 
 export async function saveExpenses(btn) {
     const period = document.getElementById('expensePeriod').value.trim();
+    const fundsRaw = document.getElementById('expenseFunds').value.trim();
     const items = currentExpenseItems();
     if (!period) return toast('Вкажіть період', 'error');
     if (!items.length) return toast('Додайте хоча б одну статтю витрат', 'error');
@@ -422,6 +432,8 @@ export async function saveExpenses(btn) {
     try {
         await setDoc(doc(db, 'finance', 'current'), {
             period, items,
+            // Порожнє поле — не нуль: у нуля й «не вказано» різний сенс
+            funds: fundsRaw === '' ? null : parseMoney(fundsRaw),
             total: items.reduce((s, i) => s + i.amount, 0),
             updatedAt: serverTimestamp()
         });
@@ -443,6 +455,8 @@ export async function loadAdminExpenses() {
         if (snap.exists()) {
             const d = snap.data();
             document.getElementById('expensePeriod').value = d.period || '';
+            document.getElementById('expenseFunds').value =
+                (d.funds === undefined || d.funds === null) ? '' : d.funds;
             (d.items || []).forEach(i => addExpenseRow(i.label, i.amount));
         }
         if (!host.children.length) {

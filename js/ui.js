@@ -121,12 +121,45 @@ export function confirmDialog(title, message, confirmLabel = 'Видалити')
 // Стан тримаємо в класі .is-open, а не в inline-стилях —
 // саме змішування цих двох підходів і породило попередній баг.
 // ------------------------------------------------------------
-const SHEET_IDS = ['notifPopup', 'menuPopup'];
+// Список беремо з DOM, а не переліком: paymentPopup колись забули
+// дописати, і шторка перестала закриватися взагалі.
+const sheets = () => document.querySelectorAll('.sheet');
+
+// ------------------------------------------------------------
+// БЛОКУВАННЯ ПРОКРУТКИ
+//
+// Самого overflow: hidden на body для iOS Safari замало — сторінка
+// під шторкою все одно їздить. Надійно тримає лише position: fixed,
+// але тоді треба самим повернути позицію прокрутки після закриття.
+// Лічильник потрібен, бо поверх шторки може відкритися галерея.
+// ------------------------------------------------------------
+let lockCount = 0;
+let savedScroll = 0;
+
+export function lockScroll() {
+    if (lockCount++ > 0) return;
+    savedScroll = window.scrollY || window.pageYOffset || 0;
+    document.body.style.top = `-${savedScroll}px`;
+    document.body.classList.add('no-scroll');
+}
+
+export function unlockScroll(force = false) {
+    if (force) lockCount = 0;
+    else if (--lockCount > 0) return;
+    lockCount = 0;
+    document.body.classList.remove('no-scroll');
+    document.body.style.top = '';
+    window.scrollTo(0, savedScroll);
+}
 
 export function closeAllSheets() {
-    SHEET_IDS.forEach(id => document.getElementById(id)?.classList.remove('is-open'));
+    let wasOpen = false;
+    sheets().forEach(el => {
+        if (el.classList.contains('is-open')) wasOpen = true;
+        el.classList.remove('is-open');
+    });
     document.getElementById('navBackdrop')?.classList.remove('is-open');
-    document.body.classList.remove('no-scroll');
+    if (wasOpen) unlockScroll();
 }
 
 export function isSheetOpen(id) {
@@ -135,9 +168,11 @@ export function isSheetOpen(id) {
 
 export function openSheet(id) {
     closeAllSheets();
-    document.getElementById(id)?.classList.add('is-open');
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('is-open');
     document.getElementById('navBackdrop')?.classList.add('is-open');
-    document.body.classList.add('no-scroll');
+    lockScroll();
 }
 
 export function toggleSheet(id) {

@@ -53,7 +53,15 @@ body {
     overscroll-behavior-y: none;
 }
 
-body.no-scroll { overflow: hidden; }
+/* position: fixed, а не тільки overflow: у iOS Safari сама лише
+   overflow: hidden не втримує сторінку під шторкою.
+   Позицію прокрутки повертає unlockScroll(). */
+body.no-scroll {
+    position: fixed;
+    left: 0; right: 0;
+    width: 100%;
+    overflow: hidden;
+}
 
 .container {
     max-width: 480px;
@@ -135,13 +143,11 @@ body.no-scroll { overflow: hidden; }
     flex-shrink: 0;
 }
 .nav-brand-text { display: flex; flex-direction: column; min-width: 0; }
+/* Номер квартири й парадна дублювалися з герой-карткою одразу
+   нижче, тож підзаголовок прибрано, а назві віддано його місце. */
 .nav-title {
-    font-weight: 700; font-size: 16px; letter-spacing: -0.3px;
+    font-weight: 700; font-size: 19px; letter-spacing: -0.45px;
     margin: 0; color: var(--ink);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.nav-subtitle {
-    font-size: 11.5px; color: var(--ink-2); font-weight: 500;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .nav-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -1095,6 +1101,7 @@ select.field-input {
 .sheet-body {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     padding: 14px 20px 24px 20px;
 }
@@ -1149,6 +1156,7 @@ select.field-input {
     box-shadow: var(--sh-modal);
     max-height: 85vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
 }
 .modal-head {
@@ -2143,3 +2151,32 @@ select.field-input {
     border-radius: var(--r-sm);
     padding: 10px 12px;
 }
+
+/* Залишок на рахунку ОСББ — у куті звіту про витрати */
+.expenses-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.funds-badge {
+    display: flex; flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    background: rgba(52, 199, 89, 0.1);
+    border-radius: var(--r-sm);
+    padding: 7px 11px;
+}
+.funds-label {
+    font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: #248A3D;
+}
+.funds-sum {
+    font-size: 17px; font-weight: 800;
+    color: #248A3D; letter-spacing: -0.5px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+}
+.funds-sum small { font-size: 10px; font-weight: 600; margin-left: 3px; }

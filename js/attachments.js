@@ -3,7 +3,7 @@
 // та переглядач документів. Використовується і в повідомленнях,
 // і у зверненнях, і в картках співвласників.
 // ============================================================
-import { escapeHtml, formatFileSize } from './ui.js';
+import { escapeHtml, formatFileSize, lockScroll, unlockScroll } from './ui.js';
 
 const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'];
 
@@ -135,7 +135,7 @@ export function openGallery(images, startIndex = 0) {
     document.getElementById('galleryNextBtn').style.display = multi ? 'flex' : 'none';
 
     document.getElementById('imageGalleryModal').classList.add('is-open');
-    document.body.classList.add('no-scroll');
+    lockScroll();
 }
 
 function updateCounter() {
@@ -161,7 +161,7 @@ function goToSlide(newIndex) {
 function closeGallery() {
     document.getElementById('imageGalleryModal').classList.remove('is-open');
     document.getElementById('galleryTrack').innerHTML = '';
-    document.body.classList.remove('no-scroll');
+    unlockScroll();
 }
 
 // ------------------------------------------------------------
@@ -189,13 +189,13 @@ export function openDocViewer(docFile) {
     }
 
     document.getElementById('docViewerModal').classList.add('is-open');
-    document.body.classList.add('no-scroll');
+    lockScroll();
 }
 
 function closeDocViewer() {
     document.getElementById('docViewerModal').classList.remove('is-open');
     document.getElementById('docViewerBody').innerHTML = '';
-    document.body.classList.remove('no-scroll');
+    unlockScroll();
 }
 
 // ------------------------------------------------------------

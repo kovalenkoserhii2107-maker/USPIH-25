@@ -10,7 +10,7 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy, openSheet, isSheetOpen, closeAllSheets } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, openSheet, isSheetOpen, closeAllSheets, lockScroll, unlockScroll } from './ui.js';
 import { renderAttachments, renderFileManager, isImageFile } from './attachments.js';
 
 let unreadMsgIds = [];
@@ -190,7 +190,7 @@ function openMessageModal(msg) {
         }]);
     }
     document.getElementById('msgModal').classList.add('is-open');
-    document.body.classList.add('no-scroll');
+    lockScroll();
 }
 
 async function markAllRead(apt) {
@@ -341,5 +341,5 @@ export function initMessages() {
 
 function closeMessageModal() {
     document.getElementById('msgModal').classList.remove('is-open');
-    document.body.classList.remove('no-scroll');
+    unlockScroll();
 }
