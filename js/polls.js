@@ -9,8 +9,8 @@
 // ============================================================
 import { db, session } from './firebase.js';
 import {
-    collection, addDoc, getDocs, setDoc, updateDoc, doc,
-    query, orderBy, serverTimestamp
+    collection, addDoc, getDocs, getDoc, setDoc, updateDoc, doc,
+    query, where, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
 
@@ -100,6 +100,37 @@ function statusBadge(status) {
 }
 
 // ------------------------------------------------------------
+// ЛІЧИЛЬНИК НЕПРОГОЛОСОВАНИХ
+// Без нього мешканець дізнався б про опитування лише випадково,
+// відкривши меню, — і голосування б нікого не зібрало.
+// ------------------------------------------------------------
+function setBadge(id, count) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = count > 9 ? '9+' : count;
+    el.style.display = count ? 'flex' : 'none';
+}
+
+export async function refreshPollsBadge() {
+    try {
+        // Без orderBy: для лічильника порядок не потрібен, а зайвий
+        // складений індекс у Firestore — потрібен.
+        const snap = await getDocs(query(collection(db, 'polls'), where('status', '==', 'active')));
+        const mine = await Promise.all(snap.docs.map(
+            d => getDoc(doc(db, 'polls', d.id, 'votes', String(session.apt)))
+        ));
+        const pending = mine.filter(v => !v.exists()).length;
+        setBadge('pollsNavBadge', pending);
+        setBadge('pollsMenuBadge', pending);
+    } catch (e) {
+        // Правила ще не опубліковані або немає звʼязку — просто без лічильника
+        console.warn('Лічильник опитувань:', e);
+        setBadge('pollsNavBadge', 0);
+        setBadge('pollsMenuBadge', 0);
+    }
+}
+
+// ------------------------------------------------------------
 // МЕШКАНЕЦЬ
 // ------------------------------------------------------------
 export async function loadUserPolls() {
@@ -165,7 +196,7 @@ export async function submitVote(pollId, option, btn) {
             votedAt: serverTimestamp()
         });
         toast('Ваш голос враховано', 'success');
-        await loadUserPolls();
+        await Promise.all([loadUserPolls(), refreshPollsBadge()]);
     } catch (e) {
         console.error('Голосування:', e);
         toast(e.code === 'permission-denied'

@@ -19,7 +19,7 @@ import {
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
 import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
-import { initPolls, loadUserPolls, loadAdminPolls } from './polls.js';
+import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
 import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
@@ -115,6 +115,7 @@ async function loadCabinet(apt) {
 
         await loadOwners(apt);
         await loadUserMessages(apt, session.entrance);
+        refreshPollsBadge();          // без await: значок не має затримувати кабінет
         showInstallHint();
     }
 }

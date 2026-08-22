@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -47,6 +47,7 @@
             </button>
             <button id="menuBtn" class="icon-btn" aria-label="Меню">
                 <svg viewBox="0 0 24 24" width="21" height="21"><circle cx="5" cy="12" r="1.6" fill="currentColor"></circle><circle cx="12" cy="12" r="1.6" fill="currentColor"></circle><circle cx="19" cy="12" r="1.6" fill="currentColor"></circle></svg>
+                <span id="pollsNavBadge" class="nav-badge" style="display:none;"></span>
             </button>
         </div>
     </div>
@@ -90,6 +91,7 @@
             <button id="menuPollsBtn" class="menu-row" type="button">
                 <span class="menu-row-icon mi-indigo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
                 <span class="menu-row-text"><strong>Голосування</strong><small>Опитування правління</small></span>
+                <span id="pollsMenuBadge" class="menu-badge" style="display:none;"></span>
                 <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <button id="menuBoardBtn" class="menu-row" type="button">
@@ -756,6 +758,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=7"></script>
+<script type="module" src="js/app.js?v=8"></script>
 </body>
 </html>
