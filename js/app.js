@@ -19,6 +19,7 @@ import {
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
 import { initBoard, loadBoardContacts, loadAdminBoard } from './board.js';
+import { initPolls, loadUserPolls, loadAdminPolls } from './polls.js';
 import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
@@ -98,7 +99,8 @@ async function loadCabinet(apt) {
     if (session.isAdmin) {
         showScreen('adminDashboardSection');
         document.getElementById('topNav').style.display = 'none';
-        await Promise.all([loadAdminHistory(), loadAdminRequests(), populateDocsDropdown(), loadAdminBoard()]);
+        await Promise.all([loadAdminHistory(), loadAdminRequests(),
+                           populateDocsDropdown(), loadAdminBoard(), loadAdminPolls()]);
         backfillRecipients(); // тиха міграція старих повідомлень
     } else {
         showScreen('dataSection');
@@ -200,6 +202,7 @@ function initNavigation() {
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
     document.getElementById('menuRequestsBtn').addEventListener('click', () => go('requestsSection', loadUserRequests));
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
+    document.getElementById('menuPollsBtn').addEventListener('click', () => go('pollsSection', loadUserPolls));
 
     document.getElementById('menuChangePassBtn').addEventListener('click', () => {
         closeAllSheets();
@@ -223,7 +226,7 @@ function initNavigation() {
     });
 
     const back = () => loadCabinet(session.apt);
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
@@ -257,6 +260,7 @@ function init() {
     initMessages();
     initRequests();
     initBoard();
+    initPolls();
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();

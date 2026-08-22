@@ -88,6 +88,31 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ---------- ГОЛОСУВАННЯ ----------
+    match /polls/{pollId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+
+      // Голоси лежать окремими документами з ID = номер квартири.
+      // Саме це, а не код у браузері, робить накрутку неможливою:
+      // квартира фізично не має куди покласти другий голос.
+      match /votes/{voteId} {
+        allow read: if isSignedIn();
+
+        allow create, update: if isSignedIn()
+          // тільки за свою квартиру
+          && voteId == myApt()
+          // тільки поки опитування триває
+          && get(/databases/$(database)/documents/polls/$(pollId)).data.status == 'active'
+          // і тільки один із запропонованих варіантів, інакше через
+          // DevTools можна було б вписати будь-який рядок і зіпсувати підрахунок
+          && request.resource.data.option
+             in get(/databases/$(database)/documents/polls/$(pollId)).data.options;
+
+        allow delete: if isAdmin();
+      }
+    }
+
     // ---------- КОНТАКТИ ПРАВЛІННЯ ----------
     match /board_members/{memberId} {
       allow read: if isSignedIn();

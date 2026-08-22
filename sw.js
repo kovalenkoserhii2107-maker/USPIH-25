@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '6';
+const VERSION = '7';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -31,7 +31,8 @@ const SHELL = [
     './js/requests.js',
     './js/board.js',
     './js/install.js',
-    './js/pull-refresh.js'
+    './js/pull-refresh.js',
+    './js/polls.js'
 ];
 
 // ------------------------------------------------------------

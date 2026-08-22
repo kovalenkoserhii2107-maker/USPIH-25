@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -85,6 +85,11 @@
             <button id="menuRequestsBtn" class="menu-row" type="button">
                 <span class="menu-row-icon mi-green"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></span>
                 <span class="menu-row-text"><strong>Звернення до Правління</strong><small>Написати та бачити відповіді</small></span>
+                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button id="menuPollsBtn" class="menu-row" type="button">
+                <span class="menu-row-icon mi-indigo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
+                <span class="menu-row-text"><strong>Голосування</strong><small>Опитування правління</small></span>
                 <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <button id="menuBoardBtn" class="menu-row" type="button">
@@ -333,6 +338,10 @@
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>
                 <span>Історія</span>
             </button>
+            <button class="admin-tab" data-tab="polls" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                <span>Опитування</span>
+            </button>
             <button class="admin-tab" data-tab="board" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 <span>Правління</span>
@@ -462,6 +471,45 @@
                 </div>
                 <div id="adminMsgHistoryContainer" class="admin-scroll-list">
                     <p class="list-empty">Історія порожня</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вкладка: опитування -->
+        <div class="admin-panel" data-panel="polls">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Нове опитування</h2>
+                    <span class="admin-card-sub">Кожна квартира має один голос</span>
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="pollTitle">Питання</label>
+                    <input type="text" id="pollTitle" class="field-input" placeholder="Напр. Чи встановлювати шлагбаум?">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="pollDescription">Деталі</label>
+                    <textarea id="pollDescription" class="field-input" rows="3" placeholder="Вартість, терміни, що це дасть мешканцям…"></textarea>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Варіанти відповіді</span>
+                    <div id="pollOptionsList" class="poll-options-list"></div>
+                    <button type="button" id="addPollOptionBtn" class="btn-ghost-small poll-add-option">
+                        + Додати варіант
+                    </button>
+                </div>
+
+                <button type="button" id="createPollBtn" class="btn-primary">Опублікувати опитування</button>
+            </div>
+
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Опитування</h2>
+                    <span class="admin-card-sub">Результати в реальному часі</span>
+                </div>
+                <div id="adminPollsContainer" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
                 </div>
             </div>
         </div>
@@ -598,6 +646,21 @@
         </div>
     </div>
 
+    <!-- ============ ГОЛОСУВАННЯ (МЕШКАНЕЦЬ) ============ -->
+    <div id="pollsSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromPollsBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+        </div>
+        <h1 class="screen-title" style="margin-bottom: 18px;">Голосування</h1>
+
+        <div id="userPollsContainer">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
     <!-- ============ КОНТАКТИ ПРАВЛІННЯ ============ -->
     <div id="boardSection" style="display: none;">
         <div class="screen-head">
@@ -693,6 +756,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=6"></script>
+<script type="module" src="js/app.js?v=7"></script>
 </body>
 </html>

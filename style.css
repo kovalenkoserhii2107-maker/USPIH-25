@@ -976,9 +976,19 @@ select.field-input {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
 }
+/* Вкладок стало шість — у рядок вони вже не вміщаються.
+   Стрічка прокручується вбік, як у застосунках Apple. */
+.admin-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.admin-tabs::-webkit-scrollbar { display: none; }
 .admin-tab {
     position: relative;
-    flex: 1;
+    /* Ширина за вмістом: вкладки з коротким написом не розтягуються,
+       а разом вони вміщаються там, де шість рівних уже не влізли б. */
+    flex: 0 0 auto;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 3px;
     background: transparent; border: none;
@@ -1514,3 +1524,152 @@ select.field-input {
 /* Протягнуто достатньо — колір підказує, що можна відпускати */
 .ptr-ready .ptr-spinner { border-top-color: var(--blue); }
 .ptr-loading .ptr-spinner { animation: spin 0.7s linear infinite; }
+
+/* ---------- ГОЛОСУВАННЯ ---------- */
+.mi-indigo { background: linear-gradient(135deg, #7D8BFF, #4B5CD6); }
+
+.poll-card { margin-bottom: var(--gap); }
+.poll-card-admin {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 14px;
+}
+.poll-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 8px;
+}
+.poll-badge {
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 4px 9px; border-radius: 8px; flex-shrink: 0;
+}
+.poll-badge-active { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.poll-badge-closed { background: rgba(120, 120, 128, 0.14); color: var(--ink-2); }
+.poll-date { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+
+.poll-title {
+    margin: 0 0 4px 0;
+    font-size: 17px; font-weight: 700;
+    color: var(--ink); letter-spacing: -0.3px; line-height: 1.3;
+}
+/* Без опису результати притискаються впритул до заголовка —
+   додаємо відступ лише тоді, коли опису справді немає. */
+.poll-title + .poll-results,
+.poll-title + .poll-options { margin-top: 13px; }
+.poll-desc {
+    margin: 0 0 14px 0;
+    font-size: 14px; color: var(--ink-2); line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word;
+}
+
+/* Варіанти для голосування — рядки-перемикачі в стилі iOS */
+.poll-options { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.poll-option {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface-2);
+    border: 1.5px solid transparent;
+    border-radius: var(--r-md);
+    padding: 13px 14px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.poll-option input { position: absolute; opacity: 0; width: 0; height: 0; }
+.poll-option-mark {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid #C7C7CC;
+    flex-shrink: 0;
+    position: relative;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.poll-option-mark::after {
+    content: "";
+    position: absolute; inset: 4px;
+    border-radius: 50%;
+    background: #fff;
+    transform: scale(0);
+    transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.poll-option-text { font-size: 15.5px; font-weight: 500; color: var(--ink); }
+/* Сам перемикач — через сусідній селектор: працює скрізь,
+   зокрема на iOS до 15.4, де :has() ще немає. */
+.poll-option input:checked + .poll-option-mark {
+    border-color: var(--blue);
+    background: var(--blue);
+}
+.poll-option input:checked + .poll-option-mark::after { transform: scale(1); }
+/* Підсвітка всього рядка — приємний додаток; якщо :has() не
+   підтримується, зникає лише вона, а перемикач працює далі. */
+.poll-option:has(input:checked) { background: rgba(0, 122, 255, 0.08); border-color: var(--blue); }
+
+/* Результати */
+.poll-results { display: flex; flex-direction: column; gap: 12px; }
+.poll-result-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 6px;
+}
+.poll-result-name {
+    font-size: 14.5px; font-weight: 600; color: var(--ink);
+    word-break: break-word;
+}
+.poll-result-lead .poll-result-name { font-weight: 700; }
+.poll-mine {
+    display: inline-block;
+    margin-left: 7px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--blue);
+    background: rgba(0, 122, 255, 0.1);
+    padding: 2px 6px; border-radius: 6px;
+    vertical-align: 1px;
+}
+.poll-result-num {
+    font-size: 15px; font-weight: 700; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; flex-shrink: 0;
+}
+.poll-result-num small { font-size: 11px; font-weight: 600; color: var(--ink-2); }
+.poll-result-count {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 11.5px; font-weight: 600;
+    color: var(--ink-2);
+    background: rgba(120, 120, 128, 0.12);
+    padding: 2px 7px; border-radius: 7px;
+}
+.poll-track {
+    height: 8px;
+    background: rgba(120, 120, 128, 0.16);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.poll-fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.55s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.poll-total {
+    display: block;
+    font-size: 12.5px; color: var(--ink-2);
+    margin-top: 2px;
+}
+
+/* Форма створення (адмін) */
+.poll-options-list { display: flex; flex-direction: column; gap: 8px; }
+.poll-option-row { display: flex; align-items: center; gap: 8px; }
+.poll-option-row .field-input { flex: 1; min-width: 0; }
+.poll-option-del {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(120, 120, 128, 0.12);
+    color: var(--ink-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+.poll-option-del:active { background: rgba(255, 59, 48, 0.16); color: var(--red); }
+.poll-option-del:disabled { opacity: 0.35; cursor: default; }
+.poll-add-option { margin-top: 10px; }
