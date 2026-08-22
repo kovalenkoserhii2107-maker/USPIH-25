@@ -42,6 +42,12 @@ service cloud.firestore {
       match /owners/{ownerId} {
         allow read, write: if isSignedIn() && (apt == myApt() || isAdmin());
       }
+
+      // Квитанції: мешканець бачить лише свої, виставляє їх бухгалтер
+      match /receipts/{receiptId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow write: if isAdmin();
+      }
     }
 
     // Правління читає всіх співвласників одним collectionGroup-запитом
@@ -123,6 +129,13 @@ service cloud.firestore {
 
         allow delete: if isAdmin();
       }
+    }
+
+    // ---------- ЗВІТ ПРО ВИТРАТИ ----------
+    // Публічний для мешканців: у цьому й сенс прозорості.
+    match /finance/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // ---------- ТЕХНІЧНІ СЛУЖБИ ----------

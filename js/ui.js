@@ -160,7 +160,7 @@ export function initSheets() {
 // ------------------------------------------------------------
 const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
-                 'requestsSection', 'pollsSection', 'servicesSection'];
+                 'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection'];
 
 export function showScreen(id) {
     SCREENS.forEach(s => {

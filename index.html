@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=11">
+    <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -275,6 +275,8 @@
             </div>
         </div>
 
+        <div id="balanceHost"></div>
+
         <div class="power-card" id="powerCard">
             <div class="power-card-inner">
                 <div class="power-icon-circle" id="powerIconCircle"></div>
@@ -285,6 +287,8 @@
                 </div>
             </div>
         </div>
+
+        <div id="expensesHost"></div>
 
         <div class="section-head">
             <div class="section-head-text">
@@ -357,13 +361,13 @@
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v15"></path><path d="M12 11h7a1 1 0 0 1 1 1v9"></path><line x1="2" y1="21" x2="22" y2="21"></line><line x1="7" y1="9" x2="9" y2="9"></line><line x1="7" y1="13" x2="9" y2="13"></line><line x1="15" y1="15" x2="17" y2="15"></line></svg>
                 <span>Квартири</span>
             </button>
-            <button class="admin-tab" data-tab="services" type="button">
-                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-                <span>Служби</span>
+            <button class="admin-tab" data-tab="finance" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                <span>Фінанси</span>
             </button>
             <button class="admin-tab" data-tab="board" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                <span>Правління</span>
+                <span>Контакти</span>
             </button>
         </div>
 
@@ -577,8 +581,147 @@
             </div>
         </div>
 
-        <!-- Вкладка: технічні служби -->
-        <div class="admin-panel" data-panel="services">
+        <!-- Вкладка: фінанси -->
+        <div class="admin-panel" data-panel="finance">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Баланси квартир</h2>
+                    <span class="admin-card-sub">Рядок на квартиру: номер і сума. Додатна — борг, від'ємна — переплата</span>
+                </div>
+                <div class="field">
+                    <textarea id="balanceBulk" class="field-input" rows="6"
+                              placeholder="298 1250,40&#10;12 -300&#10;55 0"></textarea>
+                    <span class="field-hint">Роздільник — пробіл, кома, крапка з комою або табуляція.</span>
+                </div>
+                <div id="balancePreview"></div>
+                <button type="button" id="applyBalancesBtn" class="btn-primary">Оновити баланси</button>
+            </div>
+
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Квитанції</h2>
+                    <span class="admin-card-sub">Номер квартири визначається з назви файлу — перевірте перед надсиланням</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="receiptPeriod">Період</label>
+                    <input type="text" id="receiptPeriod" class="field-input" placeholder="Серпень 2026">
+                </div>
+                <div class="field">
+                    <span class="field-label">Файли</span>
+                    <label class="dropzone" for="receiptFiles">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Обрати квитанції</span>
+                        <span class="dropzone-hint">Можна одразу всі. Напр. «298.pdf»</span>
+                    </label>
+                    <input type="file" id="receiptFiles" multiple accept="application/pdf,image/*" class="hidden-file-input">
+                </div>
+                <div id="receiptRows" class="receipt-rows"></div>
+                <button type="button" id="uploadReceiptsBtn" class="btn-primary">Розіслати квитанції</button>
+            </div>
+
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Куди пішли гроші</h2>
+                    <span class="admin-card-sub">Звіт бачать усі мешканці на головному екрані</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="expensePeriod">Період</label>
+                    <input type="text" id="expensePeriod" class="field-input" placeholder="Серпень 2026">
+                </div>
+                <div class="field">
+                    <span class="field-label">Статті витрат</span>
+                    <div id="expenseRows" class="expense-rows"></div>
+                    <button type="button" id="addExpenseBtn" class="btn-ghost-small poll-add-option">+ Додати статтю</button>
+                </div>
+                <div id="expensePreview"></div>
+                <button type="button" id="saveExpensesBtn" class="btn-primary">Опублікувати звіт</button>
+            </div>
+        </div>
+
+        <!-- Вкладка: контакти (правління + технічні служби) -->
+        <div class="admin-panel" data-panel="board">
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Голова правління</h2>
+                    <span class="admin-card-sub">Контакти побачать усі мешканці</span>
+                </div>
+
+                <div class="board-photo-row">
+                    <div class="board-photo-preview" id="boardPhotoPreview-chairman"></div>
+                    <label class="dropzone board-photo-drop" for="boardPhotoInput-chairman">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Змінити фото</span>
+                    </label>
+                    <input type="file" id="boardPhotoInput-chairman" accept="image/*" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="boardName-chairman">ПІБ</label>
+                    <input type="text" id="boardName-chairman" class="field-input" placeholder="Прізвище Ім'я По батькові">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardPhone-chairman">Телефон</label>
+                    <input type="tel" id="boardPhone-chairman" class="field-input" placeholder="+380XXXXXXXXX">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardEmail-chairman">Email</label>
+                    <input type="email" id="boardEmail-chairman" class="field-input" placeholder="name@example.com">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardViber-chairman">Viber</label>
+                    <input type="tel" id="boardViber-chairman" class="field-input" placeholder="Якщо номер відрізняється від телефону">
+                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardTelegram-chairman">Telegram</label>
+                    <input type="text" id="boardTelegram-chairman" class="field-input" placeholder="@nickname або номер">
+                </div>
+
+                <button type="button" class="btn-primary" id="boardSaveBtn-chairman">Зберегти</button>
+            </div>
+
+            <div class="card">
+                <div class="admin-card-head">
+                    <h2 class="admin-card-title">Бухгалтер</h2>
+                    <span class="admin-card-sub">Контакти побачать усі мешканці</span>
+                </div>
+
+                <div class="board-photo-row">
+                    <div class="board-photo-preview" id="boardPhotoPreview-accountant"></div>
+                    <label class="dropzone board-photo-drop" for="boardPhotoInput-accountant">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Змінити фото</span>
+                    </label>
+                    <input type="file" id="boardPhotoInput-accountant" accept="image/*" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="boardName-accountant">ПІБ</label>
+                    <input type="text" id="boardName-accountant" class="field-input" placeholder="Прізвище Ім'я По батькові">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardPhone-accountant">Телефон</label>
+                    <input type="tel" id="boardPhone-accountant" class="field-input" placeholder="+380XXXXXXXXX">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardEmail-accountant">Email</label>
+                    <input type="email" id="boardEmail-accountant" class="field-input" placeholder="name@example.com">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardViber-accountant">Viber</label>
+                    <input type="tel" id="boardViber-accountant" class="field-input" placeholder="Якщо номер відрізняється від телефону">
+                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="boardTelegram-accountant">Telegram</label>
+                    <input type="text" id="boardTelegram-accountant" class="field-input" placeholder="@nickname або номер">
+                </div>
+
+                <button type="button" class="btn-primary" id="boardSaveBtn-accountant">Зберегти</button>
+            </div>
+
+            <h2 class="admin-section-split">Технічні служби</h2>
+
             <div class="card">
                 <div class="admin-card-head">
                     <h2 class="admin-card-title">Електрик</h2>
@@ -736,89 +879,6 @@
                 <button type="button" class="btn-primary" id="serviceSaveBtn-intercom">Зберегти</button>
             </div>
         </div>
-
-        <!-- Вкладка: контакти правління -->
-        <div class="admin-panel" data-panel="board">
-            <div class="card">
-                <div class="admin-card-head">
-                    <h2 class="admin-card-title">Голова правління</h2>
-                    <span class="admin-card-sub">Контакти побачать усі мешканці</span>
-                </div>
-
-                <div class="board-photo-row">
-                    <div class="board-photo-preview" id="boardPhotoPreview-chairman"></div>
-                    <label class="dropzone board-photo-drop" for="boardPhotoInput-chairman">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        <span class="dropzone-text">Змінити фото</span>
-                    </label>
-                    <input type="file" id="boardPhotoInput-chairman" accept="image/*" class="hidden-file-input">
-                </div>
-
-                <div class="field">
-                    <label class="field-label" for="boardName-chairman">ПІБ</label>
-                    <input type="text" id="boardName-chairman" class="field-input" placeholder="Прізвище Ім'я По батькові">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardPhone-chairman">Телефон</label>
-                    <input type="tel" id="boardPhone-chairman" class="field-input" placeholder="+380XXXXXXXXX">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardEmail-chairman">Email</label>
-                    <input type="email" id="boardEmail-chairman" class="field-input" placeholder="name@example.com">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardViber-chairman">Viber</label>
-                    <input type="tel" id="boardViber-chairman" class="field-input" placeholder="Якщо номер відрізняється від телефону">
-                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardTelegram-chairman">Telegram</label>
-                    <input type="text" id="boardTelegram-chairman" class="field-input" placeholder="@nickname або номер">
-                </div>
-
-                <button type="button" class="btn-primary" id="boardSaveBtn-chairman">Зберегти</button>
-            </div>
-
-            <div class="card">
-                <div class="admin-card-head">
-                    <h2 class="admin-card-title">Бухгалтер</h2>
-                    <span class="admin-card-sub">Контакти побачать усі мешканці</span>
-                </div>
-
-                <div class="board-photo-row">
-                    <div class="board-photo-preview" id="boardPhotoPreview-accountant"></div>
-                    <label class="dropzone board-photo-drop" for="boardPhotoInput-accountant">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        <span class="dropzone-text">Змінити фото</span>
-                    </label>
-                    <input type="file" id="boardPhotoInput-accountant" accept="image/*" class="hidden-file-input">
-                </div>
-
-                <div class="field">
-                    <label class="field-label" for="boardName-accountant">ПІБ</label>
-                    <input type="text" id="boardName-accountant" class="field-input" placeholder="Прізвище Ім'я По батькові">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardPhone-accountant">Телефон</label>
-                    <input type="tel" id="boardPhone-accountant" class="field-input" placeholder="+380XXXXXXXXX">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardEmail-accountant">Email</label>
-                    <input type="email" id="boardEmail-accountant" class="field-input" placeholder="name@example.com">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardViber-accountant">Viber</label>
-                    <input type="tel" id="boardViber-accountant" class="field-input" placeholder="Якщо номер відрізняється від телефону">
-                    <span class="field-hint">Якщо не заповнено — використається номер телефону.</span>
-                </div>
-                <div class="field">
-                    <label class="field-label" for="boardTelegram-accountant">Telegram</label>
-                    <input type="text" id="boardTelegram-accountant" class="field-input" placeholder="@nickname або номер">
-                </div>
-
-                <button type="button" class="btn-primary" id="boardSaveBtn-accountant">Зберегти</button>
-            </div>
-        </div>
     </div>
 
     <!-- ============ БАЗА ДОКУМЕНТІВ (МЕШКАНЕЦЬ) ============ -->
@@ -888,6 +948,20 @@
         <h1 class="screen-title" style="margin-bottom: 18px;">Голосування</h1>
 
         <div id="userPollsContainer">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
+    <!-- ============ КВИТАНЦІЇ ============ -->
+    <div id="receiptsSection" style="display: none;">
+        <div class="screen-head">
+            <button id="backFromReceiptsBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+        </div>
+        <h1 class="screen-title" style="margin-bottom: 18px;">Квитанції</h1>
+        <div id="receiptsContainer">
             <p class="list-empty">Завантаження…</p>
         </div>
     </div>
@@ -1002,6 +1076,6 @@
     <div id="docViewerBody" class="doc-viewer-body"></div>
 </div>
 
-<script type="module" src="js/app.js?v=11"></script>
+<script type="module" src="js/app.js?v=12"></script>
 </body>
 </html>

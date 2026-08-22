@@ -1929,3 +1929,138 @@ select.field-input {
     font-size: 12px; color: var(--ink-2);
     margin-top: 3px;
 }
+
+/* ---------- БАЛАНС КВАРТИРИ ---------- */
+.balance-card {
+    border-radius: var(--r-lg);
+    padding: 18px var(--pad) 8px var(--pad);
+    margin-bottom: var(--gap);
+    box-shadow: var(--sh-card);
+    border: 0.5px solid rgba(0, 0, 0, 0.04);
+    background: var(--surface);
+}
+.balance-debt { background: linear-gradient(135deg, #FFF4F3 0%, #FFE7E5 100%); }
+.balance-credit { background: linear-gradient(135deg, #F1FBF3 0%, #DDF5E3 100%); }
+.balance-main { display: flex; flex-direction: column; }
+.balance-label {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
+}
+.balance-sum {
+    font-size: 40px; font-weight: 800;
+    letter-spacing: -1.8px; line-height: 1.05;
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+}
+.balance-sum small {
+    font-size: 15px; font-weight: 600;
+    letter-spacing: 0; margin-left: 5px;
+    color: var(--ink-2);
+}
+.balance-debt .balance-sum { color: var(--red); }
+.balance-credit .balance-sum { color: #248A3D; }
+.balance-zero .balance-sum { color: var(--ink); }
+.balance-date { font-size: 11.5px; color: var(--ink-2); margin-top: 5px; }
+.balance-receipts {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; box-sizing: border-box;
+    margin-top: 14px;
+    padding: 12px 0 12px 0;
+    background: none; border: none;
+    border-top: 0.5px solid rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    font-family: var(--font);
+}
+.balance-receipts-text { font-size: 15px; font-weight: 600; color: var(--blue); }
+
+/* ---------- КРУГОВА ДІАГРАМА ВИТРАТ ---------- */
+.donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.donut { position: relative; width: 168px; height: 168px; flex-shrink: 0; }
+.donut svg { width: 100%; height: 100%; display: block; }
+.donut-seg {
+    fill: none;
+    stroke-width: 13;
+    transition: stroke-dasharray 0.6s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.donut-center {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+}
+.donut-center b {
+    font-size: 21px; font-weight: 800;
+    letter-spacing: -0.8px; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+.donut-center small { font-size: 11px; color: var(--ink-2); font-weight: 600; }
+
+.donut-legend { width: 100%; display: flex; flex-direction: column; gap: 9px; }
+.donut-row {
+    display: grid;
+    grid-template-columns: 10px 1fr auto auto;
+    align-items: center;
+    gap: 9px;
+    font-size: 13.5px;
+}
+.donut-dot { width: 10px; height: 10px; border-radius: 3px; }
+.donut-name { color: var(--ink); font-weight: 500; min-width: 0; word-break: break-word; }
+.donut-pct {
+    font-weight: 700; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+.donut-sum {
+    font-size: 12px; color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+    min-width: 62px; text-align: right;
+}
+
+/* ---------- ФІНАНСИ (АДМІН) ---------- */
+.bulk-preview {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    background: var(--surface-2);
+    border-radius: var(--r-sm);
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 12px;
+}
+.bulk-ok, .bulk-bad {
+    font-weight: 700; padding: 3px 8px; border-radius: 7px;
+}
+.bulk-ok { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.bulk-bad { background: rgba(255, 59, 48, 0.13); color: #C93400; }
+.bulk-row { width: 100%; color: var(--ink-2); }
+.bulk-more { font-style: italic; }
+
+.receipt-rows { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.receipt-row {
+    display: grid;
+    grid-template-columns: 1fr 74px 34px;
+    align-items: center; gap: 8px;
+}
+.receipt-file {
+    font-size: 12.5px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.receipt-apt { text-align: center; font-variant-numeric: tabular-nums; }
+.receipt-row-warn .receipt-apt { border-color: var(--red); background: rgba(255, 59, 48, 0.06); }
+.receipt-row-warn .receipt-file { color: var(--red); }
+
+.expense-rows { display: flex; flex-direction: column; gap: 8px; }
+.expense-row {
+    display: grid;
+    grid-template-columns: 1fr 96px 34px;
+    align-items: center; gap: 8px;
+}
+#expensePreview:not(:empty) {
+    margin: 16px 0;
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+}
+.admin-section-split {
+    font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
+    margin: 8px 0 12px 2px;
+}

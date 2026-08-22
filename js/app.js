@@ -26,6 +26,9 @@ import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './p
 import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import {
+    initFinance, loadBalance, loadExpenses, loadReceipts, loadAdminExpenses
+} from './finance.js';
+import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
@@ -106,6 +109,7 @@ async function loadCabinet(apt) {
         document.getElementById('topNav').style.display = 'none';
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
+                           loadAdminExpenses(),
                            loadDirectory()]);
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
@@ -123,6 +127,14 @@ async function loadCabinet(apt) {
 
         await loadOwners(apt);
         await loadUserMessages(apt, session.entrance);
+        await Promise.all([loadBalance(apt), loadExpenses()]);
+
+        // Кнопку малює loadBalance, тож слухача вішаємо після нього
+        document.getElementById('openReceiptsBtn')?.addEventListener('click', () => {
+            showScreen('receiptsSection');
+            document.getElementById('topNav').style.display = 'none';
+            loadReceipts();
+        });
         refreshPollsBadge();          // без await: значок не має затримувати кабінет
         showInstallHint();
     }
@@ -236,7 +248,7 @@ function initNavigation() {
     });
 
     const back = () => loadCabinet(session.apt);
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
@@ -272,6 +284,7 @@ function init() {
     initContacts();
     initPolls();
     initDirectory();
+    initFinance();
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();
