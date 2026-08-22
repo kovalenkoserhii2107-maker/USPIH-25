@@ -45,19 +45,27 @@ export function getInitials(fullName) {
     return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
 }
 
+// Пари барв, а не готові рядки: SVG-кільце не вміє малювати
+// CSS-градієнт, йому потрібні окремі стопи.
 const AVATAR_GRADIENTS = [
-    'linear-gradient(135deg, #4FA3FF, #007AFF)',
-    'linear-gradient(135deg, #4CD97B, #34C759)',
-    'linear-gradient(135deg, #FFB157, #FF9500)',
-    'linear-gradient(135deg, #C77DFF, #AF52DE)',
-    'linear-gradient(135deg, #FF7A73, #FF3B30)',
-    'linear-gradient(135deg, #5AC8FA, #0091C2)'
+    ['#4FA3FF', '#007AFF'],
+    ['#4CD97B', '#34C759'],
+    ['#FFB157', '#FF9500'],
+    ['#C77DFF', '#AF52DE'],
+    ['#FF7A73', '#FF3B30'],
+    ['#5AC8FA', '#0091C2']
 ];
 
-export function avatarGradient(name) {
+/** Дві барви градієнта співвласника — для SVG та інших нестандартних місць. */
+export function avatarColors(name) {
     let sum = 0;
     for (let i = 0; i < (name || '').length; i++) sum += name.charCodeAt(i);
     return AVATAR_GRADIENTS[sum % AVATAR_GRADIENTS.length];
+}
+
+export function avatarGradient(name) {
+    const [from, to] = avatarColors(name);
+    return `linear-gradient(135deg, ${from}, ${to})`;
 }
 
 // ------------------------------------------------------------

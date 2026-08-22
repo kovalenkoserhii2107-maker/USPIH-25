@@ -688,8 +688,8 @@ select.field-input {
     line-height: 1.25; word-break: break-word;
 }
 
-/* Частка власності — лінійна шкала замість кільця:
-   читається з першого погляду й не тисне на макет. */
+/* Частка власності — кільце в стилі iOS: число всередині,
+   дуга в барві аватара цього ж співвласника. */
 .share-panel {
     background: var(--surface-2);
     border-radius: var(--r-md);
@@ -698,46 +698,53 @@ select.field-input {
 }
 .share-panel-head {
     display: flex; align-items: baseline; justify-content: space-between;
-    gap: 10px; margin-bottom: 2px;
+    gap: 10px;
 }
 .share-caption {
     font-size: 10.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.7px;
     color: var(--ink-2);
 }
-.share-percent {
-    font-size: 15px; font-weight: 700;
-    color: var(--ink-2); letter-spacing: -0.3px;
+.share-frac-top {
+    font-size: 20px; font-weight: 700;
+    color: var(--ink); letter-spacing: -0.6px;
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
 }
-.share-percent small { font-size: 11px; font-weight: 600; margin-left: 1px; }
-.share-frac {
-    display: block;
-    font-size: 30px; font-weight: 700;
-    color: var(--ink);
-    letter-spacing: -1.2px; line-height: 1.1;
-    font-variant-numeric: tabular-nums;
-    margin-bottom: 11px;
-}
-/* Заглушка — це текст, а не число: не роздуваємо її до розміру дробу */
+/* Заглушка — це текст, а не дріб: не роздуваємо її */
 .share-frac-empty {
-    font-size: 16px; font-weight: 600;
-    color: var(--ink-3); letter-spacing: -0.2px;
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-3); letter-spacing: 0;
 }
-.share-track {
+
+.share-ring {
     position: relative;
-    height: 7px;
-    background: rgba(120, 120, 128, 0.16);
-    border-radius: 4px;
-    overflow: hidden;
+    width: 84px; height: 84px;
+    margin-top: 12px;
 }
-.share-fill {
-    display: block;
-    height: 100%;
-    border-radius: 4px;
-    min-width: 0;
-    transition: width 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+.share-ring svg { width: 100%; height: 100%; display: block; }
+.share-ring-track {
+    fill: none;
+    stroke: rgba(120, 120, 128, 0.16);
+    stroke-width: 9;
+}
+.share-ring-fill {
+    fill: none;
+    stroke-width: 9;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.55s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.share-ring-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 27px; font-weight: 700;
+    color: var(--ink); letter-spacing: -1.2px;
+    font-variant-numeric: tabular-nums;
+}
+.share-ring-text small {
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-2);
+    letter-spacing: 0; margin-left: 1px;
 }
 
 /* Рядки даних — розділені волосинкою, як у списках Apple */

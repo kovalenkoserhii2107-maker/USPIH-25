@@ -8,10 +8,14 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, getInitials, avatarGradient, toast, confirmDialog, setBusy } from './ui.js';
+import { escapeHtml, getInitials, avatarGradient, avatarColors, toast, confirmDialog, setBusy } from './ui.js';
 import { renderAttachments, renderFileManager, fileNameFromUrl } from './attachments.js';
 
 const PRESETS = ['1/1', '1/2', '1/3', '1/4', '2/3', '1/5'];
+
+// Кожне кільце має власний <linearGradient>, тож id мусять бути унікальні
+// в межах сторінки — інакше всі картки візьмуть барву першої.
+let ringSeq = 0;
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
@@ -109,12 +113,15 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
 
     const percNum = parseFloat(sharePerc);
     const hasShare = sharePerc !== '' && !isNaN(percNum);
-    const fillWidth = hasShare ? Math.min(Math.max(percNum, 0), 100) : 0;
-    // Прибираємо хвостові нулі: 33.33 → «33,33», 50 → «50»
-    const percLabel = hasShare
-        ? String(Math.round(percNum * 100) / 100).replace('.', ',')
-        : '';
+    const pct = hasShare ? Math.min(Math.max(percNum, 0), 100) : 0;
+    // Усередині кільця місця мало, тому округлюємо: «33%», а не «33,33%».
+    // Точне значення й так видно з дробу поруч.
+    const percLabel = hasShare ? Math.round(percNum) : null;
     const accent = avatarGradient(name);
+    const [ringFrom, ringTo] = avatarColors(name);
+    const ringId = `ownerRing${++ringSeq}`;
+    const CIRC = 2 * Math.PI * 44;          // r=44 у системі координат 0 0 100 100
+    const dashOffset = CIRC * (1 - pct / 100);
     const isCustom = shareFrac && !PRESETS.includes(shareFrac);
 
     card.innerHTML = `
@@ -133,12 +140,25 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
             <div class="share-panel">
                 <div class="share-panel-head">
                     <span class="share-caption">Частка власності</span>
-                    ${hasShare ? `<span class="share-percent">${escapeHtml(percLabel)}<small>%</small></span>` : ''}
+                    <span class="share-frac-top${shareFrac ? '' : ' share-frac-empty'}">${escapeHtml(shareFrac) || 'Не вказано'}</span>
                 </div>
-                <span class="share-frac${shareFrac ? '' : ' share-frac-empty'}">${escapeHtml(shareFrac) || 'Не вказано'}</span>
-                <div class="share-track" role="img"
-                     aria-label="${hasShare ? escapeHtml(percLabel) + '% від квартири' : 'Частку не вказано'}">
-                    <span class="share-fill" style="width: ${fillWidth}%; background: ${accent};"></span>
+                <div class="share-ring" role="img"
+                     aria-label="${hasShare ? percLabel + '% від квартири' : 'Частку не вказано'}">
+                    <svg viewBox="0 0 100 100" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="${ringId}" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0" stop-color="${ringFrom}"></stop>
+                                <stop offset="1" stop-color="${ringTo}"></stop>
+                            </linearGradient>
+                        </defs>
+                        <circle class="share-ring-track" cx="50" cy="50" r="44"></circle>
+                        <circle class="share-ring-fill" cx="50" cy="50" r="44"
+                                stroke="url(#${ringId})"
+                                stroke-dasharray="${CIRC.toFixed(2)}"
+                                stroke-dashoffset="${dashOffset.toFixed(2)}"
+                                transform="rotate(-90 50 50)"></circle>
+                    </svg>
+                    <span class="share-ring-text">${hasShare ? percLabel + '<small>%</small>' : '—'}</span>
                 </div>
             </div>
 
