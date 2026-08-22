@@ -48,22 +48,14 @@ export function formatMoney(n) {
 // ------------------------------------------------------------
 // БАЛАНС КВАРТИРИ (мешканець)
 // ------------------------------------------------------------
-export function renderBalance(balance, updatedAt, funds = null) {
+export function renderBalance(balance, updatedAt) {
     const n = parseMoney(balance);
     const debt = n < -0.005;
     const credit = n > 0.005;
     const state = debt ? 'debt' : credit ? 'credit' : 'zero';
     const label = debt ? 'До сплати' : credit ? 'Переплата' : 'Заборгованості немає';
 
-    // Спершу гроші будинку, потім свої: прозорість — головне, заради
-    // чого мешканець сюди дивиться.
-    const fundsRow = funds === null ? '' : `<div class="balance-funds">
-            <span class="balance-funds-label">На рахунку ОСББ</span>
-            <span class="balance-funds-sum">${formatMoney(funds)}<small>грн</small></span>
-        </div>`;
-
     return `<div class="balance-card balance-${state}">
-        ${fundsRow}
         <div class="balance-main">
             <span class="balance-label">${label}</span>
             <span class="balance-sum">${state === 'zero' ? '0,00' : formatMoney(n)}<small>грн</small></span>
@@ -84,19 +76,11 @@ export async function loadBalance(apt) {
     const host = document.getElementById('balanceHost');
     if (!host) return;
     try {
-        // Залишок ОСББ лежить у звіті про витрати — читаємо разом
-        const [snap, fin] = await Promise.all([
-            getDoc(doc(db, 'apartments', apt)),
-            getDoc(doc(db, 'finance', 'current')).catch(() => null)
-        ]);
+        const snap = await getDoc(doc(db, 'apartments', apt));
         const d = snap.exists() ? snap.data() : {};
-        const f = fin && fin.exists() ? fin.data() : {};
-        const funds = (f.funds === undefined || f.funds === null || f.funds === '')
-            ? null : parseMoney(f.funds);
-
         session.balance = parseMoney(d.balance);
         session.personalAccount = d.personalAccount || '';
-        host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt, funds);
+        host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt);
 
         document.getElementById('payBtn')?.addEventListener('click', openPaymentSheet);
     } catch (e) {
@@ -201,11 +185,22 @@ export async function loadExpenses() {
         const d = snap.data();
         const chart = renderDonut(d.items);
         if (!chart) { host.innerHTML = ''; return; }
-        // Залишок ОСББ показуємо лише у фінансовому блоці вгорі:
-        // двічі та сама сума на одному екрані — шум.
+        const funds = (d.funds === undefined || d.funds === null || d.funds === '')
+            ? null : parseMoney(d.funds);
+        // Дату вказує бухгалтер: виписку могли внести пізніше, ніж
+        // вона сформована, і «станом на» має бути датою виписки.
+        const asOf = d.fundsDate
+            ? d.fundsDate
+            : (d.updatedAt ? formatDateTime(d.updatedAt) : '');
+
         host.innerHTML = `<div class="card">
+            ${funds === null ? '' : `<div class="funds-row">
+                <span class="funds-row-label">На рахунку ОСББ</span>
+                <span class="funds-row-sum">${formatMoney(funds)}<small>грн</small></span>
+                ${asOf ? `<span class="funds-row-date">станом на ${escapeHtml(asOf)}</span>` : ''}
+            </div>`}
             <div class="section-head-text" style="margin-bottom: 16px;">
-                <h2 class="admin-card-title">Куди пішли гроші</h2>
+                <h2 class="admin-card-title">Витрати за місяць</h2>
                 <span class="admin-card-sub">${escapeHtml(d.period || '')}</span>
             </div>
             ${chart}
@@ -433,6 +428,7 @@ function previewExpenses() {
 export async function saveExpenses(btn) {
     const period = document.getElementById('expensePeriod').value.trim();
     const fundsRaw = document.getElementById('expenseFunds').value.trim();
+    const fundsDate = document.getElementById('expenseFundsDate').value.trim();
     const items = currentExpenseItems();
     if (!period) return toast('Вкажіть період', 'error');
     if (!items.length) return toast('Додайте хоча б одну статтю витрат', 'error');
@@ -443,6 +439,7 @@ export async function saveExpenses(btn) {
             period, items,
             // Порожнє поле — не нуль: у нуля й «не вказано» різний сенс
             funds: fundsRaw === '' ? null : parseMoney(fundsRaw),
+            fundsDate,
             total: items.reduce((s, i) => s + i.amount, 0),
             updatedAt: serverTimestamp()
         });
@@ -466,6 +463,7 @@ export async function loadAdminExpenses() {
             document.getElementById('expensePeriod').value = d.period || '';
             document.getElementById('expenseFunds').value =
                 (d.funds === undefined || d.funds === null) ? '' : d.funds;
+            document.getElementById('expenseFundsDate').value = d.fundsDate || '';
             (d.items || []).forEach(i => addExpenseRow(i.label, i.amount));
         }
         if (!host.children.length) {
