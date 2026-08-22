@@ -18,6 +18,7 @@ import {
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
+import { fetchDirectory } from './directory.js';
 
 let pendingPollFiles = [];
 
@@ -53,6 +54,107 @@ function formatDeadline(poll) {
     const hours = Math.floor((left % 86400000) / 3600000);
     const rest = days > 0 ? `${days} дн.` : `${hours} год.`;
     return `До ${label} · лишилось ${rest}`;
+}
+
+// ------------------------------------------------------------
+// КВОРУМ
+//
+// Голос лежить на КВАРТИРІ, а не на власнику, тож «один власник —
+// один голос» рахуємо так: проголосувала квартира — голос
+// зараховано всім її співвласникам. Власника, що має кілька
+// квартир, ототожнюємо за прізвищем: іншого спільного
+// ідентифікатора в базі немає.
+// ------------------------------------------------------------
+const QUORUM_PCT = 50;
+
+function normName(n) {
+    return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseArea(v) {
+    const n = parseFloat(String(v ?? '').replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+}
+
+/** Рахує явку за власниками і за площею. */
+export function computeQuorum(votes, apartments) {
+    const votedApts = new Set((votes || []).map(v => String(v.apt)));
+    const allOwners = new Set();
+    const votedOwners = new Set();
+    let totalArea = 0, votedArea = 0;
+
+    (apartments || []).forEach(a => {
+        const area = parseArea(a.area);
+        totalArea += area;
+        const voted = votedApts.has(String(a.apt));
+        if (voted) votedArea += area;
+
+        (a.owners || []).forEach(o => {
+            const key = normName(o.name);
+            if (!key) return;                 // безіменний запис не рахуємо
+            allOwners.add(key);
+            if (voted) votedOwners.add(key);
+        });
+    });
+
+    const ownersPct = allOwners.size ? (votedOwners.size / allOwners.size) * 100 : 0;
+    const areaPct = totalArea ? (votedArea / totalArea) * 100 : 0;
+
+    return {
+        totalOwners: allOwners.size,
+        votedOwners: votedOwners.size,
+        ownersPct: Math.round(ownersPct * 10) / 10,
+        totalArea: Math.round(totalArea * 10) / 10,
+        votedArea: Math.round(votedArea * 10) / 10,
+        areaPct: Math.round(areaPct * 10) / 10,
+        votedApts: votedApts.size,
+        totalApts: (apartments || []).length,
+        hasQuorum: ownersPct >= QUORUM_PCT
+    };
+}
+
+let ringSeq = 0;
+
+function quorumRing(pct, label, from, to) {
+    const CIRC = 2 * Math.PI * 44;
+    const id = `qring${++ringSeq}`;
+    const clamped = Math.min(Math.max(pct, 0), 100);
+    return `<div class="quorum-ring">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+            <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="${from}"></stop>
+                <stop offset="1" stop-color="${to}"></stop>
+            </linearGradient></defs>
+            <circle class="quorum-ring-track" cx="50" cy="50" r="44"></circle>
+            <circle class="quorum-ring-fill" cx="50" cy="50" r="44" stroke="url(#${id})"
+                    stroke-dasharray="${CIRC.toFixed(2)}"
+                    stroke-dashoffset="${(CIRC * (1 - clamped / 100)).toFixed(2)}"
+                    transform="rotate(-90 50 50)"></circle>
+        </svg>
+        <span class="quorum-ring-text">${Math.round(pct)}<small>%</small></span>
+        <span class="quorum-ring-label">${escapeHtml(label)}</span>
+    </div>`;
+}
+
+/** Блок кворуму: два кільця й вердикт. */
+export function renderQuorum(q) {
+    if (!q) return '';
+    const ok = q.hasQuorum;
+    return `<div class="quorum">
+        <div class="quorum-verdict ${ok ? 'quorum-ok' : 'quorum-fail'}">
+            ${ok ? 'Кворум зібрано' : 'Кворуму немає'}
+            <small>потрібно ${QUORUM_PCT}% власників</small>
+        </div>
+        <div class="quorum-rings">
+            ${quorumRing(q.ownersPct, 'Власники', ok ? '#4CD97B' : '#FFB157', ok ? '#34C759' : '#FF9500')}
+            ${quorumRing(q.areaPct, 'Площа', '#4FA3FF', '#007AFF')}
+        </div>
+        <div class="quorum-facts">
+            <span><b>${q.votedOwners}</b> з ${q.totalOwners} власників</span>
+            <span><b>${q.votedArea}</b> з ${q.totalArea} м²</span>
+            <span><b>${q.votedApts}</b> з ${q.totalApts} квартир</span>
+        </div>
+    </div>`;
 }
 
 // ------------------------------------------------------------
@@ -198,7 +300,10 @@ export async function loadUserPolls() {
                    </div>
                    <button type="button" class="btn-primary btn-compact poll-vote-btn"
                            data-poll="${poll.id}">Проголосувати</button>`
-                : renderResults(options, poll.votes, myVote ? myVote.option : null);
+                : renderResults(options, poll.votes, myVote ? myVote.option : null)
+                  // Кворум порахувало правління при завершенні: мешканець
+                  // не має доступу до даних усіх квартир.
+                  + (poll.quorum ? renderQuorum(poll.quorum) : '');
 
             return `<div class="card poll-card">
                 <div class="poll-head">
@@ -385,11 +490,15 @@ async function closeExpiredPolls(polls) {
     const due = polls.filter(p => p.status === 'active' && isExpired(p));
     if (!due.length) return false;
 
+    const apartments = await fetchDirectory().catch(() => []);
     for (const poll of due) {
         try {
-            await updateDoc(doc(db, 'polls', poll.id), { status: 'closed' });
+            // Кворум фіксуємо в самому опитуванні: мешканець не має права
+            // читати всі квартири й не може порахувати його сам.
+            const quorum = computeQuorum(poll.votes, apartments);
+            await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', quorum });
             if (!poll.resultsSent) {
-                await broadcastResults(poll);
+                await broadcastResults(poll, quorum);
                 await updateDoc(doc(db, 'polls', poll.id), { resultsSent: true });
             }
         } catch (e) {
@@ -400,7 +509,7 @@ async function closeExpiredPolls(polls) {
 }
 
 /** Надсилає підсумки всім мешканцям звичайною розсилкою. */
-async function broadcastResults(poll) {
+async function broadcastResults(poll, quorum) {
     const options = poll.options || [];
     const { tally, total } = tallyVotes(options, poll.votes || []);
     const lines = options
@@ -410,9 +519,18 @@ async function broadcastResults(poll) {
         })
         .join('\n');
 
+    const quorumText = quorum
+        ? `\n\nЯВКА\n`
+          + `${quorum.hasQuorum ? 'Кворум зібрано' : 'Кворуму немає'} `
+          + `(потрібно ${QUORUM_PCT}% власників)\n`
+          + `Власники: ${quorum.votedOwners} з ${quorum.totalOwners} — ${quorum.ownersPct}%\n`
+          + `Площа: ${quorum.votedArea} з ${quorum.totalArea} м² — ${quorum.areaPct}%\n`
+          + `Квартири: ${quorum.votedApts} з ${quorum.totalApts}`
+        : '';
+
     await addDoc(collection(db, 'messages'), {
         title: `Результати голосування: ${poll.title}`,
-        body: `Голосування завершено.\n\n${lines}\n\nВсього проголосувало квартир: ${total}`,
+        body: `Голосування завершено.\n\n${lines}\n\nВсього проголосувало квартир: ${total}${quorumText}`,
         targetType: 'all',
         targetValue: '',
         recipients: buildRecipients('all', ''),
@@ -433,6 +551,12 @@ export async function loadAdminPolls() {
         // Якщо щось довелося закрити — перечитуємо, щоб показати свіжі статуси
         if (await closeExpiredPolls(polls)) polls = await fetchPollsWithVotes();
 
+        // Правління бачить явку наживо, не чекаючи завершення
+        const apartments = await fetchDirectory().catch(e => {
+            console.warn('Довідник для кворуму:', e);
+            return [];
+        });
+
         if (!polls.length) {
             host.innerHTML = '<p class="list-empty">Опитувань ще не створено</p>';
             return;
@@ -449,6 +573,7 @@ export async function loadAdminPolls() {
                 ${poll.description ? `<p class="poll-desc">${escapeHtml(poll.description)}</p>` : ''}
                 <div class="attach-block poll-attach" data-poll-att="${poll.id}"></div>
                 ${renderResults(poll.options || [], poll.votes)}
+                ${apartments.length ? renderQuorum(computeQuorum(poll.votes, apartments)) : ''}
                 ${!isClosed(poll)
                     ? `<button type="button" class="btn-soft btn-compact poll-close-btn"
                                data-poll="${poll.id}">Завершити опитування</button>`
@@ -477,14 +602,15 @@ async function closePoll(pollId, btn) {
 
     setBusy(btn, true, 'Завершення…');
     try {
-        await updateDoc(doc(db, 'polls', pollId), { status: 'closed' });
+        const snap = await getDoc(doc(db, 'polls', pollId));
+        const poll = { id: pollId, ...snap.data(), votes: await fetchVotes(pollId) };
+        const quorum = computeQuorum(poll.votes, await fetchDirectory().catch(() => []));
+        await updateDoc(doc(db, 'polls', pollId), { status: 'closed', quorum });
 
         // Підсумки надсилаємо один раз: resultsSent береже від повторів,
         // якщо правління натисне кнопку вдруге або спрацює автозакриття.
-        const snap = await getDoc(doc(db, 'polls', pollId));
-        const poll = { id: pollId, ...snap.data(), votes: await fetchVotes(pollId) };
         if (!poll.resultsSent) {
-            await broadcastResults(poll);
+            await broadcastResults(poll, quorum);
             await updateDoc(doc(db, 'polls', pollId), { resultsSent: true });
         }
         toast('Опитування завершено, підсумки надіслано', 'success');

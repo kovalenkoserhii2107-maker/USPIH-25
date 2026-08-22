@@ -21,7 +21,8 @@ function ownerApt(docRef) {
     return parts[parts.length - 3];
 }
 
-async function fetchDirectory() {
+/** Квартири з їхніми співвласниками. Кеш живе до «Оновити». */
+export async function fetchDirectory() {
     if (cache) return cache;
 
     const [aptSnap, ownerSnap] = await Promise.all([
@@ -142,3 +143,6 @@ export function initDirectory() {
         toast('Довідник оновлено', 'success');
     });
 }
+
+/** Скидає кеш — щоб підрахунок кворуму брав свіжі дані. */
+export function invalidateDirectory() { cache = null; }
