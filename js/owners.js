@@ -109,16 +109,20 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
 
     const percNum = parseFloat(sharePerc);
     const hasShare = sharePerc !== '' && !isNaN(percNum);
-    const CIRC = 125.66;
-    const dash = hasShare ? (CIRC * Math.min(percNum, 100) / 100) : 0;
+    const fillWidth = hasShare ? Math.min(Math.max(percNum, 0), 100) : 0;
+    // Прибираємо хвостові нулі: 33.33 → «33,33», 50 → «50»
+    const percLabel = hasShare
+        ? String(Math.round(percNum * 100) / 100).replace('.', ',')
+        : '';
+    const accent = avatarGradient(name);
     const isCustom = shareFrac && !PRESETS.includes(shareFrac);
 
     card.innerHTML = `
         <div class="view-mode"${isEditMode ? ' hidden' : ''}>
             <div class="owner-head">
-                <div class="owner-avatar" style="background: ${avatarGradient(name)};">${escapeHtml(getInitials(name))}</div>
+                <div class="owner-avatar" style="background: ${accent};">${escapeHtml(getInitials(name))}</div>
                 <div class="owner-head-text">
-                    <span class="eyebrow">Співвласник ${number}</span>
+                    <span class="owner-index">Співвласник ${number}</span>
                     <h3 class="owner-name">${escapeHtml(name) || 'Без імені'}</h3>
                 </div>
                 <button type="button" class="icon-btn edit-btn" aria-label="Редагувати">
@@ -126,33 +130,26 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
                 </button>
             </div>
 
-            <div class="owner-share-row">
-                <div class="owner-ring">
-                    <svg viewBox="0 0 48 48" width="48" height="48">
-                        <circle cx="24" cy="24" r="20" fill="none" stroke="#E9E9EE" stroke-width="4"></circle>
-                        <circle cx="24" cy="24" r="20" fill="none" stroke="var(--blue)" stroke-width="4"
-                                stroke-linecap="round" stroke-dasharray="${dash} ${CIRC}" transform="rotate(-90 24 24)"></circle>
-                    </svg>
-                    <span class="owner-ring-text">${hasShare ? Math.round(percNum) + '%' : '—'}</span>
+            <div class="share-panel">
+                <div class="share-panel-head">
+                    <span class="share-caption">Частка власності</span>
+                    ${hasShare ? `<span class="share-percent">${escapeHtml(percLabel)}<small>%</small></span>` : ''}
                 </div>
-                <div class="owner-share-text">
-                    <span class="eyebrow">Частка власності</span>
-                    <span class="owner-share-value">${escapeHtml(shareFrac) || '—'}</span>
-                    <span class="owner-share-sub">${hasShare ? escapeHtml(sharePerc) + '% від квартири' : 'Не вказано'}</span>
+                <span class="share-frac${shareFrac ? '' : ' share-frac-empty'}">${escapeHtml(shareFrac) || 'Не вказано'}</span>
+                <div class="share-track" role="img"
+                     aria-label="${hasShare ? escapeHtml(percLabel) + '% від квартири' : 'Частку не вказано'}">
+                    <span class="share-fill" style="width: ${fillWidth}%; background: ${accent};"></span>
                 </div>
             </div>
 
-            <div class="owner-doc-row">
-                <span class="eyebrow">Правовстановлюючий документ</span>
-                <span class="owner-doc-value">${escapeHtml(docInfo) || '—'}</span>
+            <div class="owner-info">
+                <span class="owner-info-label">Правовстановлюючий документ</span>
+                <span class="owner-info-value">${escapeHtml(docInfo) || '—'}</span>
             </div>
 
             <div class="owner-attachments attach-block"></div>
 
-            <button type="button" class="btn-soft btn-soft-danger delete-btn owner-delete">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                Видалити співвласника
-            </button>
+            <button type="button" class="delete-btn owner-delete">Видалити співвласника</button>
         </div>
 
         <div class="edit-mode"${isEditMode ? '' : ' hidden'}>

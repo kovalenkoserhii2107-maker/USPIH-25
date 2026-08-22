@@ -675,37 +675,105 @@ select.field-input {
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14);
 }
 .owner-head-text { flex: 1; min-width: 0; }
+.owner-index {
+    display: block;
+    font-size: 11px; font-weight: 600;
+    color: var(--ink-3);
+    letter-spacing: 0.2px;
+    margin-bottom: 2px;
+}
 .owner-name {
     margin: 0; font-size: 17px; font-weight: 700;
     color: var(--ink); letter-spacing: -0.3px;
     line-height: 1.25; word-break: break-word;
 }
-.owner-share-row {
-    display: flex; align-items: center; gap: 14px;
+
+/* Частка власності — лінійна шкала замість кільця:
+   читається з першого погляду й не тисне на макет. */
+.share-panel {
     background: var(--surface-2);
     border-radius: var(--r-md);
-    padding: 12px 14px;
-    margin-bottom: 14px;
+    padding: 13px 15px 15px 15px;
+    margin-bottom: 4px;
 }
-.owner-ring { position: relative; width: 48px; height: 48px; flex-shrink: 0; }
-.owner-ring-text {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 800;
-    color: var(--blue); letter-spacing: -0.3px;
+.share-panel-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 2px;
 }
-.owner-share-text { display: flex; flex-direction: column; min-width: 0; }
-.owner-share-value {
-    font-size: 20px; font-weight: 700;
-    color: var(--ink); letter-spacing: -0.5px; line-height: 1.15;
+.share-caption {
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
 }
-.owner-share-sub { font-size: 12px; color: var(--ink-2); margin-top: 1px; }
-.owner-doc-row { margin-bottom: 14px; }
-.owner-doc-value {
-    font-size: 14.5px; color: var(--ink);
+.share-percent {
+    font-size: 15px; font-weight: 700;
+    color: var(--ink-2); letter-spacing: -0.3px;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+.share-percent small { font-size: 11px; font-weight: 600; margin-left: 1px; }
+.share-frac {
+    display: block;
+    font-size: 30px; font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -1.2px; line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 11px;
+}
+/* Заглушка — це текст, а не число: не роздуваємо її до розміру дробу */
+.share-frac-empty {
+    font-size: 16px; font-weight: 600;
+    color: var(--ink-3); letter-spacing: -0.2px;
+}
+.share-track {
+    position: relative;
+    height: 7px;
+    background: rgba(120, 120, 128, 0.16);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.share-fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    min-width: 0;
+    transition: width 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Рядки даних — розділені волосинкою, як у списках Apple */
+.owner-info {
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 14px 2px 0 2px;
+    border-top: 0.5px solid var(--line);
+    margin-top: 14px;
+}
+.owner-info-label {
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--ink-2);
+}
+.owner-info-value {
+    font-size: 15px; color: var(--ink);
     font-weight: 500; line-height: 1.4; word-break: break-word;
 }
-.owner-delete { margin-top: 16px; font-size: 14.5px; padding: 12px; }
+
+/* Деструктивна дія тримається стримано — не конкурує з даними */
+.owner-delete {
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px;
+    background: none;
+    border: none;
+    border-top: 0.5px solid var(--line);
+    border-radius: 0;
+    color: var(--red);
+    font-family: var(--font);
+    font-size: 14.5px; font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+.owner-delete:active { opacity: 0.5; }
+.owner-attachments.has-content { margin-top: 16px; }
 .owner-edit-title {
     margin: 0 0 16px 0; font-size: 17px;
     font-weight: 700; color: var(--ink); letter-spacing: -0.3px;
@@ -1285,6 +1353,11 @@ select.field-input {
 .contact-btn:active { transform: scale(0.97); }
 .contact-btn-call { background: var(--green); color: #fff; }
 .contact-btn-viber { background: #7360F2; color: #fff; }
+.board-address {
+    margin: 0;
+    font-size: 15px; color: var(--ink);
+    font-weight: 500; line-height: 1.4;
+}
 
 /* Редагування контактів правління (адмін) */
 .board-photo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
