@@ -88,7 +88,7 @@ service cloud.firestore {
         allow create: if isSignedIn()
           && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients
           && request.resource.data.apt == myApt()
-          && request.resource.data.isBoard == isAdmin()
+          && (request.resource.data.isBoard == false || isAdmin())
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000;
@@ -105,9 +105,11 @@ service cloud.firestore {
       allow create: if isSignedIn()
         // писати можна лише від своєї квартири
         && request.resource.data.apt == myApt()
-        // позначка «від правління» має відповідати дійсності, інакше
-        // через DevTools можна було б видати себе за правління
-        && request.resource.data.isBoard == isAdmin()
+        // Позначку «від правління» може поставити лише правління.
+        // Записано так, а не через isBoard == isAdmin(): у звичайного
+        // мешканця перший доданок істинний одразу, і Firestore не
+        // читає документ квартири заради кожного повідомлення.
+        && (request.resource.data.isBoard == false || isAdmin())
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 2000;

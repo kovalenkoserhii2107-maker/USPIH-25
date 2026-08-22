@@ -19,6 +19,23 @@ import {
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 
+/**
+ * Пояснює причину відмови. Загальне «не вдалося» не дає ні мешканцю,
+ * ні правлінню жодної зачіпки — а код помилки одразу каже, куди
+ * дивитися: у правила, у звʼязок чи в саму сесію.
+ */
+function explain(e, action) {
+    const code = e?.code || 'unknown';
+    const known = {
+        'permission-denied': 'Немає доступу. Правління має опублікувати правила Firestore.',
+        'unauthenticated': 'Сесія завершилася. Увійдіть у застосунок знову.',
+        'unavailable': 'Немає звʼязку з сервером. Перевірте інтернет.',
+        'failed-precondition': 'Потрібен індекс у Firestore. Перевірте консоль браузера.',
+        'resource-exhausted': 'Перевищено ліміт Firebase. Зверніться до правління.'
+    };
+    return known[code] || `${action} (${code})`;
+}
+
 const LIMIT = 200;                      // скільки повідомлень тримаємо на екрані
 const SEEN_KEY = () => `chat_seen_${session.apt}`;
 
@@ -153,8 +170,8 @@ async function removeMessage(id) {
         await deleteDoc(doc(db, 'chat', id));
         toast('Видалено', 'success');
     } catch (e) {
-        console.error('Видалення:', e);
-        toast('Не вдалося видалити', 'error');
+        console.error('Видалення:', e.code, e);
+        toast(explain(e, 'Не вдалося видалити'), 'error');
     }
 }
 
@@ -172,6 +189,13 @@ async function sendChat(btn) {
     const text = input.value.trim();
     if (!text && !pendingFiles.length) return;
     if (text.length > 2000) return toast('Повідомлення задовге', 'error');
+
+    // Правило вимагає apt == myApt(). Якщо сесія загубилася, у базу
+    // пішов би рядок «null», і відмова виглядала б загадково.
+    if (!session.apt) return toast('Сесія втрачена. Увійдіть знову.', 'error');
+
+    // Порожній текст правила теж не приймуть — так само як і в них
+    if (!text) return toast('Напишіть текст повідомлення', 'error');
 
     setBusy(btn, true, '');
     try {
@@ -195,8 +219,8 @@ async function sendChat(btn) {
         pendingFiles = [];
         refreshChips();
     } catch (e) {
-        console.error('Надсилання в чат:', e);
-        toast('Не вдалося надіслати', 'error');
+        console.error('Надсилання в чат:', e.code, e);
+        toast(explain(e, 'Не вдалося надіслати'), 'error');
     } finally {
         setBusy(btn, false);
     }
@@ -270,8 +294,8 @@ async function sendComment(btn) {
         input.value = '';
         input.style.height = '';
     } catch (e) {
-        console.error('Коментар:', e);
-        toast('Не вдалося надіслати коментар', 'error');
+        console.error('Коментар:', e.code, e);
+        toast(explain(e, 'Не вдалося надіслати коментар'), 'error');
     } finally {
         setBusy(btn, false);
     }
