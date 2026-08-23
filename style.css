@@ -3,6 +3,11 @@
    Усі кольори, відступи й радіуси — тільки через змінні нижче.
    ============================================================ */
 
+/* Атрибут hidden мусить ховати завжди. Без цього будь-яке авторське
+   display (flex/grid/block) перекриває браузерне [hidden]{display:none},
+   і елемент лишається на екрані попри hidden = true. */
+[hidden] { display: none !important; }
+
 :root {
     /* Кольори */
     --bg: #F2F2F7;
@@ -1143,23 +1148,35 @@ select.field-input {
     padding: 14px 20px 24px 20px;
 }
 
-.menu-list { display: flex; flex-direction: column; gap: 6px; }
-.menu-row {
-    display: flex; align-items: center; gap: 12px;
-    width: 100%; box-sizing: border-box;
+/* Меню — сітка плиток: усі розділи видно одразу, без прокрутки. */
+.menu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.menu-tile {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 14px 5px 12px;
     background: var(--surface-2);
     border: none; border-radius: var(--r-md);
-    padding: 12px 14px;
-    text-align: left; cursor: pointer;
+    cursor: pointer;
     font-family: var(--font);
+    -webkit-tap-highlight-color: transparent;
     transition: background 0.15s ease, transform 0.15s ease;
 }
-.menu-row:active { background: var(--surface-3); transform: scale(0.985); }
-.menu-row-icon {
-    width: 36px; height: 36px;
-    border-radius: var(--r-sm);
+.menu-tile:active { background: var(--surface-3); transform: scale(0.96); }
+.menu-tile-icon {
+    position: relative;
+    width: 46px; height: 46px;
+    border-radius: 14px;
     display: flex; align-items: center; justify-content: center;
     color: #fff; flex-shrink: 0;
+}
+.menu-tile-icon .menu-badge {
+    position: absolute; top: -5px; right: -7px;
+    display: flex;
+    height: 20px; min-width: 20px;
+    border: 2px solid var(--surface-2);
+}
+.menu-tile-label {
+    font-size: 12px; font-weight: 600; line-height: 1.25;
+    color: var(--ink); text-align: center;
 }
 .mi-blue { background: linear-gradient(135deg, #4FA3FF, var(--blue)); }
 .mi-green { background: linear-gradient(135deg, #4CD97B, var(--green)); }
@@ -1167,10 +1184,21 @@ select.field-input {
 .mi-purple { background: linear-gradient(135deg, #C77DFF, var(--purple)); }
 .mi-grey { background: linear-gradient(135deg, #B0B4BC, #86868B); }
 .mi-red { background: linear-gradient(135deg, #FF7A73, var(--red)); }
-.menu-row-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.menu-row-text strong { font-size: 15px; font-weight: 600; color: var(--ink); }
-.menu-row-text small { font-size: 12px; color: var(--ink-2); margin-top: 1px; }
-.menu-row-danger .menu-row-text strong { color: var(--red); }
+
+/* Вихід — окремо під сіткою: дія незворотна, їй не місце серед розділів. */
+.menu-logout {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; box-sizing: border-box;
+    margin-top: 12px; padding: 13px;
+    background: var(--surface-2);
+    border: none; border-radius: var(--r-md);
+    color: var(--red);
+    font-family: var(--font); font-size: 15px; font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+.menu-logout:active { background: var(--surface-3); transform: scale(0.985); }
 
 /* ---------- МОДАЛЬНІ ВІКНА ---------- */
 .modal {
