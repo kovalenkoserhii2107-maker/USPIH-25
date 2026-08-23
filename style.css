@@ -1204,19 +1204,23 @@ select.field-input {
 .mi-grey { background: linear-gradient(135deg, #B0B4BC, #86868B); }
 .mi-red { background: linear-gradient(135deg, #FF7A73, var(--red)); }
 
-/* Вихід — окремо під рискою: на робочому столі такій дії місця немає. */
+/* Вихід виділено формою, а не кольором: власна капсула замість
+   рядка на всю ширину. Червоний приглушено — сигналу «обережно»
+   достатньо, кричати нема про що. */
 .menu-logout {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    width: 100%; box-sizing: border-box;
-    margin-top: 20px; padding: 15px 0 2px;
-    background: none;
-    border: none; border-top: 1px solid var(--line);
-    color: var(--red);
-    font-family: var(--font); font-size: 15px; font-weight: 500;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: fit-content;
+    margin: 24px auto 2px;
+    padding: 10px 20px;
+    background: var(--surface-2);
+    border: none; border-radius: 999px;
+    color: #B04A43;    /* контраст 5.02 — яскравий #FF3B30 давав лише 3.32 */
+    font-family: var(--font); font-size: 14px; font-weight: 500;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease;
 }
-.menu-logout:active { opacity: 0.5; }
+.menu-logout:active { background: var(--surface-3); }
 
 /* ---------- МОДАЛЬНІ ВІКНА ---------- */
 .modal {
