@@ -1,0 +1,7 @@
+# Службові файли Firebase CLI
+firebase-debug.log*
+firestore-debug.log*
+.firebase/
+
+# macOS
+.DS_Store
