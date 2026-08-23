@@ -20,7 +20,7 @@ import { initFaq, loadFaq } from './faq.js';
 import { initChat, loadChat, stopChat, refreshChatBadge } from './chat.js';
 import { initMessages, loadUserMessages, loadAdminHistory, backfillRecipients } from './messages.js';
 import {
-    initRequests, loadUserRequests, loadAdminRequests,
+    initRequests, loadUserRequests, loadAdminRequests, refreshRequestsBadge,
     loadOsbbDocs, populateDocsDropdown
 } from './requests.js';
 import {
@@ -138,6 +138,7 @@ async function loadCabinet(apt) {
             loadReceipts();
         });
         refreshPollsBadge();          // без await: значок не має затримувати кабінет
+        refreshRequestsBadge();       // так само — непрочитані відповіді правління
         refreshChatBadge();
         showInstallHint();
     }

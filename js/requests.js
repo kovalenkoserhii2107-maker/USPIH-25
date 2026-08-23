@@ -8,7 +8,8 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, lockScroll, unlockScroll,
+         openSheet, closeAllSheets } from './ui.js';
 import { renderAttachments, renderFileManager, getDocKind, docIconSvg } from './attachments.js';
 
 // Статуси: 'new' → 'in_progress' → 'done'. Давні записи мають
@@ -55,6 +56,7 @@ export async function sendUserRequest(btn) {
         document.getElementById('userReqBody').value = '';
         userReqFiles = [];
         refreshUserReqChips();
+        closeAllSheets();
         toast('Звернення надіслано', 'success');
         await loadUserRequests();
     } catch (e) {
@@ -65,8 +67,40 @@ export async function sendUserRequest(btn) {
     }
 }
 
+// Які відповіді мешканець уже бачив. Тримаємо на пристрої: сервер про це
+// знати не мусить, а мітка потрібна лише власнику квартири.
+const SEEN_KEY = 'uspih.seenReplies';
+function loadSeen() {
+    try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || {}; } catch { return {}; }
+}
+function markSeen(id, ms) {
+    const m = loadSeen();
+    m[id] = ms;
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify(m)); } catch { /* приватний режим */ }
+}
+
+const msOf = (ts) => (ts?.toMillis ? ts.toMillis() : (ts?.toDate ? ts.toDate().getTime() : 0));
+
+/** «2 дні тому» читається легше за «21.08, 16:31», коли важлива давність. */
+function relTime(ms) {
+    if (!ms) return '';
+    const diff = Date.now() - ms;
+    const min = Math.floor(diff / 60000);
+    if (min < 2) return 'щойно';
+    if (min < 60) return `${min} хв тому`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} год тому`;
+    const d = Math.floor(h / 24);
+    if (d === 1) return 'учора';
+    if (d < 7) return `${d} дні тому`;
+    return new Date(ms).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+const USER_LABEL = { new: 'На розгляді', in_progress: 'В роботі', done: 'Вирішено' };
+
 export async function loadUserRequests() {
     const host = document.getElementById('userRequestsContainer');
+    const summary = document.getElementById('ureqSummary');
     if (!host) return;
     host.innerHTML = '<p class="list-empty">Завантаження…</p>';
     try {
@@ -75,39 +109,98 @@ export async function loadUserRequests() {
             where('apt', '==', session.apt),
             orderBy('createdAt', 'desc')
         ));
-        if (snap.empty) { host.innerHTML = '<p class="list-empty">Ви ще не надсилали звернень</p>'; return; }
-
-        let html = '';
-        const maps = [];
-        snap.forEach(d => {
-            const req = d.data();
-            // Мешканцю показуємо той самий статус, що бачить правління,
-            // але словами про його звернення, а не про чергу.
-            const st = normStatus(req.status);
-            const label = { new: 'На розгляді', in_progress: 'В роботі', done: 'Вирішено' }[st];
-            maps.push({ id: d.id, files: req.attachments || [], replyFiles: req.replyAttachments || [] });
-            html += `<div class="req-card ${st === 'done' ? 'req-done' : 'req-pending'}">
-                <div class="req-head">
-                    <span class="req-status req-status-${st}">${label}</span>
-                    <span class="req-date">${formatDateTime(req.createdAt)}</span>
-                </div>
-                <p class="req-text">${escapeHtml(req.text)}</p>
-                <div class="attach-block req-attach" data-req-id="${d.id}"></div>
-                ${req.replyText ? `<div class="reply-block">
-                    <span class="eyebrow">Відповідь правління</span>
-                    <p class="req-text">${escapeHtml(req.replyText)}</p>
-                    <div class="attach-block reply-attach" data-req-id="${d.id}"></div>
-                </div>` : ''}
+        if (snap.empty) {
+            if (summary) summary.innerHTML = '';
+            host.innerHTML = `<div class="ureq-empty">
+                <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                <p class="ureq-empty-title">Звернень ще не було</p>
+                <p class="ureq-empty-hint">Протікає стеля, не працює домофон, згоріла лампочка — напишіть, і правління відповість тут.</p>
             </div>`;
+            return;
+        }
+
+        const seen = loadSeen();
+        const rows = snap.docs.map(d => {
+            const r = d.data();
+            const repliedMs = msOf(r.repliedAt);
+            return {
+                id: d.id, ...r,
+                st: normStatus(r.status),
+                createdMs: msOf(r.createdAt),
+                repliedMs,
+                isNewReply: Boolean(r.replyText) && repliedMs > (seen[d.id] || 0)
+            };
         });
-        host.innerHTML = html;
-        maps.forEach(m => {
-            if (m.files.length) renderAttachments(host.querySelector(`.req-attach[data-req-id="${m.id}"]`), m.files);
-            if (m.replyFiles.length) renderAttachments(host.querySelector(`.reply-attach[data-req-id="${m.id}"]`), m.replyFiles);
+
+        if (summary) {
+            const c = {
+                new: rows.filter(r => r.st === 'new').length,
+                in_progress: rows.filter(r => r.st === 'in_progress').length,
+                done: rows.filter(r => r.st === 'done').length
+            };
+            summary.innerHTML = Object.entries(USER_LABEL)
+                .filter(([k]) => c[k] > 0)
+                .map(([k, label]) => `<div class="ureq-stat us-${k}">
+                        <b>${c[k]}</b><span>${label.toLowerCase()}</span>
+                    </div>`).join('');
+        }
+
+        host.innerHTML = rows.map(r => `
+            <article class="ureq-card ${r.isNewReply ? 'has-new' : ''}" data-id="${r.id}" data-replied="${r.repliedMs}">
+                <div class="ureq-head">
+                    <span class="req-status req-status-${r.st}">${USER_LABEL[r.st]}</span>
+                    ${r.isNewReply ? '<span class="ureq-new">Нова відповідь</span>' : ''}
+                    <span class="ureq-date">${relTime(r.createdMs)}</span>
+                </div>
+                <p class="ureq-text">${escapeHtml(r.text || '')}</p>
+                <div class="attach-block req-attach" data-req-id="${r.id}"></div>
+                ${r.replyText ? `
+                <div class="ureq-reply">
+                    <div class="ureq-reply-head">
+                        <span class="ureq-reply-avatar">
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V8l7-5 7 5v13"></path><path d="M10 21v-6h4v6"></path></svg>
+                        </span>
+                        Правління ОСББ · ${relTime(r.repliedMs)}
+                    </div>
+                    <p class="ureq-text">${escapeHtml(r.replyText)}</p>
+                    <div class="attach-block reply-attach" data-req-id="${r.id}"></div>
+                </div>` : `
+                <p class="ureq-waiting">${r.st === 'in_progress'
+                    ? 'Правління взяло звернення в роботу'
+                    : 'Правління ще не відповіло'}</p>`}
+            </article>`).join('');
+
+        rows.forEach(r => {
+            if (r.attachments?.length)
+                renderAttachments(host.querySelector(`.req-attach[data-req-id="${r.id}"]`), r.attachments);
+            if (r.replyAttachments?.length)
+                renderAttachments(host.querySelector(`.reply-attach[data-req-id="${r.id}"]`), r.replyAttachments);
         });
     } catch (e) {
         console.error(e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити звернення</p>';
+    }
+}
+
+/** Скільки відповідей мешканець ще не читав — для значка в меню. */
+export async function refreshRequestsBadge() {
+    const el = document.getElementById('reqMenuBadge');
+    if (!el) return;
+    try {
+        const snap = await getDocs(query(collection(db, 'requests'), where('apt', '==', session.apt)));
+        const seen = loadSeen();
+        const n = snap.docs.filter(d => {
+            const r = d.data();
+            return r.replyText && msOf(r.repliedAt) > (seen[d.id] || 0);
+        }).length;
+        el.textContent = n > 9 ? '9+' : n;
+        el.style.display = n ? 'flex' : 'none';
+        const { updateNavBadge } = await import('./ui.js');
+        updateNavBadge();
+    } catch (e) {
+        // Немає звʼязку або правил — просто без лічильника
+        console.warn('Лічильник звернень:', e);
+        el.style.display = 'none';
     }
 }
 
@@ -449,6 +542,17 @@ function refreshOsbbChips() {
 
 export function initRequests() {
     document.getElementById('sendUserReqBtn')?.addEventListener('click', function () { sendUserRequest(this); });
+    document.getElementById('openNewReqBtn')?.addEventListener('click', () => openSheet('newRequestSheet'));
+
+    // Дотик по картці знімає мітку «нова відповідь»: мешканець її побачив.
+    document.getElementById('userRequestsContainer')?.addEventListener('click', (e) => {
+        const card = e.target.closest('.ureq-card.has-new');
+        if (!card) return;
+        markSeen(card.dataset.id, Number(card.dataset.replied) || Date.now());
+        card.classList.remove('has-new');
+        card.querySelector('.ureq-new')?.remove();
+        refreshRequestsBadge();
+    });
     document.getElementById('sendReplyBtn')?.addEventListener('click', function () { sendReply(this); });
     document.getElementById('closeReplyModalBtn')?.addEventListener('click', closeReplyModal);
 
