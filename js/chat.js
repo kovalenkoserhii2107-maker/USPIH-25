@@ -59,7 +59,28 @@ function syncChatHeight() {
     // поверталася. Тепер екран прикріплений до вікна й сторінка під
     // ним не прокручується взагалі.
     const vv = window.visualViewport;
-    sec.style.height = (vv ? vv.height : window.innerHeight) + 'px';
+    if (!vv) { sec.style.height = window.innerHeight + 'px'; return; }
+
+    // Крім висоти обовʼязково поправляємо top.
+    //
+    // position: fixed прикріплює екран до layout viewport, а клавіатура
+    // зсуває всередині нього ВИДИМУ область. Без поправки на offsetTop
+    // екран лишався прикріпленим до старого верху й весь виїжджав угору:
+    // після «Змінити» (там focus() програмний, і iOS гортає сам) шапка
+    // з полем вводу опинялися вище краю екрана, а під ними був порожній фон.
+    const h = Math.round(vv.height);
+    const t = Math.round(vv.offsetTop);
+    if (sec._vvH !== h) { sec.style.height = h + 'px'; sec._vvH = h; }
+    if (sec._vvT !== t) { sec.style.top = t + 'px'; sec._vvT = t; }
+}
+
+/**
+ * Клавіатура їде ~300 мс, і за цей час visualViewport змінюється кілька
+ * разів. Одного виклику після focus() мало — доганяємо кадрами.
+ */
+function settleChatViewport() {
+    requestAnimationFrame(syncChatHeight);
+    [120, 300, 500].forEach(ms => setTimeout(syncChatHeight, ms));
 }
 
 /** Короткий сигнал надсилання. Синтезуємо, щоб не тягнути файл. */
@@ -397,6 +418,7 @@ function startReply(item, ctx) {
     };
     renderComposeContext(ctx);
     document.getElementById(ctx.input)?.focus();
+    settleChatViewport();
 }
 
 function startEdit(item, ctx) {
@@ -409,6 +431,7 @@ function startEdit(item, ctx) {
         input.focus();
     }
     renderComposeContext(ctx);
+    settleChatViewport();
 }
 
 export function cancelCompose(ctx) {
@@ -495,6 +518,7 @@ export function loadChat() {
             // Читаємо згори вниз, показуємо знизу вгору — як у месенджерах
             lastRendered = snap.docs.map(d => ({ id: d.id, data: d.data() })).reverse();
             const atBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 120;
+            const prevTop = host.scrollTop;
             renderList(host, lastRendered, ctx);
             syncChatHeight();
 
@@ -511,6 +535,14 @@ export function loadChat() {
             // спершу підстрибувала, а тоді опускалася.
             if (atBottom) {
                 requestAnimationFrame(() => { host.scrollTop = host.scrollHeight; });
+            } else if (prevTop > 0) {
+                // Chromium позицію прокрутки при заміні innerHTML зберігає,
+                // тож зазвичай тут робити нічого. Але якщо рушій її все ж
+                // загубив, повертаємо читача туди, де він був, — інакше
+                // стрічка кидає на початок від чужого повідомлення.
+                requestAnimationFrame(() => {
+                    if (host.scrollTop === 0) host.scrollTop = prevTop;
+                });
             }
         },
         (e) => {
