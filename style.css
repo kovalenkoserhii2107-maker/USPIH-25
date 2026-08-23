@@ -1148,35 +1148,54 @@ select.field-input {
     padding: 14px 20px 24px 20px;
 }
 
-/* Меню — сітка плиток: усі розділи видно одразу, без прокрутки. */
-.menu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* Меню в стилі робочого столу iOS: іконки просто на тлі, без підкладок.
+   Підпис — рівно один рядок, як під іконкою застосунку. */
+.menu-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px 4px;
+    padding: 8px 0 4px;
+}
 .menu-tile {
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-    padding: 14px 5px 12px;
-    background: var(--surface-2);
-    border: none; border-radius: var(--r-md);
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    background: none; border: none; padding: 0;
     cursor: pointer;
     font-family: var(--font);
     -webkit-tap-highlight-color: transparent;
-    transition: background 0.15s ease, transform 0.15s ease;
 }
-.menu-tile:active { background: var(--surface-3); transform: scale(0.96); }
+/* Обгортка потрібна значку: сама іконка обрізана по контуру,
+   і значок усередині неї зрізало б. */
+.menu-tile-art { position: relative; display: block; width: 60px; height: 60px; }
 .menu-tile-icon {
-    position: relative;
-    width: 46px; height: 46px;
-    border-radius: 14px;
     display: flex; align-items: center; justify-content: center;
-    color: #fff; flex-shrink: 0;
+    width: 100%; height: 100%;
+    color: #fff;
+    /* Супереліпс |x|^5 + |y|^5 = 1 — саме цим кути іконок iOS
+       відрізняються від звичайного border-radius: грань переходить
+       у кут плавно, без помітної дуги. */
+    clip-path: polygon(100.00% 50.00%, 99.92% 68.84%, 99.69% 74.82%, 99.31% 79.12%, 98.77% 82.55%, 98.07% 85.43%, 97.20% 87.89%, 96.17% 90.03%, 94.94% 91.90%, 93.53% 93.53%, 91.90% 94.94%, 90.03% 96.17%, 87.89% 97.20%, 85.43% 98.07%, 82.55% 98.77%, 79.12% 99.31%, 74.82% 99.69%, 68.84% 99.92%, 50.00% 100.00%, 31.16% 99.92%, 25.18% 99.69%, 20.88% 99.31%, 17.45% 98.77%, 14.57% 98.07%, 12.11% 97.20%, 9.97% 96.17%, 8.10% 94.94%, 6.47% 93.53%, 5.06% 91.90%, 3.83% 90.03%, 2.80% 87.89%, 1.93% 85.43%, 1.23% 82.55%, 0.69% 79.12%, 0.31% 74.82%, 0.08% 68.84%, 0.00% 50.00%, 0.08% 31.16%, 0.31% 25.18%, 0.69% 20.88%, 1.23% 17.45%, 1.93% 14.57%, 2.80% 12.11%, 3.83% 9.97%, 5.06% 8.10%, 6.47% 6.47%, 8.10% 5.06%, 9.97% 3.83%, 12.11% 2.80%, 14.57% 1.93%, 17.45% 1.23%, 20.88% 0.69%, 25.18% 0.31%, 31.16% 0.08%, 50.00% 0.00%, 68.84% 0.08%, 74.82% 0.31%, 79.12% 0.69%, 82.55% 1.23%, 85.43% 1.93%, 87.89% 2.80%, 90.03% 3.83%, 91.90% 5.06%, 93.53% 6.47%, 94.94% 8.10%, 96.17% 9.97%, 97.20% 12.11%, 98.07% 14.57%, 98.77% 17.45%, 99.31% 20.88%, 99.69% 25.18%, 99.92% 31.16%);
+    transition: transform 0.18s ease, opacity 0.18s ease;
 }
-.menu-tile-icon .menu-badge {
-    position: absolute; top: -5px; right: -7px;
+.menu-tile-icon svg { width: 28px; height: 28px; }
+.menu-tile:active .menu-tile-icon { transform: scale(0.88); opacity: 0.7; }
+.menu-tile-art .menu-badge {
+    position: absolute; top: -4px; right: -6px;
     display: flex;
     height: 20px; min-width: 20px;
-    border: 2px solid var(--surface-2);
+    border: 2px solid var(--surface);
+    z-index: 1;
 }
 .menu-tile-label {
-    font-size: 12px; font-weight: 600; line-height: 1.25;
+    max-width: 100%; box-sizing: border-box; padding: 0 3px;
+    font-size: 11.5px; font-weight: 400; line-height: 1.15;
     color: var(--ink); text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* На вузьких екранах підписи сусідніх іконок майже стикалися. */
+@media (max-width: 359px) {
+    .menu-grid { gap: 18px 2px; }
+    .menu-tile-label { font-size: 10.5px; }
+    .menu-tile-art { width: 56px; height: 56px; }
 }
 .mi-blue { background: linear-gradient(135deg, #4FA3FF, var(--blue)); }
 .mi-green { background: linear-gradient(135deg, #4CD97B, var(--green)); }
@@ -1185,20 +1204,19 @@ select.field-input {
 .mi-grey { background: linear-gradient(135deg, #B0B4BC, #86868B); }
 .mi-red { background: linear-gradient(135deg, #FF7A73, var(--red)); }
 
-/* Вихід — окремо під сіткою: дія незворотна, їй не місце серед розділів. */
+/* Вихід — окремо під рискою: на робочому столі такій дії місця немає. */
 .menu-logout {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; box-sizing: border-box;
-    margin-top: 12px; padding: 13px;
-    background: var(--surface-2);
-    border: none; border-radius: var(--r-md);
+    margin-top: 20px; padding: 15px 0 2px;
+    background: none;
+    border: none; border-top: 1px solid var(--line);
     color: var(--red);
-    font-family: var(--font); font-size: 15px; font-weight: 600;
+    font-family: var(--font); font-size: 15px; font-weight: 500;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: background 0.15s ease, transform 0.15s ease;
 }
-.menu-logout:active { background: var(--surface-3); transform: scale(0.985); }
+.menu-logout:active { opacity: 0.5; }
 
 /* ---------- МОДАЛЬНІ ВІКНА ---------- */
 .modal {
