@@ -1474,7 +1474,6 @@ select.field-input {
 .mi-orange { background: linear-gradient(135deg, #FFB157, var(--orange)); }
 .mi-purple { background: linear-gradient(135deg, #C77DFF, var(--purple)); }
 .mi-grey { background: linear-gradient(135deg, #B0B4BC, #86868B); }
-.mi-red { background: linear-gradient(135deg, #FF7A73, var(--red)); }
 
 /* Вихід виділено формою, а не кольором: власна капсула замість
    рядка на всю ширину. Червоний приглушено — сигналу «обережно»
@@ -2179,15 +2178,6 @@ select.field-input {
 }
 .dir-head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .dir-title { font-size: 15px; font-weight: 700; color: var(--ink); }
-.dir-tag {
-    display: inline-block; margin-left: 7px;
-    font-size: 9.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.4px;
-    color: var(--purple);
-    background: rgba(175, 82, 222, 0.12);
-    padding: 2px 6px; border-radius: 6px;
-    vertical-align: 1px;
-}
 .dir-meta { font-size: 12px; color: var(--ink-2); line-height: 1.35; }
 .dir-chevron { transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1); }
 .dir-open .dir-chevron { transform: rotate(90deg); }
@@ -2808,20 +2798,7 @@ select.field-input {
 .chat-time { display: block; font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
 .chat-attach.has-content { margin-top: 8px; }
 
-.chat-del {
-    position: absolute; top: 4px; right: 4px;
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(120, 120, 128, 0.14);
-    color: var(--ink-3);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; opacity: 0;
-    transition: opacity 0.15s ease;
-}
-.chat-bubble:hover .chat-del, .chat-msg:active .chat-del { opacity: 1; }
 /* На дотику наведення не буває — тримаємо кнопку завжди видимою */
-@media (hover: none) { .chat-del { opacity: 0.45; } }
 
 .chat-compose {
     flex-shrink: 0;

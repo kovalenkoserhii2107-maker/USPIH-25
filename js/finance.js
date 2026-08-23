@@ -226,13 +226,22 @@ export function parseBalanceLines(text) {
     String(text || '').split(/\r?\n/).forEach((line, i) => {
         const raw = line.trim();
         if (!raw) return;
-        const m = raw.match(/^(\S+)[\s;,\t]+(-?[\d\s]+(?:[.,]\d+)?)$/);
+        // Такий самий розбір, як у parseDebtsCSV. Раніше тут стояв
+        // жадібний (\S+) з роздільником у класі — і в рядку без пробілів
+        // роздільником ставала ОСТАННЯ кома, тобто та, що відділяє
+        // копійки: «298;-1250,40» давало квартиру «2981250» і суму 40.
+        const m = raw.match(/^([^;,\t\s]+)\s*[;,\t]\s*(.+)$/)   // 298;-1250,40
+               || raw.match(/^(\S+)\s+(.+)$/);                    // 298 -1250,40
         if (!m) { errors.push({ line: i + 1, raw }); return; }
         // Тільки цифри: «кв.9» → «9». Інакше в базі з'явився б
         // документ «кв9», якого не існує.
         const apt = m[1].replace(/\D/g, '');
-        if (!apt) { errors.push({ line: i + 1, raw }); return; }
-        rows.push({ apt, balance: parseMoney(m[2]) });
+        const amount = m[2].trim().replace(/^"|"$/g, '');
+        if (!apt || !/^-?\s*[\d\s]*[.,]?\d+$/.test(amount)) {
+            errors.push({ line: i + 1, raw });
+            return;
+        }
+        rows.push({ apt, balance: parseMoney(amount) });
     });
     return { rows, errors };
 }

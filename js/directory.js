@@ -150,4 +150,3 @@ export function initDirectory() {
 }
 
 /** Скидає кеш — щоб підрахунок кворуму брав свіжі дані. */
-export function invalidateDirectory() { cache = null; }
