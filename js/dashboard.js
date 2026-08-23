@@ -42,7 +42,7 @@ export async function loadDashboard() {
         const [apts, openReqs, activePolls, lastMsgSnap] = await Promise.all([
             // Службовий запис правління не рахуємо як квартиру
             getCountFromServer(query(collection(db, 'apartments'), where('isAdmin', '==', false))),
-            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'new'))),
+            getCountFromServer(query(collection(db, 'requests'), where('status', 'in', ['new', 'in_progress']))),
             getCountFromServer(query(collection(db, 'polls'), where('status', '==', 'active'))),
             getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(1)))
         ]);
@@ -59,7 +59,7 @@ export async function loadDashboard() {
                 ${tile({ id: 'dashReqs', label: 'Звернень у роботі', value: reqCount,
                          hint: reqCount ? 'Потребують відповіді' : 'Усе опрацьовано',
                          tone: reqCount ? 'warn' : 'ok', tab: 'requests',
-                         target: '.req-card.req-pending' })}
+                         target: '.req-item' })}
                 ${tile({ id: 'dashPolls', label: 'Активних голосувань', value: pollCount,
                          hint: pollCount ? 'Триває' : 'Немає активних',
                          tone: pollCount ? 'info' : 'neutral', tab: 'polls',

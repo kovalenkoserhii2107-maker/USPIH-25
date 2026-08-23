@@ -11,6 +11,18 @@ import {
 import { escapeHtml, formatDateTime, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { renderAttachments, renderFileManager, getDocKind, docIconSvg } from './attachments.js';
 
+// Статуси: 'new' → 'in_progress' → 'done'. Давні записи мають
+// 'replied' — для правління це те саме, що 'done', тому нормалізуємо
+// при читанні, а не міграцією: історія лишається недоторканою.
+const STATUS = {
+    new:         { label: 'Нове',     cls: 'st-new' },
+    in_progress: { label: 'В роботі', cls: 'st-work' },
+    done:        { label: 'Вирішено', cls: 'st-done' }
+};
+const OVERDUE_MS = 3 * 24 * 60 * 60 * 1000;
+
+const normStatus = (s) => (s === 'replied' ? 'done' : (STATUS[s] ? s : 'new'));
+
 let userReqFiles = [];
 let replyFiles = [];
 let osbbDocFile = null;
@@ -69,18 +81,21 @@ export async function loadUserRequests() {
         const maps = [];
         snap.forEach(d => {
             const req = d.data();
-            const replied = req.status === 'replied';
+            // Мешканцю показуємо той самий статус, що бачить правління,
+            // але словами про його звернення, а не про чергу.
+            const st = normStatus(req.status);
+            const label = { new: 'На розгляді', in_progress: 'В роботі', done: 'Вирішено' }[st];
             maps.push({ id: d.id, files: req.attachments || [], replyFiles: req.replyAttachments || [] });
-            html += `<div class="req-card ${replied ? 'req-done' : 'req-pending'}">
+            html += `<div class="req-card ${st === 'done' ? 'req-done' : 'req-pending'}">
                 <div class="req-head">
-                    <span class="req-status ${replied ? 'req-status-done' : 'req-status-new'}">${replied ? 'Є відповідь' : 'На розгляді'}</span>
+                    <span class="req-status req-status-${st}">${label}</span>
                     <span class="req-date">${formatDateTime(req.createdAt)}</span>
                 </div>
                 <p class="req-text">${escapeHtml(req.text)}</p>
                 <div class="attach-block req-attach" data-req-id="${d.id}"></div>
-                ${replied ? `<div class="reply-block">
+                ${req.replyText ? `<div class="reply-block">
                     <span class="eyebrow">Відповідь правління</span>
-                    <p class="req-text">${escapeHtml(req.replyText || '')}</p>
+                    <p class="req-text">${escapeHtml(req.replyText)}</p>
                     <div class="attach-block reply-attach" data-req-id="${d.id}"></div>
                 </div>` : ''}
             </div>`;
@@ -97,70 +112,185 @@ export async function loadUserRequests() {
 }
 
 // ------------------------------------------------------------
-// АДМІН: перегляд звернень і відповідь
+// АДМІН: черга звернень
 // ------------------------------------------------------------
+let adminReqs = [];
+let reqFilter = 'active';
+let reqSearchText = '';
+let reqOpenId = null;
+
+/** Коротко, скільки чекає — у рядку списку немає місця на «2 дн. 3 год.». */
+function shortAge(ms) {
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return 'щойно';
+    if (min < 60) return `${min} хв`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} год`;
+    const d = Math.floor(h / 24);
+    if (d < 31) return `${d} дн`;
+    return `${Math.floor(d / 30)} міс`;
+}
+
+function previewText(text) {
+    const one = String(text || '').replace(/\s+/g, ' ').trim();
+    return one.length > 90 ? one.slice(0, 90) + '…' : (one || 'Без тексту');
+}
+
+function matchesFilter(r) {
+    if (reqFilter === 'active' && r.st === 'done') return false;
+    if (reqFilter === 'done' && r.st !== 'done') return false;
+    if (reqSearchText) {
+        const q = reqSearchText.toLowerCase();
+        if (!String(r.apt).toLowerCase().includes(q) && !String(r.text || '').toLowerCase().includes(q)) return false;
+    }
+    return true;
+}
+
+function statusButtons(id, st) {
+    return Object.entries(STATUS).map(([key, v]) =>
+        `<button type="button" class="req-st-btn ${key === st ? 'active' : ''} ${v.cls}"
+                 data-set-status="${key}" data-id="${id}">${v.label}</button>`).join('');
+}
+
+function requestHtml(r) {
+    const s = STATUS[r.st];
+    const age = r.createdMs ? shortAge(Date.now() - r.createdMs) : '';
+    const overdue = r.st !== 'done' && r.createdMs && (Date.now() - r.createdMs) > OVERDUE_MS;
+    const open = r.id === reqOpenId;
+    const files = r.attachments || [];
+
+    return `<article class="req-item ${open ? 'open' : ''} ${overdue ? 'req-overdue' : ''}" data-id="${r.id}" data-status="${r.st}">
+        <button type="button" class="req-row" data-toggle="${r.id}">
+            <span class="req-avatar">${escapeHtml(String(r.apt))}</span>
+            <span class="req-main">
+                <span class="req-line-top">
+                    <span class="req-apt">Квартира ${escapeHtml(String(r.apt))}</span>
+                    <span class="req-age ${overdue ? 'is-overdue' : ''}">${age}</span>
+                </span>
+                <span class="req-preview">${escapeHtml(previewText(r.text))}</span>
+            </span>
+            <span class="req-right">
+                <span class="req-pill ${s.cls}">${s.label}</span>
+                ${files.length ? `<span class="req-clip"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10.5 19"></path></svg>${files.length}</span>` : ''}
+            </span>
+        </button>
+
+        <div class="req-detail"><div class="req-detail-inner">
+            <p class="req-full-text">${escapeHtml(r.text || '')}</p>
+            <div class="attach-block req-attach" data-req-id="${r.id}"></div>
+
+            ${r.replyText ? `<div class="req-reply">
+                <span class="eyebrow">Відповідь правління · ${formatDateTime(r.repliedAt)}</span>
+                <p class="req-full-text">${escapeHtml(r.replyText)}</p>
+                <div class="attach-block reply-attach" data-req-id="${r.id}"></div>
+            </div>` : ''}
+
+            <span class="req-detail-label">Статус</span>
+            <div class="req-st-row">${statusButtons(r.id, r.st)}</div>
+
+            <div class="req-actions">
+                <button type="button" class="btn-primary btn-compact btn-open-reply" data-id="${r.id}">
+                    ${r.replyText ? 'Змінити відповідь' : 'Відповісти'}
+                </button>
+                <span class="req-created">Надійшло ${formatDateTime(r.createdAt)}</span>
+            </div>
+        </div></div>
+    </article>`;
+}
+
+function renderAdminRequests() {
+    const host = document.getElementById('adminRequestsContainer');
+    if (!host) return;
+
+    const counts = {
+        active: adminReqs.filter(r => r.st !== 'done').length,
+        done:   adminReqs.filter(r => r.st === 'done').length,
+        all:    adminReqs.length
+    };
+    document.querySelectorAll('#reqFilters .req-filter').forEach(b => {
+        const n = b.querySelector('.req-filter-n');
+        if (n) n.textContent = counts[b.dataset.filter] ?? 0;
+        b.classList.toggle('active', b.dataset.filter === reqFilter);
+    });
+
+    const list = adminReqs.filter(matchesFilter);
+    if (!list.length) {
+        host.innerHTML = `<p class="list-empty">${
+            reqSearchText ? 'Нічого не знайдено' :
+            reqFilter === 'active' ? 'Усе опрацьовано — активних звернень немає' :
+            reqFilter === 'done' ? 'Вирішених звернень ще немає' :
+            'Немає звернень від мешканців'}</p>`;
+        return;
+    }
+
+    host.innerHTML = list.map(requestHtml).join('');
+    // Вкладення малюємо лише для розгорнутого — решта їх не показує,
+    // і тягнути прев’ю для всієї черги нема сенсу.
+    const opened = list.find(r => r.id === reqOpenId);
+    if (opened) {
+        if (opened.attachments?.length)
+            renderAttachments(host.querySelector(`.req-attach[data-req-id="${opened.id}"]`), opened.attachments);
+        if (opened.replyAttachments?.length)
+            renderAttachments(host.querySelector(`.reply-attach[data-req-id="${opened.id}"]`), opened.replyAttachments);
+    }
+
+    const badge = document.getElementById('adminReqBadge');
+    if (badge) {
+        badge.textContent = counts.active;
+        badge.style.display = counts.active ? 'flex' : 'none';
+    }
+}
+
 export async function loadAdminRequests() {
     const host = document.getElementById('adminRequestsContainer');
-    const badge = document.getElementById('adminReqBadge');
     if (!host) return;
     host.innerHTML = '<p class="list-empty">Завантаження…</p>';
-
     try {
         const snap = await getDocs(query(collection(db, 'requests'), orderBy('createdAt', 'desc')));
-        if (snap.empty) {
-            host.innerHTML = '<p class="list-empty">Немає звернень від мешканців</p>';
-            if (badge) badge.style.display = 'none';
-            return;
-        }
-
-        let html = '', pending = 0;
-        const maps = [];
-        snap.forEach(d => {
-            const req = d.data();
-            const replied = req.status === 'replied';
-            if (!replied) pending++;
-            maps.push({ id: d.id, files: req.attachments || [] });
-
-            html += `<div class="req-card ${replied ? 'req-done' : 'req-pending'}">
-                <div class="req-head">
-                    <span class="req-apt-badge">${escapeHtml(String(req.apt))}</span>
-                    <span class="req-head-text">
-                        <span class="req-apt-label">Квартира ${escapeHtml(String(req.apt))}</span>
-                        <span class="req-date">${formatDateTime(req.createdAt)}</span>
-                    </span>
-                    <span class="req-status ${replied ? 'req-status-done' : 'req-status-new'}">${replied ? 'Відповіли' : 'Нове'}</span>
-                </div>
-                <p class="req-text">${escapeHtml(req.text)}</p>
-                <div class="attach-block req-attach" data-req-id="${d.id}"></div>
-                ${replied ? '' : `<button type="button" class="btn-primary btn-compact btn-open-reply"
-                    data-id="${d.id}" data-apt="${escapeHtml(String(req.apt))}" data-text="${encodeURIComponent(req.text)}">Відповісти</button>`}
-            </div>`;
+        adminReqs = snap.docs.map(d => {
+            const r = d.data();
+            return {
+                id: d.id, ...r,
+                st: normStatus(r.status),
+                createdMs: r.createdAt?.toDate ? r.createdAt.toDate().getTime() : null
+            };
         });
-
-        host.innerHTML = html;
-        maps.forEach(m => {
-            if (m.files.length) renderAttachments(host.querySelector(`.req-attach[data-req-id="${m.id}"]`), m.files);
-        });
-        if (badge) {
-            badge.textContent = pending;
-            badge.style.display = pending ? 'flex' : 'none';
-        }
-
-        host.querySelectorAll('.btn-open-reply').forEach(btn => {
-            btn.addEventListener('click', () => openReplyModal(btn.dataset.id, btn.dataset.apt, decodeURIComponent(btn.dataset.text)));
-        });
+        renderAdminRequests();
     } catch (e) {
         console.error(e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити звернення</p>';
     }
 }
 
-function openReplyModal(id, apt, text) {
-    document.getElementById('replyModalTitle').textContent = `Відповідь квартирі ${apt}`;
-    document.getElementById('replyModalOriginalText').textContent = text;
+async function setRequestStatus(id, status) {
+    const req = adminReqs.find(r => r.id === id);
+    if (!req || req.st === status) return;
+    const prev = req.st;
+    req.st = status;                       // показуємо одразу, не чекаючи сервера
+    renderAdminRequests();
+    try {
+        await updateDoc(doc(db, 'requests', id), { status, statusAt: serverTimestamp() });
+    } catch (e) {
+        console.error(e);
+        req.st = prev;                     // сервер відмовив — повертаємо як було
+        renderAdminRequests();
+        toast('Не вдалося змінити статус', 'error');
+    }
+}
+
+// ------------------------------------------------------------
+// АДМІН: відповідь на звернення
+// ------------------------------------------------------------
+function openReplyModal(id) {
+    const req = adminReqs.find(r => r.id === id);
+    if (!req) return;
+    document.getElementById('replyModalTitle').textContent = `Відповідь квартирі ${req.apt}`;
+    document.getElementById('replyModalOriginalText').textContent = req.text || '';
     document.getElementById('replyModalReqId').value = id;
-    document.getElementById('replyModalReqApt').value = apt;
-    document.getElementById('replyModalBody').value = '';
+    document.getElementById('replyModalReqApt').value = req.apt;
+    // Виправлення відповіді не має стирати вже написане.
+    document.getElementById('replyModalBody').value = req.replyText || '';
+    document.getElementById('replyMarkDone').checked = req.st !== 'in_progress';
     replyFiles = [];
     refreshReplyChips();
     document.getElementById('adminReplyModal').classList.add('is-open');
@@ -177,18 +307,30 @@ async function sendReply(btn) {
     const text = document.getElementById('replyModalBody').value.trim();
     if (!text) return toast('Напишіть відповідь', 'error');
 
+    const markDone = document.getElementById('replyMarkDone').checked;
+    const req = adminReqs.find(r => r.id === id);
+
     setBusy(btn, true, 'Надсилання…');
     try {
-        const attachments = await uploadAll(replyFiles, `replies/${id}`);
+        const fresh = await uploadAll(replyFiles, `replies/${id}`);
+        // Нові файли додаються до вже надісланих, а не заміняють їх:
+        // під час виправлення відповіді вкладення втрачати не можна.
+        const attachments = [...(req?.replyAttachments || []), ...fresh];
+        const status = markDone ? 'done' : 'in_progress';
+
         await updateDoc(doc(db, 'requests', id), {
-            status: 'replied',
-            replyText: text,
-            replyAttachments: attachments,
-            repliedAt: serverTimestamp()
+            status, replyText: text, replyAttachments: attachments,
+            repliedAt: serverTimestamp(), statusAt: serverTimestamp()
         });
+
+        if (req) {
+            req.st = status; req.status = status;
+            req.replyText = text; req.replyAttachments = attachments;
+            req.repliedAt = { toMillis: () => Date.now() };   // formatDateTime читає саме toMillis
+        }
         closeReplyModal();
-        toast('Відповідь надіслано', 'success');
-        await loadAdminRequests();
+        toast(markDone ? 'Відповідь надіслано, звернення закрито' : 'Відповідь надіслано', 'success');
+        renderAdminRequests();
     } catch (e) {
         console.error(e);
         toast('Помилка надсилання відповіді', 'error');
@@ -309,6 +451,35 @@ export function initRequests() {
     document.getElementById('sendUserReqBtn')?.addEventListener('click', function () { sendUserRequest(this); });
     document.getElementById('sendReplyBtn')?.addEventListener('click', function () { sendReply(this); });
     document.getElementById('closeReplyModalBtn')?.addEventListener('click', closeReplyModal);
+
+    // Черга звернень. Слухач делегований: список перемальовується
+    // при кожній зміні фільтра чи статусу.
+    document.getElementById('adminRequestsContainer')?.addEventListener('click', (e) => {
+        const st = e.target.closest('[data-set-status]');
+        if (st) { setRequestStatus(st.dataset.id, st.dataset.setStatus); return; }
+
+        const rep = e.target.closest('.btn-open-reply');
+        if (rep) { openReplyModal(rep.dataset.id); return; }
+
+        const row = e.target.closest('[data-toggle]');
+        if (row) {
+            reqOpenId = reqOpenId === row.dataset.toggle ? null : row.dataset.toggle;
+            renderAdminRequests();
+        }
+    });
+
+    document.getElementById('reqFilters')?.addEventListener('click', (e) => {
+        const b = e.target.closest('.req-filter');
+        if (!b) return;
+        reqFilter = b.dataset.filter;
+        renderAdminRequests();
+    });
+
+    const search = document.getElementById('reqSearch');
+    search?.addEventListener('input', () => {
+        reqSearchText = search.value.trim();
+        renderAdminRequests();
+    });
     document.getElementById('uploadOsbbDocBtn')?.addEventListener('click', function () { uploadOsbbDoc(this); });
 
     const userInput = document.getElementById('userReqFiles');

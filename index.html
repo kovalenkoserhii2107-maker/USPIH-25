@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=35">
+    <link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
 
@@ -532,7 +532,19 @@
                 </div>
                 <div class="admin-card-body"><div class="admin-card-body-inner">
 
-                <div id="adminRequestsContainer" class="admin-scroll-list">
+                <div class="req-toolbar">
+                    <div class="req-filters" id="reqFilters">
+                        <button type="button" class="req-filter active" data-filter="active">Активні <span class="req-filter-n">0</span></button>
+                        <button type="button" class="req-filter" data-filter="done">Вирішені <span class="req-filter-n">0</span></button>
+                        <button type="button" class="req-filter" data-filter="all">Усі <span class="req-filter-n">0</span></button>
+                    </div>
+                    <div class="req-search-wrap">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.7" y2="16.7"></line></svg>
+                        <input type="search" id="reqSearch" class="req-search" placeholder="Квартира або текст звернення" autocomplete="off">
+                    </div>
+                </div>
+
+                <div id="adminRequestsContainer" class="admin-scroll-list req-list">
                     <p class="list-empty">Завантаження…</p>
                 </div>
                 </div></div>
@@ -1368,6 +1380,11 @@
             <div id="replyModalFilesPreview" class="file-chips"></div>
         </div>
 
+        <label class="req-close-toggle">
+            <input type="checkbox" id="replyMarkDone" checked>
+            <span>Позначити вирішеним</span>
+        </label>
+
         <button id="sendReplyBtn" class="btn-primary" type="button">Надіслати відповідь</button>
     </div>
 </div>
@@ -1424,6 +1441,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=35"></script>
+<script type="module" src="js/app.js?v=36"></script>
 </body>
 </html>
