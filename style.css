@@ -2580,32 +2580,53 @@ select.field-input {
     color: var(--ink-2);
     margin-bottom: 10px;
 }
-.pw-chart {
-    display: grid;
-    grid-template-columns: repeat(14, 1fr);
-    gap: 3px;
-    align-items: end;
-    margin-bottom: 10px;
+/* Доба — смуга на 24 години. Мітки годин мусять стояти рівно над
+   доріжкою, тому відступи тут повторюють ширину підпису дати
+   та стовпчика підсумку в рядку нижче. */
+.pw-days { margin-bottom: 12px; }
+.pw-hours {
+    display: flex; justify-content: space-between;
+    padding: 0 33px 0 59px;
+    margin-bottom: 5px;
+    font-size: 9px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
 }
-.pw-col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
-/* Фіксована висота-доріжка: без неї стовпчики в один відсоток
-   перетворювали б рядок дат на «сходи». */
-.pw-bar-wrap {
-    display: flex; align-items: flex-end;
-    width: 100%; height: 96px;
+.pw-row { display: flex; align-items: center; gap: 7px; padding: 1.5px 0; }
+.pw-row-day {
+    width: 52px; flex-shrink: 0;
+    font-size: 10px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+}
+.pw-row-day b { color: var(--ink-2); font-weight: 700; }
+.pw-row.is-today .pw-row-day b { color: var(--blue); }
+.pw-track {
+    position: relative; flex: 1; min-width: 0;
+    height: 14px;
+    border-radius: 4px;
     background: var(--surface-2);
-    border-radius: 5px;
     overflow: hidden;
+    /* Поділки кожні 6 годин — без них не зрозуміло, ранок це чи вечір. */
+    background-image: linear-gradient(to right, rgba(0, 0, 0, 0.07) 1px, transparent 1px);
+    background-size: 25% 100%;
 }
-.pw-bar {
-    width: 100%;
-    background: linear-gradient(180deg, #FF7A73, var(--red));
-    border-radius: 5px;
-    transition: height 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+.pw-seg {
+    position: absolute; top: 0; bottom: 0;
+    background: var(--red);
+    border-radius: 3px;
 }
-.pw-bar-empty { background: rgba(120, 120, 128, 0.22); }
-.pw-day { font-size: 9px; color: var(--ink-2); font-weight: 600; }
-.pw-date { font-size: 8px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* Решта сьогоднішньої доби ще не настала — інакше порожня смуга
+   читалася б як «світло було». */
+.pw-future {
+    position: absolute; top: 0; bottom: 0; right: 0;
+    background: repeating-linear-gradient(45deg,
+        rgba(120, 120, 128, 0.13) 0 3px, transparent 3px 7px);
+}
+.pw-row-total {
+    width: 26px; flex-shrink: 0;
+    text-align: right;
+    font-size: 10.5px; font-weight: 700; color: var(--red);
+    font-variant-numeric: tabular-nums;
+}
 .pw-note { display: block; font-size: 12.5px; color: var(--ink-2); }
 
 /* ---------- ЧАСТІ ЗАПИТАННЯ ---------- */

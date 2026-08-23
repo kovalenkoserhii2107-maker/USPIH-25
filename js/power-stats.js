@@ -49,12 +49,32 @@ export function summarize(entries, now = Date.now()) {
     const totalOff = clipped.reduce((s, i) => s + (i.to - i.from), 0);
     const longest = offs.reduce((m, i) => Math.max(m, i.to - i.from), 0);
 
+    const todayStart = startOfDay(now).getTime();
     const days = [];
     for (let d = 0; d < DAYS; d++) {
         const dayStart = startOfDay(now - (DAYS - 1 - d) * DAY_MS).getTime();
+        const dayEnd = dayStart + DAY_MS;
+        // Крім суми зберігаємо самі відрізки: для віялових відключень
+        // важливо не скільки, а КОЛИ. Відключення через північ саме тут
+        // і ділиться між двома добами.
+        const segments = offs
+            .filter(i => i.to > dayStart && i.from < dayEnd)
+            .map(i => {
+                const from = Math.max(i.from, dayStart);
+                const to = Math.min(i.to, dayEnd);
+                return {
+                    left: ((from - dayStart) / DAY_MS) * 100,
+                    width: ((to - from) / DAY_MS) * 100
+                };
+            });
         days.push({
             date: new Date(dayStart),
-            offMs: offs.reduce((s, i) => s + overlap(i, dayStart), 0)
+            offMs: offs.reduce((s, i) => s + overlap(i, dayStart), 0),
+            segments,
+            isToday: dayStart === todayStart,
+            // Скільки доби вже минуло — решту сьогоднішньої смуги гасимо,
+            // інакше порожній залишок читається як «світло було».
+            elapsedPct: dayStart === todayStart ? ((now - dayStart) / DAY_MS) * 100 : 100
         });
     }
 
@@ -66,6 +86,16 @@ export function summarize(entries, now = Date.now()) {
         days,
         hasData: entries.length > 0
     };
+}
+
+const dec = (n) => n.toFixed(1).replace('.', ',');
+
+/** Для плиток: «16,7 год» замість «16 год. 40 хв.», що не влазило в рядок. */
+function compactDur(ms) {
+    const h = ms / 3600000;
+    if (h >= 24) return `${dec(h / 24)} дн`;
+    if (h >= 1) return `${dec(h)} год`;
+    return `${Math.round(ms / 60000)} хв`;
 }
 
 const WEEKDAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
@@ -89,20 +119,33 @@ function renderLog(entries) {
     </details>`;
 }
 
-function renderBars(days) {
-    const max = Math.max(...days.map(d => d.offMs), 1);
-    return `<div class="pw-chart">
+/**
+ * Кожна доба — смуга на 24 години, відрізки без світла стоять на своїх
+ * місцях. Стовпчики цього не показували: у них доба без відключень
+ * виглядала так само помітно, як доба з ними, а коли саме гасло —
+ * не було видно взагалі.
+ */
+function renderDays(days) {
+    const fmtDate = (d) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `<div class="pw-days">
+        <div class="pw-hours">
+            <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+        </div>
         ${days.map(d => {
             const hours = d.offMs / 3600000;
-            const pct = (d.offMs / max) * 100;
-            const label = `${String(d.date.getDate()).padStart(2, '0')}.${String(d.date.getMonth() + 1).padStart(2, '0')}`;
-            const title = hours >= 0.05 ? `${hours.toFixed(1)} год без світла` : 'без відключень';
-            return `<div class="pw-col" title="${label} — ${title}">
-                <span class="pw-bar-wrap">
-                    <span class="pw-bar${d.offMs ? '' : ' pw-bar-empty'}" style="height: ${Math.max(pct, d.offMs ? 4 : 2)}%;"></span>
+            const total = hours >= 0.05 ? dec(hours) : '';
+            return `<div class="pw-row${d.offMs ? ' has-off' : ''}${d.isToday ? ' is-today' : ''}">
+                <span class="pw-row-day">
+                    <b>${WEEKDAYS[d.date.getDay()]}</b> ${fmtDate(d.date)}
                 </span>
-                <span class="pw-day">${WEEKDAYS[d.date.getDay()]}</span>
-                <span class="pw-date">${label}</span>
+                <span class="pw-track">
+                    ${d.elapsedPct < 100
+                        ? `<i class="pw-future" style="left:${d.elapsedPct.toFixed(2)}%"></i>` : ''}
+                    ${d.segments.map(g =>
+                        `<i class="pw-seg" style="left:${g.left.toFixed(2)}%;width:${Math.max(g.width, 0.6).toFixed(2)}%"></i>`
+                    ).join('')}
+                </span>
+                <span class="pw-row-total">${total}</span>
             </div>`;
         }).join('')}
     </div>`;
@@ -122,22 +165,22 @@ export function renderStats(s, patched = false, entries = []) {
                 <span class="pw-label">Відключень</span>
             </div>
             <div class="pw-tile">
-                <span class="pw-value pw-value-off">${escapeHtml(formatElapsed(s.totalOff))}</span>
+                <span class="pw-value pw-value-off">${escapeHtml(compactDur(s.totalOff))}</span>
                 <span class="pw-label">Без світла</span>
             </div>
             <div class="pw-tile">
-                <span class="pw-value">${escapeHtml(formatElapsed(s.avg))}</span>
+                <span class="pw-value">${escapeHtml(compactDur(s.avg))}</span>
                 <span class="pw-label">У середньому</span>
             </div>
         </div>
         <div class="pw-longest">
             Найдовше відключення — <b>${escapeHtml(formatElapsed(s.longest))}</b>
         </div>
-        <span class="pw-chart-title">Годин без світла за добу</span>
-        ${renderBars(s.days)}
+        <span class="pw-chart-title">Коли не було світла</span>
+        ${renderDays(s.days)}
         ${patched ? `<p class="pw-warn">У журналі бракувало запису — його відновлено за поточним статусом. Якщо таке повторюється, перевірте звʼязок під час перемикання.</p>` : ''}
         <span class="pw-note">${worst
-            ? `Найгірша доба — ${(worst / 3600000).toFixed(1)} год без світла`
+            ? `Найгірша доба — ${dec(worst / 3600000)} год без світла`
             : 'За два тижні відключень не було'}</span>
         ${renderLog(entries)}`;
 }
