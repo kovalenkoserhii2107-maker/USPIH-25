@@ -1,0 +1,11 @@
+{
+  "name": "uspih-25-functions",
+  "description": "Датчик електропостачання ОСББ «Успіх-25»",
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.0"
+  },
+  "private": true
+}
