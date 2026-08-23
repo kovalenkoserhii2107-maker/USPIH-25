@@ -1075,6 +1075,43 @@ select.field-input {
 @keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .admin-card-head { margin-bottom: 18px; }
+
+/* Блоки адмінки згортаються: у «Фінансах» їх пʼять, у «Контактах» шість,
+   і без цього вкладка була нескінченною стрічкою полів. */
+.admin-card-toggle {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; box-sizing: border-box;
+    padding: 0; border: none; background: none;
+    color: inherit; text-align: left; cursor: pointer;
+    font-family: var(--font);
+    -webkit-tap-highlight-color: transparent;
+}
+.admin-card-headings { flex: 1; min-width: 0; }
+.admin-card-head-row .admin-card-toggle { flex: 1; }
+.admin-card-chevron {
+    flex-shrink: 0; color: var(--ink-3);
+    transition: transform 0.34s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.admin-fold.open .admin-card-chevron { transform: rotate(180deg); }
+/* Поки блок згорнуто, відступ під заголовком зайвий — він переїхав у тіло. */
+.admin-fold .admin-card-head { margin-bottom: 0; }
+/* Анімуємо grid-template-rows, а не max-height: висота відкритого блоку
+   лишається «auto», тож те, що росте вже після відкриття — статті витрат,
+   попередній перегляд балансів — не обрізається. */
+.admin-card-body {
+    display: grid; grid-template-rows: 0fr;
+    transition: grid-template-rows 0.34s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.admin-fold.open .admin-card-body { grid-template-rows: 1fr; }
+.admin-card-body-inner { overflow: hidden; min-height: 0; }
+/* Відступ під заголовком — псевдоелементом, а не padding: padding лишався
+   б висотою навіть при нульовому рядку сітки, і згорнутий блок мав
+   зайві 18px порожнечі внизу. */
+.admin-card-body-inner::before { content: ''; display: block; height: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-card-body, .admin-card-chevron { transition: none; }
+}
 .admin-card-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .admin-card-title {
     font-size: 19px; font-weight: 700; margin: 0;

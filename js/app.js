@@ -310,6 +310,21 @@ function initAdminTabs() {
     document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminHistory);
 }
 
+/**
+ * Згортання блоків адмінки. Слухач один і делегований на документ —
+ * інакше картки, розмітку яких перемальовує JS, лишалися б без нього.
+ */
+function initAdminFolds() {
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.admin-card-toggle');
+        if (!btn) return;
+        const card = btn.closest('.admin-fold');
+        if (!card) return;
+        const open = card.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+}
+
 // ------------------------------------------------------------
 // СТАРТ
 // ------------------------------------------------------------
@@ -348,6 +363,7 @@ function init() {
         }
     }
     initAdminTabs();
+    initAdminFolds();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
     document.getElementById('passInput').addEventListener('keydown', (e) => {

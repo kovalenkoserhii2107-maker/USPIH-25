@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=34">
+    <link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
 
@@ -438,11 +438,16 @@
 
         <!-- Вкладка: розсилка -->
         <div class="admin-panel active" data-panel="send">
-            <div class="card">
+            <div class="card admin-fold open">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Нове повідомлення</h2>
-                    <span class="admin-card-sub">Дійде всім обраним мешканцям одразу</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Нове повідомлення</h2>
+                    <span class="admin-card-sub">Дійде всім обраним мешканцям одразу</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="field">
                     <label class="field-label" for="adminMsgTitle">Заголовок</label>
@@ -495,41 +500,57 @@
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     Надіслати повідомлення
                 </button>
+                </div></div>
             </div>
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head admin-card-head-row">
-                    <div>
-                        <h2 class="admin-card-title">Історія розсилок</h2>
-                        <span class="admin-card-sub">Хто і коли прочитав</span>
-                    </div>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Історія розсилок</h2>
+                        <span class="admin-card-sub">Хто і коли прочитав</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                     <button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div id="adminMsgHistoryContainer" class="admin-scroll-list">
                     <p class="list-empty">Історія порожня</p>
                 </div>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: звернення -->
         <div class="admin-panel" data-panel="requests">
-            <div class="card">
+            <div class="card admin-fold open">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Звернення мешканців</h2>
-                    <span class="admin-card-sub">Питання та скарги від квартир</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Звернення мешканців</h2>
+                    <span class="admin-card-sub">Питання та скарги від квартир</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div id="adminRequestsContainer" class="admin-scroll-list">
                     <p class="list-empty">Завантаження…</p>
                 </div>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: база документів -->
         <div class="admin-panel" data-panel="docs">
-            <div class="card">
+            <div class="card admin-fold open">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Додати документ у Базу</h2>
-                    <span class="admin-card-sub">Буде доступний усім мешканцям</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Додати документ у Базу</h2>
+                    <span class="admin-card-sub">Буде доступний усім мешканцям</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="field">
                     <label class="field-label" for="osbbDocTitle">Назва документа</label>
@@ -556,16 +577,22 @@
                 </div>
 
                 <button id="uploadOsbbDocBtn" class="btn-primary" type="button">Завантажити в Базу</button>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: чат правління -->
         <div class="admin-panel" data-panel="chat">
-            <div class="card">
+            <div class="card admin-fold open">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Чат будинку</h2>
-                    <span class="admin-card-sub">Ваші повідомлення підписуються «Правління ОСББ»</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Чат будинку</h2>
+                    <span class="admin-card-sub">Ваші повідомлення підписуються «Правління ОСББ»</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div class="chat-body chat-body-admin">
                     <div id="adminChatList" class="chat-list"></div>
                     <div class="chat-compose">
@@ -583,16 +610,22 @@
                         </div>
                     </div>
                 </div>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: опитування -->
         <div class="admin-panel" data-panel="polls">
-            <div class="card">
+            <div class="card admin-fold open">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Нове опитування</h2>
-                    <span class="admin-card-sub">Кожна квартира має один голос</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Нове опитування</h2>
+                    <span class="admin-card-sub">Кожна квартира має один голос</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="field">
                     <label class="field-label" for="pollTitle">Питання</label>
@@ -634,29 +667,39 @@
                 </div>
 
                 <button type="button" id="createPollBtn" class="btn-primary">Опублікувати опитування</button>
+                </div></div>
             </div>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Опитування</h2>
-                    <span class="admin-card-sub">Результати в реальному часі</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Опитування</h2>
+                    <span class="admin-card-sub">Результати в реальному часі</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div id="adminPollsContainer" class="admin-scroll-list">
                     <p class="list-empty">Завантаження…</p>
                 </div>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: довідник квартир -->
         <div class="admin-panel" data-panel="directory">
-            <div class="card">
+            <div class="card admin-fold open">
                 <div class="admin-card-head admin-card-head-row">
-                    <div>
-                        <h2 class="admin-card-title">Довідник квартир</h2>
-                        <span class="admin-card-sub" id="directoryCount">Завантаження…</span>
-                    </div>
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Довідник квартир</h2>
+                        <span class="admin-card-sub" id="directoryCount">Завантаження…</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                     <button id="directoryRefreshBtn" class="btn-ghost-small" type="button">Оновити</button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="field">
                     <input type="search" id="directorySearch" class="field-input"
@@ -666,16 +709,22 @@
                 <div id="directoryList" class="admin-scroll-list">
                     <p class="list-empty">Завантаження…</p>
                 </div>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: фінанси -->
         <div class="admin-panel" data-panel="finance">
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Реквізити ОСББ</h2>
-                    <span class="admin-card-sub">Мешканці копіюють їх у застосунку свого банку</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Реквізити ОСББ</h2>
+                    <span class="admin-card-sub">Мешканці копіюють їх у застосунку свого банку</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div class="field">
                     <label class="field-label" for="reqPayee">Одержувач</label>
                     <input type="text" id="reqPayee" class="field-input" placeholder="ОСББ «Успіх-25»">
@@ -699,13 +748,19 @@
                     <span class="field-hint">Замість <code>{apt}</code> підставиться номер квартири мешканця.</span>
                 </div>
                 <button type="button" id="saveRequisitesBtn" class="btn-primary">Зберегти реквізити</button>
+                </div></div>
             </div>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Баланси квартир</h2>
-                    <span class="admin-card-sub">Рядок на квартиру: номер і сума. Від'ємна — борг, додатна — переплата</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Баланси квартир</h2>
+                    <span class="admin-card-sub">Рядок на квартиру: номер і сума. Від'ємна — борг, додатна — переплата</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div class="field">
                     <textarea id="balanceBulk" class="field-input" rows="6"
                               placeholder="298 -1250,40&#10;12 300&#10;55 0"></textarea>
@@ -726,13 +781,19 @@
                     <input type="file" id="debtsCsvFile" accept=".csv,text/csv" class="hidden-file-input">
                 </div>
                 <button type="button" id="uploadDebtsBtn" class="btn-soft">Оновити з файлу</button>
+                </div></div>
             </div>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Особові рахунки</h2>
-                    <span class="admin-card-sub">Рядок на квартиру: номер квартири та її особовий рахунок</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Особові рахунки</h2>
+                    <span class="admin-card-sub">Рядок на квартиру: номер квартири та її особовий рахунок</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div class="field">
                     <textarea id="accountsBulk" class="field-input" rows="5"
                               placeholder="298 1234567890&#10;12 1234567891"></textarea>
@@ -740,13 +801,19 @@
                 </div>
                 <div id="accountsPreview"></div>
                 <button type="button" id="applyAccountsBtn" class="btn-primary">Внести рахунки</button>
+                </div></div>
             </div>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Квитанції</h2>
-                    <span class="admin-card-sub">Номер квартири визначається з назви файлу — перевірте перед надсиланням</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Квитанції</h2>
+                    <span class="admin-card-sub">Номер квартири визначається з назви файлу — перевірте перед надсиланням</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div class="field">
                     <label class="field-label" for="receiptPeriod">Період</label>
                     <input type="text" id="receiptPeriod" class="field-input" placeholder="Серпень 2026">
@@ -762,13 +829,19 @@
                 </div>
                 <div id="receiptRows" class="receipt-rows"></div>
                 <button type="button" id="uploadReceiptsBtn" class="btn-primary">Розіслати квитанції</button>
+                </div></div>
             </div>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Витрати за місяць</h2>
-                    <span class="admin-card-sub">Звіт бачать усі мешканці на головному екрані</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Витрати за місяць</h2>
+                    <span class="admin-card-sub">Звіт бачать усі мешканці на головному екрані</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
                 <div class="field">
                     <label class="field-label" for="expensePeriod">Період</label>
                     <input type="text" id="expensePeriod" class="field-input" placeholder="Серпень 2026">
@@ -788,16 +861,22 @@
                 </div>
                 <div id="expensePreview"></div>
                 <button type="button" id="saveExpensesBtn" class="btn-primary">Опублікувати звіт</button>
+                </div></div>
             </div>
         </div>
 
         <!-- Вкладка: контакти (правління + технічні служби) -->
         <div class="admin-panel" data-panel="board">
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Голова правління</h2>
-                    <span class="admin-card-sub">Контакти побачать усі мешканці</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Голова правління</h2>
+                    <span class="admin-card-sub">Контакти побачать усі мешканці</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="board-photo-row">
                     <div class="board-photo-preview" id="boardPhotoPreview-chairman"></div>
@@ -831,13 +910,19 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="boardSaveBtn-chairman">Зберегти</button>
+                </div></div>
             </div>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Бухгалтер</h2>
-                    <span class="admin-card-sub">Контакти побачать усі мешканці</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Бухгалтер</h2>
+                    <span class="admin-card-sub">Контакти побачать усі мешканці</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="board-photo-row">
                     <div class="board-photo-preview" id="boardPhotoPreview-accountant"></div>
@@ -871,15 +956,21 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="boardSaveBtn-accountant">Зберегти</button>
+                </div></div>
             </div>
 
             <h2 class="admin-section-split">Технічні служби</h2>
 
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Електрик</h2>
-                    <span class="admin-card-sub">Аварійні виклики, освітлення</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Електрик</h2>
+                    <span class="admin-card-sub">Аварійні виклики, освітлення</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="board-photo-row">
                     <div class="board-photo-preview" id="servicePhotoPreview-electrician"></div>
@@ -913,12 +1004,18 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="serviceSaveBtn-electrician">Зберегти</button>
+                </div></div>
             </div>
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Сантехнік</h2>
-                    <span class="admin-card-sub">Стояки, протікання, засмічення</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Сантехнік</h2>
+                    <span class="admin-card-sub">Стояки, протікання, засмічення</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="board-photo-row">
                     <div class="board-photo-preview" id="servicePhotoPreview-plumber"></div>
@@ -952,12 +1049,18 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="serviceSaveBtn-plumber">Зберегти</button>
+                </div></div>
             </div>
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Ліфтер</h2>
-                    <span class="admin-card-sub">Обслуговування та застрягання</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Ліфтер</h2>
+                    <span class="admin-card-sub">Обслуговування та застрягання</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="board-photo-row">
                     <div class="board-photo-preview" id="servicePhotoPreview-elevator"></div>
@@ -991,12 +1094,18 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="serviceSaveBtn-elevator">Зберегти</button>
+                </div></div>
             </div>
-            <div class="card">
+            <div class="card admin-fold">
                 <div class="admin-card-head">
-                    <h2 class="admin-card-title">Домофон</h2>
-                    <span class="admin-card-sub">Ключі, виклична панель</span>
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Домофон</h2>
+                    <span class="admin-card-sub">Ключі, виклична панель</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
 
                 <div class="board-photo-row">
                     <div class="board-photo-preview" id="servicePhotoPreview-intercom"></div>
@@ -1030,6 +1139,7 @@
                 </div>
 
                 <button type="button" class="btn-primary" id="serviceSaveBtn-intercom">Зберегти</button>
+                </div></div>
             </div>
         </div>
     </div>
@@ -1057,11 +1167,10 @@
             </button>
             <span class="head-title">Звернення</span>
         </div>
-        <div class="card">
-            <div class="admin-card-head">
-                <h2 class="admin-card-title">Нове звернення</h2>
-                <span class="admin-card-sub">Правління відповість у застосунку</span>
-            </div>
+                <div class="card">
+            <div class="admin-card-head"><h2 class="admin-card-title">Нове звернення</h2>
+                <span class="admin-card-sub">Правління відповість у застосунку</span></div>
+
             <div class="field">
                 <label class="field-label" for="userReqBody">Ваше питання</label>
                 <textarea id="userReqBody" class="field-input" rows="4" placeholder="Опишіть проблему або питання…"></textarea>
@@ -1315,6 +1424,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=34"></script>
+<script type="module" src="js/app.js?v=35"></script>
 </body>
 </html>
