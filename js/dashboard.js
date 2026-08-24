@@ -10,6 +10,8 @@ import {
     collection, query, where, orderBy, limit, getDocs, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, formatDateTime } from './ui.js';
+import { fetchDirectory } from './directory.js';
+import { pendingChangesCount } from './verify.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
 function openTab(name, scrollToSelector) {
@@ -40,22 +42,34 @@ export async function loadDashboard() {
         // getCountFromServer рахує на сервері й коштує один читок,
         // а не стільки, скільки документів у колекції.
         const [apts, openReqs, activePolls, lastMsgSnap] = await Promise.all([
-            // Службовий запис правління не рахуємо як квартиру
-            getCountFromServer(query(collection(db, 'apartments'), where('isAdmin', '==', false))),
+            // Беремо з довідника, а не окремим запитом.
+            //
+            // where('isAdmin','==',false) не повертає записи, де цього
+            // поля взагалі немає, — а довідник їх показує (isAdmin !== true).
+            // Через це дашборд писав «1 квартира», коли в довіднику їх дві.
+            // Одне джерело — і розійтися вони більше не можуть.
+            fetchDirectory(),
             getCountFromServer(query(collection(db, 'requests'), where('status', 'in', ['new', 'in_progress']))),
             getCountFromServer(query(collection(db, 'polls'), where('status', '==', 'active'))),
             getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(1)))
         ]);
 
-        const aptCount = apts.data().count;
+        const aptCount = apts.length;
         const reqCount = openReqs.data().count;
         const pollCount = activePolls.data().count;
         const lastMsg = lastMsgSnap.empty ? null : lastMsgSnap.docs[0].data();
+        const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
+        const changes = pendingChangesCount();
 
         host.innerHTML = `
             <div class="dash-grid">
                 ${tile({ id: 'dashApts', label: 'Квартир у системі', value: aptCount,
-                         tone: 'neutral', tab: 'board' })}
+                         hint: `Звірено ${verified} із ${aptCount}`,
+                         tone: 'neutral', tab: 'directory' })}
+                ${tile({ id: 'dashOwners', label: 'Заявок на звірку', value: changes,
+                         hint: changes ? 'Чекають рішення' : (verified < aptCount ? 'Нагадайте решті' : 'Усе звірено'),
+                         tone: changes ? 'warn' : (verified < aptCount ? 'info' : 'ok'),
+                         tab: 'directory', target: '.vf-card' })}
                 ${tile({ id: 'dashReqs', label: 'Звернень у роботі', value: reqCount,
                          hint: reqCount ? 'Потребують відповіді' : 'Усе опрацьовано',
                          tone: reqCount ? 'warn' : 'ok', tab: 'requests',

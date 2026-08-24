@@ -9,7 +9,7 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, collectionGroup, doc, getDocs, query, where,
+    collection, collectionGroup, doc, getDocs,
     updateDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, promptDialog, normName } from './ui.js';
@@ -60,6 +60,9 @@ function diffHtml(before, after) {
 let pending = [];
 let notResponded = [];
 
+/** Скільки заявок чекає рішення — потрібно дашборду. */
+export const pendingChangesCount = () => pending.length;
+
 export async function loadVerifyQueue() {
     const host = document.getElementById('verifyQueue');
     const stats = document.getElementById('verifyStats');
@@ -67,13 +70,14 @@ export async function loadVerifyQueue() {
     host.innerHTML = '<p class="list-empty">Завантаження…</p>';
 
     try {
-        // Без orderBy: складений індекс для collectionGroup довелося б
-        // створювати руками, а заявок тут одиниці — сортуємо в памʼяті.
-        const snap = await getDocs(query(
-            collectionGroup(db, 'owner_changes'), where('status', '==', 'pending')
-        ));
+        // Ні where, ні orderBy: запит із фільтром по collectionGroup
+        // вимагає окремого індексу з ГРУПОВОЮ областю, а такий
+        // автоматично не створюється — саме через це черга падала з
+        // помилкою. Заявок тут одиниці, тож фільтруємо в памʼяті.
+        const snap = await getDocs(collectionGroup(db, 'owner_changes'));
         pending = snap.docs
             .map(d => ({ id: d.id, apt: aptOf(d.ref), ...d.data(), at: ms(d.data().createdAt) }))
+            .filter(c => c.status === 'pending')
             .sort((a, b) => a.at - b.at);
 
         host.innerHTML = pending.length

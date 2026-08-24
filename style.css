@@ -2429,9 +2429,12 @@ select.field-input {
 
 /* ---------- ДАШБОРД ПРАВЛІННЯ ---------- */
 .dash { margin-bottom: 16px; }
+/* Дві на два, а не три в ряд: плиток стало чотири, і четверта
+   лишалася б сама в другому рядку. Заразом підписи перестали
+   тиснутися в три слова на рядок. */
 .dash-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
     margin-bottom: 8px;
 }
