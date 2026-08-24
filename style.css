@@ -3981,3 +3981,74 @@ select.field-input {
     .tut-scene *, .tut-scene { animation: none !important; opacity: 1 !important; }
     .sc-sheet, .sc-tap { display: none; }
 }
+
+/* ------------------------------------------------------------
+   ЗАВАНТАЖЕННЯ БАЗИ ВЛАСНИКІВ
+   ------------------------------------------------------------ */
+.imp-help { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.imp-format {
+    margin-bottom: 14px; padding: 10px 12px;
+    border-radius: var(--r-sm); background: var(--surface-2);
+    font-size: 12.5px; line-height: 1.7; color: var(--ink-2);
+}
+.imp-format b { color: var(--ink); font-weight: 600; }
+
+.imp-sum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 12px; }
+.imp-stat {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 10px 4px; border-radius: var(--r-sm); background: var(--surface-2);
+}
+.imp-stat b { font-size: 19px; font-weight: 800; letter-spacing: -0.5px; color: var(--ink); }
+.imp-stat span { font-size: 10.5px; color: var(--ink-2); text-align: center; }
+.imp-stat.is-bad { background: rgba(255, 59, 48, 0.09); }
+.imp-stat.is-bad b { color: var(--red); }
+.imp-stat.is-warn { background: rgba(255, 149, 0, 0.1); }
+.imp-stat.is-warn b { color: #9A5A00; }
+
+/* Які колонки розпізнано. Без цього неправильний заголовок помічають
+   аж тоді, коли в базі не виявиться площ. */
+.imp-cols { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.imp-col {
+    padding: 3px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    background: rgba(120, 120, 128, 0.12); color: var(--ink-3);
+    text-decoration: line-through;
+}
+.imp-col.is-on {
+    background: rgba(52, 199, 89, 0.14); color: #1E7A36; text-decoration: none;
+}
+
+.imp-issues {
+    max-height: 240px; overflow-y: auto;
+    margin-bottom: 12px; padding: 10px 12px;
+    border-radius: var(--r-sm); background: var(--surface-2);
+}
+.imp-issue { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); padding: 3px 0; }
+.imp-issue b { margin-right: 6px; color: var(--ink-3); font-weight: 600; }
+.imp-error { color: #A3382F; }
+.imp-warn { color: #9A5A00; }
+.imp-ok { margin: 0 0 12px; font-size: 13px; color: #1E7A36; font-weight: 500; }
+
+.imp-details { margin-bottom: 14px; }
+.imp-details summary {
+    font-size: 13px; font-weight: 600; color: var(--blue);
+    cursor: pointer; padding: 6px 0;
+}
+.imp-rows { max-height: 260px; overflow-y: auto; }
+.imp-row {
+    display: grid; grid-template-columns: 42px 1fr auto;
+    gap: 10px; align-items: baseline;
+    padding: 8px 0; border-top: 0.5px solid rgba(0, 0, 0, 0.06);
+    font-size: 12.5px; line-height: 1.5;
+}
+.imp-row b { font-weight: 700; color: var(--ink); }
+.imp-row span { color: var(--ink-2); min-width: 0; }
+.imp-row i { font-style: normal; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+.imp-row.is-warn b { color: #9A5A00; }
+
+.imp-check {
+    display: flex; align-items: flex-start; gap: 9px;
+    margin-bottom: 14px; font-size: 13px; line-height: 1.4; color: var(--ink-2);
+    cursor: pointer;
+}
+.imp-check input { margin-top: 1px; flex-shrink: 0; }

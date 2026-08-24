@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=76">
+    <link rel="stylesheet" href="style.css?v=77">
 </head>
 <body>
 
@@ -736,6 +736,41 @@
                 </div></div>
             </div>
 
+            <div class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Завантажити базу власників</h2>
+                        <span class="admin-card-sub">Файл CSV з Excel — квартири, власники, частки</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <p class="imp-help">У файлі має бути рядок заголовка. Одна квартира — стільки рядків,
+                    скільки в неї власників; номер квартири повторюється в кожному.</p>
+                <div class="imp-format">
+                    <b>Обовʼязково:</b> Квартира · Власник · Частка<br>
+                    <b>Бажано:</b> Парадна · Площа · Документ<br>
+                    <b>Необовʼязково:</b> Особовий рахунок · Борг · Дата
+                </div>
+
+                <label class="dropzone" for="impFile">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span class="dropzone-title">Обрати файл CSV</span>
+                    <span class="dropzone-hint">Excel: «Зберегти як» → CSV</span>
+                </label>
+                <input type="file" id="impFile" accept=".csv,text/csv" class="hidden-file-input">
+
+                <div id="impPreview"></div>
+
+                <label class="imp-check">
+                    <input type="checkbox" id="impOverwrite">
+                    <span>Перезаписати навіть квартири, які мешканці вже звірили</span>
+                </label>
+                <button type="button" id="impRunBtn" class="btn-primary" disabled>Записати в базу</button>
+                </div></div>
+            </div>
+
             <div class="card admin-fold open">
                 <div class="admin-card-head admin-card-head-row">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
@@ -1309,6 +1344,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=76"></script>
+<script type="module" src="js/app.js?v=77"></script>
 </body>
 </html>
