@@ -57,6 +57,13 @@ export async function fetchDirectory() {
     return cache;
 }
 
+/**
+ * Скидає кеш довідника. Потрібен після того, як правління застосувало
+ * заявку на зміну списку власників: інакше довідник і покриття
+ * показували б старі дані до перезавантаження.
+ */
+export function invalidateDirectory() { cache = null; }
+
 /** Шукає і за номером квартири, і за прізвищем чи документом. */
 function matches(entry, q) {
     if (!q) return true;
