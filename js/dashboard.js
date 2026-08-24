@@ -7,11 +7,12 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, query, where, orderBy, limit, getDocs, getCountFromServer
+    collection, query, where, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { escapeHtml, formatDateTime, parseMoney } from './ui.js';
+import { escapeHtml, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import { pendingChangesCount } from './verify.js';
+import { loadExpenses } from './finance.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
 function openTab(name, scrollToSelector) {
@@ -139,7 +140,7 @@ export async function loadDashboard() {
     try {
         // getCountFromServer рахує на сервері й коштує один читок,
         // а не стільки, скільки документів у колекції.
-        const [apts, openReqs, activePolls, lastMsgSnap] = await Promise.all([
+        const [apts, openReqs, activePolls] = await Promise.all([
             // Беремо з довідника, а не окремим запитом.
             //
             // where('isAdmin','==',false) не повертає записи, де цього
@@ -148,14 +149,12 @@ export async function loadDashboard() {
             // Одне джерело — і розійтися вони більше не можуть.
             fetchDirectory(),
             getCountFromServer(query(collection(db, 'requests'), where('status', 'in', ['new', 'in_progress']))),
-            getCountFromServer(query(collection(db, 'polls'), where('status', '==', 'active'))),
-            getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(1)))
+            getCountFromServer(query(collection(db, 'polls'), where('status', '==', 'active')))
         ]);
 
         const aptCount = apts.length;
         const reqCount = openReqs.data().count;
         const pollCount = activePolls.data().count;
-        const lastMsg = lastMsgSnap.empty ? null : lastMsgSnap.docs[0].data();
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
         const changes = pendingChangesCount();
         const ownerCount = apts.reduce((sum, a) => sum + (a.owners?.length || 0), 0);
@@ -189,14 +188,12 @@ export async function loadDashboard() {
                          tone: debtors.length ? 'warn' : 'ok', tab: 'finance',
                          target: '#balanceBulk' })}
             </div>
-            <button type="button" class="dash-last" id="dashLastMsg" data-tab="history">
-                <span class="dash-last-label">Остання розсилка</span>
-                ${lastMsg
-                    ? `<span class="dash-last-title">${escapeHtml(lastMsg.title)}</span>
-                       <span class="dash-last-date">${formatDateTime(lastMsg.createdAt)}</span>`
-                    : '<span class="dash-last-title dash-last-empty">Ще нічого не надсилали</span>'}
-                <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            </button>`;
+            <div id="adminBudgetHost"></div>`;
+
+        // Той самий звіт, що бачить мешканець. Правління має дивитися на
+        // те саме, що й будинок, — інакше воно не помітить, що звіт
+        // застарів або показує не те.
+        loadExpenses('adminBudgetHost');
 
         host.querySelectorAll('[data-tab]').forEach(el => {
             el.addEventListener('click', () => openTab(el.dataset.tab, el.dataset.target));

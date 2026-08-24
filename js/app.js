@@ -138,16 +138,11 @@ async function loadCabinet(apt) {
         await loadUserMessages(apt, session.entrance);
         await Promise.all([loadBalance(apt), loadExpenses()]);
 
-        // Кнопки малюють loadBalance і loadExpenses, тож слухачів вішаємо після них
+        // Кнопку малює loadBalance, тож слухача вішаємо після нього
         document.getElementById('openReceiptsBtn')?.addEventListener('click', () => {
             showScreen('receiptsSection');
             document.getElementById('topNav').style.display = 'none';
             loadReceipts();
-        });
-        document.getElementById('openFinanceBtn')?.addEventListener('click', () => {
-            showScreen('financeSection');
-            document.getElementById('topNav').style.display = 'none';
-            loadFinanceDetail();
         });
         refreshPollsBadge();          // без await: значок не має затримувати кабінет
         refreshRequestsBadge();       // так само — непрочитані відповіді правління

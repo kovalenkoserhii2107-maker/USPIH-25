@@ -242,7 +242,7 @@ export function renderBudget(d) {
                 ${d.period ? `<span class="bud-period">${escapeHtml(d.period)}</span>` : ''}
                 ${flows}
                 ${chart}
-                <button type="button" class="bud-more" id="openFinanceBtn">
+                <button type="button" class="bud-more">
                     Докладніше про доходи й витрати
                     <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
@@ -250,12 +250,23 @@ export function renderBudget(d) {
         </div>`;
 }
 
-export async function loadExpenses() {
-    const host = document.getElementById('expensesHost');
+/**
+ * @param {string} hostId куди малювати. Той самий блок бачать і мешканець
+ *   у кабінеті, і правління на дашборді — це не два різні звіти.
+ */
+export async function loadExpenses(hostId = 'expensesHost') {
+    const host = document.getElementById(hostId);
     if (!host) return;
     try {
         const snap = await getDoc(doc(db, 'finance', 'current'));
         host.innerHTML = snap.exists() ? renderBudget(snap.data()) : '';
+        host.querySelector('.bud-more')?.addEventListener('click', async () => {
+            const { showScreen } = await import('./ui.js');
+            showScreen('financeSection');
+            const nav = document.getElementById('topNav');
+            if (nav) nav.style.display = 'none';
+            loadFinanceDetail();
+        });
     } catch (e) {
         console.error('Звіт про витрати:', e);
         host.innerHTML = '';
