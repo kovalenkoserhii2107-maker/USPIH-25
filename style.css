@@ -1075,6 +1075,39 @@ select.field-input {
 .ureq-empty-hint { margin: 0; font-size: 13px; line-height: 1.45; max-width: 280px; }
 
 /* ---------- ЗВІРКА СПИСКІВ (правління) ---------- */
+/* Фільтри списку квартир — вони ж і лічильники стану звірки.
+   Раніше числа були в одній картці, а список у другій, і зв'язати
+   «27 не відповіли» зі списком доводилося очима. */
+.dir-filters {
+    display: flex; gap: 6px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding: 2px 0 12px;
+    scrollbar-width: none;
+}
+.dir-filters::-webkit-scrollbar { display: none; }
+.dir-filter {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 12px;
+    background: var(--surface-2);
+    border: none; border-radius: 999px;
+    color: var(--ink-2);
+    font-family: var(--font); font-size: 12.5px; font-weight: 600;
+    white-space: nowrap; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.dir-filter.active { background: var(--ink); color: #fff; }
+.dir-filter-n {
+    min-width: 18px; padding: 1px 5px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.07);
+    font-size: 11px; font-weight: 700;
+}
+.dir-filter.active .dir-filter-n { background: rgba(255, 255, 255, 0.22); }
+
+.vf-count { color: var(--ink-3); font-weight: 700; }
+
 .vf-stats { display: flex; gap: 8px; margin-bottom: 10px; }
 .vf-stat {
     flex: 1;
@@ -1162,7 +1195,8 @@ select.field-input {
 
 /* Статус звірки в довіднику квартир */
 .dir-verify {
-    flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 5px;
     padding: 3px 8px; border-radius: 7px;
     font-size: 10.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.3px;

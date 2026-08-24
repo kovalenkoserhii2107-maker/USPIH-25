@@ -64,8 +64,30 @@ export async function fetchDirectory() {
  */
 export function invalidateDirectory() { cache = null; }
 
+// Стан звірки як фільтр списку. Числа й список раніше жили в різних
+// картках, і зв'язати «27 не відповіли» зі списком доводилося очима.
+let statusFilter = 'all';
+
+const STATUS_LABEL = {
+    all: 'Усі', pending: 'Не звірено', review: 'На розгляді', confirmed: 'Звірено'
+};
+
+function renderFilters(all) {
+    const host = document.getElementById('dirFilters');
+    if (!host) return;
+    const n = { all: all.length, pending: 0, review: 0, confirmed: 0 };
+    all.forEach(a => { n[a.ownersStatus] = (n[a.ownersStatus] || 0) + 1; });
+
+    host.innerHTML = Object.entries(STATUS_LABEL)
+        .filter(([k]) => k === 'all' || n[k] > 0)
+        .map(([k, label]) => `<button type="button" class="dir-filter${k === statusFilter ? ' active' : ''}" data-f="${k}">
+            ${label} <span class="dir-filter-n">${n[k] || 0}</span>
+        </button>`).join('');
+}
+
 /** Шукає і за номером квартири, і за прізвищем чи документом. */
 function matches(entry, q) {
+    if (statusFilter !== 'all' && entry.ownersStatus !== statusFilter) return false;
     if (!q) return true;
     if (entry.apt.toLowerCase().includes(q)) return true;
     return entry.owners.some(o =>
@@ -103,10 +125,10 @@ function render(list) {
                     <span class="dir-meta">${e.entrance && e.entrance !== '--' ? `Парадна ${escapeHtml(String(e.entrance))}` : 'Парадна —'}
                         · ${e.area ? escapeHtml(String(e.area)) + ' м²' : 'площа —'}
                         · ${e.owners.length ? `співвласників: ${e.owners.length}` : 'без співвласників'}</span>
+                    <span class="dir-verify dv-${e.ownersStatus}">${
+                        { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
+                    }</span>
                 </span>
-                <span class="dir-verify dv-${e.ownersStatus}">${
-                    { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
-                }</span>
                 <svg class="row-chevron dir-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <div class="dir-body" hidden>
@@ -139,7 +161,9 @@ export async function loadDirectory() {
         const all = await fetchDirectory();
         document.getElementById('directoryCount').textContent =
             `Квартир: ${all.length}`;
-        render(all);
+        renderFilters(all);
+        const q = (document.getElementById('directorySearch')?.value || '').trim().toLowerCase();
+        render(all.filter(e => matches(e, q)));
     } catch (e) {
         console.error('Довідник квартир:', e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити довідник</p>';
@@ -147,6 +171,16 @@ export async function loadDirectory() {
 }
 
 export function initDirectory() {
+    document.getElementById('dirFilters')?.addEventListener('click', async (e) => {
+        const b = e.target.closest('.dir-filter');
+        if (!b || b.dataset.f === statusFilter) return;
+        statusFilter = b.dataset.f;
+        const q = (document.getElementById('directorySearch')?.value || '').trim().toLowerCase();
+        const all = await fetchDirectory();
+        renderFilters(all);
+        render(all.filter(x => matches(x, q)));
+    });
+
     // Слухач один і на весь список: render викликається ще й при
     // пошуку, тож чіпляти його там означало б підтверджувати квартиру
     // стільки разів, скільки літер набрали в пошуку.

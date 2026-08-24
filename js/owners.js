@@ -722,7 +722,7 @@ function markDirty() {
 }
 
 async function confirmOwners(btn) {
-    if (!container().querySelectorAll('.owner-card').length) {
+    if (!container().querySelectorAll('.owner-card:not([data-removed])').length) {
         return toast('Спочатку додайте хоча б одного співвласника', 'error');
     }
     const problems = ownerProblems();
@@ -747,8 +747,12 @@ async function confirmOwners(btn) {
 }
 
 async function sendChanges(btn) {
-    if (!container().querySelectorAll('.owner-card').length) {
-        return toast('Список порожній — додайте хоча б одного власника', 'error');
+    // Рахуємо тих, хто лишається: прибрані картки нікуди не зникають з
+    // екрана, тож звичайна перевірка на порожній список їх не бачила —
+    // і можна було надіслати квартиру взагалі без власників.
+    const remaining = container().querySelectorAll('.owner-card:not([data-removed])').length;
+    if (!remaining) {
+        return toast('У квартири має лишитися хоча б один власник', 'error');
     }
     const problems = ownerProblems();
     if (problems.length) return showProblems(problems);

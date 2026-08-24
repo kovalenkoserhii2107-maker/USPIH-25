@@ -95,6 +95,9 @@ export async function loadVerifyQueue() {
             </div>`).join('')
             : '<p class="list-empty">Заявок на зміну немає</p>';
 
+        const count = document.getElementById('verifyQueueCount');
+        if (count) count.textContent = pending.length ? ` · ${pending.length}` : '';
+
         // Значок на вкладці: заявка, яку ніхто не помітив, лежатиме
         // тижнями — а це саме те, від чого залежить реєстр власників.
         const badge = document.getElementById('adminOwnersBadge');
@@ -122,15 +125,10 @@ async function renderCoverage(stats) {
         // Список тих, кому є сенс нагадати
         notResponded = dir.filter(a => a.ownersStatus === 'pending').map(a => a.apt);
 
-        stats.innerHTML = `<div class="vf-stats">
-            <div class="vf-stat"><b>${n.confirmed}</b><span>підтвердили</span></div>
-            <div class="vf-stat"><b>${n.review}</b><span>на розгляді</span></div>
-            <div class="vf-stat"><b>${n.pending}</b><span>не відповіли</span></div>
-        </div>
-        <div class="vf-bar"><i style="width:${pct}%"></i></div>
-        <p class="vf-bar-note">Звірено ${n.confirmed} із ${dir.length} квартир — ${pct}%</p>
+        stats.innerHTML = `<div class="vf-bar"><i style="width:${pct}%"></i></div>
+        <p class="vf-bar-note">Звірено <b>${n.confirmed}</b> із <b>${dir.length}</b> квартир — ${pct}%</p>
         ${n.pending ? `<button type="button" class="vf-remind" id="verifyRemindBtn">
-            Підготувати нагадування для ${n.pending} квартир
+            Підготувати нагадування для ${n.pending} ${n.pending === 1 ? 'квартири' : 'квартир'}
         </button>` : ''}`;
 
         document.getElementById('verifyRemindBtn')?.addEventListener('click', remind);
