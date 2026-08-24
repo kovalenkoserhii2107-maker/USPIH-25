@@ -3669,19 +3669,33 @@ select.field-input {
 .bud-card { padding: 0; overflow: hidden; }
 .bud-toggle {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; width: 100%; padding: 16px 18px;
+    gap: 12px; width: 100%; padding: 15px 16px;
     background: none; border: none; text-align: left; cursor: pointer;
+    font-family: var(--font);
 }
-.bud-head { display: flex; flex-direction: column; min-width: 0; }
+/* Значок будинку робить різницю з балансом квартири категоріальною,
+   а не просто «менш важливо»: це інша сутність, а не менше число. */
+.bud-mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+    background: rgba(0, 122, 255, 0.1); color: var(--blue);
+}
+.bud-head { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .bud-label {
     font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
     text-transform: uppercase; color: var(--ink-3);
 }
+/* Не зелений і не героїчний — навмисне.
+   Просто над цим блоком стоїть баланс квартири: теж велике зелене
+   число. Однакове оформлення читалося як «два показники одного роду»,
+   хоча одне — гроші мешканця, а друге — гроші будинку. Сусідство ще й
+   запрошувало їх зіставити, хоча між ними немає жодного відношення.
+   Зелений лишається за станом власного рахунку, тут — звичайний факт. */
 .bud-sum {
-    font-size: 25px; font-weight: 700; letter-spacing: -0.8px;
-    color: #248A3D; margin-top: 3px;
+    font-size: 20px; font-weight: 700; letter-spacing: -0.4px;
+    color: var(--ink); margin-top: 2px;
 }
-.bud-sum small { font-size: 13px; font-weight: 600; margin-left: 4px; color: var(--ink-2); }
+.bud-sum small { font-size: 12px; font-weight: 600; margin-left: 4px; color: var(--ink-3); }
 .bud-sum-muted { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px; }
 .bud-when { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; }
 .bud-card .admin-card-body-inner::before { height: 0; }

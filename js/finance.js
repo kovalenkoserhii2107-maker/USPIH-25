@@ -235,6 +235,9 @@ export function renderBudget(d) {
 
         return `<div class="card admin-fold bud-card">
             <button class="admin-card-toggle bud-toggle" type="button" aria-expanded="false">
+                <span class="bud-mark">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                </span>
                 <span class="bud-head">${head}</span>
                 <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
