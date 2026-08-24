@@ -97,6 +97,7 @@ export async function loadOwners(apt) {
     // заявка пропала.
     if (session.ownersStatus === 'review' && await renderProposed(apt)) {
         updateOwnersCount();
+        setOwnersBaseline();
         renderOwnersStatus();
         return;
     }
@@ -114,6 +115,7 @@ export async function loadOwners(apt) {
         snap.forEach(d => renderOwnerCard({ id: d.id, ...d.data() }, i++, false));
     }
     updateOwnersCount();
+    setOwnersBaseline();
     renderOwnersStatus();
 }
 
@@ -407,10 +409,29 @@ function wireOwnerCard(card, isNew) {
             card.remove();
             if (!container().children.length) await loadOwners(session.apt);
             updateOwnersCount();
+            recomputeDirty();
         } else {
+            // Повертаємо вихідні значення, а не просто ховаємо форму:
+            // інакше скасована правка лишалася б у полях і рахувалася
+            // як зміна.
+            const o = card._original || {};
+            card.querySelector('.i-name').value = o.name || '';
+            card.querySelector('.i-doc').value = o.docInfo || '';
+            const preset = card.querySelector('.i-share-preset');
+            const custom = card.querySelector('.i-share-custom');
+            const isCustom = o.shareFrac && !PRESETS.includes(o.shareFrac);
+            preset.value = isCustom ? 'custom' : (o.shareFrac ? `${o.shareFrac}|${o.sharePerc}` : '');
+            custom.hidden = !isCustom;
+            custom.value = isCustom ? o.shareFrac : '';
+
+            card.querySelectorAll('.field-error').forEach(e => e.remove());
+            card.querySelectorAll('.field-invalid').forEach(e => e.classList.remove('field-invalid'));
+            card._pendingFiles = [];
+            refreshFileChips(card);
+
             edit.hidden = true;
             view.hidden = false;
-            card._pendingFiles = [];
+            recomputeDirty();
         }
     });
 
@@ -571,6 +592,56 @@ export async function submitOwnerChanges(reason) {
 // один дотик, а редагування — це виняток, у який заходить меншість.
 // ------------------------------------------------------------
 let dirty = false;
+let baseline = [];      // стан списку, з яким порівнюємо
+
+/**
+ * Знімок того, що зараз у картках.
+ *
+ * Сортуємо за іменем: власники не мають порядку, тож переставлення
+ * карток не є зміною даних. Картки, ще не прийняті («нові» в режимі
+ * редагування), у знімок не входять — вони ще не частина пропозиції.
+ */
+function snapshotOwners() {
+    return [...container().querySelectorAll('.owner-card')]
+        .filter(c => !c.dataset.removed && c.dataset.new !== '1')
+        .map(c => {
+            const val = (sel) => (c.querySelector(sel)?.value || '').trim();
+            const preset = val('.i-share-preset');
+            let shareFrac = '';
+            if (preset === 'custom') shareFrac = calculateShares(val('.i-share-custom')).frac;
+            else if (preset) shareFrac = preset.split('|')[0];
+            return {
+                name: val('.i-name'),
+                docInfo: val('.i-doc'),
+                shareFrac,
+                files: (c._existingFiles || []).map(f => f.url).join(','),
+                pending: (c._pendingFiles || []).length
+            };
+        })
+        .sort((a, b) => normName(a.name).localeCompare(normName(b.name), 'uk'));
+}
+
+const withoutPending = (list) => list.map(o => ({ ...o, pending: 0 }));
+
+/** Запамʼятати поточний стан як «незмінений». */
+export function setOwnersBaseline() {
+    baseline = snapshotOwners();
+    dirty = false;
+}
+
+/**
+ * Чи справді щось змінилося.
+ *
+ * Раніше тут стояв прапорець «щось чіпали», і кнопка «Надіслати»
+ * зʼявлялася навіть після скасування власної ж дії — прибрав
+ * співвласника й повернув назад. Тепер порівнюємо з початковим станом.
+ */
+function recomputeDirty() {
+    const now = snapshotOwners();
+    dirty = now.some(o => o.pending > 0)
+        || JSON.stringify(withoutPending(now)) !== JSON.stringify(withoutPending(baseline));
+    renderOwnersStatus();
+}
 
 // Поля, без яких картку не можна вважати заповненою, і те, як про це
 // сказати. Підпис стоїть біля самого поля: «заповніть документ» під
@@ -647,8 +718,7 @@ function showProblems(problems) {
 
 
 function markDirty() {
-    dirty = true;
-    renderOwnersStatus();
+    recomputeDirty();
 }
 
 async function confirmOwners(btn) {
