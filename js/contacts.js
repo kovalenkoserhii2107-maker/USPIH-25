@@ -10,7 +10,7 @@
 // ============================================================
 import { db, storage } from './firebase.js';
 import {
-    doc, getDoc, getDocs, setDoc, deleteDoc, collection
+    doc, getDoc, getDocs, setDoc, deleteDoc, collection, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
@@ -187,7 +187,7 @@ const FIELD_META = {
 
 const CHEVRON = '<svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
-function adminCardHtml(key, m) {
+function adminCardHtml(key, m, pos, total) {
     const g = GROUPS[key];
     const id = m.id;
     const fields = g.fields.map(f => {
@@ -199,15 +199,26 @@ function adminCardHtml(key, m) {
         </div>`;
     }).join('');
 
+    // Стрілки — у заголовку, а не у формі: порядок видно й міняється,
+    // не розгортаючи картку. Кнопка в кнопці неприпустима, тому
+    // перемикач і стрілки — сусіди в одному рядку.
     return `<div class="card admin-fold" data-pos="${escapeHtml(id)}">
-        <div class="admin-card-head">
+        <div class="admin-card-head admin-card-head-row">
             <button class="admin-card-toggle" type="button" aria-expanded="false">
                 <span class="admin-card-headings">
-                    <h2 class="admin-card-title">${escapeHtml(m.label)}</h2>
+                    <h2 class="admin-card-title"><span class="pos-num">${pos + 1}</span>${escapeHtml(m.label)}</h2>
                     <span class="admin-card-sub">${escapeHtml(m.name || 'Контакти ще не заповнені')}</span>
                 </span>
                 ${CHEVRON}
             </button>
+            <span class="pos-move">
+                <button type="button" data-up="${escapeHtml(id)}" aria-label="Підняти вище"${pos === 0 ? ' disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="6"></line><polyline points="6 12 12 6 18 12"></polyline></svg>
+                </button>
+                <button type="button" data-down="${escapeHtml(id)}" aria-label="Опустити нижче"${pos === total - 1 ? ' disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="18"></line><polyline points="6 12 12 18 18 12"></polyline></svg>
+                </button>
+            </span>
         </div>
         <div class="admin-card-body"><div class="admin-card-body-inner">
 
@@ -240,13 +251,22 @@ async function loadAdminGroup(key) {
     const group = GROUPS[key];
     const host = document.getElementById(group.adminHost);
     if (!host) return;
+    // Які картки були розгорнуті — після перестановки вони мають
+    // лишитися розгорнутими, інакше список «схлопується» під рукою.
+    const opened = new Set([...host.querySelectorAll('.admin-fold.open')].map(c => c.dataset.pos));
     host.innerHTML = '<p class="list-empty">Завантаження…</p>';
     try {
         const positions = await fetchPositions(key);
         host.innerHTML = positions.length
-            ? positions.map(m => adminCardHtml(key, m)).join('')
+            ? positions.map((m, i) => adminCardHtml(key, m, i, positions.length)).join('')
             : '<p class="list-empty">Посад ще немає — додайте першу кнопкою нижче</p>';
         positions.forEach(m => renderPhotoPreview(group.prefix, m.id, m.photoUrl || '', m.name || m.label));
+        opened.forEach(id => {
+            const card = host.querySelector(`[data-pos="${id}"]`);
+            if (!card) return;
+            card.classList.add('open');
+            card.querySelector('.admin-card-toggle')?.setAttribute('aria-expanded', 'true');
+        });
     } catch (e) {
         console.error(`Адмін-контакти «${key}»:`, e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити</p>';
@@ -312,6 +332,36 @@ async function deletePosition(key, roleId) {
     }
 }
 
+/**
+ * Переставляє посаду на одну позицію.
+ *
+ * Після перестановки переписуємо порядок суцільною нумерацією всієї
+ * групи. Простий обмін значеннями тут ненадійний: у записів, створених
+ * до появи поля order, його або немає, або він однаковий — і обмін
+ * нічого б не змінив.
+ */
+async function movePosition(key, id, dir) {
+    const group = GROUPS[key];
+    try {
+        const positions = await fetchPositions(key);
+        const i = positions.findIndex(p => p.id === id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= positions.length) return;
+
+        const arr = [...positions];
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+
+        const batch = writeBatch(db);
+        arr.forEach((p, n) => batch.set(doc(db, group.collection, p.id), { order: n }, { merge: true }));
+        await batch.commit();
+
+        await loadAdminGroup(key);
+    } catch (e) {
+        console.error('Перестановка посади:', e);
+        toast('Не вдалося змінити порядок', 'error');
+    }
+}
+
 async function addPosition(key, btn) {
     const group = GROUPS[key];
     setBusy(btn, true, 'Додаємо…');
@@ -373,7 +423,11 @@ export function initContacts() {
             const save = e.target.closest('[data-save]');
             if (save) { saveMember(key, save.dataset.save, save); return; }
             const del = e.target.closest('[data-del]');
-            if (del) deletePosition(key, del.dataset.del);
+            if (del) { deletePosition(key, del.dataset.del); return; }
+            const up = e.target.closest('[data-up]');
+            if (up) { movePosition(key, up.dataset.up, -1); return; }
+            const down = e.target.closest('[data-down]');
+            if (down) movePosition(key, down.dataset.down, +1);
         });
 
         host?.addEventListener('change', (e) => {
