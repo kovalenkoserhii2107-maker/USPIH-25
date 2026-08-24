@@ -38,7 +38,7 @@ import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
-import { maybeShowTutorial } from './tutorial.js';
+import { maybeShowTutorial, markFreshLogin } from './tutorial.js';
 import { initLedger, loadLedger } from './ledger.js';
 import { initVerify, loadVerifyQueue } from './verify.js';
 
@@ -64,6 +64,7 @@ async function handleLogin() {
     try {
         await signInWithEmailAndPassword(auth, aptToEmail(apt), pass);
         localStorage.setItem('session_timestamp', Date.now());
+        markFreshLogin();
     } catch (error) {
         console.error('Помилка входу:', error.code, error.message);
         // Розрізняємо причини, щоб не маскувати технічну проблему під "невірний пароль"

@@ -91,6 +91,21 @@ const STEPS = [
     }
 ];
 
+// ⚠️ ТИМЧАСОВО, ДЛЯ ПЕРЕВІРКИ.
+// Показує знайомство при КОЖНОМУ вході з логіна й пароля, а не лише
+// першого разу. Перед запуском для мешканців повернути на false —
+// більше нічого міняти не треба.
+const ALWAYS_SHOW_ON_LOGIN = true;
+
+// Саме «вхід», а не «завантаження екрана»: кабінет перечитується
+// й після оновлення жестом, і тур вискакував би щоразу.
+let freshLogin = false;
+
+/** Викликається одразу після успішного входу логіном і паролем. */
+export function markFreshLogin() {
+    freshLogin = true;
+}
+
 let step = 0;
 
 const overlay = () => document.getElementById('tutorialOverlay');
@@ -154,7 +169,10 @@ async function finish(goToOwners) {
 
 /** Показує знайомство, якщо мешканець його ще не бачив. */
 export function maybeShowTutorial() {
-    if (session.isAdmin || session.tutorialSeen) return;
+    if (session.isAdmin) return;
+    const force = ALWAYS_SHOW_ON_LOGIN && freshLogin;
+    freshLogin = false;               // одноразово, хай там як
+    if (!force && session.tutorialSeen) return;
     const host = overlay();
     if (!host) return;
     step = 0;
