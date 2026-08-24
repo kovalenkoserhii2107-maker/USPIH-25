@@ -227,6 +227,62 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
     return card;
 }
 
+/**
+ * Приймає правку локально й перемальовує картку з фактичних значень.
+ *
+ * Просто перемкнути видимість недостатньо: розмітка перегляду
+ * намальована зі старих даних, і після редагування показувала б
+ * «Без імені» та порожній документ. Раніше її оновлювало
+ * перезавантаження з бази — тепер, коли правки йдуть заявкою,
+ * перемальовуємо самі.
+ */
+function acceptCardEdit(card) {
+    const val = (sel) => (card.querySelector(sel)?.value || '').trim();
+    const preset = val('.i-share-preset');
+    let shareFrac = '', sharePerc = '';
+    if (preset === 'custom') {
+        const calc = calculateShares(val('.i-share-custom'));
+        shareFrac = calc.frac; sharePerc = calc.perc;
+    } else if (preset) {
+        [shareFrac, sharePerc] = preset.split('|');
+    }
+
+    const pendingFiles = card._pendingFiles || [];
+    const existingFiles = card._existingFiles || [];
+
+    const fresh = renderOwnerCard({
+        id: card.dataset.id || undefined,
+        name: val('.i-name'),
+        docInfo: val('.i-doc'),
+        shareFrac, sharePerc,
+        fileUrls: existingFiles.map(f => f.url).join(',')
+    }, 1, false);
+
+    // renderOwnerCard дописує картку в кінець — ставимо її на місце старої
+    card.replaceWith(fresh);
+    fresh._pendingFiles = pendingFiles;
+    fresh._existingFiles = existingFiles;
+    refreshFileChips(fresh);
+
+    // Файли ще не вивантажені, тож у перегляді їх немає. Кажемо про це
+    // прямо, інакше здається, що вкладення зникло.
+    if (pendingFiles.length) {
+        const note = document.createElement('p');
+        note.className = 'owner-pending-files';
+        note.textContent = `${pendingFiles.length} файл(ів) буде додано після надсилання`;
+        fresh.querySelector('.view-mode')?.appendChild(note);
+    }
+    renumberOwners();
+    return fresh;
+}
+
+/** Нумерація «Співвласник N» після перестановки чи видалення. */
+function renumberOwners() {
+    let i = 1;
+    container().querySelectorAll('.owner-card .owner-index')
+        .forEach(el => { el.textContent = `Співвласник ${i++}`; });
+}
+
 function wireOwnerCard(card, isNew) {
     const view = card.querySelector('.view-mode');
     const edit = card.querySelector('.edit-mode');
@@ -257,6 +313,7 @@ function wireOwnerCard(card, isNew) {
         // Прибираємо лише з екрана. У базу піде одна заявка на всі
         // правки — інакше правління розглядало б кожну дію окремо.
         card.remove();
+        renumberOwners();
         updateOwnersCount();
         markDirty();
     });
@@ -285,8 +342,7 @@ function wireOwnerCard(card, isNew) {
             return;
         }
         // Правку приймаємо локально: у базу все піде однією заявкою.
-        card.querySelector('.view-mode').hidden = false;
-        card.querySelector('.edit-mode').hidden = true;
+        acceptCardEdit(card);
         markDirty();
     });
 
@@ -485,9 +541,15 @@ async function sendChanges(btn) {
         toast('Заявку надіслано правлінню', 'success');
         renderOwnersStatus();
     } catch (e) {
+        // Помилку показуємо як є: «не вдалося» без причини змушує
+        // тицяти кнопку наосліп. Стан повертаємо, щоб можна було
+        // спробувати ще раз.
         console.error('Заявка на зміну власників:', e);
-        toast('Не вдалося надіслати. Перевірте інтернет.', 'error');
+        toast(e?.code === 'permission-denied'
+            ? 'Немає доступу. Скажіть правлінню — потрібно оновити правила бази.'
+            : 'Не вдалося надіслати. Перевірте інтернет і спробуйте ще раз.', 'error');
         setBusy(btn, false);
+        renderOwnersStatus();
     }
 }
 
@@ -501,8 +563,11 @@ export function renderOwnersStatus() {
     if (banner) banner.hidden = dirty || session.ownersStatus !== 'pending';
 
     if (dirty) {
+        const gaps = ownerProblems();
         host.innerHTML = `<div class="own-status own-status-edit">
             <p class="own-status-text">Зміни ще не надіслано. Правління звірить їх із документами.</p>
+            ${gaps.length ? `<p class="own-status-text own-status-gap">Бракує: ${escapeHtml(
+                [...new Set(gaps.flatMap(g => g.missing))].join(', '))}. Без цього надіслати не можна.</p>` : ''}
             <button type="button" class="btn-primary" id="sendOwnerChangesBtn">Надіслати на перевірку</button>
         </div>`;
         document.getElementById('sendOwnerChangesBtn')

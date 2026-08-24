@@ -95,6 +95,14 @@ export async function loadVerifyQueue() {
             </div>`).join('')
             : '<p class="list-empty">Заявок на зміну немає</p>';
 
+        // Значок на вкладці: заявка, яку ніхто не помітив, лежатиме
+        // тижнями — а це саме те, від чого залежить реєстр власників.
+        const badge = document.getElementById('adminOwnersBadge');
+        if (badge) {
+            badge.textContent = pending.length > 9 ? '9+' : pending.length;
+            badge.style.display = pending.length ? 'flex' : 'none';
+        }
+
         await renderCoverage(stats);
     } catch (e) {
         console.error('Черга звірки:', e);
