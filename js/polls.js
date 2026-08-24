@@ -15,7 +15,7 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, normName } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
@@ -66,10 +66,6 @@ function formatDeadline(poll) {
 // ідентифікатора в базі немає.
 // ------------------------------------------------------------
 const QUORUM_PCT = 50;
-
-function normName(n) {
-    return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
 
 function parseArea(v) {
     const n = parseFloat(String(v ?? '').replace(',', '.'));

@@ -39,6 +39,7 @@ import {
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
 import { initLedger, loadLedger } from './ledger.js';
+import { initVerify, loadVerifyQueue } from './verify.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
 
@@ -121,7 +122,7 @@ async function loadCabinet(apt) {
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadAdminExpenses(), loadAdminRequisites(),
-                           loadDirectory()]);
+                           loadDirectory(), loadVerifyQueue()]);
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
         refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
@@ -388,6 +389,7 @@ function init() {
     initAdminTabs();
     initAdminFolds();
     initLedger();
+    initVerify();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
     document.getElementById('passInput').addEventListener('keydown', (e) => {

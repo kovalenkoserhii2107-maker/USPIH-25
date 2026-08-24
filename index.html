@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=51">
+    <link rel="stylesheet" href="style.css?v=52">
 </head>
 <body>
 
@@ -707,6 +707,22 @@
             <div class="card admin-fold open">
                 <div class="admin-card-head admin-card-head-row">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Звірка списків власників</h2>
+                        <span class="admin-card-sub">Від цього залежить, чи можна вірити результатам голосування</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    <button id="verifyRefreshBtn" class="btn-ghost-small" type="button">Оновити</button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div id="verifyStats"></div>
+                <span class="vf-queue-label">Заявки на зміну</span>
+                <div id="verifyQueue"><p class="list-empty">Завантаження…</p></div>
+                </div></div>
+            </div>
+
+            <div class="card admin-fold open">
+                <div class="admin-card-head admin-card-head-row">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Довідник квартир</h2>
                         <span class="admin-card-sub" id="directoryCount">Завантаження…</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1231,6 +1247,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=51"></script>
+<script type="module" src="js/app.js?v=52"></script>
 </body>
 </html>

@@ -37,6 +37,18 @@ export function formatElapsed(ms) {
     return `${mins} хв.`;
 }
 
+/**
+ * Імʼя для порівняння «та сама людина».
+ *
+ * Живе тут, а не в polls.js, бо ним користуються двоє: кворум (щоб
+ * власник двох квартир мав один голос) і звірка списків (щоб зміна
+ * пробілу не читалася як заміна людини). Якби вони розійшлися,
+ * правління бачило б у заявці вигадану зміну.
+ */
+export function normName(n) {
+    return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function getInitials(fullName) {
     if (!fullName) return '?';
     const parts = String(fullName).trim().split(/\s+/).filter(Boolean);

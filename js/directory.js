@@ -47,6 +47,8 @@ export async function fetchDirectory() {
                 apt: d.id,
                 entrance: data.entrance || '',
                 area: data.area || '',
+                ownersStatus: data.ownersStatus || 'pending',
+                ownersConfirmedBy: data.ownersConfirmedBy || '',
                 owners: byApt[d.id] || []
             };
         })
