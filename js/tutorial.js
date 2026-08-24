@@ -14,39 +14,79 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, lockScroll, unlockScroll } from './ui.js';
 
-const icon = (paths) =>
-    `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor"
-          stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+// Замість запису екрана — мініатюра інтерфейсу, зібрана з тих самих
+// стилів і оживлена CSS. Гіфка тієї ж довжини важила б сотні кілобайт
+// і мулила б на телефоні; тут кілька кілобайт, чітко на будь-якій
+// щільності пікселів і працює офлайн.
+//
+// Сцена перемальовується разом із кроком, тож анімація щоразу
+// починається спочатку — без жодного коду перезапуску.
+const SCENES = {
+    hello: `
+        <div class="sc-bar">
+            <span class="sc-logo"></span>
+            <span class="sc-name"></span>
+            <span class="sc-bell"></span>
+        </div>
+        <div class="sc-hero">
+            <span class="sc-hero-cap"></span>
+            <span class="sc-hero-num">298</span>
+            <span class="sc-hero-strip"><i></i><i></i><i></i></span>
+        </div>`,
+
+    money: `
+        <div class="sc-bal">
+            <span class="sc-bal-cap"></span>
+            <span class="sc-bal-sum">6 247,33</span>
+            <span class="sc-bal-btns"><i class="sc-pay"></i><i class="sc-rec"></i></span>
+            <span class="sc-tap"></span>
+        </div>
+        <div class="sc-sheet"><i></i><i></i><i></i></div>`,
+
+    talk: `
+        <div class="sc-chat">
+            <span class="sc-msg sc-msg-in"></span>
+            <span class="sc-msg sc-msg-out"></span>
+            <span class="sc-msg sc-msg-in sc-msg-in2"></span>
+        </div>
+        <span class="sc-badge">1</span>`,
+
+    owners: `
+        <div class="sc-head">
+            <span class="sc-head-title"></span>
+            <span class="sc-chip">
+                <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                звірено
+            </span>
+        </div>
+        <div class="sc-own sc-own1"><span class="sc-av"></span><span class="sc-lines"><i></i><i></i></span><span class="sc-share">1/2</span></div>
+        <div class="sc-own sc-own2"><span class="sc-av sc-av2"></span><span class="sc-lines"><i></i><i></i></span><span class="sc-share">1/2</span></div>`
+};
 
 const STEPS = [
     {
-        tone: 'blue',
-        icon: icon('<path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"></path><path d="M9 21v-8h6v8"></path>'),
+        scene: 'hello',
         title: 'Вітаємо у застосунку ОСББ',
         text: 'Тут усе про ваш будинок і вашу квартиру: платежі, звернення до правління, '
             + 'голосування та новини. Пароль ви щойно змінили — більше ніхто, крім вас, у цю квартиру не зайде.'
     },
     {
-        tone: 'green',
-        icon: icon('<rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line>'),
+        scene: 'money',
         title: 'Ваші платежі',
         text: 'На головному екрані видно борг або переплату. Поруч — реквізити для оплати '
-            + 'з готовим призначенням платежу, ваші квитанції та історія нарахувань за будь-який місяць.'
+            + 'з готовим призначенням платежу, ваші квитанції та історія нарахувань.'
     },
     {
-        tone: 'orange',
-        icon: icon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>'),
+        scene: 'talk',
         title: 'Звʼязок із правлінням',
         text: 'Зламався ліфт, протікає дах, є питання — напишіть звернення, і правління відповість '
             + 'просто тут. Оголошення для всього будинку приходять у дзвіночок угорі екрана.'
     },
     {
-        tone: 'purple',
-        icon: icon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline>'),
+        scene: 'owners',
         title: 'Найважливіше — список власників',
         text: 'Рішення ОСББ ухвалюють співвласники, і голос кожного важить рівно стільки, '
-            + 'скільки його частка. Щоб голосування було чесним, список має бути точним. '
-            + 'Перевірте свій — це одна хвилина.',
+            + 'скільки його частка. Перевірте свій список — це одна хвилина.',
         cta: 'Перевірити список'
     }
 ];
@@ -66,7 +106,7 @@ function render() {
              aria-valuenow="${step + 1}" aria-valuemin="1" aria-valuemax="${STEPS.length}">
             ${STEPS.map((_, i) => `<i class="${i === step ? 'is-on' : ''}"></i>`).join('')}
         </div>
-        <div class="tut-icon tut-${s.tone}">${s.icon}</div>
+        <div class="tut-scene sc-${s.scene}" aria-hidden="true">${SCENES[s.scene]}</div>
         <h2 class="tut-title">${escapeHtml(s.title)}</h2>
         <p class="tut-text">${escapeHtml(s.text)}</p>
         <button type="button" class="btn-primary tut-next">${escapeHtml(s.cta || 'Далі')}</button>

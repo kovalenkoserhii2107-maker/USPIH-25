@@ -3814,17 +3814,143 @@ select.field-input {
 }
 .tut-dots i.is-on { width: 20px; border-radius: 4px; background: var(--blue); }
 
-.tut-icon {
-    display: flex; align-items: center; justify-content: center;
-    width: 62px; height: 62px; border-radius: 20px;
-    margin: 0 auto 18px;
+/* ---------- Сцена: мініатюра екрана застосунку ----------
+   Замість запису відео — та сама мова стилів, оживлена CSS.
+   Висота гумова: на 320×568 інакше кнопка йшла б за край. */
+.tut-scene {
+    position: relative; overflow: hidden;
+    height: clamp(104px, 23vh, 142px);
+    margin: 0 0 18px;
+    border-radius: 16px;
+    /* Тло сцени — як тло застосунку, а не як картка: інакше білі
+       елементи всередині (панель реквізитів, повідомлення) зливалися
+       з ним, і рух читався як зникнення. */
+    background: var(--surface-3);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
 }
-.tut-blue { background: rgba(0, 122, 255, 0.12); color: var(--blue); }
-.tut-green { background: rgba(52, 199, 89, 0.14); color: #1E7A36; }
-.tut-orange { background: rgba(255, 149, 0, 0.16); color: #9A5A00; }
-.tut-purple { background: rgba(175, 82, 222, 0.13); color: #7B2FA8; }
+.tut-scene > * { position: absolute; }
 
-/* Кегль більший за звичайний: половині будинку за сімдесят. */
+/* Спільні дрібниці */
+/* Заповнювачі. Іменовані елементи (.sc-pay, .sc-rec) перебивають це
+   правило лише з двома класами: одного класу мало — .tut-scene i
+   специфічніше, і кнопки ставали сірими. */
+.tut-scene i { display: block; border-radius: 3px; background: rgba(120,120,128,0.3); }
+
+@keyframes sc-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes sc-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sc-pop { 0% { opacity: 0; transform: scale(0.4); } 70% { transform: scale(1.15); } 100% { opacity: 1; transform: scale(1); } }
+
+/* ---- 1. Вітання: шапка і картка квартири ---- */
+.sc-bar {
+    top: 10px; left: 10px; right: 10px; height: 26px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 8px; border-radius: 9px; background: var(--surface);
+    animation: sc-in 0.5s both;
+}
+.sc-logo { width: 14px; height: 14px; border-radius: 4px; background: var(--blue); }
+.sc-name { flex: 1; height: 6px; border-radius: 3px; background: rgba(120,120,128,0.35); max-width: 78px; }
+.sc-bell { width: 12px; height: 12px; border-radius: 50%; background: rgba(0,122,255,0.25); }
+.sc-hero {
+    top: 44px; left: 10px; right: 10px; bottom: 10px;
+    border-radius: 12px; padding: 8px 10px;
+    background: linear-gradient(135deg, #23262F, #1B3B6F);
+    animation: sc-up 0.6s 0.25s both;
+}
+.sc-hero-cap { display: block; width: 34px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.4); }
+.sc-hero-num {
+    display: block; margin-top: 2px;
+    font-size: 20px; font-weight: 800; color: #fff; letter-spacing: -0.6px;
+}
+.sc-hero-strip { display: flex; gap: 5px; margin-top: 6px; }
+.sc-hero-strip i { flex: 1; height: 12px; border-radius: 4px; background: rgba(255,255,255,0.14); }
+
+/* ---- 2. Платежі: картка балансу, дотик, панель реквізитів ---- */
+.sc-bal {
+    top: 12px; left: 12px; right: 12px; height: 74px;
+    border-radius: 12px; padding: 9px 11px;
+    background: linear-gradient(135deg, #E6F8EB, #CFF0D9);
+    animation: sc-in 0.4s both;
+}
+.sc-bal-cap { display: block; width: 42px; height: 4px; border-radius: 2px; background: rgba(30,122,54,0.35); }
+.sc-bal-sum {
+    display: block; margin-top: 3px;
+    font-size: 17px; font-weight: 800; color: #248A3D; letter-spacing: -0.5px;
+}
+.sc-bal-btns { display: flex; gap: 5px; margin-top: 7px; }
+.sc-bal-btns .sc-pay { flex: 1.6; height: 15px; border-radius: 6px; background: var(--blue); }
+.sc-bal-btns .sc-rec { flex: 1; height: 15px; border-radius: 6px; background: rgba(52,199,89,0.42); }
+/* Дотик по кнопці — і знизу виїжджає панель */
+.sc-tap {
+    left: 44px; top: 66px; width: 14px; height: 14px; border-radius: 50%;
+    background: rgba(0,0,0,0.3); box-shadow: 0 0 0 4px rgba(0,0,0,0.08); opacity: 0;
+    animation: sc-tap 3.6s 1s infinite;
+}
+@keyframes sc-tap {
+    0%, 22% { opacity: 0; transform: scale(1.6); }
+    30% { opacity: 1; transform: scale(1); }
+    45%, 100% { opacity: 0; transform: scale(0.8); }
+}
+.sc-sheet {
+    left: 0; right: 0; bottom: 0; height: 52px;
+    border-radius: 14px 14px 0 0; padding: 10px 14px 0;
+    background: var(--surface); box-shadow: 0 -5px 18px rgba(0,0,0,0.16);
+    border-top: 0.5px solid rgba(0,0,0,0.06);
+    transform: translateY(100%);
+    animation: sc-sheet 3.6s 1s infinite;
+}
+.sc-sheet i { height: 5px; margin-bottom: 6px; }
+.sc-sheet i:nth-child(1) { width: 60%; }
+.sc-sheet i:nth-child(2) { width: 85%; }
+.sc-sheet i:nth-child(3) { width: 45%; }
+@keyframes sc-sheet {
+    0%, 38% { transform: translateY(100%); }
+    52%, 88% { transform: translateY(0); }
+    100% { transform: translateY(100%); }
+}
+
+/* ---- 3. Звʼязок: звернення, відповідь, значок у дзвіночку ---- */
+.sc-chat { inset: 12px; }
+.sc-msg { display: block; border-radius: 10px; margin-bottom: 7px; }
+.sc-msg-in { width: 58%; height: 26px; background: var(--surface); border-bottom-left-radius: 3px;
+             animation: sc-up 0.5s 0.2s both; }
+.sc-msg-out { width: 66%; height: 30px; margin-left: auto; border-bottom-right-radius: 3px;
+              background: linear-gradient(135deg, #4FA3FF, var(--blue));
+              animation: sc-up 0.5s 1s both; }
+.sc-msg-in2 { width: 44%; height: 18px; animation-delay: 1.8s; }
+.sc-badge {
+    top: 10px; right: 12px;
+    display: flex; align-items: center; justify-content: center;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--red); color: #fff;
+    font-size: 10px; font-weight: 700;
+    animation: sc-pop 0.45s 2.4s both;
+}
+
+/* ---- 4. Власники: заголовок зі значком і дві картки ---- */
+.sc-head { top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 7px; }
+.sc-head-title { width: 74px; height: 8px; border-radius: 4px; background: rgba(120,120,128,0.45); }
+.sc-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px 2px 5px; border-radius: 999px;
+    background: rgba(52,199,89,0.16); color: #1E7A36;
+    font-size: 9px; font-weight: 700;
+    animation: sc-pop 0.45s 1.9s both;
+}
+.sc-own {
+    left: 12px; right: 12px; height: 30px;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 8px; border-radius: 10px; background: var(--surface);
+}
+.sc-own1 { top: 38px; animation: sc-up 0.5s 0.3s both; }
+.sc-own2 { top: 74px; animation: sc-up 0.5s 0.9s both; }
+.sc-av { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #5FD37E, #2FA34F); flex-shrink: 0; }
+.sc-av2 { background: linear-gradient(135deg, #4FA3FF, var(--blue)); }
+.sc-lines { flex: 1; min-width: 0; }
+.sc-lines i { height: 4px; }
+.sc-lines i:first-child { width: 70%; margin-bottom: 3px; }
+.sc-lines i:last-child { width: 45%; background: rgba(120,120,128,0.2); }
+.sc-share { font-size: 11px; font-weight: 700; color: var(--ink); }
+
 .tut-title {
     margin: 0 0 10px; text-align: center;
     font-size: 22px; font-weight: 700;
@@ -3847,7 +3973,11 @@ select.field-input {
 }
 .tut-link:active { opacity: 0.5; }
 
+/* Кому рух заважає — показуємо ту саму сцену, але зібраною:
+   без анімації елементи інакше лишилися б прозорими назавжди. */
 @media (prefers-reduced-motion: reduce) {
     .tut, .tut-card { animation: none; }
     .tut-dots i { transition: none; }
+    .tut-scene *, .tut-scene { animation: none !important; opacity: 1 !important; }
+    .sc-sheet, .sc-tap { display: none; }
 }
