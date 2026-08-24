@@ -35,11 +35,25 @@ const WORDS = {
 // РОЗБІР ВИВАНТАЖЕННЯ
 // ------------------------------------------------------------
 
-/** «01.08.2026», «1.8.26», «2026-08-01». Повертає Date або null. */
+/**
+ * «01.08.2026», «1.8.26», «2026-08-01», з часом або без:
+ * «18.08.2026 23:09». Час не обовʼязковий, але якщо він є —
+ * бережемо: дві операції за одну добу інакше стали б у довільному
+ * порядку. Повертає Date або null.
+ */
 export function parseLedgerDate(input) {
-    const t = String(input || '').trim();
-    let y, mo, d;
+    let t = String(input || '').trim();
+    let hh = 0, mi = 0;
 
+    // Час відділяють по-різному: пробілом, комою, крапкою з комою, «·»
+    const withTime = t.match(/^(.*?)[\s,·•]+(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (withTime) {
+        t = withTime[1].trim();
+        hh = +withTime[2]; mi = +withTime[3];
+        if (hh > 23 || mi > 59) return null;
+    }
+
+    let y, mo, d;
     let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (m) { [y, mo, d] = [+m[1], +m[2], +m[3]]; }
     else {
@@ -49,7 +63,7 @@ export function parseLedgerDate(input) {
         if (y < 100) y += 2000;
     }
 
-    const date = new Date(y, mo - 1, d);
+    const date = new Date(y, mo - 1, d, hh, mi);
     // 32.13.2026 інакше «перекотилося б» у наступний місяць і тихо
     // потрапило б у базу неправильною датою.
     if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
