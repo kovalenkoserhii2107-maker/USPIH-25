@@ -826,6 +826,35 @@ async function sendChanges(btn) {
     }
 }
 
+// Рішення правління мешканець має побачити один раз. Далі це вже не
+// новина, а стан — і його місце в заголовку розділу, а не смугою на
+// півекрана під списком.
+const SEEN_KEY = 'uspih.seenOwnersDecision';
+let shownDecision = 0;   // показане в цьому сеансі лишається на екрані
+const decisionSeen = (at) => {
+    if (shownDecision === Number(at)) return false;
+    try { return Number(localStorage.getItem(SEEN_KEY) || 0) >= Number(at || 0); } catch { return false; }
+};
+const markDecisionSeen = (at) => {
+    shownDecision = Number(at) || 0;
+    try { localStorage.setItem(SEEN_KEY, String(at || 0)); } catch { /* приватний режим */ }
+};
+
+/** Стан звірки — коротко, біля заголовка розділу. */
+function renderStatusChip(st) {
+    const chip = document.getElementById('ownersStatusChip');
+    if (!chip) return;
+    const map = {
+        confirmed: { text: 'звірено', cls: 'own-chip-ok', icon: '<polyline points="20 6 9 17 4 12"></polyline>' },
+        review: { text: 'на розгляді', cls: 'own-chip-wait', icon: '<circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline>' }
+    };
+    const m = map[st];
+    chip.hidden = !m;
+    if (!m) return;
+    chip.className = `own-chip ${m.cls}`;
+    chip.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${m.icon}</svg>${m.text}`;
+}
+
 export function renderOwnersStatus() {
     // Правління редагує напряму — прохання підтвердити тут ні до чого.
     if (isBoardEditing()) return;
@@ -836,6 +865,7 @@ export function renderOwnersStatus() {
     // неї прохання побачили б лише ті, хто гортає до кінця.
     const banner = document.getElementById('ownersBanner');
     if (banner) banner.hidden = dirty || session.ownersStatus !== 'pending';
+    renderStatusChip(dirty ? '' : session.ownersStatus);
 
     if (dirty) {
         const gaps = ownerProblems();
@@ -853,8 +883,9 @@ export function renderOwnersStatus() {
     const st = session.ownersStatus;
     const d = session.ownersDecision;
 
-    // Рішення правління показуємо першим: це відповідь на дію мешканця,
-    // і без неї незрозуміло, що сталося з надісланими правками.
+    // Відмова лишається блоком і стоїть першою: вона вимагає дії, і
+    // згорнути її в значок означало б лишити людину без пояснення,
+    // що саме не так і що робити далі.
     const decision = (st === 'pending' && d?.status === 'rejected')
         ? `<div class="own-status own-status-reject">
                <p class="own-status-title">Правління не прийняло зміни</p>
@@ -862,24 +893,17 @@ export function renderOwnersStatus() {
                <p class="own-status-text own-status-next">Виправте дані й надішліть ще раз —
                    або підтвердіть список, якщо він усе-таки вірний.</p>
            </div>`
-        : (st === 'confirmed' && d?.status === 'approved')
-        ? `<div class="own-status own-status-ok">
-               <p class="own-status-text">Правління прийняло ваші зміни. Список оновлено й звірено.</p>
-           </div>`
         : '';
 
-    if (decision && st === 'confirmed') { host.innerHTML = decision; return; }
-
-    if (st === 'review') {
-        host.innerHTML = `<div class="own-status own-status-wait">
-            <p class="own-status-text">Заявку надіслано. Правління перевірить її найближчим часом.</p>
-        </div>`;
-        return;
-    }
-    if (st === 'confirmed') {
-        host.innerHTML = `<div class="own-status own-status-ok">
-            <p class="own-status-text">Список підтверджено. Дякуємо — ваш голос рахуватиметься правильно.</p>
-        </div>`;
+    if (st === 'review' || st === 'confirmed') {
+        // Прийняття — новина: показуємо один раз і більше не повторюємо.
+        const fresh = st === 'confirmed' && d?.status === 'approved' && !decisionSeen(d.at);
+        host.innerHTML = fresh
+            ? `<div class="own-status own-status-ok">
+                   <p class="own-status-text">Правління прийняло ваші зміни. Список оновлено й звірено.</p>
+               </div>`
+            : '';
+        if (fresh) markDecisionSeen(d.at);
         return;
     }
 

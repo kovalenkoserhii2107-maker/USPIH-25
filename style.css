@@ -1274,13 +1274,26 @@ select.field-input {
 /* Прохання — помітне, але не тривожне: це звичайна дія, а не проблема. */
 .own-status-ask { background: rgba(0, 122, 255, 0.07); border-color: rgba(0, 122, 255, 0.16); }
 .own-status-edit { background: rgba(255, 149, 0, 0.09); border-color: rgba(255, 149, 0, 0.22); }
-.own-status-wait { background: var(--surface-2); }
 .own-status-ok { background: rgba(52, 199, 89, 0.09); border-color: rgba(52, 199, 89, 0.2); }
 .own-status-ok .own-status-text { color: #1E7A36; }
 .own-status-reject { background: rgba(255, 59, 48, 0.08); border-color: rgba(255, 59, 48, 0.22); }
 .own-status-reject .own-status-title { color: #A3382F; }
 .own-status-next { margin-top: 8px; }
 .own-status-gap { margin-top: 10px; color: #A3382F; font-weight: 500; }
+
+/* Стан звірки біля заголовка розділу: це довідка, а не оголошення,
+   тому — дрібним, поруч із тим, чого стосується. */
+.own-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: 8px; padding: 3px 9px 3px 7px;
+    border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0;
+    vertical-align: 3px;
+    white-space: nowrap;
+}
+.own-chip svg { flex-shrink: 0; }
+.own-chip-ok { background: rgba(52, 199, 89, 0.13); color: #1E7A36; }
+.own-chip-wait { background: rgba(0, 122, 255, 0.11); color: #0A5FCC; }
 /* Картка, де бракує даних, — щоб не шукати її очима серед інших. */
 .owner-incomplete { outline: 2px solid rgba(255, 59, 48, 0.45); outline-offset: 2px; border-radius: var(--r-lg); }
 .owner-pending-files {
