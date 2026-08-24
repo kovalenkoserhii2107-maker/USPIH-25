@@ -18,11 +18,29 @@ function openTab(name, scrollToSelector) {
     const tab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
     if (!tab) return;
     tab.click();
-    if (!scrollToSelector) return;
-    // Даємо панелі проявитись, і аж тоді прокручуємо до потрібного місця
+
+    // Даємо панелі проявитись, і аж тоді шукаємо, куди везти
     setTimeout(() => {
-        document.querySelector(scrollToSelector)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const target = scrollToSelector ? document.querySelector(scrollToSelector) : null;
+
+        // Ціль може лежати у згорнутому блоці — тоді вона має нульову
+        // висоту, і прокрутка до неї нічого не показує. Розгортаємо й
+        // чекаємо на анімацію, інакше рахуватимемо позицію по старій.
+        const fold = target?.closest('.admin-fold');
+        const opened = fold && !fold.classList.contains('open');
+        if (opened) {
+            fold.classList.add('open');
+            fold.querySelector('.admin-card-toggle')?.setAttribute('aria-expanded', 'true');
+        }
+
+        // Немає конкретної цілі (нічого не чекає рішення, розділ порожній) —
+        // везе принаймні до самої вкладки. Інакше після натискання екран
+        // лишався на місці, і здавалося, що кнопка не спрацювала.
+        const where = target || document.getElementById('adminTabs');
+        const go = () => where?.scrollIntoView({
+            behavior: 'smooth', block: target ? 'center' : 'start'
+        });
+        if (opened) setTimeout(go, 360); else go();
     }, 220);
 }
 
@@ -37,6 +55,17 @@ function plural(n, one, few, many) {
 const ADDRESS = 'вул. Інглезі, 3/3 · м. Одеса';
 
 const num = (v) => new Intl.NumberFormat('uk-UA').format(v);
+
+const CHEVRON = '<svg class="dash-go" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+
+// Значок читається швидше за підпис і робить плитки різними на вигляд —
+// без нього чотири однакові прямокутники доводиться перечитувати щоразу.
+const ICONS = {
+    owners: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline>',
+    requests: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
+    polls: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>',
+    debt: '<rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line>'
+};
 
 /** Мільйонні суми в плитку не влазять — там точність до гривні й не потрібна. */
 function compactMoney(v) {
@@ -55,6 +84,8 @@ function compactMoney(v) {
  */
 function houseCard({ aptCount, ownerCount, area, verified }) {
     const pct = aptCount ? Math.round(verified / aptCount * 100) : 0;
+    const left = aptCount - verified;
+    const done = aptCount > 0 && left === 0;
     const fact = (value, label) => `<span class="dash-fact">
         <b>${value}</b><small>${escapeHtml(label)}</small>
     </span>`;
@@ -64,24 +95,38 @@ function houseCard({ aptCount, ownerCount, area, verified }) {
             <span class="dash-house-name">ОСББ «Успіх-25»</span>
             <span class="dash-house-addr">${escapeHtml(ADDRESS)}</span>
         </div>
+
         <button type="button" class="dash-facts" data-tab="directory">
             ${fact(num(aptCount), plural(aptCount, 'квартира', 'квартири', 'квартир'))}
             ${fact(num(ownerCount), plural(ownerCount, 'співвласник', 'співвласники', 'співвласників'))}
             ${fact(area ? num(Math.round(area)) : '—', 'м² житла')}
         </button>
-        <div class="dash-cover">
-            <div class="dash-cover-top">
-                <span>Списки власників звірено</span>
-                <b>${verified} із ${aptCount}</b>
-            </div>
-            <div class="vf-bar"><i style="width:${pct}%"></i></div>
-        </div>
+
+        <button type="button" class="dash-cover${done ? ' is-done' : ''}"
+                data-tab="directory" data-target=".vf-cover">
+            <span class="dash-cover-top">
+                <span class="dash-cover-title">Списки власників звірено</span>
+                <b class="dash-cover-pct">${pct}%</b>
+            </span>
+            <span class="dash-bar"><i style="width:${pct}%"></i></span>
+            <span class="dash-cover-note">
+                <span>${verified} із ${aptCount} ${plural(aptCount, 'квартири', 'квартир', 'квартир')}${
+                    done ? '' : ` · ${left} ще не ${plural(left, 'підтвердила', 'підтвердили', 'підтвердили')}`}</span>
+                ${CHEVRON}
+            </span>
+        </button>
     </div>`;
 }
 
-const tile = ({ id, label, value, hint, tone, tab, target }) => `
+const tile = ({ id, label, value, hint, tone, tab, target, icon }) => `
     <button type="button" class="dash-tile dash-${tone}" id="${id}"
             data-tab="${tab}"${target ? ` data-target="${target}"` : ''}>
+        <span class="dash-tile-top">
+            <span class="dash-icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon] || ''}</svg>
+            </span>
+            ${CHEVRON}
+        </span>
         <span class="dash-value">${value}</span>
         <span class="dash-label">${escapeHtml(label)}</span>
         ${hint ? `<span class="dash-hint">${escapeHtml(hint)}</span>` : ''}
@@ -125,23 +170,24 @@ export async function loadDashboard() {
 
         host.innerHTML = houseCard({ aptCount, ownerCount, area, verified }) + `
             <div class="dash-grid">
-                ${tile({ id: 'dashOwners', label: 'Заявок на звірку', value: changes,
+                ${tile({ icon: 'owners', id: 'dashOwners', label: 'Заявок на звірку', value: changes,
                          hint: changes ? 'Чекають рішення' : (verified < aptCount ? 'Нагадайте решті' : 'Усе звірено'),
                          tone: changes ? 'warn' : (verified < aptCount ? 'info' : 'ok'),
-                         tab: 'directory', target: '.vf-card' })}
-                ${tile({ id: 'dashReqs', label: 'Звернень у роботі', value: reqCount,
+                         tab: 'directory', target: changes ? '.vf-card' : '.vf-cover' })}
+                ${tile({ icon: 'requests', id: 'dashReqs', label: 'Звернень у роботі', value: reqCount,
                          hint: reqCount ? 'Потребують відповіді' : 'Усе опрацьовано',
                          tone: reqCount ? 'warn' : 'ok', tab: 'requests',
                          target: '.req-item' })}
-                ${tile({ id: 'dashPolls', label: 'Активних голосувань', value: pollCount,
+                ${tile({ icon: 'polls', id: 'dashPolls', label: 'Активних голосувань', value: pollCount,
                          hint: pollCount ? 'Триває' : 'Немає активних',
                          tone: pollCount ? 'info' : 'neutral', tab: 'polls',
                          target: '.poll-card-admin' })}
-                ${tile({ id: 'dashDebt', label: 'Заборгованість', value: `${compactMoney(debtSum)}<small>грн</small>`,
+                ${tile({ icon: 'debt', id: 'dashDebt', label: 'Заборгованість', value: `${compactMoney(debtSum)}<small>грн</small>`,
                          hint: debtors.length
                              ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')} у мінусі`
                              : 'Боргів немає',
-                         tone: debtors.length ? 'warn' : 'ok', tab: 'finance' })}
+                         tone: debtors.length ? 'warn' : 'ok', tab: 'finance',
+                         target: '#balanceBulk' })}
             </div>
             <button type="button" class="dash-last" id="dashLastMsg" data-tab="history">
                 <span class="dash-last-label">Остання розсилка</span>
