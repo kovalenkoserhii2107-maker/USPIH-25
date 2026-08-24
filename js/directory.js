@@ -104,12 +104,20 @@ function render(list) {
                         · ${e.area ? escapeHtml(String(e.area)) + ' м²' : 'площа —'}
                         · ${e.owners.length ? `співвласників: ${e.owners.length}` : 'без співвласників'}</span>
                 </span>
+                <span class="dir-verify dv-${e.ownersStatus}">${
+                    { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
+                }</span>
                 <svg class="row-chevron dir-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <div class="dir-body" hidden>
                 ${e.owners.length
                     ? e.owners.map(ownerLine).join('')
                     : '<p class="muted-note">Дані про співвласників не внесено</p>'}
+                ${e.ownersStatus === 'confirmed'
+                    ? `<p class="dir-confirmed">Список звірено${e.ownersConfirmedBy === 'board' ? ' правлінням' : ' мешканцем'}</p>`
+                    : `<button type="button" class="dir-confirm" data-confirm="${escapeHtml(e.apt)}">
+                           Підтвердити від імені правління
+                       </button>`}
             </div>
         </div>`).join('');
 
@@ -139,6 +147,16 @@ export async function loadDirectory() {
 }
 
 export function initDirectory() {
+    // Слухач один і на весь список: render викликається ще й при
+    // пошуку, тож чіпляти його там означало б підтверджувати квартиру
+    // стільки разів, скільки літер набрали в пошуку.
+    document.getElementById('directoryList')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-confirm]');
+        if (!btn) return;
+        const { confirmByBoard } = await import('./verify.js');
+        if (await confirmByBoard(btn.dataset.confirm)) loadDirectory();
+    });
+
     const input = document.getElementById('directorySearch');
     input?.addEventListener('input', async () => {
         const q = input.value.trim().toLowerCase();

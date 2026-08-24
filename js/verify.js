@@ -14,6 +14,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, promptDialog, normName } from './ui.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
+import { prefillAnnouncement } from './messages.js';
 
 const aptOf = (ref) => ref.path.split('/')[1];
 
@@ -57,6 +58,7 @@ function diffHtml(before, after) {
 }
 
 let pending = [];
+let notResponded = [];
 
 export async function loadVerifyQueue() {
     const host = document.getElementById('verifyQueue');
@@ -105,17 +107,41 @@ async function renderCoverage(stats) {
         const total = dir.length || 1;
         const pct = Math.round((n.confirmed / total) * 100);
 
+        // Список тих, кому є сенс нагадати
+        notResponded = dir.filter(a => a.ownersStatus === 'pending').map(a => a.apt);
+
         stats.innerHTML = `<div class="vf-stats">
             <div class="vf-stat"><b>${n.confirmed}</b><span>підтвердили</span></div>
             <div class="vf-stat"><b>${n.review}</b><span>на розгляді</span></div>
             <div class="vf-stat"><b>${n.pending}</b><span>не відповіли</span></div>
         </div>
         <div class="vf-bar"><i style="width:${pct}%"></i></div>
-        <p class="vf-bar-note">Звірено ${n.confirmed} із ${dir.length} квартир — ${pct}%</p>`;
+        <p class="vf-bar-note">Звірено ${n.confirmed} із ${dir.length} квартир — ${pct}%</p>
+        ${n.pending ? `<button type="button" class="vf-remind" id="verifyRemindBtn">
+            Підготувати нагадування для ${n.pending} квартир
+        </button>` : ''}`;
+
+        document.getElementById('verifyRemindBtn')?.addEventListener('click', remind);
     } catch (e) {
         console.warn('Покриття звірки:', e);
         stats.innerHTML = '';
     }
+}
+
+/** Готує адресну розсилку тим, хто не відповів. Надсилає правління сама. */
+function remind() {
+    if (!notResponded.length) return;
+    prefillAnnouncement({
+        title: 'Перевірте список співвласників вашої квартири',
+        body: 'Шановні мешканці!\n\nГолосування ОСББ рахується за співвласниками. '
+            + 'Щоб ваш голос рахувався правильно, зайдіть у застосунок і підтвердіть, '
+            + 'що список власників вашої квартири вірний — це один дотик. '
+            + 'Якщо дані змінилися, надішліть виправлення, і ми їх звіримо.\n\n'
+            + 'З повагою, Правління ОСББ «Успіх-25»',
+        apartments: notResponded
+    });
+    document.querySelector('.admin-tab[data-tab="send"]')?.click();
+    toast('Текст і список квартир підготовлено — перевірте й надішліть', 'success');
 }
 
 /** Застосовує запропонований список до бази. */

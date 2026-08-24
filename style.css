@@ -1138,6 +1138,59 @@ select.field-input {
 .vf-reject:active { opacity: 0.55; }
 
 /* ---------- ПІДТВЕРДЖЕННЯ СПИСКУ ВЛАСНИКІВ ---------- */
+.own-banner {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; box-sizing: border-box;
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    background: rgba(0, 122, 255, 0.09);
+    border: 1px solid rgba(0, 122, 255, 0.2);
+    border-radius: var(--r-md);
+    text-align: left; cursor: pointer;
+    font-family: var(--font);
+    -webkit-tap-highlight-color: transparent;
+}
+.own-banner:active { background: rgba(0, 122, 255, 0.16); }
+.own-banner-icon {
+    width: 30px; height: 30px; flex-shrink: 0;
+    border-radius: 9px;
+    background: var(--blue); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+}
+.own-banner-text { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.35; }
+.own-banner .row-chevron { flex-shrink: 0; color: var(--ink-3); }
+
+/* Статус звірки в довіднику квартир */
+.dir-verify {
+    flex-shrink: 0;
+    padding: 3px 8px; border-radius: 7px;
+    font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+.dv-confirmed { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.dv-review { background: rgba(0, 122, 255, 0.13); color: #0040A0; }
+.dv-pending { background: rgba(120, 120, 128, 0.14); color: var(--ink-2); }
+.dir-confirm {
+    width: 100%; margin-top: 10px; padding: 10px;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--blue);
+    font-family: var(--font); font-size: 13.5px; font-weight: 600;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.dir-confirm:active { background: var(--surface-3); }
+.dir-confirmed { margin: 10px 0 0; font-size: 12.5px; color: #248A3D; }
+
+.vf-remind {
+    width: 100%; margin-top: 12px; padding: 11px;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--blue);
+    font-family: var(--font); font-size: 13.5px; font-weight: 600;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.vf-remind:active { background: var(--surface-3); }
+
+
 .own-status {
     margin-top: 12px;
     padding: 16px;

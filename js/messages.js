@@ -28,6 +28,28 @@ export function buildRecipients(targetType, targetValue) {
     return parts.map(p => prefix + p);
 }
 
+/**
+ * Готує форму розсилки, але НЕ надсилає.
+ *
+ * Нагадування про звірку списків збирається саме тут: правління
+ * бачить текст і перелік квартир перед відправкою. Надсилати потай
+ * від його імені було б неправильно, та й нової логіки не треба —
+ * усе робить наявна розсилка.
+ */
+export function prefillAnnouncement({ title = '', body = '', apartments = [] }) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('adminMsgTitle', title);
+    set('adminMsgBody', body);
+
+    const targeted = apartments.length > 0;
+    set('adminMsgTargetType', targeted ? 'apartment' : 'all');
+    set('adminMsgTargetValue', apartments.join(', '));
+    const group = document.getElementById('adminMsgTargetValueGroup');
+    if (group) group.hidden = !targeted;
+    document.querySelectorAll('#adminTargetSegmented .segmented-item')
+        .forEach(i => i.classList.toggle('active', i.dataset.target === (targeted ? 'apartment' : 'all')));
+}
+
 // ------------------------------------------------------------
 // РОЗСИЛКА (адмін)
 // ------------------------------------------------------------

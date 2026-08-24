@@ -445,6 +445,11 @@ export function renderOwnersStatus() {
     const host = document.getElementById('ownersStatusHost');
     if (!host) return;
 
+    // Смужка вгорі: секція співвласників — унизу довгого екрана, і без
+    // неї прохання побачили б лише ті, хто гортає до кінця.
+    const banner = document.getElementById('ownersBanner');
+    if (banner) banner.hidden = dirty || session.ownersStatus !== 'pending';
+
     if (dirty) {
         host.innerHTML = `<div class="own-status own-status-edit">
             <p class="own-status-text">Зміни ще не надіслано. Правління звірить їх із документами.</p>
@@ -481,4 +486,8 @@ export function renderOwnersStatus() {
 
 export function initOwners() {
     document.getElementById('addOwnerBtn')?.addEventListener('click', addOwner);
+    document.getElementById('ownersBanner')?.addEventListener('click', () => {
+        document.getElementById('ownersStatusHost')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
 }
