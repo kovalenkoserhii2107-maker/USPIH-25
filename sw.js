@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '46';
+const VERSION = '47';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -47,13 +47,22 @@ const SHELL = [
 // Кожен файл додаємо окремо: якщо один шлях зіпсовано, це не
 // має валити встановлення воркера цілком (cache.addAll саме так
 // і поводиться — падає весь список через один файл).
+//
+// Не cache.add(), а fetch із no-cache: add() читає крізь браузерний
+// HTTP-кеш і склав би у сховище воркера рівно ті застарілі файли,
+// заради оновлення яких воркер і перевстановлюється.
 // ------------------------------------------------------------
 self.addEventListener('install', (event) => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE);
-        await Promise.all(SHELL.map(
-            url => cache.add(url).catch(e => console.warn('SW: не закешовано', url, e))
-        ));
+        await Promise.all(SHELL.map(async (url) => {
+            try {
+                const res = await fetch(url, { cache: 'no-cache', credentials: 'same-origin' });
+                if (res.ok) await cache.put(url, res);
+            } catch (e) {
+                console.warn('SW: не закешовано', url, e);
+            }
+        }));
         await self.skipWaiting();
     })());
 });
@@ -100,7 +109,19 @@ self.addEventListener('fetch', (event) => {
 async function networkFirst(req) {
     const cache = await caches.open(CACHE);
     try {
-        const fresh = await fetch(req);
+        // cache: 'no-cache' — не примха, а обовʼязкова умова.
+        //
+        // GitHub Pages віддає файли з max-age=600, а браузерний HTTP-кеш
+        // стоїть ПЕРЕД воркером: звичайний fetch(req) до десяти хвилин
+        // повертав старий файл, хоч на сервері вже лежав новий. Виходила
+        // та сама суміш версій, від якої мала рятувати «мережа-перша».
+        // no-cache змушує спитати сервер; якщо файл не змінився, той
+        // відповість 304 — це дешево.
+        //
+        // Беремо req.url, а не сам req: у запиту навігації режим
+        // 'navigate', і конструювання нового Request з нього має власні
+        // тонкощі, які тут ні до чого.
+        const fresh = await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
         // Кешуємо лише вдалі відповіді свого походження
         if (fresh && fresh.ok && fresh.type === 'basic') cache.put(req, fresh.clone());
         return fresh;
