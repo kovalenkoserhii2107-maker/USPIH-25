@@ -12,8 +12,8 @@ import { db, session } from './firebase.js';
 import {
     collection, doc, getDocs, query, orderBy, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { escapeHtml, toast, setBusy } from './ui.js';
-import { parseMoney, formatMoney, loadKnownApts } from './finance.js';
+import { escapeHtml, toast, setBusy, parseMoney, formatMoney } from './ui.js';
+import { loadKnownApts } from './finance.js';
 
 const MONTHS = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
                 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];

@@ -15,7 +15,7 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, parseMoney, formatMoney } from './ui.js';
 import { renderAttachments } from './attachments.js';
 import { fetchDirectory } from './directory.js';
 
@@ -34,16 +34,6 @@ export async function loadKnownApts() {
 
 const SLICE_COLORS = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30',
                       '#5AC8FA', '#FFC300', '#14A79D'];
-
-/** «1234.5» або «1 234,50» → 1234.5. Порожнє чи сміття → 0. */
-export function parseMoney(v) {
-    const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.'));
-    return isNaN(n) ? 0 : n;
-}
-
-export function formatMoney(n) {
-    return Math.abs(n).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 // ------------------------------------------------------------
 // БАЛАНС КВАРТИРИ (мешканець)

@@ -10,7 +10,8 @@ import { db } from './firebase.js';
 import {
     collection, collectionGroup, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { escapeHtml, getInitials, avatarGradient, toast } from './ui.js';
+import { escapeHtml, getInitials, avatarGradient, toast, formatDateTime, parseMoney, formatMoney } from './ui.js';
+
 
 let cache = null;          // [{ apt, entrance, area, owners: [...] }]
 
@@ -49,6 +50,8 @@ export async function fetchDirectory() {
                 area: data.area || '',
                 ownersStatus: data.ownersStatus || 'pending',
                 ownersConfirmedBy: data.ownersConfirmedBy || '',
+                balance: data.balance,
+                balanceUpdatedAt: data.balanceUpdatedAt || null,
                 owners: byApt[d.id] || []
             };
         })
@@ -79,6 +82,26 @@ const STATUS_LABEL = {
  * найпомітніше місце рядка на те, що вже видно. Правління шукає саме
  * людину, тож туди й ставимо.
  */
+/**
+ * Стан розрахунків у картці квартири.
+ *
+ * Правління дивиться сюди, коли розбирається з квартирою, — і зараз
+ * мусило б іти шукати цифру у «Фінансах». Тримаємо ту саму умовність,
+ * що й у мешканця: відʼємне — борг, додатне — переплата.
+ */
+function balanceRow(e) {
+    const n = parseMoney(e.balance);
+    if (e.balance === undefined || e.balance === null || e.balance === '') {
+        return '<p class="dir-balance dir-balance-none">Стан розрахунків не внесено</p>';
+    }
+    const debt = n < -0.005, credit = n > 0.005;
+    const label = debt ? 'До сплати' : credit ? 'Переплата' : 'Заборгованості немає';
+    const when = e.balanceUpdatedAt ? ` · станом на ${escapeHtml(formatDateTime(e.balanceUpdatedAt))}` : '';
+    return `<p class="dir-balance ${debt ? 'is-debt' : credit ? 'is-credit' : ''}">
+        ${label}${debt || credit ? `: <b>${formatMoney(Math.abs(n))} грн</b>` : ''}<span>${when}</span>
+    </p>`;
+}
+
 function ownersTitle(owners) {
     if (!owners.length) return 'Власників не внесено';
     const first = String(owners[0].name || '').trim() || 'Без імені';
@@ -166,14 +189,20 @@ function render(list) {
             <div class="dir-body" hidden>
                 <p class="dir-body-meta">${e.entrance && e.entrance !== '--'
                     ? `Парадна ${escapeHtml(String(e.entrance))}` : 'Парадна не вказана'}</p>
+                ${balanceRow(e)}
                 ${e.owners.length
                     ? e.owners.map(ownerLine).join('')
                     : '<p class="muted-note">Дані про співвласників не внесено</p>'}
-                ${e.ownersStatus === 'confirmed'
-                    ? `<p class="dir-confirmed">Список звірено${e.ownersConfirmedBy === 'board' ? ' правлінням' : ' мешканцем'}</p>`
-                    : `<button type="button" class="dir-confirm" data-confirm="${escapeHtml(e.apt)}">
-                           Підтвердити від імені правління
-                       </button>`}
+                <div class="dir-actions">
+                    <button type="button" class="dir-edit" data-edit="${escapeHtml(e.apt)}">
+                        Редагувати
+                    </button>
+                    ${e.ownersStatus === 'confirmed'
+                        ? `<p class="dir-confirmed">Звірено${e.ownersConfirmedBy === 'board' ? ' правлінням' : ' мешканцем'}</p>`
+                        : `<button type="button" class="dir-confirm" data-confirm="${escapeHtml(e.apt)}">
+                               Підтвердити
+                           </button>`}
+                </div>
             </div>
         </div>`).join('');
 
@@ -219,6 +248,12 @@ export function initDirectory() {
     // пошуку, тож чіпляти його там означало б підтверджувати квартиру
     // стільки разів, скільки літер набрали в пошуку.
     document.getElementById('directoryList')?.addEventListener('click', async (e) => {
+        const edit = e.target.closest('[data-edit]');
+        if (edit) {
+            const { openOwnersEditor } = await import('./verify.js');
+            openOwnersEditor(edit.dataset.edit);
+            return;
+        }
         const btn = e.target.closest('[data-confirm]');
         if (!btn) return;
         const { confirmByBoard } = await import('./verify.js');

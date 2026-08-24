@@ -45,6 +45,21 @@ export function formatElapsed(ms) {
  * пробілу не читалася як заміна людини). Якби вони розійшлися,
  * правління бачило б у заявці вигадану зміну.
  */
+/**
+ * Гроші: розбір і показ. Живуть тут, бо ними користуються троє —
+ * фінанси, історія нарахувань і довідник квартир. Коли вони лежали у
+ * finance.js, довідник мусив імпортувати звідти, а finance імпортує
+ * довідник — виходило коло, яке трималося лише на підйомі оголошень.
+ */
+export function parseMoney(v) {
+    const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+}
+
+export function formatMoney(n) {
+    return Math.abs(n).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function normName(n) {
     return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -241,7 +256,7 @@ export function initSheets() {
 const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
                  'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection', 'chatSection',
-                 'ledgerSection'];
+                 'ledgerSection', 'ownersEditSection'];
 
 /**
  * Значок у шапці — сума всіх значків у меню. Так мешканець бачить,

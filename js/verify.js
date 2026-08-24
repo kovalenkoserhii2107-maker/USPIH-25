@@ -125,11 +125,15 @@ async function renderCoverage(stats) {
         // Список тих, кому є сенс нагадати
         notResponded = dir.filter(a => a.ownersStatus === 'pending').map(a => a.apt);
 
+        // Показник і дія — в одному рядку: окремою смугою на всю ширину
+        // кнопка виглядала як частина списку, а не як дія над покриттям.
         stats.innerHTML = `<div class="vf-bar"><i style="width:${pct}%"></i></div>
-        <p class="vf-bar-note">Звірено <b>${n.confirmed}</b> із <b>${dir.length}</b> квартир — ${pct}%</p>
-        ${n.pending ? `<button type="button" class="vf-remind" id="verifyRemindBtn">
-            Підготувати нагадування для ${n.pending} ${n.pending === 1 ? 'квартири' : 'квартир'}
-        </button>` : ''}`;
+        <div class="vf-cover">
+            <p class="vf-bar-note">Звірено <b>${n.confirmed}</b> із <b>${dir.length}</b> — ${pct}%</p>
+            ${n.pending ? `<button type="button" class="vf-remind" id="verifyRemindBtn">
+                Нагадати ${n.pending}
+            </button>` : ''}
+        </div>`;
 
         document.getElementById('verifyRemindBtn')?.addEventListener('click', remind);
     } catch (e) {
@@ -247,6 +251,50 @@ export async function confirmByBoard(apt) {
     }
 }
 
+/**
+ * Відкриває редактор списку від імені правління.
+ *
+ * Частина мешканців похилого віку не впорається з формою сама —
+ * правління вносить дані замість них. Екран той самий, що й у
+ * мешканця: інший інтерфейс довелося б підтримувати окремо, і вони
+ * почали б розходитися.
+ */
+export async function openOwnersEditor(apt) {
+    const own = await import('./owners.js');
+    const { showScreen } = await import('./ui.js');
+
+    own.useOwnersTarget({ host: 'ownersEditContainer', apt });
+    document.getElementById('ownersEditTitle').textContent = `Квартира ${apt}`;
+    showScreen('ownersEditSection');
+    await own.loadOwners(apt);
+}
+
+/** Повертає модуль до кабінету мешканця. */
+async function closeOwnersEditor() {
+    const own = await import('./owners.js');
+    own.useOwnersTarget();
+}
+
+async function saveOwnersAsBoard(btn) {
+    const own = await import('./owners.js');
+    setBusy(btn, true, 'Зберігаємо…');
+    try {
+        await own.saveOwnersDirect();
+        invalidateDirectory();
+        toast('Список збережено й позначено як звірений', 'success');
+        await closeOwnersEditor();
+        const { showScreen } = await import('./ui.js');
+        showScreen('adminDashboardSection');
+        const { loadDirectory } = await import('./directory.js');
+        loadDirectory();
+        loadVerifyQueue();
+    } catch (e) {
+        console.error('Збереження списку правлінням:', e);
+        toast('Не вдалося зберегти. Перевірте інтернет.', 'error');
+        setBusy(btn, false);
+    }
+}
+
 export function initVerify() {
     document.getElementById('verifyQueue')?.addEventListener('click', (e) => {
         const card = e.target.closest('.vf-card');
@@ -255,6 +303,18 @@ export function initVerify() {
         if (e.target.closest('[data-approve]')) approve(apt, id, e.target.closest('[data-approve]'));
         else if (e.target.closest('[data-reject]')) reject(apt, id);
     });
+    document.getElementById('saveOwnersAdminBtn')
+        ?.addEventListener('click', function () { saveOwnersAsBoard(this); });
+    document.getElementById('backFromOwnersEditBtn')?.addEventListener('click', async () => {
+        await closeOwnersEditor();
+        const { showScreen } = await import('./ui.js');
+        showScreen('adminDashboardSection');
+    });
+    document.getElementById('addOwnerAdminBtn')?.addEventListener('click', async () => {
+        const { addOwner } = await import('./owners.js');
+        addOwner();
+    });
+
     document.getElementById('verifyRefreshBtn')?.addEventListener('click', () => {
         invalidateDirectory();
         loadVerifyQueue();

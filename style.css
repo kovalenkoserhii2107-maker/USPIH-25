@@ -1214,24 +1214,51 @@ select.field-input {
 .dv-confirmed { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
 .dv-review { background: rgba(0, 122, 255, 0.13); color: #0040A0; }
 .dv-pending { background: rgba(120, 120, 128, 0.14); color: var(--ink-2); }
-.dir-confirm {
-    width: 100%; margin-top: 10px; padding: 10px;
+.dir-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.dir-edit, .dir-confirm {
+    flex: 1; padding: 10px;
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
     color: var(--blue);
     font-family: var(--font); font-size: 13.5px; font-weight: 600;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-.dir-confirm:active { background: var(--surface-3); }
-.dir-confirmed { margin: 10px 0 0; font-size: 12.5px; color: #248A3D; }
+.dir-edit:active, .dir-confirm:active { background: var(--surface-3); }
+.dir-confirmed { margin: 0; flex: 1; text-align: center; font-size: 12.5px; color: #248A3D; }
 
+/* Редактор списку від імені правління */
+.own-edit-note {
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    background: rgba(255, 149, 0, 0.09);
+    border: 1px solid rgba(255, 149, 0, 0.22);
+    border-radius: var(--r-md);
+    font-size: 13px; line-height: 1.45; color: var(--ink);
+}
+.own-edit-save { margin-top: 16px; }
+
+.vf-cover {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin: 6px 0 14px;
+}
+.vf-cover .vf-bar-note { margin: 0; }
 .vf-remind {
-    width: 100%; margin-top: 12px; padding: 11px;
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
+    flex-shrink: 0;
+    padding: 8px 14px;
+    background: rgba(0, 122, 255, 0.10); border: none; border-radius: 999px;
     color: var(--blue);
-    font-family: var(--font); font-size: 13.5px; font-weight: 600;
+    font-family: var(--font); font-size: 13px; font-weight: 600;
+    white-space: nowrap;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-.vf-remind:active { background: var(--surface-3); }
+.vf-remind:active { background: rgba(0, 122, 255, 0.2); }
+
+/* Стан розрахунків у картці квартири */
+.dir-balance { margin: 0 0 12px; font-size: 13px; color: var(--ink-2); }
+.dir-balance b { color: var(--ink); font-weight: 700; }
+.dir-balance span { color: var(--ink-3); font-size: 12px; }
+.dir-balance.is-debt b { color: #A3382F; }
+.dir-balance.is-credit b { color: #1E7A36; }
+.dir-balance-none { color: var(--ink-3); font-style: italic; }
 
 
 .own-status {

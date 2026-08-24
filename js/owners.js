@@ -3,7 +3,7 @@
 // ============================================================
 import { db, storage, session, currentApt } from './firebase.js';
 import {
-    collection, getDocs, doc, addDoc, updateDoc, serverTimestamp
+    collection, getDocs, doc, addDoc, updateDoc, serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
@@ -40,7 +40,21 @@ export function calculateShares(input) {
     return { frac: `${numerator / divisor}/${denominator / divisor}`, perc: String(perc) };
 }
 
-const container = () => document.getElementById('ownersContainer');
+// Модуль обслуговує два екрани: кабінет мешканця і редактор правління.
+// Різняться вони лише тим, ДЕ малювати і ЧИЮ квартиру правити.
+let hostId = 'ownersContainer';
+let targetApt = null;                  // null — квартира самого мешканця
+
+const container = () => document.getElementById(hostId);
+const workingApt = () => targetApt || currentApt();
+
+/** Перемикає модуль на інший екран і квартиру. Без аргументів — назад до мешканця. */
+export function useOwnersTarget({ host = 'ownersContainer', apt = null } = {}) {
+    hostId = host;
+    targetApt = apt;
+}
+
+export const isBoardEditing = () => targetApt !== null;
 
 // ------------------------------------------------------------
 // ЗАВАНТАЖЕННЯ
@@ -95,7 +109,7 @@ export async function loadOwners(apt) {
     // що в базі. Інакше після перезавантаження мешканець не бачить ні
     // доданого співвласника, ні позначки на прибраному — і вирішує, що
     // заявка пропала.
-    if (session.ownersStatus === 'review' && await renderProposed(apt)) {
+    if (!isBoardEditing() && session.ownersStatus === 'review' && await renderProposed(apt)) {
         updateOwnersCount();
         setOwnersBaseline();
         renderOwnersStatus();
@@ -516,7 +530,7 @@ function refreshFileChips(card) {
 // ------------------------------------------------------------
 /** Збирає те, що зараз у картках. Нічого не пише. */
 async function collectOwners() {
-    const apt = currentApt();
+    const apt = workingApt();
     if (!apt) throw new Error('Користувач не автентифікований');
 
     const cards = Array.from(container().querySelectorAll('.owner-card'));
@@ -556,6 +570,31 @@ async function collectOwners() {
 }
 
 /**
+ * Запис напряму — тільки для правління.
+ *
+ * Мешканець пропонує, правління вирішує; коли правління саме вносить
+ * дані за літню людину, погоджувати нема з ким — воно і є тим, хто
+ * погоджує.
+ */
+export async function saveOwnersDirect() {
+    const apt = workingApt();
+    const payloads = await collectOwners();
+    const ownersRef = collection(db, 'apartments', apt, 'owners');
+    const existing = await getDocs(ownersRef);
+
+    const batch = writeBatch(db);
+    const keep = new Set(payloads.map(p => p.id).filter(Boolean));
+    existing.forEach(d => { if (!keep.has(d.id)) batch.delete(d.ref); });
+    payloads.forEach(p => batch.set(p.id ? doc(ownersRef, p.id) : doc(ownersRef), p.data));
+    batch.set(doc(db, 'apartments', apt), {
+        ownersStatus: 'confirmed',
+        ownersConfirmedAt: serverTimestamp(),
+        ownersConfirmedBy: 'board'
+    }, { merge: true });
+    await batch.commit();
+}
+
+/**
  * Надсилає правки як ЗАЯВКУ, а не запис.
  *
  * Кворум рахує унікальних власників, тож дописаний співвласник — це
@@ -564,7 +603,7 @@ async function collectOwners() {
  * рішення ухвалює правління.
  */
 export async function submitOwnerChanges(reason) {
-    const apt = currentApt();
+    const apt = workingApt();
     if (!apt) throw new Error('Користувач не автентифікований');
 
     const after = await collectOwners();
@@ -734,7 +773,7 @@ async function confirmOwners(btn) {
 
     setBusy(btn, true, 'Зберігаємо…');
     try {
-        await updateDoc(doc(db, 'apartments', currentApt()), {
+        await updateDoc(doc(db, 'apartments', workingApt()), {
             ownersStatus: 'confirmed',
             ownersConfirmedAt: serverTimestamp(),
             ownersConfirmedBy: 'apt'
@@ -788,6 +827,8 @@ async function sendChanges(btn) {
 }
 
 export function renderOwnersStatus() {
+    // Правління редагує напряму — прохання підтвердити тут ні до чого.
+    if (isBoardEditing()) return;
     const host = document.getElementById('ownersStatusHost');
     if (!host) return;
 
