@@ -2858,17 +2858,21 @@ select.field-input {
 .balance-credit .balance-sum { color: #248A3D; }
 .balance-zero .balance-sum { color: var(--ink); }
 .balance-date { font-size: 11.5px; color: var(--ink-2); margin-top: 5px; }
+/* «Квитанції» стоять поруч з оплатою, а не окремим рядком: власний
+   рядок з розділювачем з'їдав висоту заради одного посилання. */
+.balance-actions { display: flex; gap: 8px; margin-top: 14px; align-items: stretch; }
+.balance-actions .balance-pay { flex: 1; margin-top: 0; min-width: 0; }
 .balance-receipts {
-    display: flex; align-items: center; justify-content: space-between;
-    width: 100%; box-sizing: border-box;
-    margin-top: 14px;
-    padding: 12px 0 12px 0;
-    background: none; border: none;
-    border-top: 0.5px solid rgba(0, 0, 0, 0.08);
-    cursor: pointer;
-    font-family: var(--font);
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 0 14px; border: none; border-radius: 14px;
+    background: rgba(120, 120, 128, 0.14); color: var(--blue);
+    cursor: pointer; white-space: nowrap;
+    transition: transform 0.15s ease, background 0.15s ease;
 }
-.balance-receipts-text { font-size: 15px; font-weight: 600; color: var(--blue); }
+.balance-receipts:active { transform: scale(0.96); background: rgba(120, 120, 128, 0.22); }
+.balance-debt .balance-receipts { background: rgba(255, 59, 48, 0.1); }
+.balance-credit .balance-receipts { background: rgba(52, 199, 89, 0.13); }
+.balance-receipts-text { font-size: 14px; font-weight: 600; color: inherit; }
 
 /* ---------- КРУГОВА ДІАГРАМА ВИТРАТ ---------- */
 .donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
@@ -2962,7 +2966,7 @@ select.field-input {
 }
 
 /* ---------- ПАНЕЛЬ ОПЛАТИ ---------- */
-.balance-pay { margin-top: 14px; }
+
 .pay-hint {
     margin: 0 0 14px 0;
     font-size: 13px; color: var(--ink-2); line-height: 1.45;
@@ -3018,39 +3022,7 @@ select.field-input {
 }
 
 
-
-/* Залишок на рахунку ОСББ — угорі блоку витрат */
-.funds-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: baseline;
-    gap: 2px 12px;
-    padding-bottom: 14px;
-    margin-bottom: 16px;
-    border-bottom: 1px solid var(--line);
-}
-.funds-row-label {
-    grid-column: 1;
-    font-size: 10.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.7px;
-    color: var(--ink-2);
-}
-.funds-row-sum {
-    grid-column: 2; grid-row: 1 / 3;
-    align-self: center;
-    font-size: 22px; font-weight: 800;
-    color: #248A3D; letter-spacing: -0.7px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-.funds-row-sum small {
-    font-size: 11px; font-weight: 600;
-    margin-left: 3px; color: var(--ink-2);
-}
-.funds-row-date {
-    grid-column: 1;
-    font-size: 11.5px; color: var(--ink-3);
-}
+/* Поле залишку в адмін-формі лишається — його заповнює бухгалтер */
 .funds-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* ---------- СТАТИСТИКА ВІДКЛЮЧЕНЬ ---------- */
@@ -3606,3 +3578,103 @@ select.field-input {
 .pw-off { background: var(--red); }
 .pw-log-what { flex: 1; color: var(--ink); }
 .pw-log-when { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ------------------------------------------------------------
+   БЮДЖЕТ ОСББ (мешканець)
+   Згорнутий блок показує головне число, розклад — за дотиком:
+   на головному екрані спершу власна квартира, потім будинок.
+   ------------------------------------------------------------ */
+.bud-card { padding: 0; overflow: hidden; }
+.bud-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; width: 100%; padding: 16px 18px;
+    background: none; border: none; text-align: left; cursor: pointer;
+}
+.bud-head { display: flex; flex-direction: column; min-width: 0; }
+.bud-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+    text-transform: uppercase; color: var(--ink-3);
+}
+.bud-sum {
+    font-size: 25px; font-weight: 700; letter-spacing: -0.8px;
+    color: #248A3D; margin-top: 3px;
+}
+.bud-sum small { font-size: 13px; font-weight: 600; margin-left: 4px; color: var(--ink-2); }
+.bud-sum-muted { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px; }
+.bud-when { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; }
+.bud-card .admin-card-body-inner::before { height: 0; }
+/* Відступи — на власній обгортці: padding на .admin-card-body-inner
+   лишається висотою й при нульовому рядку сітки, і згорнутий блок
+   показував би шматок вмісту. */
+.bud-body { padding: 4px 18px 18px; }
+.bud-period {
+    display: block; font-size: 12.5px; color: var(--ink-2); margin-bottom: 12px;
+}
+
+/* Надходження й витрати поруч: одна цифра без другої нічого не каже. */
+.bud-flows { display: flex; gap: 10px; margin-bottom: 16px; }
+.bud-flow {
+    flex: 1; min-width: 0; padding: 10px 12px;
+    border-radius: 12px; background: var(--surface-2);
+    display: flex; flex-direction: column; gap: 2px;
+}
+.bud-flow-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
+    text-transform: uppercase; color: var(--ink-3);
+}
+.bud-flow-sum { font-size: 16px; font-weight: 700; letter-spacing: -0.4px; }
+.bud-flow-in { background: rgba(52, 199, 89, 0.09); }
+.bud-flow-in .bud-flow-sum { color: #1E7A36; }
+.bud-flow-out { background: rgba(255, 149, 0, 0.09); }
+.bud-flow-out .bud-flow-sum { color: #9A5A00; }
+
+.bud-more {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    width: 100%; margin-top: 16px; padding: 12px;
+    border: none; border-radius: 14px;
+    background: rgba(0, 122, 255, 0.09); color: var(--blue);
+    font-size: 14.5px; font-weight: 600; cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+.bud-more:active { transform: scale(0.98); background: rgba(0, 122, 255, 0.16); }
+
+/* ------------------------------------------------------------
+   ФІНАНСИ ОСББ — окремий екран
+   ------------------------------------------------------------ */
+.fin-period {
+    display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+    text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px;
+}
+.fin-rows { display: grid; gap: 10px; }
+.fin-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fin-row-label { font-size: 14px; color: var(--ink-2); min-width: 0; }
+.fin-row-sum { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; white-space: nowrap; }
+.fin-in { color: #248A3D; }
+.fin-out { color: #C2410C; }
+.fin-row-total {
+    padding-top: 10px; margin-top: 2px;
+    border-top: 1px solid var(--hairline, rgba(120, 120, 128, 0.18));
+}
+.fin-row-total .fin-row-label { font-weight: 600; color: var(--ink); }
+.fin-funds {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+    margin-top: 16px; padding-top: 14px;
+    border-top: 1px solid var(--hairline, rgba(120, 120, 128, 0.18));
+}
+.fin-funds-label { font-size: 12.5px; color: var(--ink-2); }
+.fin-funds-sum { font-size: 19px; font-weight: 700; letter-spacing: -0.5px; color: var(--ink); }
+.fin-funds-sum small { font-size: 12px; font-weight: 600; margin-left: 3px; color: var(--ink-2); }
+
+/* Смуги замість другої діаграми: на екрані деталізації важливо
+   порівняти статті між собою, а не побачити ще раз ціле коло. */
+.fin-items { display: grid; gap: 14px; }
+.fin-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.fin-item-name { font-size: 14px; font-weight: 600; color: var(--ink); min-width: 0; }
+.fin-item-sum { font-size: 14px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+.fin-item-bar {
+    height: 7px; border-radius: 4px; margin: 7px 0 5px;
+    background: rgba(120, 120, 128, 0.13); overflow: hidden;
+}
+.fin-item-bar i { display: block; height: 100%; border-radius: 4px; }
+.fin-item-pct { font-size: 11.5px; color: var(--ink-3); }

@@ -256,7 +256,7 @@ export function initSheets() {
 const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
                  'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection', 'chatSection',
-                 'ledgerSection', 'ownersEditSection'];
+                 'ledgerSection', 'ownersEditSection', 'financeSection'];
 
 /**
  * Значок у шапці — сума всіх значків у меню. Так мешканець бачить,

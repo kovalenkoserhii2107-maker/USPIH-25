@@ -57,14 +57,17 @@ export function renderBalance(balance, updatedAt) {
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path><polyline points="12 7 12 12 15 14"></polyline></svg>
             </button>
         </div>
-        <button type="button" class="btn-primary balance-pay" id="payBtn">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
-            ${debt ? 'Сплатити' : 'Реквізити для оплати'}
-        </button>
-        <button type="button" class="balance-receipts" id="openReceiptsBtn">
-            <span class="balance-receipts-text">Квитанції</span>
-            <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </button>
+        <div class="balance-actions">
+            <button type="button" class="btn-primary balance-pay" id="payBtn">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                ${debt ? 'Сплатити' : 'Реквізити'}
+            </button>
+            <button type="button" class="balance-receipts" id="openReceiptsBtn"
+                    aria-label="Квитанції" title="Квитанції">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="15" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
+                <span class="balance-receipts-text">Квитанції</span>
+            </button>
+        </div>
     </div>`;
 }
 
@@ -184,38 +187,155 @@ export function renderDonut(items) {
     </div>`;
 }
 
+/**
+ * Бюджет ОСББ на головному екрані.
+ *
+ * Раніше тут одразу лежала діаграма витрат на півекрана — і це при
+ * тому, що мешканця насамперед цікавить власна квартира. Тепер
+ * згорнутий блок показує головне число (залишок на рахунку), а
+ * розклад витрат відкривається дотиком.
+ */
+export function renderBudget(d) {
+        const chart = renderDonut(d.items);
+        const money = (v) => (v === undefined || v === null || v === '') ? null : parseMoney(v);
+        const funds = money(d.funds);
+        const income = money(d.income);
+        const spent = (d.items || []).reduce((sum, i) => sum + parseMoney(i.amount), 0);
+
+        // Нічого показувати — краще нічого й не малювати, ніж порожня картка
+        if (funds === null && income === null && !chart) return '';
+
+        // Дату вказує бухгалтер: виписку могли внести пізніше, ніж
+        // вона сформована, і «станом на» має бути датою виписки.
+        const asOf = d.fundsDate || (d.updatedAt ? formatDateTime(d.updatedAt) : '');
+
+        const head = funds === null
+            ? `<span class="bud-sum bud-sum-muted">${escapeHtml(d.period || 'Витрати за місяць')}</span>`
+            : `<span class="bud-sum">${formatMoney(funds)}<small>грн</small></span>
+               ${asOf ? `<span class="bud-when">станом на ${escapeHtml(asOf)}</span>` : ''}`;
+
+        // Надходження й витрати поруч: одна цифра без другої нічого не
+        // каже — 17 тисяч витрат це багато чи мало, видно лише поруч
+        // із тим, скільки зібрали.
+        const flows = (income === null && !spent) ? '' : `<div class="bud-flows">
+            ${income === null ? '' : `<div class="bud-flow bud-flow-in">
+                <span class="bud-flow-label">Надходження</span>
+                <span class="bud-flow-sum">${formatMoney(income)}</span>
+            </div>`}
+            ${!spent ? '' : `<div class="bud-flow bud-flow-out">
+                <span class="bud-flow-label">Витрати</span>
+                <span class="bud-flow-sum">${formatMoney(spent)}</span>
+            </div>`}
+        </div>`;
+
+        return `<div class="card admin-fold bud-card">
+            <button class="admin-card-toggle bud-toggle" type="button" aria-expanded="false">
+                <span class="bud-head">
+                    <span class="bud-label">Бюджет ОСББ</span>
+                    ${head}
+                </span>
+                <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="admin-card-body"><div class="admin-card-body-inner"><div class="bud-body">
+                ${d.period ? `<span class="bud-period">${escapeHtml(d.period)}</span>` : ''}
+                ${flows}
+                ${chart}
+                <button type="button" class="bud-more" id="openFinanceBtn">
+                    Докладніше про доходи й витрати
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div></div></div>
+        </div>`;
+}
+
 export async function loadExpenses() {
     const host = document.getElementById('expensesHost');
     if (!host) return;
     try {
         const snap = await getDoc(doc(db, 'finance', 'current'));
-        if (!snap.exists()) { host.innerHTML = ''; return; }
-        const d = snap.data();
-        const chart = renderDonut(d.items);
-        if (!chart) { host.innerHTML = ''; return; }
-        const funds = (d.funds === undefined || d.funds === null || d.funds === '')
-            ? null : parseMoney(d.funds);
-        // Дату вказує бухгалтер: виписку могли внести пізніше, ніж
-        // вона сформована, і «станом на» має бути датою виписки.
-        const asOf = d.fundsDate
-            ? d.fundsDate
-            : (d.updatedAt ? formatDateTime(d.updatedAt) : '');
-
-        host.innerHTML = `<div class="card">
-            ${funds === null ? '' : `<div class="funds-row">
-                <span class="funds-row-label">На рахунку ОСББ</span>
-                <span class="funds-row-sum">${formatMoney(funds)}<small>грн</small></span>
-                ${asOf ? `<span class="funds-row-date">станом на ${escapeHtml(asOf)}</span>` : ''}
-            </div>`}
-            <div class="section-head-text" style="margin-bottom: 16px;">
-                <h2 class="admin-card-title">Витрати за місяць</h2>
-                <span class="admin-card-sub">${escapeHtml(d.period || '')}</span>
-            </div>
-            ${chart}
-        </div>`;
+        host.innerHTML = snap.exists() ? renderBudget(snap.data()) : '';
     } catch (e) {
         console.error('Звіт про витрати:', e);
         host.innerHTML = '';
+    }
+}
+
+// ------------------------------------------------------------
+// ФІНАНСИ ОСББ — окремий екран
+// ------------------------------------------------------------
+export function renderFinanceDetail(d) {
+        const money = (v) => (v === undefined || v === null || v === '') ? null : parseMoney(v);
+        const funds = money(d.funds);
+        const income = money(d.income);
+
+        const items = (d.items || [])
+            .map(i => ({ label: String(i.label || '').trim(), amount: parseMoney(i.amount) }))
+            .filter(i => i.label && i.amount > 0)
+            .sort((a, b) => b.amount - a.amount);
+        const spent = items.reduce((sum, i) => sum + i.amount, 0);
+        const max = items[0]?.amount || 0;
+
+        // Різниця важливіша за обидві суми окремо: вона каже, чи вистачає
+        // внесків на утримання будинку, чи ОСББ проїдає накопичене.
+        const diff = (income === null) ? null : income - spent;
+
+        return `
+            <div class="card fin-summary">
+                <span class="fin-period">${escapeHtml(d.period || 'Поточний період')}</span>
+                <div class="fin-rows">
+                    ${income === null ? '' : `<div class="fin-row">
+                        <span class="fin-row-label">Надходження</span>
+                        <span class="fin-row-sum fin-in">${formatMoney(income)}</span>
+                    </div>`}
+                    <div class="fin-row">
+                        <span class="fin-row-label">Витрати</span>
+                        <span class="fin-row-sum fin-out">${formatMoney(spent)}</span>
+                    </div>
+                    ${diff === null ? '' : `<div class="fin-row fin-row-total">
+                        <span class="fin-row-label">${diff < 0 ? 'Витрачено більше, ніж зібрано' : 'Залишилося з місячних внесків'}</span>
+                        <span class="fin-row-sum ${diff < 0 ? 'fin-out' : 'fin-in'}">${formatMoney(Math.abs(diff))}</span>
+                    </div>`}
+                </div>
+                ${funds === null ? '' : `<div class="fin-funds">
+                    <span class="fin-funds-label">На рахунку ОСББ${
+                        d.fundsDate ? ` · станом на ${escapeHtml(d.fundsDate)}` : ''}</span>
+                    <span class="fin-funds-sum">${formatMoney(funds)}<small>грн</small></span>
+                </div>`}
+            </div>
+
+            <div class="card">
+                <div class="section-head-text" style="margin-bottom: 14px;">
+                    <h2 class="admin-card-title">Статті витрат</h2>
+                    <span class="admin-card-sub">Від найбільшої до найменшої</span>
+                </div>
+                ${items.length ? `<div class="fin-items">${items.map((it, idx) => `
+                    <div class="fin-item">
+                        <div class="fin-item-head">
+                            <span class="fin-item-name">${escapeHtml(it.label)}</span>
+                            <span class="fin-item-sum">${formatMoney(it.amount)}</span>
+                        </div>
+                        <div class="fin-item-bar">
+                            <i style="width:${max ? (it.amount / max * 100).toFixed(1) : 0}%;
+                                      background:${SLICE_COLORS[idx % SLICE_COLORS.length]}"></i>
+                        </div>
+                        <span class="fin-item-pct">${spent ? (it.amount / spent * 100).toFixed(1).replace('.', ',') : 0}% усіх витрат</span>
+                    </div>`).join('')}</div>`
+                : '<p class="list-empty">Статей витрат немає</p>'}
+            </div>`;
+}
+
+export async function loadFinanceDetail() {
+    const host = document.getElementById('financeContainer');
+    if (!host) return;
+    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    try {
+        const snap = await getDoc(doc(db, 'finance', 'current'));
+        host.innerHTML = snap.exists()
+            ? renderFinanceDetail(snap.data())
+            : '<p class="list-empty">Звіт ще не опубліковано</p>';
+    } catch (e) {
+        console.error('Фінанси ОСББ:', e);
+        host.innerHTML = '<p class="list-empty">Не вдалося завантажити звіт</p>';
     }
 }
 
@@ -446,6 +566,7 @@ export async function saveExpenses(btn) {
     const period = document.getElementById('expensePeriod').value.trim();
     const fundsRaw = document.getElementById('expenseFunds').value.trim();
     const fundsDate = document.getElementById('expenseFundsDate').value.trim();
+    const incomeRaw = document.getElementById('expenseIncome').value.trim();
     const items = currentExpenseItems();
     if (!period) return toast('Вкажіть період', 'error');
     if (!items.length) return toast('Додайте хоча б одну статтю витрат', 'error');
@@ -456,6 +577,7 @@ export async function saveExpenses(btn) {
             period, items,
             // Порожнє поле — не нуль: у нуля й «не вказано» різний сенс
             funds: fundsRaw === '' ? null : parseMoney(fundsRaw),
+            income: incomeRaw === '' ? null : parseMoney(incomeRaw),
             fundsDate,
             total: items.reduce((s, i) => s + i.amount, 0),
             updatedAt: serverTimestamp()
@@ -481,6 +603,8 @@ export async function loadAdminExpenses() {
             document.getElementById('expenseFunds').value =
                 (d.funds === undefined || d.funds === null) ? '' : d.funds;
             document.getElementById('expenseFundsDate').value = d.fundsDate || '';
+            document.getElementById('expenseIncome').value =
+                (d.income === undefined || d.income === null) ? '' : d.income;
             (d.items || []).forEach(i => addExpenseRow(i.label, i.amount));
         }
         if (!host.children.length) {

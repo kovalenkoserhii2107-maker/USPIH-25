@@ -32,7 +32,7 @@ import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import {
     initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
-    loadAdminExpenses, loadAdminRequisites
+    loadFinanceDetail, loadAdminExpenses, loadAdminRequisites
 } from './finance.js';
 import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
@@ -138,11 +138,16 @@ async function loadCabinet(apt) {
         await loadUserMessages(apt, session.entrance);
         await Promise.all([loadBalance(apt), loadExpenses()]);
 
-        // Кнопку малює loadBalance, тож слухача вішаємо після нього
+        // Кнопки малюють loadBalance і loadExpenses, тож слухачів вішаємо після них
         document.getElementById('openReceiptsBtn')?.addEventListener('click', () => {
             showScreen('receiptsSection');
             document.getElementById('topNav').style.display = 'none';
             loadReceipts();
+        });
+        document.getElementById('openFinanceBtn')?.addEventListener('click', () => {
+            showScreen('financeSection');
+            document.getElementById('topNav').style.display = 'none';
+            loadFinanceDetail();
         });
         refreshPollsBadge();          // без await: значок не має затримувати кабінет
         refreshRequestsBadge();       // так само — непрочитані відповіді правління
@@ -168,6 +173,7 @@ const SCREEN_RELOADERS = {
     servicesSection: loadServices,
     receiptsSection: loadReceipts,
     ledgerSection: loadLedger,
+    financeSection: loadFinanceDetail,
     faqSection: loadFaq,
     chatSection: loadChat
 };
@@ -303,7 +309,7 @@ function initNavigation() {
         if (session.isAdmin) { showScreen('adminDashboardSection'); return; }
         return loadCabinet(session.apt);
     };
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn', 'backFromLedgerBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn', 'backFromLedgerBtn', 'backFromFinanceBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);

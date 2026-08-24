@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=66">
+    <link rel="stylesheet" href="style.css?v=67">
 </head>
 <body>
 
@@ -929,6 +929,11 @@
                     <span class="field-hint">Дата — з виписки, напр. «20.08.2026». Порожня сума — не показувати блок.</span>
                 </div>
                 <div class="field">
+                    <label class="field-label" for="expenseIncome">Надходження за місяць</label>
+                    <input type="text" id="expenseIncome" class="field-input" inputmode="decimal" placeholder="грн">
+                    <span class="field-hint">Скільки зібрано внесків за період. Порожнє — не показувати.</span>
+                </div>
+                <div class="field">
                     <span class="field-label">Статті витрат</span>
                     <div id="expenseRows" class="expense-rows"></div>
                     <button type="button" id="addExpenseBtn" class="btn-ghost-small poll-add-option">+ Додати статтю</button>
@@ -1121,6 +1126,19 @@
         </div>
     </div>
 
+    <div id="financeSection" style="display: none;">
+        <div class="screen-head compact-head">
+            <button id="backFromFinanceBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+            <span class="head-title">Фінанси ОСББ</span>
+        </div>
+        <div id="financeContainer">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
     <div id="receiptsSection" style="display: none;">
         <div class="screen-head compact-head">
             <button id="backFromReceiptsBtn" class="back-btn" type="button">
@@ -1284,6 +1302,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=66"></script>
+<script type="module" src="js/app.js?v=67"></script>
 </body>
 </html>
