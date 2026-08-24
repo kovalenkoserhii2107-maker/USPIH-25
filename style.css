@@ -3034,8 +3034,17 @@ select.field-input {
 }
 
 /* Чат у панелі правління живе всередині картки, а не на весь екран */
-.chat-body-admin { height: 58vh; }
-.chat-body-admin .chat-compose { padding-bottom: 0; }
+/* Усередині картки правління чат вирівнюється по її полях.
+   .chat-body має margin: 0 -9px — це розраховано на екран мешканця
+   з іншими відступами, і в картці воно вилазило за її межі. Сірий фон
+   смуги вводу на білій картці читався як чужа стрічка. */
+.chat-body-admin { height: 58vh; margin: 0; }
+.chat-body-admin .chat-list { padding-left: 0; padding-right: 0; }
+.chat-body-admin .chat-compose {
+    padding: 10px 0 0 0;
+    background: transparent;
+    border-top: 1px solid var(--line);
+}
 
 /* У серії кути з боку відправника менш округлі — видно, що це одна репліка */
 .chat-grouped .chat-bubble { border-radius: 16px; }

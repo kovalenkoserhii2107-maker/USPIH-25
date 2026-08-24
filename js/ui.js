@@ -219,13 +219,32 @@ export function currentScreen() {
     }) || null;
 }
 
+// Скільки щонайменше видно екран завантаження.
+//
+// У встановленому застосунку сторінка піднімається з кешу, а сесія —
+// з локального сховища, тож кабінет готовий за лічені міліcекунди.
+// iOS у цей час показує власну заставку, і черепаху не встигали
+// побачити взагалі. У браузері вона видно, бо там усе повільніше.
+const LOADER_MIN_MS = 700;
+const appStarted = Date.now();
+let loaderHidden = false;
+
+function hideLoader() {
+    if (loaderHidden) return;
+    loaderHidden = true;
+    const loader = document.getElementById('appLoader');
+    if (!loader) return;
+    const left = LOADER_MIN_MS - (Date.now() - appStarted);
+    if (left > 0) setTimeout(() => { loader.style.display = 'none'; }, left);
+    else loader.style.display = 'none';
+}
+
 export function showScreen(id) {
     SCREENS.forEach(s => {
         const el = document.getElementById(s);
         if (el) el.style.display = (s === id) ? 'block' : 'none';
     });
-    const loader = document.getElementById('appLoader');
-    if (loader) loader.style.display = 'none';
+    hideLoader();
     window.scrollTo({ top: 0 });
 }
 

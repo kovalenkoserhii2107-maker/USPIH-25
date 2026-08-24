@@ -306,6 +306,16 @@ function initAdminTabs() {
             });
             const tabs = document.getElementById('adminTabs');
             window.scrollTo({ top: Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
+
+            // Поки панель прихована, у стрічки нульова висота, тож
+            // прокрутка «донизу» під час надходження повідомлень
+            // нічого не давала. Доганяємо, коли вкладку відкрито.
+            if (tab.dataset.tab === 'chat') {
+                requestAnimationFrame(() => {
+                    const list = document.getElementById('adminChatList');
+                    if (list) list.scrollTop = list.scrollHeight;
+                });
+            }
         });
     });
     document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminHistory);

@@ -491,8 +491,14 @@ const CTX_ADMIN = {
     list: 'adminChatList', input: 'adminChatInput', context: 'adminChatComposeCtx',
     files: 'adminChatFiles', preview: 'adminChatFilesPreview'
 };
-const activeCtx = () =>
-    (document.getElementById('adminChatList')?.offsetParent ? CTX_ADMIN : CTX_CHAT);
+// Роль, а не видимість.
+//
+// Раніше контекст обирався за offsetParent панелі правління. Але
+// loadChat() викликається при вході в кабінет, коли активна вкладка —
+// «Оголошення», отже панель чату прихована й offsetParent дорівнює
+// null. Через це повідомлення правління малювалися у прихований
+// екран мешканця, а його власна панель лишалася порожньою.
+const activeCtx = () => (session.isAdmin ? CTX_ADMIN : CTX_CHAT);
 const ctxComments = (msgId) => ({
     key: 'comments', path: ['messages', msgId, 'comments'],
     input: 'commentInput', context: 'commentComposeCtx',
