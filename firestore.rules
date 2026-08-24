@@ -48,6 +48,13 @@ service cloud.firestore {
         allow read: if isSignedIn() && (apt == myApt() || isAdmin());
         allow write: if isAdmin();
       }
+
+      // Історія нарахувань і оплат — те саме право, що й у квитанцій:
+      // мешканець читає лише свою, вносить її правління вивантаженням.
+      match /ledger/{entryId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow write: if isAdmin();
+      }
     }
 
     // Правління читає всіх співвласників одним collectionGroup-запитом

@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=43">
+    <link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
 
@@ -813,6 +813,38 @@
             <div class="card admin-fold">
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Історія нарахувань і оплат</h2>
+                    <span class="admin-card-sub">Вивантаження з бухгалтерії: мешканець бачить, звідки взявся його борг</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <span class="field-label">Файл із бухгалтерії</span>
+                    <label class="dropzone" for="ledgerCsvFile">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span class="dropzone-text">Обрати CSV</span>
+                        <span class="dropzone-hint">Квартира; дата; тип; сума; примітка</span>
+                    </label>
+                    <input type="file" id="ledgerCsvFile" accept=".csv,.txt,text/csv,text/plain" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="ledgerBulk">Або вставте рядки</label>
+                    <textarea id="ledgerBulk" class="field-input" rows="6"
+                              placeholder="298;01.08.2026;Нарахування;1250,40;Внески на утримання&#10;298;05.08.2026;Оплата;1250,40;Приват24"></textarea>
+                    <span class="field-hint">Роздільник колонок — <b>крапка з комою</b> або табуляція. Кома в сумі означає копійки. Тип: «нарахування» або «оплата». Заголовок таблиці можна лишити.</span>
+                </div>
+
+                <div id="ledgerPreview"></div>
+                <button type="button" id="applyLedgerBtn" class="btn-primary">Внести в базу</button>
+                </div></div>
+            </div>
+
+            <div class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Квитанції</h2>
                     <span class="admin-card-sub">Номер квартири визначається з назви файлу — перевірте перед надсиланням</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1264,6 +1296,19 @@
     </div>
 
     <!-- ============ КВИТАНЦІЇ ============ -->
+    <div id="ledgerSection" style="display: none;">
+        <div class="screen-head compact-head">
+            <button id="backFromLedgerBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+            <span class="head-title">Нарахування й оплати</span>
+        </div>
+        <div id="ledgerContainer">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+
     <div id="receiptsSection" style="display: none;">
         <div class="screen-head compact-head">
             <button id="backFromReceiptsBtn" class="back-btn" type="button">
@@ -1427,6 +1472,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=43"></script>
+<script type="module" src="js/app.js?v=44"></script>
 </body>
 </html>

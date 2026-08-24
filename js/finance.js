@@ -21,7 +21,7 @@ import { fetchDirectory } from './directory.js';
 
 /** Номери реальних квартир — щоб не створити фіктивну через друкарську помилку. */
 let knownApts = null;
-async function loadKnownApts() {
+export async function loadKnownApts() {
     if (knownApts) return knownApts;
     try {
         knownApts = new Set((await fetchDirectory()).map(a => String(a.apt)));
@@ -67,6 +67,10 @@ export function renderBalance(balance, updatedAt) {
         </button>
         <button type="button" class="balance-receipts" id="openReceiptsBtn">
             <span class="balance-receipts-text">Квитанції</span>
+            <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+        <button type="button" class="balance-receipts" id="openLedgerBtn">
+            <span class="balance-receipts-text">Історія нарахувань і оплат</span>
             <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>
     </div>`;

@@ -38,6 +38,7 @@ import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
+import { initLedger, loadLedger } from './ledger.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
 
@@ -160,6 +161,7 @@ const SCREEN_RELOADERS = {
     boardSection: loadBoardContacts,
     servicesSection: loadServices,
     receiptsSection: loadReceipts,
+    ledgerSection: loadLedger,
     faqSection: loadFaq,
     chatSection: loadChat
 };
@@ -295,7 +297,7 @@ function initNavigation() {
         if (session.isAdmin) { showScreen('adminDashboardSection'); return; }
         return loadCabinet(session.apt);
     };
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn', 'backFromLedgerBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
@@ -381,6 +383,7 @@ function init() {
     }
     initAdminTabs();
     initAdminFolds();
+    initLedger();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
     document.getElementById('passInput').addEventListener('keydown', (e) => {
