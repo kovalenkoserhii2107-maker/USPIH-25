@@ -2699,8 +2699,9 @@ select.field-input {
 }
 
 /* ---------- Плитки: що потребує уваги ---------- */
-/* Дві на два, а не три в ряд: плиток чотири, і четверта лишалася б
-   сама в другому рядку. Заразом підписи перестали тиснутися. */
+/* Значок і число в одному рядку. Окремим рядком значок з'їдав висоту
+   й лишав порожнечу посередині плитки — а всієї інформації тут на
+   три короткі рядки. */
 .dash-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -2710,12 +2711,11 @@ select.field-input {
 .dash-tile {
     display: flex; flex-direction: column;
     align-items: stretch; justify-content: flex-start;
-    gap: 1px;
     background: var(--surface);
     border: 0.5px solid rgba(0, 0, 0, 0.05);
     border-radius: var(--r-md);
     box-shadow: var(--sh-card);
-    padding: 12px;
+    padding: 11px 12px 12px;
     cursor: pointer;
     text-align: left;
     font-family: var(--font);
@@ -2723,13 +2723,10 @@ select.field-input {
     min-width: 0;
 }
 .dash-tile:active { transform: scale(0.97); }
-.dash-tile-top {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; margin-bottom: 8px;
-}
+.dash-tile-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .dash-icon {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; border-radius: 9px;
+    width: 26px; height: 26px; border-radius: 8px;
     background: rgba(120, 120, 128, 0.14); color: var(--ink-2);
     flex-shrink: 0;
 }
@@ -2738,16 +2735,17 @@ select.field-input {
 .dash-go { color: var(--ink-4, #C7C7CC); flex-shrink: 0; }
 
 .dash-value {
-    font-size: 26px; font-weight: 800;
-    letter-spacing: -1px; line-height: 1.1;
+    flex: 1; min-width: 0;
+    font-size: 22px; font-weight: 800;
+    letter-spacing: -0.8px; line-height: 1.1;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.dash-value small { font-size: 11px; font-weight: 600; margin-left: 3px; color: var(--ink-2); letter-spacing: 0; }
 .dash-label {
-    font-size: 11.5px; font-weight: 600;
-    color: var(--ink); line-height: 1.25; margin-top: 1px;
+    font-size: 12px; font-weight: 600;
+    color: var(--ink); line-height: 1.25; margin-top: 7px;
 }
-.dash-hint { font-size: 10.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.2; }
+.dash-hint { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; line-height: 1.2; }
 
 .dash-neutral .dash-value { color: var(--ink); }
 .dash-ok .dash-value { color: var(--green); }

@@ -68,11 +68,24 @@ const ICONS = {
     debt: '<rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line>'
 };
 
-/** Мільйонні суми в плитку не влазять — там точність до гривні й не потрібна. */
+/**
+ * Сума для плитки.
+ *
+ * У рядку зі значком і стрілкою на число лишається ~90px — туди не
+ * влазить навіть «12 400 грн». Тому гривні переїхали в підпис плитки,
+ * а великі суми стискаються: на дашборді потрібен порядок величини,
+ * точна цифра — за один дотик у «Фінансах».
+ */
 function compactMoney(v) {
     const n = Math.round(v);
-    if (n >= 1000000) return `${(n / 1000000).toFixed(2).replace('.', ',')} млн`;
-    return num(n);
+    if (n < 100000) return num(n);
+    // Поріг перевіряємо ПІСЛЯ округлення до тисяч: 999 999 інакше давало
+    // «1000 тис» — формально вірно, читається як помилка.
+    const k = Math.round(n / 1000);
+    if (k < 1000) return `${num(k)} тис`;
+    const m = n / 1000000;
+    // Від десяти мільйонів десята частка вже не влазить і нічого не додає
+    return m >= 10 ? `${Math.round(m)} млн` : `${m.toFixed(1).replace('.', ',')} млн`;
 }
 
 /**
@@ -124,11 +137,11 @@ const tile = ({ id, label, value, hint, tone, tab, target, icon }) => `
             data-tab="${tab}"${target ? ` data-target="${target}"` : ''}>
         <span class="dash-tile-top">
             <span class="dash-icon">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon] || ''}</svg>
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon] || ''}</svg>
             </span>
+            <span class="dash-value">${value}</span>
             ${CHEVRON}
         </span>
-        <span class="dash-value">${value}</span>
         <span class="dash-label">${escapeHtml(label)}</span>
         ${hint ? `<span class="dash-hint">${escapeHtml(hint)}</span>` : ''}
     </button>`;
@@ -181,7 +194,7 @@ export async function loadDashboard() {
                          hint: pollCount ? 'Триває' : 'Немає активних',
                          tone: pollCount ? 'info' : 'neutral', tab: 'polls',
                          target: '.poll-card-admin' })}
-                ${tile({ icon: 'debt', id: 'dashDebt', label: 'Заборгованість', value: `${compactMoney(debtSum)}<small>грн</small>`,
+                ${tile({ icon: 'debt', id: 'dashDebt', label: 'Заборгованість, грн', value: compactMoney(debtSum),
                          hint: debtors.length
                              ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')} у мінусі`
                              : 'Боргів немає',
