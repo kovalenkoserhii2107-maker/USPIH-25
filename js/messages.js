@@ -171,14 +171,24 @@ export async function loadUserMessages(apt, entrance) {
             // голосувань, документи й звичайні оголошення — різні за
             // суттю речі, і однаковий вигляд змушував читати все.
             const isPoll = /^Результати голосування/i.test(msg.title || '');
-            const kind = isPoll ? 'poll' : (msg.linkedDoc ? 'doc' : 'news');
+            // Якщо тип записаний у документі — віримо йому; здогад за назвою
+            // лишається для старих повідомлень, надісланих до цього поля.
+            const guessed = isPoll ? 'poll' : (msg.linkedDoc ? 'doc' : 'news');
+            const kind = ['poll', 'doc', 'news', 'owners', 'ownersFix'].includes(msg.kind) ? msg.kind : guessed;
             const KIND = {
                 poll: { label: 'Підсумки голосування',
                         icon: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>' },
                 doc:  { label: 'Документ ОСББ',
                         icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline>' },
                 news: { label: 'Оголошення',
-                        icon: '<path d="M3 11l18-5v12L3 13v-2z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path>' }
+                        icon: '<path d="M3 11l18-5v12L3 13v-2z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path>' },
+                owners: { label: 'Звірка співвласників',
+                        icon: '<path d="M9 12l2 2 4-4"></path><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"></path>' },
+                // Відмова має власний вигляд: зелена галочка над словом
+                // «не прийнято» читається як успіх ще до того, як текст
+                // устигнуть прочитати.
+                ownersFix: { label: 'Потрібно виправити',
+                        icon: '<circle cx="12" cy="12" r="9"></circle><line x1="12" y1="7.5" x2="12" y2="13"></line><line x1="12" y1="16.5" x2="12" y2="16.5"></line>' }
             }[kind];
 
             // У підсумках голосування назва вже містить тип — не дублюємо
@@ -257,6 +267,35 @@ async function markAllRead(apt) {
         document.querySelectorAll('.msg-row.msg-unread').forEach(r => r.classList.remove('msg-unread'));
     } catch (e) {
         console.error('Відмітка прочитання:', e);
+    }
+}
+
+/**
+ * Службове сповіщення одній квартирі — у дзвіночок.
+ *
+ * Рішення правління щодо співвласників мешканець має побачити там,
+ * де він звик шукати новини, а не смугою під списком: смуга або
+ * висить вічно, або зникає непоміченою. Тут вона стає звичайним
+ * повідомленням — з міткою «непрочитане», датою і повним текстом.
+ *
+ * Пише лише правління: створення в messages дозволене адміністратору.
+ * Помилка тут не має зривати саму дію — рішення вже в базі, тож
+ * ловимо її на місці й лише пишемо в журнал.
+ */
+export async function notifyApartment({ apt, title, body, kind = 'owners' }) {
+    try {
+        await addDoc(collection(db, 'messages'), {
+            title, body, kind,
+            targetType: 'apartment', targetValue: String(apt),
+            recipients: [`apt:${apt}`],
+            attachments: [], linkedDoc: null,
+            createdAt: serverTimestamp(),
+            readBy: {}
+        });
+        return true;
+    } catch (e) {
+        console.error('Сповіщення квартири:', e);
+        return false;
     }
 }
 

@@ -921,6 +921,8 @@ select.field-input {
 .msg-news .msg-icon { background: linear-gradient(135deg, #FFB157, var(--orange)); }
 .msg-poll .msg-icon { background: linear-gradient(135deg, #7D8BFF, #4B5CD6); }
 .msg-doc .msg-icon { background: linear-gradient(135deg, #4FA3FF, var(--blue)); }
+.msg-owners .msg-icon { background: linear-gradient(135deg, #5FD37E, #2FA34F); }
+.msg-ownersFix .msg-icon { background: linear-gradient(135deg, #FF7A6E, #E03B2C); }
 
 .msg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .msg-kind {
@@ -1274,8 +1276,6 @@ select.field-input {
 /* Прохання — помітне, але не тривожне: це звичайна дія, а не проблема. */
 .own-status-ask { background: rgba(0, 122, 255, 0.07); border-color: rgba(0, 122, 255, 0.16); }
 .own-status-edit { background: rgba(255, 149, 0, 0.09); border-color: rgba(255, 149, 0, 0.22); }
-.own-status-ok { background: rgba(52, 199, 89, 0.09); border-color: rgba(52, 199, 89, 0.2); }
-.own-status-ok .own-status-text { color: #1E7A36; }
 .own-status-reject { background: rgba(255, 59, 48, 0.08); border-color: rgba(255, 59, 48, 0.22); }
 .own-status-reject .own-status-title { color: #A3382F; }
 .own-status-next { margin-top: 8px; }

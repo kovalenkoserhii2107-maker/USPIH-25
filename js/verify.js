@@ -14,7 +14,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, promptDialog, normName } from './ui.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
-import { prefillAnnouncement } from './messages.js';
+import { prefillAnnouncement, notifyApartment } from './messages.js';
 
 const aptOf = (ref) => ref.path.split('/')[1];
 
@@ -185,6 +185,14 @@ async function approve(apt, id, btn) {
         }, { merge: true });
         await batch.commit();
 
+        await notifyApartment({
+            apt,
+            title: 'Зміни у списку співвласників прийнято',
+            body: 'Правління звірило надіслані вами зміни з документами і прийняло їх.\n\n'
+                + 'Список співвласників вашої квартири оновлено. Тепер він вважається '
+                + 'звіреним — ваш голос на зборах ОСББ рахуватиметься за ним.'
+        });
+
         invalidateDirectory();
         toast(`Кв. ${apt}: зміни застосовано`, 'success');
         await loadVerifyQueue();
@@ -212,6 +220,16 @@ async function reject(apt, id) {
             ownersStatus: 'pending',
             ownersDecision: { status: 'rejected', note, at: Date.now() }
         });
+        await notifyApartment({
+            apt,
+            kind: 'ownersFix',
+            title: 'Зміни у списку співвласників не прийнято',
+            body: `Правління переглянуло надіслані вами зміни і не змогло їх прийняти.\n\n`
+                + `Причина: ${note}\n\n`
+                + 'Список залишився без змін. Відкрийте розділ «Співвласники», виправте дані '
+                + 'й надішліть ще раз — або підтвердіть список, якщо він усе-таки вірний.'
+        });
+
         toast(`Кв. ${apt}: заявку відхилено`, 'success');
         await loadVerifyQueue();
     } catch (e) {
@@ -241,6 +259,16 @@ export async function confirmByBoard(apt) {
             ownersConfirmedBy: 'board',
             ownersConfirmNote: note
         });
+        // Запис змінили без участі мешканця — він має про це дізнатися.
+        await notifyApartment({
+            apt,
+            title: 'Список співвласників підтверджено правлінням',
+            body: `Правління підтвердило список співвласників вашої квартири від вашого імені.\n\n`
+                + `Підстава: ${note}\n\n`
+                + 'Якщо в списку щось не так — відкрийте розділ «Співвласники», '
+                + 'виправте дані й надішліть на перевірку.'
+        });
+
         invalidateDirectory();
         toast(`Кв. ${apt}: список підтверджено`, 'success');
         return true;
@@ -279,7 +307,15 @@ async function saveOwnersAsBoard(btn) {
     const own = await import('./owners.js');
     setBusy(btn, true, 'Зберігаємо…');
     try {
-        await own.saveOwnersDirect();
+        const apt = await own.saveOwnersDirect();
+        if (apt) await notifyApartment({
+            apt,
+            title: 'Правління оновило список співвласників',
+            body: 'Правління внесло зміни до списку співвласників вашої квартири '
+                + 'і позначило його як звірений.\n\n'
+                + 'Перегляньте розділ «Співвласники». Якщо щось не так — виправте дані '
+                + 'й надішліть на перевірку.'
+        });
         invalidateDirectory();
         toast('Список збережено й позначено як звірений', 'success');
         await closeOwnersEditor();

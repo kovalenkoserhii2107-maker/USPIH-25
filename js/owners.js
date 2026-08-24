@@ -592,6 +592,7 @@ export async function saveOwnersDirect() {
         ownersConfirmedBy: 'board'
     }, { merge: true });
     await batch.commit();
+    return apt;
 }
 
 /**
@@ -826,20 +827,6 @@ async function sendChanges(btn) {
     }
 }
 
-// Рішення правління мешканець має побачити один раз. Далі це вже не
-// новина, а стан — і його місце в заголовку розділу, а не смугою на
-// півекрана під списком.
-const SEEN_KEY = 'uspih.seenOwnersDecision';
-let shownDecision = 0;   // показане в цьому сеансі лишається на екрані
-const decisionSeen = (at) => {
-    if (shownDecision === Number(at)) return false;
-    try { return Number(localStorage.getItem(SEEN_KEY) || 0) >= Number(at || 0); } catch { return false; }
-};
-const markDecisionSeen = (at) => {
-    shownDecision = Number(at) || 0;
-    try { localStorage.setItem(SEEN_KEY, String(at || 0)); } catch { /* приватний режим */ }
-};
-
 /** Стан звірки — коротко, біля заголовка розділу. */
 function renderStatusChip(st) {
     const chip = document.getElementById('ownersStatusChip');
@@ -895,17 +882,9 @@ export function renderOwnersStatus() {
            </div>`
         : '';
 
-    if (st === 'review' || st === 'confirmed') {
-        // Прийняття — новина: показуємо один раз і більше не повторюємо.
-        const fresh = st === 'confirmed' && d?.status === 'approved' && !decisionSeen(d.at);
-        host.innerHTML = fresh
-            ? `<div class="own-status own-status-ok">
-                   <p class="own-status-text">Правління прийняло ваші зміни. Список оновлено й звірено.</p>
-               </div>`
-            : '';
-        if (fresh) markDecisionSeen(d.at);
-        return;
-    }
+    // Тут нічого не потрібно від мешканця: стан несе значок у заголовку,
+    // а про саме рішення правління приходить сповіщення в дзвіночок.
+    if (st === 'review' || st === 'confirmed') { host.innerHTML = ''; return; }
 
     // Одразу кажемо, чого бракує, — щоб людина не тицяла кнопку
     // й не отримувала відмову.
