@@ -48,6 +48,9 @@
 
 * { -webkit-tap-highlight-color: transparent; }
 
+/* Щоб щілина над зсунутим вмістом мала колір тла, а не білий. */
+html { background: var(--bg); }
+
 body {
     font-family: var(--font);
     background: var(--bg);
@@ -1866,9 +1869,13 @@ select.field-input {
 /* ---------- ПОТЯГНУТИ, ЩОБ ОНОВИТИ ---------- */
 /* z-index нижчий за підкладку панелей (200): індикатор не має
    зʼявлятися поверх відкритого меню. */
+/* Стоїть вище краю вмісту й ховається за ним. Коли body зсувається
+   вниз, кружечок виїжджає у щілину, що відкривається, — як у рідних
+   застосунках. position: fixed усередині body з transform поводиться
+   як absolute відносно body, тож індикатор їде разом із вмістом. */
 .ptr-indicator {
     position: fixed;
-    top: calc(env(safe-area-inset-top) + 6px);
+    top: calc(env(safe-area-inset-top) - 44px);
     left: 50%;
     transform: translate(-50%, 0);
     z-index: 150;
