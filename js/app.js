@@ -117,9 +117,9 @@ async function loadCabinet(apt) {
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadAdminExpenses(), loadAdminRequisites(),
                            loadDirectory()]);
-        loadChat();                   // чат правління в його панелі
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
+        refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
         backfillRecipients(); // тиха міграція старих повідомлень
     } else {
         showScreen('dataSection');
@@ -287,7 +287,14 @@ function initNavigation() {
         location.reload();
     });
 
-    const back = () => { stopChat(); return loadCabinet(session.apt); };
+    const back = () => {
+        stopChat();
+        // Правлінню нема куди «повертатися в кабінет» — його місце
+        // панель керування. Повний loadCabinet тут був би зайвим:
+        // це девʼять запитів заради екрана, який нікуди не подівся.
+        if (session.isAdmin) { showScreen('adminDashboardSection'); return; }
+        return loadCabinet(session.apt);
+    };
     ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
@@ -300,6 +307,14 @@ function initNavigation() {
 function initAdminTabs() {
     document.querySelectorAll('.admin-tab').forEach(tab => {
         tab.addEventListener('click', () => {
+            // Чат — окремий екран, а не картка в панелі: у картці
+            // повідомлення тіснилися, а прокрутка всередині прокрутки
+            // збивала сторінку вище й нижче потрібного.
+            if (tab.dataset.tab === 'chat') {
+                showScreen('chatSection');
+                loadChat();
+                return;
+            }
             document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t === tab));
             document.querySelectorAll('.admin-panel').forEach(p => {
                 p.classList.toggle('active', p.dataset.panel === tab.dataset.tab);
@@ -307,15 +322,6 @@ function initAdminTabs() {
             const tabs = document.getElementById('adminTabs');
             window.scrollTo({ top: Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
 
-            // Поки панель прихована, у стрічки нульова висота, тож
-            // прокрутка «донизу» під час надходження повідомлень
-            // нічого не давала. Доганяємо, коли вкладку відкрито.
-            if (tab.dataset.tab === 'chat') {
-                requestAnimationFrame(() => {
-                    const list = document.getElementById('adminChatList');
-                    if (list) list.scrollTop = list.scrollHeight;
-                });
-            }
         });
     });
     document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminHistory);

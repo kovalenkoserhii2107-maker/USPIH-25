@@ -154,11 +154,13 @@ export async function refreshChatBadge() {
             return t > seen;
         }).length;
         setBadge('chatMenuBadge', unread);
+        setBadge('adminChatBadge', unread);   // чат правління тепер за вкладкою
         const { updateNavBadge } = await import('./ui.js');
         updateNavBadge();
     } catch (e) {
         console.warn('Лічильник чату:', e);
         setBadge('chatMenuBadge', 0);
+        setBadge('adminChatBadge', 0);
     }
 }
 
@@ -484,21 +486,11 @@ const CTX_CHAT = {
     list: 'chatList', input: 'chatInput', context: 'chatComposeCtx',
     files: 'chatFiles', preview: 'chatFilesPreview'
 };
-// Правління користується тим самим чатом, але зі своєї панелі, тож
-// елементи інші. Логіка спільна — дублювати її не було б за що.
-const CTX_ADMIN = {
-    key: 'chat', path: ['chat'],
-    list: 'adminChatList', input: 'adminChatInput', context: 'adminChatComposeCtx',
-    files: 'adminChatFiles', preview: 'adminChatFilesPreview'
-};
-// Роль, а не видимість.
-//
-// Раніше контекст обирався за offsetParent панелі правління. Але
-// loadChat() викликається при вході в кабінет, коли активна вкладка —
-// «Оголошення», отже панель чату прихована й offsetParent дорівнює
-// null. Через це повідомлення правління малювалися у прихований
-// екран мешканця, а його власна панель лишалася порожньою.
-const activeCtx = () => (session.isAdmin ? CTX_ADMIN : CTX_CHAT);
+// Чат один на всіх — і мешканці, і правління користуються тим самим
+// повноекранним чатом. Друга копія в панелі правління тіснила
+// повідомлення й давала прокрутку всередині прокрутки.
+// Підпис «Правління ОСББ» береться з сесії, а не з місця вводу.
+const activeCtx = () => CTX_CHAT;
 const ctxComments = (msgId) => ({
     key: 'comments', path: ['messages', msgId, 'comments'],
     input: 'commentInput', context: 'commentComposeCtx',
@@ -533,6 +525,7 @@ export function loadChat() {
                 : 0;
             markSeen(newest || Date.now());
             setBadge('chatMenuBadge', 0);
+            setBadge('adminChatBadge', 0);
             import('./ui.js').then(m => m.updateNavBadge());
 
             // Прокручуємо вниз лише якщо мешканець і так був унизу:
@@ -715,14 +708,14 @@ export function initChat() {
     }
     window.addEventListener('resize', syncChatHeight);
 
-    ['chatSendBtn', 'adminChatSendBtn'].forEach(id => {
+    ['chatSendBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', function () { sendChat(this); });
     });
     document.getElementById('commentSendBtn')?.addEventListener('click', function () { sendComment(this); });
 
-    ['chatInput', 'adminChatInput', 'commentInput'].forEach(id => autoGrow(document.getElementById(id)));
+    ['chatInput', 'commentInput'].forEach(id => autoGrow(document.getElementById(id)));
 
-    ['chatFiles', 'adminChatFiles'].forEach(id => {
+    ['chatFiles'].forEach(id => {
         const files = document.getElementById(id);
         files?.addEventListener('change', () => {
             pendingFiles.push(...Array.from(files.files));
