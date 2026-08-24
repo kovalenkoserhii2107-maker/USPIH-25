@@ -209,9 +209,14 @@ export function renderBudget(d) {
         // вона сформована, і «станом на» має бути датою виписки.
         const asOf = d.fundsDate || (d.updatedAt ? formatDateTime(d.updatedAt) : '');
 
+        // Заголовок називає те, що під ним. Коли залишку немає, називати
+        // блок «залишком на рахунку» було б неправдою — тоді це просто
+        // фінанси за період.
         const head = funds === null
-            ? `<span class="bud-sum bud-sum-muted">${escapeHtml(d.period || 'Витрати за місяць')}</span>`
-            : `<span class="bud-sum">${formatMoney(funds)}<small>грн</small></span>
+            ? `<span class="bud-label">Фінанси ОСББ</span>
+               <span class="bud-sum bud-sum-muted">${escapeHtml(d.period || 'Витрати за місяць')}</span>`
+            : `<span class="bud-label">Залишок на рахунку ОСББ</span>
+               <span class="bud-sum">${formatMoney(funds)}<small>грн</small></span>
                ${asOf ? `<span class="bud-when">станом на ${escapeHtml(asOf)}</span>` : ''}`;
 
         // Надходження й витрати поруч: одна цифра без другої нічого не
@@ -230,10 +235,7 @@ export function renderBudget(d) {
 
         return `<div class="card admin-fold bud-card">
             <button class="admin-card-toggle bud-toggle" type="button" aria-expanded="false">
-                <span class="bud-head">
-                    <span class="bud-label">Бюджет ОСББ</span>
-                    ${head}
-                </span>
+                <span class="bud-head">${head}</span>
                 <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
             <div class="admin-card-body"><div class="admin-card-body-inner"><div class="bud-body">

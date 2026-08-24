@@ -688,7 +688,32 @@ select.field-input {
 .power-toggle-switch input:disabled + .power-toggle-slider { opacity: 0.6; }
 
 /* ---------- СПІВВЛАСНИКИ ---------- */
-.owners-container { display: flex; flex-direction: column; gap: var(--gap); }
+/* Співвласники живуть в одному блоці: картка квартири містить своїх
+   власників, а не розсипає їх окремими картками по всьому екрану.
+   Тому всередині вони на приглушеному тлі й без власної тіні —
+   інакше вийшла б картка в картці. */
+.owners-block {
+    background: var(--surface);
+    border-radius: var(--r-lg);
+    /* Бічні відступи менші за звичайні: блок і картка всередині дають
+       подвійний відступ, і на 375px від імені лишалася половина рядка. */
+    padding: 2px 8px 10px;
+    box-shadow: var(--sh-card);
+    border: 0.5px solid rgba(0, 0, 0, 0.04);
+    margin-top: var(--gap);
+}
+.owners-block .section-head { margin: 14px 10px 12px; }
+
+.owners-container { display: flex; flex-direction: column; gap: 10px; }
+.owners-block .owner-card {
+    background: var(--surface-2);
+    box-shadow: none;
+    border: 0.5px solid rgba(0, 0, 0, 0.05);
+    padding: 15px;
+}
+/* Панель частки всередині картки була того ж кольору, що й сама
+   картка на новому тлі, — тож інвертуємо: сіра картка, біла панель. */
+.owners-block .share-panel { background: var(--surface); }
 .owner-card {
     background: var(--surface);
     border-radius: var(--r-lg);
