@@ -31,16 +31,46 @@ service cloud.firestore {
     // Мешканець бачить і редагує ТІЛЬКИ свою квартиру.
     match /apartments/{apt} {
       allow read: if isSignedIn() && (apt == myApt() || isAdmin());
-      // Мешканець не може сам призначити себе адміном
+
+      // Мешканець змінює у своїй квартирі рівно те, що є його власною
+      // дією: пароль змінено, список власників підтверджено, тур пройдено.
+      //
+      // Раніше тут дозволялося все, крім isAdmin. Тобто мешканець міг
+      // виправити собі площу — а вона входить у кворум за площею — або
+      // обнулити власний борг. Ці поля веде бухгалтерія, не мешканець.
       allow update: if isSignedIn() && apt == myApt()
-                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin']);
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['passwordChanged', 'ownersStatus', 'ownersConfirmedAt',
+                       'ownersConfirmedBy', 'tutorialAt'])
+        // «Підтвердило правління» мешканець про себе написати не може
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersConfirmedBy'])
+            || request.resource.data.ownersConfirmedBy == 'apt')
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersStatus'])
+            || request.resource.data.ownersStatus in ['confirmed', 'review']);
+
       allow create: if isSignedIn() && apt == myApt()
                     && request.resource.data.isAdmin == false;
       allow write: if isAdmin();
 
-      // Співвласники — тільки власник квартири або адмін
+      // Список співвласників мешканець тільки читає.
+      //
+      // Досі він міг його й писати — тобто дописати собі співвласника,
+      // а отже й голос: кворум рахує унікальних власників. Тепер будь-яка
+      // правка йде заявкою в owner_changes, і її розглядає правління.
       match /owners/{ownerId} {
-        allow read, write: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      // Заявка на зміну списку власників.
+      match /owner_changes/{changeId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow create: if isSignedIn() && apt == myApt()
+                      && request.resource.data.status == 'pending'
+                      && request.resource.data.reason is string
+                      && request.resource.data.reason.size() <= 1000;
+        // Рішення за заявкою ухвалює лише правління
+        allow update, delete: if isAdmin();
       }
 
       // Квитанції: мешканець бачить лише свої, виставляє їх бухгалтер
@@ -55,6 +85,11 @@ service cloud.firestore {
         allow read: if isSignedIn() && (apt == myApt() || isAdmin());
         allow write: if isAdmin();
       }
+    }
+
+    // Черга заявок на зміну списків власників — теж одним запитом.
+    match /{path=**}/owner_changes/{changeId} {
+      allow read: if isAdmin();
     }
 
     // Правління читає всіх співвласників одним collectionGroup-запитом

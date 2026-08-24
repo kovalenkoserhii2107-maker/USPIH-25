@@ -116,6 +116,39 @@ export function confirmDialog(title, message, confirmLabel = 'Видалити')
     });
 }
 
+/**
+ * Те саме, але з полем для тексту. Повертає введене або null.
+ * Порожній текст не приймаємо: причина — сенс усієї заявки.
+ */
+export function promptDialog(title, message, { placeholder = '', confirmLabel = 'Надіслати', maxLength = 500 } = {}) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        overlay.innerHTML = `
+            <div class="confirm-box">
+                <h3 class="confirm-title">${escapeHtml(title)}</h3>
+                <p class="confirm-text">${escapeHtml(message)}</p>
+                <textarea class="field-input prompt-input" rows="3"
+                          maxlength="${maxLength}" placeholder="${escapeHtml(placeholder)}"></textarea>
+                <div class="confirm-actions">
+                    <button class="btn-soft confirm-cancel">Скасувати</button>
+                    <button class="btn-soft btn-soft-primary confirm-ok">${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const input = overlay.querySelector('.prompt-input');
+        const done = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('.confirm-ok').addEventListener('click', () => {
+            const text = input.value.trim();
+            if (!text) { input.focus(); return; }
+            done(text);
+        });
+        overlay.querySelector('.confirm-cancel').addEventListener('click', () => done(null));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) done(null); });
+        setTimeout(() => input.focus(), 50);
+    });
+}
+
 // ------------------------------------------------------------
 // ВИСУВНІ ПАНЕЛІ (bottom sheets)
 // Стан тримаємо в класі .is-open, а не в inline-стилях —

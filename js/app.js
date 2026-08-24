@@ -94,6 +94,7 @@ async function loadCabinet(apt) {
         session.area = data.area || '--';
         session.entrance = data.entrance || '--';
         session.isAdmin = data.isAdmin === true;
+        session.ownersStatus = data.ownersStatus || 'pending';
     } else {
         await setDoc(aptRef, { passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: new Date() });
         session.apt = apt;

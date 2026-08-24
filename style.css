@@ -1074,6 +1074,24 @@ select.field-input {
 .ureq-empty-title { margin: 12px 0 4px; font-size: 15.5px; font-weight: 600; color: var(--ink-2); }
 .ureq-empty-hint { margin: 0; font-size: 13px; line-height: 1.45; max-width: 280px; }
 
+/* ---------- ПІДТВЕРДЖЕННЯ СПИСКУ ВЛАСНИКІВ ---------- */
+.own-status {
+    margin-top: 12px;
+    padding: 16px;
+    border-radius: var(--r-lg);
+    border: 0.5px solid rgba(0, 0, 0, 0.05);
+}
+.own-status-title { margin: 0 0 6px; font-size: 16px; font-weight: 700; color: var(--ink); }
+.own-status-text { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.own-status .btn-primary { margin-top: 14px; }
+
+/* Прохання — помітне, але не тривожне: це звичайна дія, а не проблема. */
+.own-status-ask { background: rgba(0, 122, 255, 0.07); border-color: rgba(0, 122, 255, 0.16); }
+.own-status-edit { background: rgba(255, 149, 0, 0.09); border-color: rgba(255, 149, 0, 0.22); }
+.own-status-wait { background: var(--surface-2); }
+.own-status-ok { background: rgba(52, 199, 89, 0.09); border-color: rgba(52, 199, 89, 0.2); }
+.own-status-ok .own-status-text { color: #1E7A36; }
+
 /* ---------- ПОСАДИ В КОНТАКТАХ (адмін) ---------- */
 .pos-group-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -1897,6 +1915,8 @@ select.field-input {
 }
 .confirm-title { margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: var(--ink); }
 .confirm-text { margin: 0 0 20px 0; font-size: 14.5px; color: var(--ink-2); line-height: 1.45; }
+.prompt-input { margin: 4px 0 14px; width: 100%; box-sizing: border-box; }
+.btn-soft-primary { background: var(--blue); color: #fff; }
 .confirm-actions { display: flex; gap: 10px; }
 .confirm-actions > * { flex: 1; padding: 12px; font-size: 15px; }
 

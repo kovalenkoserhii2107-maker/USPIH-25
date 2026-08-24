@@ -3,12 +3,13 @@
 // ============================================================
 import { db, storage, session, currentApt } from './firebase.js';
 import {
-    collection, getDocs, doc, writeBatch
+    collection, getDocs, doc, addDoc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, getInitials, avatarGradient, avatarColors, toast, confirmDialog, setBusy } from './ui.js';
+import { escapeHtml, getInitials, avatarGradient, avatarColors, toast, confirmDialog,
+         promptDialog, setBusy } from './ui.js';
 import { renderAttachments, renderFileManager, fileNameFromUrl } from './attachments.js';
 
 const PRESETS = ['1/1', '1/2', '1/3', '1/4', '2/3', '1/5'];
@@ -47,6 +48,7 @@ const container = () => document.getElementById('ownersContainer');
 export async function loadOwners(apt) {
     const host = container();
     host.innerHTML = '';
+    dirty = false;
     const snap = await getDocs(collection(db, 'apartments', apt, 'owners'));
 
     if (snap.empty) {
@@ -60,6 +62,7 @@ export async function loadOwners(apt) {
         snap.forEach(d => renderOwnerCard({ id: d.id, ...d.data() }, i++, false));
     }
     updateOwnersCount();
+    renderOwnersStatus();
 }
 
 export function updateOwnersCount() {
@@ -251,16 +254,11 @@ function wireOwnerCard(card, isNew) {
         const ok = await confirmDialog('Видалити співвласника?',
             'Дані та прикріплені документи цього співвласника буде видалено.');
         if (!ok) return;
+        // Прибираємо лише з екрана. У базу піде одна заявка на всі
+        // правки — інакше правління розглядало б кожну дію окремо.
         card.remove();
-        try {
-            await saveOwners();
-            toast('Співвласника видалено', 'success');
-            updateOwnersCount();
-            if (!container().children.length) await loadOwners(session.apt);
-        } catch (e) {
-            console.error(e);
-            toast('Не вдалося видалити. Оновіть сторінку.', 'error');
-        }
+        updateOwnersCount();
+        markDirty();
     });
 
     const preset = card.querySelector('.i-share-preset');
@@ -286,16 +284,10 @@ function wireOwnerCard(card, isNew) {
             card.querySelector('.i-name').focus();
             return;
         }
-        setBusy(this, true, 'Збереження…');
-        try {
-            await saveOwners();
-            await loadOwners(session.apt);
-            toast('Дані збережено', 'success');
-        } catch (error) {
-            console.error(error);
-            toast('Помилка збереження. Перевірте інтернет.', 'error');
-            setBusy(this, false);
-        }
+        // Правку приймаємо локально: у базу все піде однією заявкою.
+        card.querySelector('.view-mode').hidden = false;
+        card.querySelector('.edit-mode').hidden = true;
+        markDirty();
     });
 
     refreshFileChips(card);
@@ -319,12 +311,12 @@ function refreshFileChips(card) {
 // записувалися нові — обрив мережі між цими кроками знищував
 // дані назавжди. Тепер це один атомарний batch: або все, або нічого.
 // ------------------------------------------------------------
-export async function saveOwners() {
+/** Збирає те, що зараз у картках. Нічого не пише. */
+async function collectOwners() {
     const apt = currentApt();
     if (!apt) throw new Error('Користувач не автентифікований');
 
     const cards = Array.from(container().querySelectorAll('.owner-card'));
-    const ownersRef = collection(db, 'apartments', apt, 'owners');
 
     // 1. Спершу вивантажуємо файли (найдовша операція) — до будь-яких змін у базі
     const payloads = [];
@@ -356,16 +348,135 @@ export async function saveOwners() {
         });
     }
 
-    // 2. Тепер один атомарний запис
-    const batch = writeBatch(db);
-    const existing = await getDocs(ownersRef);
-    const keepIds = new Set(payloads.map(p => p.id).filter(Boolean));
-    existing.forEach(d => { if (!keepIds.has(d.id)) batch.delete(d.ref); });
-    payloads.forEach(p => {
-        const ref = p.id ? doc(ownersRef, p.id) : doc(ownersRef);
-        batch.set(ref, p.data);
+    return payloads;
+}
+
+/**
+ * Надсилає правки як ЗАЯВКУ, а не запис.
+ *
+ * Кворум рахує унікальних власників, тож дописаний співвласник — це
+ * дописаний голос. Досі мешканець міг зробити це сам: правила
+ * дозволяли йому писати у власний список. Тепер він пропонує, а
+ * рішення ухвалює правління.
+ */
+export async function submitOwnerChanges(reason) {
+    const apt = currentApt();
+    if (!apt) throw new Error('Користувач не автентифікований');
+
+    const after = await collectOwners();
+    const snap = await getDocs(collection(db, 'apartments', apt, 'owners'));
+    const before = snap.docs.map(d => {
+        const o = d.data();
+        return { name: o.name || '', shareFrac: o.shareFrac || '', sharePerc: o.sharePerc || '',
+                 docInfo: o.docInfo || '', fileUrls: o.fileUrls || '' };
     });
-    await batch.commit();
+
+    await addDoc(collection(db, 'apartments', apt, 'owner_changes'), {
+        before,
+        after: after.map(p => p.data),
+        reason,
+        status: 'pending',
+        createdAt: serverTimestamp()
+    });
+    await updateDoc(doc(db, 'apartments', apt), {
+        ownersStatus: 'review',
+        ownersConfirmedBy: 'apt'
+    });
+}
+
+// ------------------------------------------------------------
+// ПІДТВЕРДЖЕННЯ СПИСКУ
+//
+// Головна дія мешканця — не «заповнити», а «підтвердити»: для
+// більшості квартир дані вже правильні. Тому підтвердження коштує
+// один дотик, а редагування — це виняток, у який заходить меншість.
+// ------------------------------------------------------------
+let dirty = false;
+
+function markDirty() {
+    dirty = true;
+    renderOwnersStatus();
+}
+
+async function confirmOwners(btn) {
+    setBusy(btn, true, 'Зберігаємо…');
+    try {
+        await updateDoc(doc(db, 'apartments', currentApt()), {
+            ownersStatus: 'confirmed',
+            ownersConfirmedAt: serverTimestamp(),
+            ownersConfirmedBy: 'apt'
+        });
+        session.ownersStatus = 'confirmed';
+        dirty = false;
+        toast('Дякуємо! Список підтверджено', 'success');
+        renderOwnersStatus();
+    } catch (e) {
+        console.error('Підтвердження списку:', e);
+        toast('Не вдалося зберегти. Перевірте інтернет.', 'error');
+        setBusy(btn, false);
+    }
+}
+
+async function sendChanges(btn) {
+    if (!container().querySelectorAll('.owner-card').length) {
+        return toast('Список порожній — додайте хоча б одного власника', 'error');
+    }
+    const reason = await promptDialog(
+        'Що змінилося?',
+        'Правління звірить зміни з документами. Напишіть коротко підставу — так перевірка пройде швидше.',
+        { placeholder: 'Напр.: успадкував частку у 2024 році', confirmLabel: 'Надіслати' });
+    if (!reason) return;
+
+    setBusy(btn, true, 'Надсилаємо…');
+    try {
+        await submitOwnerChanges(reason);
+        session.ownersStatus = 'review';
+        dirty = false;
+        toast('Заявку надіслано правлінню', 'success');
+        renderOwnersStatus();
+    } catch (e) {
+        console.error('Заявка на зміну власників:', e);
+        toast('Не вдалося надіслати. Перевірте інтернет.', 'error');
+        setBusy(btn, false);
+    }
+}
+
+export function renderOwnersStatus() {
+    const host = document.getElementById('ownersStatusHost');
+    if (!host) return;
+
+    if (dirty) {
+        host.innerHTML = `<div class="own-status own-status-edit">
+            <p class="own-status-text">Зміни ще не надіслано. Правління звірить їх із документами.</p>
+            <button type="button" class="btn-primary" id="sendOwnerChangesBtn">Надіслати на перевірку</button>
+        </div>`;
+        document.getElementById('sendOwnerChangesBtn')
+            .addEventListener('click', function () { sendChanges(this); });
+        return;
+    }
+
+    const st = session.ownersStatus;
+    if (st === 'review') {
+        host.innerHTML = `<div class="own-status own-status-wait">
+            <p class="own-status-text">Заявку надіслано. Правління перевірить її найближчим часом.</p>
+        </div>`;
+        return;
+    }
+    if (st === 'confirmed') {
+        host.innerHTML = `<div class="own-status own-status-ok">
+            <p class="own-status-text">Список підтверджено. Дякуємо — ваш голос рахуватиметься правильно.</p>
+        </div>`;
+        return;
+    }
+
+    host.innerHTML = `<div class="own-status own-status-ask">
+        <p class="own-status-title">Перевірте, будь ласка, список</p>
+        <p class="own-status-text">Голосування ОСББ рахується за співвласниками. Щоб ваш голос
+            рахувався правильно, підтвердіть, що дані вірні — або виправте їх.</p>
+        <button type="button" class="btn-primary" id="confirmOwnersBtn">Так, усе правильно</button>
+    </div>`;
+    document.getElementById('confirmOwnersBtn')
+        .addEventListener('click', function () { confirmOwners(this); });
 }
 
 export function initOwners() {
