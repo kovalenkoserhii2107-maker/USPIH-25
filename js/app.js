@@ -38,6 +38,7 @@ import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
+import { maybeShowTutorial } from './tutorial.js';
 import { initLedger, loadLedger } from './ledger.js';
 import { initVerify, loadVerifyQueue } from './verify.js';
 
@@ -97,6 +98,7 @@ async function loadCabinet(apt) {
         session.isAdmin = data.isAdmin === true;
         session.ownersStatus = data.ownersStatus || 'pending';
         session.ownersDecision = data.ownersDecision || null;
+        session.tutorialSeen = Boolean(data.tutorialAt);
     } else {
         await setDoc(aptRef, { passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: new Date() });
         session.apt = apt;
@@ -148,6 +150,9 @@ async function loadCabinet(apt) {
         refreshRequestsBadge();       // так само — непрочитані відповіді правління
         refreshChatBadge();
         showInstallHint();
+        // Знайомство — останнім: кабінет під ним уже завантажений, тож
+        // з останнього кроку можна одразу везти до списку співвласників.
+        maybeShowTutorial();
     }
 }
 

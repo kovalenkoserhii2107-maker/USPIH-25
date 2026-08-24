@@ -44,6 +44,7 @@ export const session = {
     personalAccount: '',
     ownersStatus: '',
     ownersDecision: null,
+    tutorialSeen: false,
     ownerName: '',    // ПІБ першого співвласника — для форм банку
     isAdmin: false
 };
@@ -63,6 +64,7 @@ export function resetSession() {
     session.personalAccount = '';
     session.ownersStatus = '';
     session.ownersDecision = null;
+    session.tutorialSeen = false;
     session.ownerName = '';
     session.isAdmin = false;
 }
