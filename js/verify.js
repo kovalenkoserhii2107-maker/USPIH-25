@@ -164,7 +164,11 @@ async function approve(apt, id, btn) {
         batch.set(doc(db, 'apartments', apt), {
             ownersStatus: 'confirmed',
             ownersConfirmedAt: serverTimestamp(),
-            ownersConfirmedBy: 'board'
+            ownersConfirmedBy: 'board',
+            // Рішення кладемо в документ квартири, а не лише в заявку:
+            // мешканець дивиться саме сюди, і без цього він не дізнався б,
+            // що сталося з його правками.
+            ownersDecision: { status: 'approved', at: Date.now() }
         }, { merge: true });
         batch.set(doc(db, 'apartments', apt, 'owner_changes', id), {
             status: 'approved', decidedAt: serverTimestamp()
@@ -191,8 +195,13 @@ async function reject(apt, id) {
         await updateDoc(doc(db, 'apartments', apt, 'owner_changes', id), {
             status: 'rejected', decision: note, decidedAt: serverTimestamp()
         });
-        // Повертаємо квартиру в «не підтверджено»: список лишився старий
-        await updateDoc(doc(db, 'apartments', apt), { ownersStatus: 'pending' });
+        // Повертаємо квартиру в «не підтверджено»: список лишився старий.
+        // Причину кладемо поруч — інакше мешканець бачив би лише те, що
+        // його заявка кудись зникла.
+        await updateDoc(doc(db, 'apartments', apt), {
+            ownersStatus: 'pending',
+            ownersDecision: { status: 'rejected', note, at: Date.now() }
+        });
         toast(`Кв. ${apt}: заявку відхилено`, 'success');
         await loadVerifyQueue();
     } catch (e) {

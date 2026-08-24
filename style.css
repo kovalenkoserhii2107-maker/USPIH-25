@@ -1207,6 +1207,12 @@ select.field-input {
 .own-status-wait { background: var(--surface-2); }
 .own-status-ok { background: rgba(52, 199, 89, 0.09); border-color: rgba(52, 199, 89, 0.2); }
 .own-status-ok .own-status-text { color: #1E7A36; }
+.own-status-reject { background: rgba(255, 59, 48, 0.08); border-color: rgba(255, 59, 48, 0.22); }
+.own-status-reject .own-status-title { color: #A3382F; }
+.own-status-next { margin-top: 8px; }
+.own-status-gap { margin-top: 10px; color: #A3382F; font-weight: 500; }
+/* Картка, де бракує даних, — щоб не шукати її очима серед інших. */
+.owner-incomplete { outline: 2px solid rgba(255, 59, 48, 0.45); outline-offset: 2px; border-radius: var(--r-lg); }
 
 /* ---------- ПОСАДИ В КОНТАКТАХ (адмін) ---------- */
 .pos-group-head {

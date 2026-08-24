@@ -393,12 +393,59 @@ export async function submitOwnerChanges(reason) {
 // ------------------------------------------------------------
 let dirty = false;
 
+/**
+ * Чого бракує в картках.
+ *
+ * Підтвердити неповний список не можна: саме за цими даними рахується
+ * кворум, а частка й документ — підстава права власності. Порожнє поле
+ * означає, що дані просто перенесли з паперу й ніхто їх не звіряв.
+ */
+function ownerProblems() {
+    const out = [];
+    container().querySelectorAll('.owner-card').forEach(card => {
+        const val = (sel) => (card.querySelector(sel)?.value || '').trim();
+        const preset = val('.i-share-preset');
+        const share = preset === 'custom' ? val('.i-share-custom') : preset;
+
+        const missing = [];
+        if (!val('.i-name')) missing.push('ПІБ');
+        if (!share) missing.push('частку');
+        if (!val('.i-doc')) missing.push('документ');
+        if (missing.length) out.push({ card, missing });
+    });
+    return out;
+}
+
+/** Показує, де саме бракує даних, і веде до першої такої картки. */
+function showProblems(problems) {
+    container().querySelectorAll('.owner-card').forEach(c => c.classList.remove('owner-incomplete'));
+    problems.forEach(p => p.card.classList.add('owner-incomplete'));
+
+    const first = problems[0];
+    // Розгортаємо картку в режим редагування: інакше незрозуміло,
+    // де саме заповнювати.
+    first.card.querySelector('.view-mode').hidden = true;
+    first.card.querySelector('.edit-mode').hidden = false;
+    first.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    first.card.querySelector('.i-name')?.focus();
+
+    const what = [...new Set(problems.flatMap(p => p.missing))].join(', ');
+    toast(`Заповніть ${what} — без цього підтвердити не можна`, 'error');
+}
+
+
 function markDirty() {
     dirty = true;
     renderOwnersStatus();
 }
 
 async function confirmOwners(btn) {
+    if (!container().querySelectorAll('.owner-card').length) {
+        return toast('Спочатку додайте хоча б одного співвласника', 'error');
+    }
+    const problems = ownerProblems();
+    if (problems.length) return showProblems(problems);
+
     setBusy(btn, true, 'Зберігаємо…');
     try {
         await updateDoc(doc(db, 'apartments', currentApt()), {
@@ -421,6 +468,9 @@ async function sendChanges(btn) {
     if (!container().querySelectorAll('.owner-card').length) {
         return toast('Список порожній — додайте хоча б одного власника', 'error');
     }
+    const problems = ownerProblems();
+    if (problems.length) return showProblems(problems);
+
     const reason = await promptDialog(
         'Що змінилося?',
         'Правління звірить зміни з документами. Напишіть коротко підставу — так перевірка пройде швидше.',
@@ -461,6 +511,25 @@ export function renderOwnersStatus() {
     }
 
     const st = session.ownersStatus;
+    const d = session.ownersDecision;
+
+    // Рішення правління показуємо першим: це відповідь на дію мешканця,
+    // і без неї незрозуміло, що сталося з надісланими правками.
+    const decision = (st === 'pending' && d?.status === 'rejected')
+        ? `<div class="own-status own-status-reject">
+               <p class="own-status-title">Правління не прийняло зміни</p>
+               <p class="own-status-text">${escapeHtml(d.note || 'Причину не вказано')}</p>
+               <p class="own-status-text own-status-next">Виправте дані й надішліть ще раз —
+                   або підтвердіть список, якщо він усе-таки вірний.</p>
+           </div>`
+        : (st === 'confirmed' && d?.status === 'approved')
+        ? `<div class="own-status own-status-ok">
+               <p class="own-status-text">Правління прийняло ваші зміни. Список оновлено й звірено.</p>
+           </div>`
+        : '';
+
+    if (decision && st === 'confirmed') { host.innerHTML = decision; return; }
+
     if (st === 'review') {
         host.innerHTML = `<div class="own-status own-status-wait">
             <p class="own-status-text">Заявку надіслано. Правління перевірить її найближчим часом.</p>
@@ -474,10 +543,20 @@ export function renderOwnersStatus() {
         return;
     }
 
-    host.innerHTML = `<div class="own-status own-status-ask">
+    // Одразу кажемо, чого бракує, — щоб людина не тицяла кнопку
+    // й не отримувала відмову.
+    const gaps = ownerProblems();
+    const gapNote = gaps.length
+        ? `<p class="own-status-text own-status-gap">Бракує: ${escapeHtml(
+              [...new Set(gaps.flatMap(g => g.missing))].join(', '))}.
+           Заповніть, і кнопка спрацює.</p>`
+        : '';
+
+    host.innerHTML = decision + `<div class="own-status own-status-ask">
         <p class="own-status-title">Перевірте, будь ласка, список</p>
         <p class="own-status-text">Голосування ОСББ рахується за співвласниками. Щоб ваш голос
             рахувався правильно, підтвердіть, що дані вірні — або виправте їх.</p>
+        ${gapNote}
         <button type="button" class="btn-primary" id="confirmOwnersBtn">Так, усе правильно</button>
     </div>`;
     document.getElementById('confirmOwnersBtn')

@@ -43,6 +43,7 @@ export const session = {
     balance: 0,       // від'ємне — борг, додатне — переплата
     personalAccount: '',
     ownersStatus: '',
+    ownersDecision: null,
     ownerName: '',    // ПІБ першого співвласника — для форм банку
     isAdmin: false
 };
@@ -61,6 +62,7 @@ export function resetSession() {
     session.balance = 0;
     session.personalAccount = '';
     session.ownersStatus = '';
+    session.ownersDecision = null;
     session.ownerName = '';
     session.isAdmin = false;
 }
