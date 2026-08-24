@@ -9,7 +9,7 @@ import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { escapeHtml, getInitials, avatarGradient, avatarColors, toast, confirmDialog,
-         promptDialog, setBusy } from './ui.js';
+         promptDialog, setBusy, normName } from './ui.js';
 import { renderAttachments, renderFileManager, fileNameFromUrl } from './attachments.js';
 
 const PRESETS = ['1/1', '1/2', '1/3', '1/4', '2/3', '1/5'];
@@ -45,10 +45,56 @@ const container = () => document.getElementById('ownersContainer');
 // ------------------------------------------------------------
 // ЗАВАНТАЖЕННЯ
 // ------------------------------------------------------------
+/**
+ * Малює список із заявки, що на розгляді: додані й прибрані — з мітками.
+ * Повертає false, якщо заявки немає (тоді показуємо звичайний список).
+ */
+async function renderProposed(apt) {
+    try {
+        const snap = await getDocs(collection(db, 'apartments', apt, 'owner_changes'));
+        const req = snap.docs
+            .map(d => d.data())
+            .filter(c => c.status === 'pending')
+            .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))[0];
+        if (!req) return false;
+
+        const key = (o) => normName(o.name);
+        const wasNames = new Set((req.before || []).map(key));
+        const nowNames = new Set((req.after || []).map(key));
+
+        let i = 1;
+        (req.after || []).forEach(o => {
+            const card = renderOwnerCard(o, i++, false);
+            if (!wasNames.has(key(o))) markCard(card, 'add');
+        });
+        // Ті, кого прибирають, показуємо в кінці — з міткою
+        (req.before || []).filter(o => !nowNames.has(key(o))).forEach(o => {
+            const card = renderOwnerCard(o, 0, false);
+            markCard(card, 'remove');
+        });
+        renumberOwners();
+        return true;
+    } catch (e) {
+        console.warn('Заявка на зміну власників:', e);
+        return false;
+    }
+}
+
 export async function loadOwners(apt) {
     const host = container();
     host.innerHTML = '';
     dirty = false;
+
+    // Поки заявку розглядають, показуємо ЗАПРОПОНОВАНИЙ список, а не той,
+    // що в базі. Інакше після перезавантаження мешканець не бачить ні
+    // доданого співвласника, ні позначки на прибраному — і вирішує, що
+    // заявка пропала.
+    if (session.ownersStatus === 'review' && await renderProposed(apt)) {
+        updateOwnersCount();
+        renderOwnersStatus();
+        return;
+    }
+
     const snap = await getDocs(collection(db, 'apartments', apt, 'owners'));
 
     if (snap.empty) {
@@ -68,7 +114,8 @@ export async function loadOwners(apt) {
 export function updateOwnersCount() {
     const el = document.getElementById('displayOwnersCount');
     if (!el) return;
-    const count = container().querySelectorAll('.owner-card:not([data-new="1"])').length;
+    const count = container()
+        .querySelectorAll('.owner-card:not([data-new="1"]):not([data-removed])').length;
     el.textContent = count > 0 ? count : '—';
 }
 
@@ -264,6 +311,9 @@ function acceptCardEdit(card) {
     fresh._existingFiles = existingFiles;
     refreshFileChips(fresh);
 
+    // Немає id — отже в базі такого співвласника ще немає, це додавання
+    if (!card.dataset.id) markCard(fresh, 'add');
+
     // Файли ще не вивантажені, тож у перегляді їх немає. Кажемо про це
     // прямо, інакше здається, що вкладення зникло.
     if (pendingFiles.length) {
@@ -276,11 +326,46 @@ function acceptCardEdit(card) {
     return fresh;
 }
 
+/**
+ * Позначає картку як запропоновану зміну.
+ *
+ * Доданий і прибраний співвласники лишаються на екрані, але іншим
+ * накресленням і з підписом: заявку ще розглядають, і поки правління
+ * не вирішило — це пропозиція, а не факт.
+ */
+export function markCard(card, kind) {
+    card.classList.remove('owner-pending-add', 'owner-pending-remove');
+    card.querySelector('.owner-pending-note')?.remove();
+    if (!kind) { delete card.dataset.removed; return; }
+
+    card.classList.add(kind === 'add' ? 'owner-pending-add' : 'owner-pending-remove');
+    if (kind === 'remove') card.dataset.removed = '1';
+
+    const note = document.createElement('p');
+    note.className = 'owner-pending-note';
+    // Угорі картки вже стоїть «Прибирається», тож тут не повторюємось,
+    // а кажемо головне: рішення ще не ухвалене.
+    note.textContent = kind === 'add'
+        ? 'Додається — чекає підтвердження правління'
+        : 'У заявці на видалення — чекає рішення правління';
+    card.querySelector('.view-mode')?.appendChild(note);
+
+    // Прибраного можна повернути, поки заявку не надіслано
+    const del = card.querySelector('.delete-btn');
+    if (del && kind === 'remove') {
+        del.textContent = 'Повернути співвласника';
+        del.classList.add('owner-undo');
+    }
+}
+
 /** Нумерація «Співвласник N» після перестановки чи видалення. */
 function renumberOwners() {
     let i = 1;
-    container().querySelectorAll('.owner-card .owner-index')
-        .forEach(el => { el.textContent = `Співвласник ${i++}`; });
+    container().querySelectorAll('.owner-card').forEach(card => {
+        const el = card.querySelector('.owner-index');
+        if (!el) return;
+        el.textContent = card.dataset.removed ? 'Прибирається' : `Співвласник ${i++}`;
+    });
 }
 
 function wireOwnerCard(card, isNew) {
@@ -307,12 +392,22 @@ function wireOwnerCard(card, isNew) {
     });
 
     card.querySelector('.delete-btn').addEventListener('click', async () => {
+        if (card.dataset.removed) {                 // передумали — повертаємо
+            markCard(card, null);
+            card.querySelector('.delete-btn').textContent = 'Видалити співвласника';
+            card.querySelector('.delete-btn').classList.remove('owner-undo');
+            renumberOwners();
+            updateOwnersCount();
+            markDirty();
+            return;
+        }
         const ok = await confirmDialog('Видалити співвласника?',
             'Дані та прикріплені документи цього співвласника буде видалено.');
         if (!ok) return;
-        // Прибираємо лише з екрана. У базу піде одна заявка на всі
-        // правки — інакше правління розглядало б кожну дію окремо.
-        card.remove();
+        // Картку не прибираємо, а позначаємо. Інакше після надсилання
+        // мешканець не бачить, що саме він запропонував прибрати, —
+        // а заявку ще можуть відхилити.
+        markCard(card, 'remove');
         renumberOwners();
         updateOwnersCount();
         markDirty();
@@ -377,6 +472,7 @@ async function collectOwners() {
     // 1. Спершу вивантажуємо файли (найдовша операція) — до будь-яких змін у базі
     const payloads = [];
     for (const card of cards) {
+        if (card.dataset.removed) continue;         // запропоновано прибрати
         const name = card.querySelector('.i-name').value.trim();
         if (!name) continue;
 
@@ -459,6 +555,7 @@ let dirty = false;
 function ownerProblems() {
     const out = [];
     container().querySelectorAll('.owner-card').forEach(card => {
+        if (card.dataset.removed) return;           // його все одно прибирають
         const val = (sel) => (card.querySelector(sel)?.value || '').trim();
         const preset = val('.i-share-preset');
         const share = preset === 'custom' ? val('.i-share-custom') : preset;
