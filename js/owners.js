@@ -62,10 +62,16 @@ async function renderProposed(apt) {
         const wasNames = new Set((req.before || []).map(key));
         const nowNames = new Set((req.after || []).map(key));
 
+        // Для порівняння «чи змінилися дані» шукаємо ту саму людину в «було»
+        const beforeBy = new Map((req.before || []).map(o => [key(o), o]));
+        const same = (a, b) => a.shareFrac === b.shareFrac && a.docInfo === b.docInfo
+            && String(a.fileUrls || '') === String(b.fileUrls || '');
+
         let i = 1;
         (req.after || []).forEach(o => {
             const card = renderOwnerCard(o, i++, false);
             if (!wasNames.has(key(o))) markCard(card, 'add');
+            else if (!same(beforeBy.get(key(o)) || {}, o)) markCard(card, 'edit');
         });
         // Ті, кого прибирають, показуємо в кінці — з міткою
         (req.before || []).filter(o => !nowNames.has(key(o))).forEach(o => {
@@ -160,6 +166,8 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
     const existingUrls = String(ownerData?.fileUrls || '').split(',').map(u => u.trim()).filter(Boolean);
     card._existingFiles = existingUrls.map((url, i) => ({ name: fileNameFromUrl(url, i), url, type: '', size: 0 }));
     card._pendingFiles = [];
+    // Вихідні дані — щоб потім побачити, чи щось насправді змінилося.
+    card._original = { name, docInfo, shareFrac, sharePerc, fileUrls: String(ownerData?.fileUrls || '') };
 
     const percNum = parseFloat(sharePerc);
     const hasShare = sharePerc !== '' && !isNaN(percNum);
@@ -311,8 +319,21 @@ function acceptCardEdit(card) {
     fresh._existingFiles = existingFiles;
     refreshFileChips(fresh);
 
-    // Немає id — отже в базі такого співвласника ще немає, це додавання
-    if (!card.dataset.id) markCard(fresh, 'add');
+    // Вихідні дані беремо зі СТАРОЇ картки: у нової вони вже нові.
+    fresh._original = card._original;
+
+    if (!card.dataset.id) {
+        // Немає id — отже в базі такого співвласника ще немає
+        markCard(fresh, 'add');
+    } else {
+        const o = card._original || {};
+        const changed = o.name !== val('.i-name')
+            || o.docInfo !== val('.i-doc')
+            || o.shareFrac !== shareFrac
+            || pendingFiles.length > 0
+            || o.fileUrls !== existingFiles.map(f => f.url).join(',');
+        if (changed) markCard(fresh, 'edit');
+    }
 
     // Файли ще не вивантажені, тож у перегляді їх немає. Кажемо про це
     // прямо, інакше здається, що вкладення зникло.
@@ -334,20 +355,22 @@ function acceptCardEdit(card) {
  * не вирішило — це пропозиція, а не факт.
  */
 export function markCard(card, kind) {
-    card.classList.remove('owner-pending-add', 'owner-pending-remove');
+    card.classList.remove('owner-pending-add', 'owner-pending-remove', 'owner-pending-edit');
     card.querySelector('.owner-pending-note')?.remove();
     if (!kind) { delete card.dataset.removed; return; }
 
-    card.classList.add(kind === 'add' ? 'owner-pending-add' : 'owner-pending-remove');
+    card.classList.add(`owner-pending-${kind}`);
     if (kind === 'remove') card.dataset.removed = '1';
 
     const note = document.createElement('p');
     note.className = 'owner-pending-note';
     // Угорі картки вже стоїть «Прибирається», тож тут не повторюємось,
     // а кажемо головне: рішення ще не ухвалене.
-    note.textContent = kind === 'add'
-        ? 'Додається — чекає підтвердження правління'
-        : 'У заявці на видалення — чекає рішення правління';
+    note.textContent = {
+        add: 'Додається — чекає підтвердження правління',
+        edit: 'Дані змінено — чекає підтвердження правління',
+        remove: 'У заявці на видалення — чекає рішення правління'
+    }[kind];
     card.querySelector('.view-mode')?.appendChild(note);
 
     // Прибраного можна повернути, поки заявку не надіслано
@@ -430,12 +453,16 @@ function wireOwnerCard(card, isNew) {
     });
 
     card.querySelector('.save-ok-btn').addEventListener('click', async function () {
-        const nameValue = card.querySelector('.i-name').value.trim();
-        if (!nameValue) {
-            toast('Вкажіть ПІБ співвласника', 'error');
-            card.querySelector('.i-name').focus();
+        // Перевіряємо все одразу, а не лише ПІБ. Раніше картка
+        // «зберігалася» без документа, і людина дізнавалася про це аж при
+        // надсиланні — курсором на імені, яке було заповнене.
+        const gaps = cardGaps(card);
+        if (gaps.length) {
+            showCardGaps(card, gaps);
+            toast(`Не заповнено: ${gaps.map(g => g.label).join(', ')}`, 'error');
             return;
         }
+        card.querySelectorAll('.field-error').forEach(e => e.remove());
         // Правку приймаємо локально: у базу все піде однією заявкою.
         acceptCardEdit(card);
         markDirty();
@@ -545,6 +572,46 @@ export async function submitOwnerChanges(reason) {
 // ------------------------------------------------------------
 let dirty = false;
 
+// Поля, без яких картку не можна вважати заповненою, і те, як про це
+// сказати. Підпис стоїть біля самого поля: «заповніть документ» під
+// іменем нічого не пояснює.
+const REQUIRED = [
+    { sel: '.i-name', label: 'ПІБ', msg: 'Вкажіть прізвище, імʼя та по батькові' },
+    { sel: '.i-share-preset', label: 'частку', msg: 'Оберіть частку власності' },
+    { sel: '.i-doc', label: 'документ', msg: 'Вкажіть документ про право власності' }
+];
+
+/** Чого бракує саме в цій картці. */
+function cardGaps(card) {
+    const val = (sel) => (card.querySelector(sel)?.value || '').trim();
+    return REQUIRED.filter(f => {
+        if (f.sel !== '.i-share-preset') return !val(f.sel);
+        const preset = val('.i-share-preset');
+        return preset === 'custom' ? !val('.i-share-custom') : !preset;
+    });
+}
+
+/** Малює підписи біля незаповнених полів і веде до першого з них. */
+function showCardGaps(card, gaps) {
+    card.querySelectorAll('.field-error').forEach(e => e.remove());
+    card.querySelectorAll('.field-invalid').forEach(e => e.classList.remove('field-invalid'));
+
+    gaps.forEach(f => {
+        const input = card.querySelector(f.sel === '.i-share-preset' && card.querySelector('.i-share-preset')?.value === 'custom'
+            ? '.i-share-custom' : f.sel);
+        if (!input) return;
+        input.classList.add('field-invalid');
+        const msg = document.createElement('span');
+        msg.className = 'field-error';
+        msg.textContent = f.msg;
+        input.insertAdjacentElement('afterend', msg);
+    });
+
+    const first = card.querySelector('.field-invalid');
+    first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => first?.focus(), 250);
+}
+
 /**
  * Чого бракує в картках.
  *
@@ -556,15 +623,8 @@ function ownerProblems() {
     const out = [];
     container().querySelectorAll('.owner-card').forEach(card => {
         if (card.dataset.removed) return;           // його все одно прибирають
-        const val = (sel) => (card.querySelector(sel)?.value || '').trim();
-        const preset = val('.i-share-preset');
-        const share = preset === 'custom' ? val('.i-share-custom') : preset;
-
-        const missing = [];
-        if (!val('.i-name')) missing.push('ПІБ');
-        if (!share) missing.push('частку');
-        if (!val('.i-doc')) missing.push('документ');
-        if (missing.length) out.push({ card, missing });
+        const gaps = cardGaps(card);
+        if (gaps.length) out.push({ card, missing: gaps.map(g => g.label) });
     });
     return out;
 }
@@ -575,12 +635,11 @@ function showProblems(problems) {
     problems.forEach(p => p.card.classList.add('owner-incomplete'));
 
     const first = problems[0];
-    // Розгортаємо картку в режим редагування: інакше незрозуміло,
-    // де саме заповнювати.
+    // Розгортаємо картку й ведемо до конкретного порожнього поля,
+    // а не просто до імені.
     first.card.querySelector('.view-mode').hidden = true;
     first.card.querySelector('.edit-mode').hidden = false;
-    first.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    first.card.querySelector('.i-name')?.focus();
+    showCardGaps(first.card, cardGaps(first.card));
 
     const what = [...new Set(problems.flatMap(p => p.missing))].join(', ');
     toast(`Заповніть ${what} — без цього підтвердити не можна`, 'error');

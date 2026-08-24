@@ -1221,18 +1221,24 @@ select.field-input {
 
 /* Запропоновані зміни — тонким і похилим: поки правління не вирішило,
    це пропозиція, а не факт. Прибраного ще й приглушуємо. */
-.owner-pending-add .owner-name,
-.owner-pending-remove .owner-name,
-.owner-pending-add .owner-info-value,
-.owner-pending-remove .owner-info-value,
-.owner-pending-add .share-panel-text,
-.owner-pending-remove .share-panel-text {
+.owner-pending-add .owner-name, .owner-pending-remove .owner-name, .owner-pending-edit .owner-name,
+.owner-pending-add .owner-info-value, .owner-pending-remove .owner-info-value, .owner-pending-edit .owner-info-value,
+.owner-pending-add .share-panel-text, .owner-pending-remove .share-panel-text, .owner-pending-edit .share-panel-text {
     font-style: italic;
     font-weight: 400;
 }
 .owner-pending-add { border: 1px dashed rgba(52, 199, 89, 0.5); }
+.owner-pending-edit { border: 1px dashed rgba(255, 149, 0, 0.55); }
 .owner-pending-remove { border: 1px dashed rgba(255, 59, 48, 0.45); opacity: 0.72; }
 .owner-pending-remove .owner-name { text-decoration: line-through; }
+.owner-pending-edit .owner-pending-note { color: #A85B00; }
+
+/* Підпис біля поля, якого бракує */
+.field-invalid { border-color: rgba(255, 59, 48, 0.55) !important; }
+.field-error {
+    display: block; margin-top: 5px;
+    font-size: 12px; color: #A3382F;
+}
 
 .owner-pending-note {
     margin: 10px 0 0; padding-top: 10px;
