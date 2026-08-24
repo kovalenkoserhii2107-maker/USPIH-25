@@ -1194,12 +1194,21 @@ select.field-input {
 .own-banner .row-chevron { flex-shrink: 0; color: var(--ink-3); }
 
 /* Статус звірки в довіднику квартир */
+/* Імʼя — на весь перший рядок, стан — біля опису на другому.
+   Разом вони не вміщалися, і імʼя обрізалося на півслові. */
+.dir-line { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; }
+.dir-line .dir-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir-head-text > .dir-title {
+    display: block; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dir-body-meta { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); }
+/* Без великих літер і розрідження: так плашка вужча на чверть, і
+   опис квартири перестає обрізатися на півслові. */
 .dir-verify {
-    align-self: flex-start;
-    margin-top: 5px;
+    flex-shrink: 0;
     padding: 3px 8px; border-radius: 7px;
-    font-size: 10.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.3px;
+    font-size: 11px; font-weight: 600;
     white-space: nowrap;
 }
 .dv-confirmed { background: rgba(52, 199, 89, 0.15); color: #248A3D; }

@@ -122,8 +122,12 @@ export async function loadOwners(apt) {
 export function updateOwnersCount() {
     const el = document.getElementById('displayOwnersCount');
     if (!el) return;
-    const count = container()
-        .querySelectorAll('.owner-card:not([data-new="1"]):not([data-removed])').length;
+    // Рахуємо тих, хто є власником ЗАРАЗ, а не тих, хто буде після
+    // заявки. Прибраний лишається власником, доки правління не
+    // вирішило, а доданий ще ним не став — інакше кількість у картці
+    // квартири міняється раніше за саме рішення.
+    const count = container().querySelectorAll(
+        '.owner-card:not([data-new="1"]):not(.owner-pending-add)').length;
     el.textContent = count > 0 ? count : '—';
 }
 

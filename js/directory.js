@@ -72,6 +72,38 @@ const STATUS_LABEL = {
     all: 'Усі', pending: 'Не звірено', review: 'На розгляді', confirmed: 'Звірено'
 };
 
+/**
+ * У заголовку рядка — імʼя власника, а не «Квартира 297».
+ *
+ * Номер уже стоїть на значку зліва, і повторювати його — це витрачати
+ * найпомітніше місце рядка на те, що вже видно. Правління шукає саме
+ * людину, тож туди й ставимо.
+ */
+function ownersTitle(owners) {
+    if (!owners.length) return 'Власників не внесено';
+    const first = String(owners[0].name || '').trim() || 'Без імені';
+    return owners.length > 1 ? `${first} +${owners.length - 1}` : first;
+}
+
+const plural = (n, one, few, many) => {
+    const d = n % 10, h = n % 100;
+    if (d === 1 && h !== 11) return one;
+    if (d >= 2 && d <= 4 && (h < 12 || h > 14)) return few;
+    return many;
+};
+
+// У рядку списку — тільки те, за чим шукають очима. Парадна потрібна
+// рідко, тож вона переїхала в розгорнуту картку: інакше опис і плашка
+// стану не вміщаються в один рядок, і імʼя доводиться обрізати.
+function metaLine(e) {
+    const parts = [];
+    if (e.area) parts.push(`${e.area} м²`);
+    parts.push(e.owners.length
+        ? `${e.owners.length} ${plural(e.owners.length, 'власник', 'власники', 'власників')}`
+        : 'без власників');
+    return parts.join(' · ');
+}
+
 function renderFilters(all) {
     const host = document.getElementById('dirFilters');
     if (!host) return;
@@ -121,17 +153,19 @@ function render(list) {
             <button type="button" class="dir-head">
                 <span class="dir-apt">${escapeHtml(e.apt)}</span>
                 <span class="dir-head-text">
-                    <span class="dir-title">Квартира ${escapeHtml(e.apt)}</span>
-                    <span class="dir-meta">${e.entrance && e.entrance !== '--' ? `Парадна ${escapeHtml(String(e.entrance))}` : 'Парадна —'}
-                        · ${e.area ? escapeHtml(String(e.area)) + ' м²' : 'площа —'}
-                        · ${e.owners.length ? `співвласників: ${e.owners.length}` : 'без співвласників'}</span>
-                    <span class="dir-verify dv-${e.ownersStatus}">${
-                        { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
-                    }</span>
+                    <span class="dir-title">${escapeHtml(ownersTitle(e.owners))}</span>
+                    <span class="dir-line">
+                        <span class="dir-meta">${escapeHtml(metaLine(e))}</span>
+                        <span class="dir-verify dv-${e.ownersStatus}">${
+                            { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
+                        }</span>
+                    </span>
                 </span>
                 <svg class="row-chevron dir-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <div class="dir-body" hidden>
+                <p class="dir-body-meta">${e.entrance && e.entrance !== '--'
+                    ? `Парадна ${escapeHtml(String(e.entrance))}` : 'Парадна не вказана'}</p>
                 ${e.owners.length
                     ? e.owners.map(ownerLine).join('')
                     : '<p class="muted-note">Дані про співвласників не внесено</p>'}
