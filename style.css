@@ -2626,9 +2626,52 @@ select.field-input {
 
 /* ---------- ДАШБОРД ПРАВЛІННЯ ---------- */
 .dash { margin-bottom: 16px; }
-/* Дві на два, а не три в ряд: плиток стало чотири, і четверта
-   лишалася б сама в другому рядку. Заразом підписи перестали
-   тиснутися в три слова на рядок. */
+/* ---------- Картка будинку: те, чим правління розпоряджається ---------- */
+.dash-house {
+    background: var(--surface);
+    border: 0.5px solid rgba(0, 0, 0, 0.05);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-card);
+    padding: 16px 16px 14px;
+    margin-bottom: 8px;
+}
+.dash-house-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.dash-house-name {
+    font-size: 17px; font-weight: 700;
+    letter-spacing: -0.3px; color: var(--ink);
+}
+.dash-house-addr { font-size: 12.5px; color: var(--ink-2); }
+
+.dash-facts {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    width: 100%; box-sizing: border-box;
+    gap: 8px; padding: 12px 4px;
+    background: var(--surface-2);
+    border: none; border-radius: var(--r-md);
+    cursor: pointer; text-align: left;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+.dash-facts:active { transform: scale(0.98); background: var(--surface-3); }
+.dash-fact {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px; min-width: 0; text-align: center;
+}
+.dash-fact b {
+    font-size: 21px; font-weight: 800; letter-spacing: -0.6px;
+    color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.dash-fact small { font-size: 10.5px; color: var(--ink-2); line-height: 1.2; }
+
+.dash-cover { margin-top: 14px; }
+.dash-cover-top {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 7px;
+}
+.dash-cover-top span { font-size: 12px; color: var(--ink-2); }
+.dash-cover-top b { font-size: 12.5px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+
+/* Дві на два, а не три в ряд: плиток чотири, і четверта лишалася б
+   сама в другому рядку. Заразом підписи перестали тиснутися. */
 .dash-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -2660,6 +2703,7 @@ select.field-input {
     font-size: 11px; font-weight: 600;
     color: var(--ink-2); line-height: 1.25;
 }
+.dash-value small { font-size: 11px; font-weight: 600; margin-left: 3px; color: var(--ink-2); letter-spacing: 0; }
 .dash-hint { font-size: 10px; color: var(--ink-3); margin-top: 2px; line-height: 1.2; }
 .dash-neutral .dash-value { color: var(--ink); }
 .dash-ok .dash-value { color: var(--green); }

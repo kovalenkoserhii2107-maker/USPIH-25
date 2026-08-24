@@ -9,7 +9,7 @@ import { db } from './firebase.js';
 import {
     collection, query, where, orderBy, limit, getDocs, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { escapeHtml, formatDateTime } from './ui.js';
+import { escapeHtml, formatDateTime, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import { pendingChangesCount } from './verify.js';
 
@@ -24,6 +24,59 @@ function openTab(name, scrollToSelector) {
         document.querySelector(scrollToSelector)
             ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 220);
+}
+
+/** Українська множина: 1 квартира, 2 квартири, 5 квартир. */
+function plural(n, one, few, many) {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+}
+
+const ADDRESS = 'вул. Інглезі, 3/3 · м. Одеса';
+
+const num = (v) => new Intl.NumberFormat('uk-UA').format(v);
+
+/** Мільйонні суми в плитку не влазять — там точність до гривні й не потрібна. */
+function compactMoney(v) {
+    const n = Math.round(v);
+    if (n >= 1000000) return `${(n / 1000000).toFixed(2).replace('.', ',')} млн`;
+    return num(n);
+}
+
+/**
+ * Картка будинку — те, чим правління розпоряджається.
+ *
+ * Раніше дашборд складався лише з плиток «що зробити». Але перше,
+ * що має бачити правління, — сам будинок: скільки квартир, скільки
+ * співвласників, скільки площі. Це не заклик до дії, а опора, з
+ * якою решта цифр набуває сенсу.
+ */
+function houseCard({ aptCount, ownerCount, area, verified }) {
+    const pct = aptCount ? Math.round(verified / aptCount * 100) : 0;
+    const fact = (value, label) => `<span class="dash-fact">
+        <b>${value}</b><small>${escapeHtml(label)}</small>
+    </span>`;
+
+    return `<div class="dash-house">
+        <div class="dash-house-head">
+            <span class="dash-house-name">ОСББ «Успіх-25»</span>
+            <span class="dash-house-addr">${escapeHtml(ADDRESS)}</span>
+        </div>
+        <button type="button" class="dash-facts" data-tab="directory">
+            ${fact(num(aptCount), plural(aptCount, 'квартира', 'квартири', 'квартир'))}
+            ${fact(num(ownerCount), plural(ownerCount, 'співвласник', 'співвласники', 'співвласників'))}
+            ${fact(area ? num(Math.round(area)) : '—', 'м² житла')}
+        </button>
+        <div class="dash-cover">
+            <div class="dash-cover-top">
+                <span>Списки власників звірено</span>
+                <b>${verified} із ${aptCount}</b>
+            </div>
+            <div class="vf-bar"><i style="width:${pct}%"></i></div>
+        </div>
+    </div>`;
 }
 
 const tile = ({ id, label, value, hint, tone, tab, target }) => `
@@ -60,12 +113,18 @@ export async function loadDashboard() {
         const lastMsg = lastMsgSnap.empty ? null : lastMsgSnap.docs[0].data();
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
         const changes = pendingChangesCount();
+        const ownerCount = apts.reduce((sum, a) => sum + (a.owners?.length || 0), 0);
+        const area = apts.reduce((sum, a) => sum + parseMoney(a.area), 0);
 
-        host.innerHTML = `
+        // Заборгованість — теж стан будинку, і правління має бачити її
+        // без походу у фінанси. Рахуємо лише мінусові баланси: переплати
+        // не гасять чужий борг, і складати їх в одну цифру означало б
+        // применшувати проблему.
+        const debtors = apts.filter(a => parseMoney(a.balance) < -0.005);
+        const debtSum = debtors.reduce((sum, a) => sum - parseMoney(a.balance), 0);
+
+        host.innerHTML = houseCard({ aptCount, ownerCount, area, verified }) + `
             <div class="dash-grid">
-                ${tile({ id: 'dashApts', label: 'Квартир у системі', value: aptCount,
-                         hint: `Звірено ${verified} із ${aptCount}`,
-                         tone: 'neutral', tab: 'directory' })}
                 ${tile({ id: 'dashOwners', label: 'Заявок на звірку', value: changes,
                          hint: changes ? 'Чекають рішення' : (verified < aptCount ? 'Нагадайте решті' : 'Усе звірено'),
                          tone: changes ? 'warn' : (verified < aptCount ? 'info' : 'ok'),
@@ -78,6 +137,11 @@ export async function loadDashboard() {
                          hint: pollCount ? 'Триває' : 'Немає активних',
                          tone: pollCount ? 'info' : 'neutral', tab: 'polls',
                          target: '.poll-card-admin' })}
+                ${tile({ id: 'dashDebt', label: 'Заборгованість', value: `${compactMoney(debtSum)}<small>грн</small>`,
+                         hint: debtors.length
+                             ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')} у мінусі`
+                             : 'Боргів немає',
+                         tone: debtors.length ? 'warn' : 'ok', tab: 'finance' })}
             </div>
             <button type="button" class="dash-last" id="dashLastMsg" data-tab="history">
                 <span class="dash-last-label">Остання розсилка</span>
