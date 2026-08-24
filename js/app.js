@@ -25,7 +25,7 @@ import {
 } from './requests.js';
 import {
     initContacts, loadBoardContacts, loadServices,
-    loadAdminBoard, loadAdminServices
+    loadAdminBoard, loadAdminServices, moveAccountantToServices
 } from './contacts.js';
 import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
 import { loadDashboard } from './dashboard.js';
@@ -114,6 +114,9 @@ async function loadCabinet(apt) {
     if (session.isAdmin) {
         showScreen('adminDashboardSection');
         document.getElementById('topNav').style.display = 'none';
+        // Разове перенесення бухгалтера у групу служб — до того, як
+        // списки прочитаються, інакше він з'явився б у старому місці.
+        await moveAccountantToServices();
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadAdminExpenses(), loadAdminRequisites(),

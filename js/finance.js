@@ -78,6 +78,15 @@ export function renderBalance(balance, updatedAt) {
     </div>`;
 }
 
+function renderPersonalAccount() {
+    const btn = document.getElementById('heroAccountBtn');
+    const val = document.getElementById('displayAccount');
+    if (!btn || !val) return;
+    const acc = session.personalAccount;
+    btn.hidden = !acc;
+    if (acc) val.textContent = acc;
+}
+
 export async function loadBalance(apt) {
     const host = document.getElementById('balanceHost');
     if (!host) return;
@@ -86,6 +95,9 @@ export async function loadBalance(apt) {
         const d = snap.exists() ? snap.data() : {};
         session.balance = parseMoney(d.balance);
         session.personalAccount = d.personalAccount || '';
+        // Рахунок показуємо в картці квартири: його доводиться диктувати
+        // в банку, і шукати його в реквізитах щоразу — зайвий шлях.
+        renderPersonalAccount();
         host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt);
 
         document.getElementById('payBtn')?.addEventListener('click', openPaymentSheet);
@@ -838,6 +850,13 @@ export async function uploadDebtsCSV(file, btn) {
 }
 
 export function initPayments() {
+    document.getElementById('heroAccountBtn')?.addEventListener('click', async function () {
+        const acc = session.personalAccount;
+        if (!acc) return;
+        const ok = await copyText(acc);
+        toast(ok ? 'Особовий рахунок скопійовано' : 'Не вдалося скопіювати', ok ? 'success' : 'error');
+    });
+
     document.getElementById('openBankBtn')?.addEventListener('click', function () { copyAll(this); });
     document.getElementById('portmoneLink')?.setAttribute('href', PORTMONE_URL);
     document.getElementById('saveRequisitesBtn')?.addEventListener('click', function () { saveRequisites(this); });

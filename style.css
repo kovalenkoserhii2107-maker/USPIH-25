@@ -551,6 +551,8 @@ select.field-input {
     font-size: 54px; font-weight: 800;
     line-height: 0.95; letter-spacing: -2.5px;
 }
+/* Права колонка картки: адреса, під нею — особовий рахунок. */
+.hero-right { display: flex; flex-direction: column; align-items: flex-end; gap: 9px; min-width: 0; }
 .hero-address {
     display: flex;
     align-items: flex-start;
@@ -558,6 +560,27 @@ select.field-input {
     text-align: right;
     padding-top: 4px;
 }
+/* Рахунок доводиться диктувати в банку — тож уся плашка є кнопкою
+   копіювання, а не крихітний значок збоку. */
+.hero-account {
+    display: inline-flex; align-items: center; gap: 7px;
+    max-width: 100%;
+    padding: 6px 11px;
+    background: rgba(255, 255, 255, 0.11);
+    border: none; border-radius: 999px;
+    color: rgba(255, 255, 255, 0.88);
+    font-family: var(--font); font-size: 12.5px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+.hero-account:active { background: rgba(255, 255, 255, 0.22); transform: scale(0.96); }
+.hero-account-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hero-account b {
+    font-weight: 700; color: #fff;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.2px;
+}
+.hero-account svg { flex-shrink: 0; opacity: 0.65; }
 .hero-address > div { display: flex; flex-direction: column; }
 .hero-pin { flex-shrink: 0; margin-top: 2px; opacity: 0.6; }
 .hero-street {
@@ -1050,6 +1073,41 @@ select.field-input {
 }
 .ureq-empty-title { margin: 12px 0 4px; font-size: 15.5px; font-weight: 600; color: var(--ink-2); }
 .ureq-empty-hint { margin: 0; font-size: 13px; line-height: 1.45; max-width: 280px; }
+
+/* ---------- ПОСАДИ В КОНТАКТАХ (адмін) ---------- */
+.pos-group-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    margin: 4px 2px 12px;
+}
+.pos-group-head:not(:first-child) { margin-top: 26px; }
+.pos-group-sub { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+.pos-add {
+    display: inline-flex; align-items: center; gap: 5px;
+    flex-shrink: 0;
+    padding: 8px 14px;
+    background: var(--blue);
+    border: none; border-radius: 999px;
+    color: #fff;
+    font-family: var(--font); font-size: 13.5px; font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.pos-add:active { transform: scale(0.95); opacity: 0.85; }
+
+.pos-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+/* Видалення — навмисно не кнопка-суперник «Зберегти»: воно нижче,
+   без заливки й меншим кеглем. Помилитися важче. */
+.pos-delete {
+    padding: 10px;
+    background: none; border: none;
+    color: #B04A43;
+    font-family: var(--font); font-size: 13.5px; font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.pos-delete:active { opacity: 0.55; }
 
 /* ---------- ІСТОРІЯ НАРАХУВАНЬ І ОПЛАТ ---------- */
 /* Періоди — стрічкою: за рік їх дванадцять, у сітку вони не стануть,
