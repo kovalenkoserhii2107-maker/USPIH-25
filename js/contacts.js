@@ -187,7 +187,7 @@ const FIELD_META = {
 
 const CHEVRON = '<svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
-function adminCardHtml(key, m, pos, total) {
+function adminCardHtml(key, m, pos) {
     const g = GROUPS[key];
     const id = m.id;
     const fields = g.fields.map(f => {
@@ -199,9 +199,12 @@ function adminCardHtml(key, m, pos, total) {
         </div>`;
     }).join('');
 
-    // Стрілки — у заголовку, а не у формі: порядок видно й міняється,
+    // Стрілка — у заголовку, а не у формі: порядок видно й міняється,
     // не розгортаючи картку. Кнопка в кнопці неприпустима, тому
-    // перемикач і стрілки — сусіди в одному рядку.
+    // перемикач і стрілка — сусіди в одному рядку.
+    //
+    // Кнопка одна, «вгору»: нею збирається будь-який порядок, а кнопок
+    // на екрані вдвічі менше.
     return `<div class="card admin-fold" data-pos="${escapeHtml(id)}">
         <div class="admin-card-head admin-card-head-row">
             <button class="admin-card-toggle" type="button" aria-expanded="false">
@@ -211,14 +214,10 @@ function adminCardHtml(key, m, pos, total) {
                 </span>
                 ${CHEVRON}
             </button>
-            <span class="pos-move">
-                <button type="button" data-up="${escapeHtml(id)}" aria-label="Підняти вище"${pos === 0 ? ' disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="6"></line><polyline points="6 12 12 6 18 12"></polyline></svg>
-                </button>
-                <button type="button" data-down="${escapeHtml(id)}" aria-label="Опустити нижче"${pos === total - 1 ? ' disabled' : ''}>
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="18"></line><polyline points="6 12 12 18 18 12"></polyline></svg>
-                </button>
-            </span>
+            <button type="button" class="pos-up" data-up="${escapeHtml(id)}"
+                    aria-label="Підняти вище"${pos === 0 ? ' disabled' : ''}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="6"></line><polyline points="6 12 12 6 18 12"></polyline></svg>
+            </button>
         </div>
         <div class="admin-card-body"><div class="admin-card-body-inner">
 
@@ -258,7 +257,7 @@ async function loadAdminGroup(key) {
     try {
         const positions = await fetchPositions(key);
         host.innerHTML = positions.length
-            ? positions.map((m, i) => adminCardHtml(key, m, i, positions.length)).join('')
+            ? positions.map((m, i) => adminCardHtml(key, m, i)).join('')
             : '<p class="list-empty">Посад ще немає — додайте першу кнопкою нижче</p>';
         positions.forEach(m => renderPhotoPreview(group.prefix, m.id, m.photoUrl || '', m.name || m.label));
         opened.forEach(id => {
@@ -333,20 +332,20 @@ async function deletePosition(key, roleId) {
 }
 
 /**
- * Переставляє посаду на одну позицію.
+ * Піднімає посаду на одну позицію вгору.
  *
  * Після перестановки переписуємо порядок суцільною нумерацією всієї
  * групи. Простий обмін значеннями тут ненадійний: у записів, створених
  * до появи поля order, його або немає, або він однаковий — і обмін
  * нічого б не змінив.
  */
-async function movePosition(key, id, dir) {
+async function movePositionUp(key, id) {
     const group = GROUPS[key];
     try {
         const positions = await fetchPositions(key);
         const i = positions.findIndex(p => p.id === id);
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= positions.length) return;
+        if (i < 1) return;                     // першу нікуди піднімати
+        const j = i - 1;
 
         const arr = [...positions];
         [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -357,7 +356,7 @@ async function movePosition(key, id, dir) {
 
         await loadAdminGroup(key);
     } catch (e) {
-        console.error('Перестановка посади:', e);
+        console.error('Підняття посади:', e);
         toast('Не вдалося змінити порядок', 'error');
     }
 }
@@ -425,9 +424,7 @@ export function initContacts() {
             const del = e.target.closest('[data-del]');
             if (del) { deletePosition(key, del.dataset.del); return; }
             const up = e.target.closest('[data-up]');
-            if (up) { movePosition(key, up.dataset.up, -1); return; }
-            const down = e.target.closest('[data-down]');
-            if (down) movePosition(key, down.dataset.down, +1);
+            if (up) movePositionUp(key, up.dataset.up);
         });
 
         host?.addEventListener('change', (e) => {
