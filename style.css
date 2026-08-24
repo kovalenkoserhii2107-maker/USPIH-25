@@ -2425,7 +2425,24 @@ select.field-input {
 }
 .balance-debt { background: linear-gradient(135deg, #FFF4F3 0%, #FFE7E5 100%); }
 .balance-credit { background: linear-gradient(135deg, #F1FBF3 0%, #DDF5E3 100%); }
-.balance-main { display: flex; flex-direction: column; }
+/* Сума ліворуч, історія — круглою кнопкою праворуч. Той самий
+   шаблон, що й статистика у картці світла. */
+.balance-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.balance-main { display: flex; flex-direction: column; min-width: 0; }
+.balance-history {
+    width: 36px; height: 36px; flex-shrink: 0;
+    border-radius: 50%;
+    border: none;
+    background: rgba(120, 120, 128, 0.14);
+    color: var(--ink-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+.balance-history:active { transform: scale(0.9); background: rgba(120, 120, 128, 0.22); }
+.balance-debt .balance-history { background: rgba(255, 59, 48, 0.12); color: #A3382F; }
+.balance-credit .balance-history { background: rgba(52, 199, 89, 0.14); color: #1E7A36; }
 .balance-label {
     font-size: 11px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.7px;

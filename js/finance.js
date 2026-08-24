@@ -56,10 +56,16 @@ export function renderBalance(balance, updatedAt) {
     const label = debt ? 'До сплати' : credit ? 'Переплата' : 'Заборгованості немає';
 
     return `<div class="balance-card balance-${state}">
-        <div class="balance-main">
-            <span class="balance-label">${label}</span>
-            <span class="balance-sum">${state === 'zero' ? '0,00' : formatMoney(n)}<small>грн</small></span>
-            ${updatedAt ? `<span class="balance-date">Оновлено ${escapeHtml(formatDateTime(updatedAt))}</span>` : ''}
+        <div class="balance-head">
+            <div class="balance-main">
+                <span class="balance-label">${label}</span>
+                <span class="balance-sum">${state === 'zero' ? '0,00' : formatMoney(n)}<small>грн</small></span>
+                ${updatedAt ? `<span class="balance-date">Оновлено ${escapeHtml(formatDateTime(updatedAt))}</span>` : ''}
+            </div>
+            <button type="button" class="balance-history" id="openLedgerBtn"
+                    aria-label="Історія нарахувань і оплат" title="Історія нарахувань і оплат">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path><polyline points="12 7 12 12 15 14"></polyline></svg>
+            </button>
         </div>
         <button type="button" class="btn-primary balance-pay" id="payBtn">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
@@ -67,10 +73,6 @@ export function renderBalance(balance, updatedAt) {
         </button>
         <button type="button" class="balance-receipts" id="openReceiptsBtn">
             <span class="balance-receipts-text">Квитанції</span>
-            <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </button>
-        <button type="button" class="balance-receipts" id="openLedgerBtn">
-            <span class="balance-receipts-text">Історія нарахувань і оплат</span>
             <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>
     </div>`;
