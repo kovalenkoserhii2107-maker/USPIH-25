@@ -1149,17 +1149,65 @@ select.field-input {
     word-break: break-word;
 }
 /* Було й стане — поруч: інакше правління порівнює по памʼяті. */
-.vf-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.vf-col { min-width: 0; }
-.vf-col-label {
-    display: block; margin-bottom: 4px;
-    font-size: 10.5px; font-weight: 700; color: var(--ink-3);
-    text-transform: uppercase; letter-spacing: 0.4px;
+/* Що змінилося — переліком по людях. Дві колонки імен показували
+   лише імена, і зміна документа виглядала як відсутність змін. */
+.vf-sum {
+    margin: 0 0 10px; font-size: 12px; font-weight: 600;
+    color: var(--ink-2); text-transform: lowercase;
 }
-.vf-list { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--ink); line-height: 1.5; }
-.vf-list .vf-none { list-style: none; margin-left: -16px; color: var(--ink-3); }
-.vf-added { margin: 10px 0 0; font-size: 12.5px; color: #1E7A36; }
-.vf-gone { margin: 4px 0 0; font-size: 12.5px; color: #A3382F; }
+.vf-sum-none { color: var(--ink-3); font-style: italic; }
+
+.vf-changes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.vf-change {
+    padding: 10px 12px; border-radius: 12px;
+    background: var(--surface-2);
+    border-left: 3px solid var(--ink-4, #C7C7CC);
+}
+.vf-change-add { border-left-color: var(--green); background: rgba(52, 199, 89, 0.07); }
+.vf-change-edit { border-left-color: var(--orange); background: rgba(255, 149, 0, 0.07); }
+.vf-change-gone { border-left-color: #E03B2C; background: rgba(255, 59, 48, 0.06); }
+.vf-change-same { opacity: 0.6; }
+
+.vf-change-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap;
+}
+.vf-change-head b { font-size: 13.5px; color: var(--ink); }
+.vf-tag {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px;
+    text-transform: uppercase; white-space: nowrap;
+    padding: 2px 7px; border-radius: 999px;
+    background: rgba(0, 0, 0, 0.06); color: var(--ink-2);
+}
+.vf-tag-add { background: rgba(52, 199, 89, 0.16); color: #1E7A36; }
+.vf-tag-edit { background: rgba(255, 149, 0, 0.18); color: #9A5A00; }
+.vf-tag-gone { background: rgba(255, 59, 48, 0.14); color: #A3382F; }
+
+.vf-fields { margin-top: 8px; display: grid; gap: 6px; }
+.vf-f { display: grid; grid-template-columns: 74px 1fr; gap: 8px; align-items: baseline; }
+.vf-f-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px;
+    text-transform: uppercase; color: var(--ink-3);
+}
+.vf-f-val { font-size: 12.5px; line-height: 1.45; color: var(--ink); min-width: 0; }
+/* Старе значення лишаємо видимим, а не ховаємо: правління звіряє
+   саме перехід, а не кінцевий стан. */
+.vf-f-old { color: var(--ink-3); margin-right: 6px; }
+.vf-f-old + .vf-f-new::before { content: '→ '; color: var(--ink-3); }
+.vf-f-new { font-weight: 600; }
+.vf-empty { color: var(--ink-3); font-style: italic; font-weight: 400; }
+
+.vf-files { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.vf-file {
+    display: inline-block; max-width: 100%;
+    padding: 3px 9px; border-radius: 8px;
+    font-size: 11.5px; font-weight: 600; text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vf-file-new { background: rgba(0, 122, 255, 0.1); color: var(--blue); }
+.vf-file-gone { background: rgba(255, 59, 48, 0.09); color: #A3382F; text-decoration: line-through; }
+.vf-f-note { font-size: 11px; color: var(--ink-3); }
+
 .vf-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .vf-actions .btn-primary { flex: 1; }
 .vf-reject {

@@ -13,6 +13,7 @@ import {
     updateDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, promptDialog, normName } from './ui.js';
+import { fileNameFromUrl } from './attachments.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
 import { prefillAnnouncement, notifyApartment } from './messages.js';
 
@@ -29,32 +30,123 @@ function waited(msVal) {
     return `${d} дн. тому`;
 }
 
-function ownerLine(o) {
-    const share = o.shareFrac || o.sharePerc ? ` — ${escapeHtml(o.shareFrac || o.sharePerc + '%')}` : '';
-    return `<li>${escapeHtml(o.name || '—')}${share}</li>`;
+const urls = (o) => String(o.fileUrls || '').split(',').map(u => u.trim()).filter(Boolean);
+const shareOf = (o) => o.shareFrac || (o.sharePerc ? `${o.sharePerc}%` : '');
+
+// Поля, які правління звіряє з документами. Порядок — за важливістю:
+// частка вирішує вагу голосу, документ — чи є на неї підстава.
+const FIELDS = [
+    { label: 'Частка', get: shareOf },
+    { label: 'Документ', get: (o) => o.docInfo || '' }
+];
+
+const val = (v) => v ? escapeHtml(v) : '<i class="vf-empty">не вказано</i>';
+
+/** Посилання на скан: правління має мати змогу відкрити й перевірити. */
+function fileLinks(list, cls) {
+    if (!list.length) return '';
+    return list.map((u, i) => `<a class="vf-file ${cls}" href="${escapeHtml(u)}"
+        target="_blank" rel="noopener">${escapeHtml(fileNameFromUrl(u, i))}</a>`).join('');
 }
 
-/** Що саме змінилося: підсвічуємо появу й зникнення імен. */
+/** Рядок «було → стане» для одного поля. */
+function fieldRow(label, was, now) {
+    if (was === now) return '';
+    return `<div class="vf-f">
+        <span class="vf-f-label">${label}</span>
+        <span class="vf-f-val">
+            <s class="vf-f-old">${val(was)}</s>
+            <b class="vf-f-new">${val(now)}</b>
+        </span>
+    </div>`;
+}
+
+/** Усі поля людини — для доданих і прибраних, де порівнювати нема з чим. */
+function fullRows(o) {
+    const f = urls(o);
+    return FIELDS.map(({ label, get }) => `<div class="vf-f">
+        <span class="vf-f-label">${label}</span>
+        <span class="vf-f-val"><b class="vf-f-new">${val(get(o))}</b></span>
+    </div>`).join('')
+    + (f.length ? `<div class="vf-f">
+        <span class="vf-f-label">Файли</span>
+        <span class="vf-f-val vf-files">${fileLinks(f, 'vf-file-new')}</span>
+    </div>` : '');
+}
+
+/**
+ * Що саме змінилося — по кожній людині окремо.
+ *
+ * Дві колонки імен показували лише імена, тож зміна документа чи
+ * доданий скан виглядали як «нічого не змінилося»: обидва списки
+ * однакові, а заявка є. Тепер видно кожне поле, що поїхало, і
+ * файли, які додали, — з посиланням, щоб їх можна було відкрити.
+ */
 function diffHtml(before, after) {
     // Та сама нормалізація, що й у кворумі — інакше зміна пробілу
     // читалася б як заміна людини.
-    const names = (arr) => new Set((arr || []).map(o => normName(o.name)));
-    const wasNames = names(before), nowNames = names(after);
-    const added = (after || []).filter(o => !wasNames.has(normName(o.name)));
-    const gone = (before || []).filter(o => !nowNames.has(normName(o.name)));
+    const key = (o) => normName(o.name);
+    const beforeBy = new Map((before || []).map(o => [key(o), o]));
+    const afterKeys = new Set((after || []).map(key));
 
-    return `<div class="vf-diff">
-        <div class="vf-col">
-            <span class="vf-col-label">Було</span>
-            <ul class="vf-list">${(before || []).map(ownerLine).join('') || '<li class="vf-none">порожньо</li>'}</ul>
-        </div>
-        <div class="vf-col">
-            <span class="vf-col-label">Стане</span>
-            <ul class="vf-list">${(after || []).map(ownerLine).join('') || '<li class="vf-none">порожньо</li>'}</ul>
-        </div>
-    </div>
-    ${added.length ? `<p class="vf-added">Додається: ${added.map(o => escapeHtml(o.name)).join(', ')}</p>` : ''}
-    ${gone.length ? `<p class="vf-gone">Прибирається: ${gone.map(o => escapeHtml(o.name)).join(', ')}</p>` : ''}`;
+    const rows = [];
+
+    (after || []).forEach(o => {
+        const was = beforeBy.get(key(o));
+        if (!was) {
+            rows.push({ kind: 'add', tag: 'додається', name: o.name, body: fullRows(o) });
+            return;
+        }
+        const wasFiles = urls(was), nowFiles = urls(o);
+        const addedFiles = nowFiles.filter(u => !wasFiles.includes(u));
+        const goneFiles = wasFiles.filter(u => !nowFiles.includes(u));
+
+        let body = FIELDS.map(({ label, get }) => fieldRow(label, get(was), get(o))).join('');
+        if (addedFiles.length || goneFiles.length) {
+            body += `<div class="vf-f">
+                <span class="vf-f-label">Файли</span>
+                <span class="vf-f-val vf-files">
+                    ${fileLinks(addedFiles, 'vf-file-new')}
+                    ${fileLinks(goneFiles, 'vf-file-gone')}
+                    <span class="vf-f-note">${[
+                        addedFiles.length ? `додано ${addedFiles.length}` : '',
+                        goneFiles.length ? `прибрано ${goneFiles.length}` : ''
+                    ].filter(Boolean).join(', ')}</span>
+                </span>
+            </div>`;
+        }
+        rows.push(body
+            ? { kind: 'edit', tag: 'змінено', name: o.name, body }
+            : { kind: 'same', tag: 'без змін', name: o.name, body: '' });
+    });
+
+    (before || []).filter(o => !afterKeys.has(key(o))).forEach(o => {
+        rows.push({ kind: 'gone', tag: 'прибирається', name: o.name, body: fullRows(o) });
+    });
+
+    // Незмінені йдуть у кінець: правління дивиться на те, що поїхало.
+    const order = { add: 0, edit: 1, gone: 2, same: 3 };
+    rows.sort((a, b) => order[a.kind] - order[b.kind]);
+
+    const touched = rows.filter(r => r.kind !== 'same').length;
+    const summary = touched
+        ? `<p class="vf-sum">${[
+              rows.filter(r => r.kind === 'add').length ? `додається ${rows.filter(r => r.kind === 'add').length}` : '',
+              rows.filter(r => r.kind === 'edit').length ? `змінюється ${rows.filter(r => r.kind === 'edit').length}` : '',
+              rows.filter(r => r.kind === 'gone').length ? `прибирається ${rows.filter(r => r.kind === 'gone').length}` : ''
+          ].filter(Boolean).join(' · ')}</p>`
+        // Заявка без відмінностей — теж інформація: значить мешканець
+        // надіслав те саме, і правління має це бачити, а не гадати.
+        : `<p class="vf-sum vf-sum-none">Відмінностей у даних немає</p>`;
+
+    return summary + `<ul class="vf-changes">${rows.map(r => `
+        <li class="vf-change vf-change-${r.kind}">
+            <span class="vf-change-head">
+                <b>${escapeHtml(r.name || '—')}</b>
+                <span class="vf-tag vf-tag-${r.kind}">${r.tag}</span>
+            </span>
+            ${r.body ? `<div class="vf-fields">${r.body}</div>` : ''}
+        </li>`).join('')}</ul>`;
 }
 
 let pending = [];
