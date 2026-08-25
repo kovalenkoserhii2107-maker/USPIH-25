@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=80">
+    <link rel="stylesheet" href="style.css?v=81">
 </head>
 <body>
 
@@ -645,9 +645,29 @@
                 <button id="uploadOsbbDocBtn" class="btn-primary" type="button">Завантажити в Базу</button>
                 </div></div>
             </div>
+                <div class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Графік відключень ДТЕК</h2>
+                        <span class="admin-card-sub">Черга, на якій стоїть будинок</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="field">
+                    <label class="field-label" for="dtekGroup">Черга</label>
+                    <select id="dtekGroup" class="field-input"></select>
+                    <span class="field-hint">Подивитися свою чергу можна на
+                        <a href="https://www.dtek-oem.com.ua/ua/shutdowns" target="_blank" rel="noopener">сайті ДТЕК</a>
+                        — введіть адресу будинку. Графік підтягується автоматично кожні три години.</span>
+                </div>
+                <div id="dtekState" class="dtek-state"></div>
+                <button type="button" id="saveDtekBtn" class="btn-primary">Зберегти чергу</button>
+                </div></div>
+            </div>
+
         </div>
 
-        <!-- Вкладка: чат правління -->
         <div class="admin-panel" data-panel="polls">
             <div class="card admin-fold open">
                 <div class="admin-card-head">
@@ -1380,6 +1400,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=80"></script>
+<script type="module" src="js/app.js?v=81"></script>
 </body>
 </html>

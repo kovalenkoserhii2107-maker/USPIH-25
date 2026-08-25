@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '80';
+const VERSION = '81';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -44,7 +44,8 @@ const SHELL = [
     './js/tutorial.js',
     './js/import-owners.js',
     './js/export-base.js',
-    './js/xlsx-write.js'
+    './js/xlsx-write.js',
+    './js/dtek.js'
 ];
 
 // ------------------------------------------------------------

@@ -88,3 +88,83 @@ exports.updatePowerStatus = onRequest(
         }
     }
 );
+
+// ============================================================
+// Графік можливих відключень ДТЕК
+//
+// Забирає сторінку графіків, дістає з неї JSON і кладе у Firestore
+// чергу нашого будинку. Застосунок сам цього зробити не може: у
+// відповіді ДТЕК немає Access-Control-Allow-Origin.
+//
+// Номер черги веде правління в налаштуваннях; без нього функція
+// нічого не пише — вгадувати чергу за адресою ми не беремося.
+// ============================================================
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { URL_SHUTDOWNS, parseSchedule } = require('./dtek');
+
+const SCHEDULE_REGION = 'europe-central2';
+
+async function refreshSchedule() {
+    const cfg = await db.doc('osbb_settings/power').get();
+    const group = cfg.exists ? cfg.data().dtekGroup : '';
+    if (!group) {
+        logger.info('Чергу ДТЕК не налаштовано — пропускаємо');
+        return { skipped: true };
+    }
+
+    const res = await fetch(URL_SHUTDOWNS, {
+        headers: {
+            // Представляємось чесно: анонімний скребок легко прийняти
+            // за атаку й заблокувати, а нам тут жити.
+            'User-Agent': 'OSBB-Uspih-25/1.0 (+https://kovalenkoserhii2107-maker.github.io/USPIH-25)',
+            'Accept': 'text/html'
+        }
+    });
+    if (!res.ok) throw new Error(`ДТЕК відповів ${res.status}`);
+
+    const parsed = parseSchedule(await res.text());
+    if (!parsed) throw new Error('Не вдалося знайти графік у сторінці');
+
+    const week = parsed.week[group];
+    if (!week) throw new Error(`Черги ${group} немає у графіку`);
+
+    await db.doc('status/schedule').set({
+        group,
+        groupName: parsed.names[group] || group,
+        week,
+        hoursPerWeek: parsed.totals[group] ?? null,
+        // Дата з самого ДТЕК: наш час оновлення нічого не каже про те,
+        // наскільки свіжий графік — сторінку могли не міняти тижнями.
+        sourceUpdated: parsed.updatedText || '',
+        fetchedAt: FieldValue.serverTimestamp(),
+        source: URL_SHUTDOWNS
+    }, { merge: true });
+
+    logger.info('Графік оновлено', { group, hours: parsed.totals[group] });
+    return { group, hours: parsed.totals[group] };
+}
+
+// Кожні три години: ДТЕК і сам не міняє графік частіше, а зайві
+// звернення до чужого сайту — погані манери.
+exports.pullDtekSchedule = onSchedule(
+    { schedule: 'every 3 hours', timeZone: 'Europe/Kyiv', region: SCHEDULE_REGION, maxInstances: 1 },
+    async () => { await refreshSchedule(); }
+);
+
+// Ручне оновлення — щоб не чекати три години після зміни черги.
+exports.pullDtekScheduleNow = onRequest(
+    { region: SCHEDULE_REGION, secrets: [POWER_SECRET], maxInstances: 1 },
+    async (req, res) => {
+        const key = req.get('X-Api-Key') || req.query.key;
+        if (key !== POWER_SECRET.value()) {
+            res.status(403).json({ error: 'forbidden' });
+            return;
+        }
+        try {
+            res.json({ ok: true, ...(await refreshSchedule()) });
+        } catch (e) {
+            logger.error('Оновлення графіка:', e);
+            res.status(502).json({ error: String(e.message || e) });
+        }
+    }
+);

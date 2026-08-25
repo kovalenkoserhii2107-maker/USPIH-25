@@ -32,6 +32,7 @@ import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import { initImportOwners } from './import-owners.js';
 import { initExportBase } from './export-base.js';
+import { initDtek, loadDtekSettings } from './dtek.js';
 import {
     initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
     loadFinanceDetail, loadAdminExpenses, loadAdminRequisites
@@ -128,7 +129,7 @@ async function loadCabinet(apt) {
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadAdminExpenses(), loadAdminRequisites(),
-                           loadDirectory(), loadVerifyQueue()]);
+                           loadDirectory(), loadVerifyQueue(), loadDtekSettings()]);
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
         refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
@@ -377,6 +378,7 @@ function init() {
     initDirectory();
     initImportOwners();
     initExportBase();
+    initDtek();
     initFinance();
     initPayments();
     initAccounts();

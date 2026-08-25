@@ -4140,3 +4140,24 @@ select.field-input {
 }
 .exp-up:active { transform: scale(0.9); }
 .exp-up:disabled { opacity: 0.25; cursor: default; }
+
+/* ---------- Черга ДТЕК (адмін) ---------- */
+.dtek-state { margin: 14px 0; }
+.dtek-empty { margin: 0; font-size: 13px; color: var(--ink-3); line-height: 1.45; }
+.dtek-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.dtek-head b { font-size: 14px; color: var(--ink); }
+.dtek-head span { font-size: 11.5px; color: var(--ink-3); }
+.dtek-rows { border-radius: var(--r-sm); background: var(--surface-2); padding: 4px 10px; }
+.dtek-row {
+    display: grid; grid-template-columns: 28px 1fr; gap: 8px;
+    padding: 5px 0; font-size: 12.5px; line-height: 1.4;
+    border-top: 0.5px solid rgba(0, 0, 0, 0.05);
+}
+.dtek-row:first-child { border-top: none; }
+.dtek-row b { color: var(--ink-2); font-weight: 700; }
+.dtek-row span { color: var(--ink); min-width: 0; }
+.dtek-row i { color: var(--ink-3); font-style: normal; }
+.dtek-note { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-3); }
