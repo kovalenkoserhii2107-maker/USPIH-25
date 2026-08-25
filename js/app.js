@@ -32,7 +32,7 @@ import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import { initImportOwners } from './import-owners.js';
 import { initExportBase } from './export-base.js';
-import { initDtek, loadDtekSettings } from './dtek.js';
+import { initDtek, loadDtekSettings, loadPowerSchedule } from './dtek.js';
 import {
     initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
     loadFinanceDetail, loadAdminExpenses, loadAdminRequisites
@@ -142,7 +142,7 @@ async function loadCabinet(apt) {
         document.getElementById('displayAreaVal').textContent = session.area;
         await loadOwners(apt);
         await loadUserMessages(apt, session.entrance);
-        await Promise.all([loadBalance(apt), loadExpenses()]);
+        await Promise.all([loadBalance(apt), loadExpenses(), loadPowerSchedule()]);
 
         // Кнопку малює loadBalance, тож слухача вішаємо після нього
         document.getElementById('openReceiptsBtn')?.addEventListener('click', () => {

@@ -10,7 +10,7 @@
 //   power_log/*   → { isOn, at }
 // тож статистика відключень працює без жодних змін у клієнті.
 // ============================================================
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -165,6 +165,33 @@ exports.pullDtekScheduleNow = onRequest(
         } catch (e) {
             logger.error('Оновлення графіка:', e);
             res.status(502).json({ error: String(e.message || e) });
+        }
+    }
+);
+
+/**
+ * Оновлення на вимогу з панелі правління.
+ *
+ * Саме onCall, а не вебхук із ключем: інакше ключ довелося б покласти
+ * в браузер, звідки його дістає будь-хто. Тут особу підтверджує сам
+ * Firebase Auth, а право — прапорець isAdmin у документі квартири.
+ */
+exports.refreshDtekSchedule = onCall(
+    { region: SCHEDULE_REGION, maxInstances: 2 },
+    async (request) => {
+        const email = request.auth?.token?.email || '';
+        const apt = email.split('@')[0];
+        if (!apt) throw new HttpsError('unauthenticated', 'Потрібен вхід');
+
+        const snap = await db.doc(`apartments/${apt}`).get();
+        if (!snap.exists || snap.data().isAdmin !== true) {
+            throw new HttpsError('permission-denied', 'Лише для правління');
+        }
+        try {
+            return await refreshSchedule();
+        } catch (e) {
+            logger.error('Оновлення графіка на вимогу:', e);
+            throw new HttpsError('unavailable', String(e.message || e));
         }
     }
 );

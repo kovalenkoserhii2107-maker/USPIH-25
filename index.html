@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=81">
+    <link rel="stylesheet" href="style.css?v=82">
 </head>
 <body>
 
@@ -175,6 +175,15 @@
 </div>
 
 <!-- ============ СТАТИСТИКА ВІДКЛЮЧЕНЬ ============ -->
+<div id="schedulePopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Графік відключень</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body" id="scheduleBody"></div>
+</div>
+
 <div id="powerStatsPopup" class="sheet">
     <div class="sheet-grabber"></div>
     <div class="sheet-header">
@@ -393,6 +402,8 @@
                 </button>
             </div>
         </div>
+
+        <div id="powerScheduleHost"></div>
 
         <div id="balanceHost"></div>
 
@@ -1400,6 +1411,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=81"></script>
+<script type="module" src="js/app.js?v=82"></script>
 </body>
 </html>
