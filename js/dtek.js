@@ -154,19 +154,25 @@ export async function loadPowerSchedule() {
         const s = scheduleNow(data.week);
         if (!s) { host.innerHTML = ''; return; }
 
+        // Кожен рядок сам називає свій предмет. «Сьогодні о 20:30» без
+        // слова «світло» читалося як що завгодно — збори, голосування,
+        // прийом. Тепер смужка лежить усередині картки світла, але
+        // текст усе одно каже прямо: припущення на здогад тут зайве.
         const TEXT = {
-            off:      () => `<b>Зараз за графіком — без світла</b><span>до ${escapeHtml(s.to)}</span>`,
-            soon:     () => `<b>Сьогодні о ${escapeHtml(s.from)}</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
-            tomorrow: () => `<b>Завтра о ${escapeHtml(s.from)}</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
+            off:      () => `<b>Зараз має бути без світла</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
+            soon:     () => `<b>Наступне відключення о ${escapeHtml(s.from)}</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
+            // Коротше, ніж «Наступне відключення завтра о 06:00»: те
+            // переносилося на другий рядок і ламало рівний ритм картки.
+            tomorrow: () => `<b>Наступне — завтра о ${escapeHtml(s.from)}</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
             clear:    () => `<b>Сьогодні відключень немає</b><span>за графіком ДТЕК</span>`
         };
 
         host.innerHTML = `<button type="button" class="pw-sched pw-sched-${s.state}" id="openScheduleBtn">
             <span class="pw-sched-icon">
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line></svg>
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
             </span>
             <span class="pw-sched-text">${TEXT[s.state]()}</span>
-            <svg class="row-chevron" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <svg class="row-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>`;
 
         document.getElementById('openScheduleBtn')?.addEventListener('click', async () => {

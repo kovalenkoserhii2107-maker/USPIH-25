@@ -139,7 +139,10 @@ async function loadCabinet(apt) {
         document.getElementById('topNav').style.display = 'block';
         document.getElementById('displayAptNum').textContent = apt;
         document.getElementById('displayEntranceNum').textContent = session.entrance;
-        document.getElementById('displayAreaVal').textContent = session.area;
+        // Кома, а не крапка: усі інші числа в застосунку українські
+        // («6 247,33»), і «64.0» серед них виглядає чужим.
+        document.getElementById('displayAreaVal').textContent =
+            String(session.area).replace('.', ',');
         await loadOwners(apt);
         await loadUserMessages(apt, session.entrance);
         await Promise.all([loadBalance(apt), loadExpenses(), loadPowerSchedule()]);

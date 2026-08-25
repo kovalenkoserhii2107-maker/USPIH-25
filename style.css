@@ -4159,30 +4159,36 @@ select.field-input {
 .dtek-row i { color: var(--ink-3); font-style: normal; }
 .dtek-note { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-3); }
 
-/* ---------- Графік відключень: смужка на головному ---------- */
+/* ---------- Графік відключень: рядок у картці світла ----------
+   Раніше це була окрема картка — і читалася як щось стороннє:
+   «Сьогодні о 20:30» без предмета. Тепер вона всередині картки
+   світла, під тонкою лінією, тобто явно про те саме. */
 .pw-sched {
-    display: flex; align-items: center; gap: 11px;
+    display: flex; align-items: center; gap: 10px;
     width: 100%; box-sizing: border-box;
-    padding: 12px 14px; margin-bottom: var(--gap);
-    border: none; border-radius: var(--r-lg);
-    background: var(--surface); box-shadow: var(--sh-card);
-    text-align: left; font-family: var(--font); cursor: pointer;
-    transition: transform 0.15s ease;
+    margin-top: 14px; padding: 12px 0 0;
+    border: none; border-top: 0.5px solid rgba(0, 0, 0, 0.07);
+    background: none; text-align: left;
+    font-family: var(--font); cursor: pointer;
+    transition: opacity 0.15s ease;
 }
-.pw-sched:active { transform: scale(0.99); }
+.pw-sched:active { opacity: 0.55; }
 .pw-sched-icon {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
-    background: rgba(120, 120, 128, 0.12); color: var(--ink-2);
+    width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+    background: rgba(138, 109, 0, 0.12); color: #8A6D00;
 }
 .pw-sched-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.pw-sched-text b { font-size: 14.5px; font-weight: 600; color: var(--ink); }
-.pw-sched-text span { font-size: 12px; color: var(--ink-2); margin-top: 1px; }
-/* Тон за станом: «зараз без світла» має читатися до тексту. */
-.pw-sched-off .pw-sched-icon { background: rgba(255, 59, 48, 0.12); color: var(--red); }
+.pw-sched-text b { font-size: 14px; font-weight: 600; color: var(--ink); }
+.pw-sched-text span { font-size: 11.5px; color: var(--ink-2); margin-top: 1px; }
+.pw-sched .row-chevron { color: var(--ink-4, #C7C7CC); flex-shrink: 0; }
+
+/* «Зараз має бути без світла» — єдиний стан, що вимагає уваги. */
+.pw-sched-off .pw-sched-icon { background: rgba(255, 59, 48, 0.13); color: var(--red); }
 .pw-sched-off .pw-sched-text b { color: #A3382F; }
-.pw-sched-soon .pw-sched-icon { background: rgba(255, 149, 0, 0.14); color: #9A5A00; }
-.pw-sched-clear .pw-sched-icon { background: rgba(52, 199, 89, 0.14); color: #1E7A36; }
+.pw-sched-clear .pw-sched-icon { background: rgba(52, 199, 89, 0.15); color: #1E7A36; }
+/* У картці «світла немає» лінія на червонуватому тлі має бути темніша */
+.power-off .pw-sched { border-top-color: rgba(163, 56, 47, 0.14); }
 
 /* ---------- Графік відключень: тиждень у панелі ---------- */
 .sched-src { margin: 0 0 14px; font-size: 12.5px; color: var(--ink-2); }
