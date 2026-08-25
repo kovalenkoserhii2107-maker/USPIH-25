@@ -9,7 +9,7 @@
 // ============================================================
 import { db, storage, session } from './firebase.js';
 import {
-    collection, addDoc, getDocs, getDoc, setDoc, updateDoc, doc,
+    collection, addDoc, getDocs, getDoc, setDoc, updateDoc, doc, runTransaction,
     query, where, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
@@ -492,11 +492,30 @@ async function closeExpiredPolls(polls) {
             // Кворум фіксуємо в самому опитуванні: мешканець не має права
             // читати всі квартири й не може порахувати його сам.
             const quorum = computeQuorum(poll.votes, apartments);
-            await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', quorum });
-            if (!poll.resultsSent) {
-                await broadcastResults(poll, quorum);
-                await updateDoc(doc(db, 'polls', poll.id), { resultsSent: true });
-            }
+            const ref = doc(db, 'polls', poll.id);
+
+            // Мітку «підсумки надіслано» ставимо в транзакції, ДО розсилки.
+            //
+            // Читання й запис нарізно тут не годяться: дві вкладки
+            // правління, відкриті одночасно, обидві побачили б
+            // resultsSent === false і обидві розіслали б підсумки —
+            // усьому будинку, двічі.
+            //
+            // Якщо розсилка після цього впаде, підсумки не підуть зовсім.
+            // Це гірше, ніж здається на слух, але все ж краще за дубль:
+            // відсутню розсилку правління бачить і повторює вручну, а
+            // друга копія в трьохстах телефонах — уже не виправна.
+            const mine = await runTransaction(db, async (tx) => {
+                const snap = await tx.get(ref);
+                if (!snap.exists()) return false;
+                const already = snap.data().resultsSent === true;
+                tx.update(ref, already
+                    ? { status: 'closed', quorum }
+                    : { status: 'closed', quorum, resultsSent: true });
+                return !already;
+            });
+
+            if (mine) await broadcastResults(poll, quorum);
         } catch (e) {
             console.error(`Автозакриття «${poll.title}»:`, e);
         }
