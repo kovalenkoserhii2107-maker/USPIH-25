@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=77">
+    <link rel="stylesheet" href="style.css?v=78">
 </head>
 <body>
 
@@ -771,6 +771,42 @@
                 </div></div>
             </div>
 
+            <div class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Вивантажити базу</h2>
+                        <span class="admin-card-sub">Обираєте поля й порядок — отримуєте файл Excel</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <label class="field-label" for="expFilter">Які квартири</label>
+                    <select id="expFilter" class="field-input"></select>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Рядок відповідає</span>
+                    <div class="exp-grain">
+                        <label><input type="radio" name="expGrain" value="owner" checked><span>Власнику</span></label>
+                        <label><input type="radio" name="expGrain" value="apt"><span>Квартирі</span></label>
+                    </div>
+                    <span class="field-hint">«Власнику» — квартира з двома власниками дасть два рядки;
+                        площа й борг у них повторяться, тож сума по стовпцю буде завищена.
+                        «Квартирі» — один рядок, власники в одній клітинці; для підсумків беріть його.</span>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Колонки та їх порядок</span>
+                    <div id="expFields" class="exp-fields"></div>
+                    <span class="field-hint" id="expCount"></span>
+                </div>
+
+                <button type="button" id="expRunBtn" class="btn-primary">Завантажити Excel</button>
+                </div></div>
+            </div>
+
             <div class="card admin-fold open">
                 <div class="admin-card-head admin-card-head-row">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
@@ -1344,6 +1380,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=77"></script>
+<script type="module" src="js/app.js?v=78"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '77';
+const VERSION = '78';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -42,7 +42,9 @@ const SHELL = [
     './js/ledger.js',
     './js/verify.js',
     './js/tutorial.js',
-    './js/import-owners.js'
+    './js/import-owners.js',
+    './js/export-base.js',
+    './js/xlsx-write.js'
 ];
 
 // ------------------------------------------------------------

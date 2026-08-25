@@ -31,6 +31,7 @@ import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './p
 import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import { initImportOwners } from './import-owners.js';
+import { initExportBase } from './export-base.js';
 import {
     initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
     loadFinanceDetail, loadAdminExpenses, loadAdminRequisites
@@ -375,6 +376,7 @@ function init() {
     initPolls();
     initDirectory();
     initImportOwners();
+    initExportBase();
     initFinance();
     initPayments();
     initAccounts();

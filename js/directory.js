@@ -52,6 +52,8 @@ export async function fetchDirectory() {
                 ownersConfirmedBy: data.ownersConfirmedBy || '',
                 balance: data.balance,
                 balanceUpdatedAt: data.balanceUpdatedAt || null,
+                personalAccount: data.personalAccount || '',
+                ownersConfirmedAt: data.ownersConfirmedAt || null,
                 owners: byApt[d.id] || []
             };
         })
