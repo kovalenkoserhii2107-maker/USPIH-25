@@ -187,6 +187,12 @@ function renderTabs() {
  * місцях. На широких відрізках пишемо тривалість просто на них:
  * інакше «скільки саме» доводилося вгадувати за довжиною.
  */
+/** 54.17% доби → «13:00». Потрібно, щоб підписати смугу її ж часом. */
+const hhmmOfPct = (p) => {
+    const total = Math.round(p / 100 * 1440);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+
 const hhmmPct = (v) => {
     const [h, m] = String(v).split(':').map(Number);
     return ((h * 60 + (m || 0)) / 1440) * 100;
@@ -280,6 +286,76 @@ function renderDays(days, schedWeek) {
             ${hasUnplanned ? '<span class="pw-key-item"><i class="pw-key pw-key-unplanned"></i>поза графіком — ймовірно аварія</span>' : ''}
         </div>
         ${schedWeek ? `<p class="pw-plan-note">Графік показано поточний — у минулому він міг бути іншим.</p>` : ''}
+    </div>`;
+}
+
+/**
+ * Тиждень стовпцями: день — колонка, час іде згори вниз.
+ *
+ * По горизонталі «з котрої години» доводилося міряти на око проти
+ * підписів угорі. Вертикально час читається як на годиннику, а на
+ * самій смузі стоїть час початку — не треба зіставляти нічого.
+ *
+ * Місяць і рік лишаються рядками: тридцять колонок не влізуть, та
+ * там і питання інше — не «коли», а «скільки».
+ */
+function renderDaysColumns(days, schedWeek) {
+    const pct = (v) => `${v.toFixed(2)}%`;
+    const hasUnplanned = schedWeek && days.some(d =>
+        d.segments.some(g => outsidePlan(g, planBands(d.date, schedWeek)).length));
+
+    // Кожна година своїм рядком: питання «з котрої не буде світла»
+    // не має розвʼязуватися прикиданням між позначками через три.
+    // Кратні шести підписуємо темніше — щоб було за що зачепитися оком.
+    const marks = Array.from({ length: 25 }, (_, h) => h);
+    const axis = marks.map(h => `<span class="pc-mark${h % 6 ? '' : ' is-major'}"
+        style="top:${pct(h / 24 * 100)}">${String(h).padStart(2, '0')}</span>`).join('');
+    const grid = marks.slice(1, -1).map(h =>
+        `<i class="pc-line${h % 6 ? '' : ' is-major'}" style="top:${pct(h / 24 * 100)}"></i>`).join('');
+
+    const cols = days.map(d => {
+        const bands = planBands(d.date, schedWeek);
+        const plan = bands.map(([a, b]) =>
+            `<i class="pc-plan" style="top:${pct(a)};height:${pct(b - a)}"></i>`).join('');
+
+        const facts = d.segments.map(g =>
+            `<i class="pc-fact" style="top:${pct(g.left)};height:${pct(Math.max(g.width, 0.5))}"
+                title="${escapeHtml(hhmmOfPct(g.left))} — ${escapeHtml(shortDur(g.ms))}"></i>`).join('');
+
+        // Підписи — окремим шаром поверх усього: смуга «поза графіком»
+        // малюється після фактичної і інакше накривала б час початку.
+        // Влазить приблизно від півтори години смуги.
+        const labels = d.segments.filter(g => g.width >= 6).map(g =>
+            `<span class="pc-time" style="top:${pct(g.left)}">${escapeHtml(hhmmOfPct(g.left))}</span>`).join('');
+
+        const unplanned = bands.length
+            ? d.segments.flatMap(g => outsidePlan(g, bands)).map(([a, b]) =>
+                `<i class="pc-unplanned" style="top:${pct(a)};height:${pct(b - a)}"></i>`).join('')
+            : '';
+
+        return `<div class="pc-col${d.isToday ? ' is-today' : ''}">
+            <span class="pc-name"><b>${WEEKDAYS[d.date.getDay()]}</b>${
+                String(d.date.getDate()).padStart(2, '0')}.${String(d.date.getMonth() + 1).padStart(2, '0')}</span>
+            <span class="pc-track">
+                ${grid}${plan}${facts}${unplanned}${labels}
+                ${d.elapsedPct < 100 ? `<i class="pc-future" style="top:${pct(d.elapsedPct)}"></i>
+                    <i class="pc-now" style="top:${pct(d.elapsedPct)}"></i>` : ''}
+            </span>
+            <span class="pc-total">${d.offMs >= 60000 ? escapeHtml(shortDur(d.offMs)) : ''}</span>
+        </div>`;
+    }).join('');
+
+    return `<div class="pc">
+        <div class="pc-grid">
+            <div class="pc-axis">${axis}</div>
+            ${cols}
+        </div>
+        <div class="pw-legend">
+            ${schedWeek ? '<span class="pw-key-item"><i class="pw-key pw-key-plan"></i>за графіком ДТЕК</span>' : ''}
+            <span class="pw-key-item"><i class="pw-key pw-key-fact"></i>фактично без світла</span>
+            ${hasUnplanned ? '<span class="pw-key-item"><i class="pw-key pw-key-unplanned"></i>поза графіком — ймовірно аварія</span>' : ''}
+        </div>
+        ${schedWeek ? '<p class="pw-plan-note">Графік показано поточний — у минулому він міг бути іншим.</p>' : ''}
     </div>`;
 }
 
@@ -381,7 +457,9 @@ export function renderStats(s, patched = false, entries = [], now = Date.now(), 
 
     return renderTabs() + tiles + longest + compare + peakNote
         + `<span class="pw-chart-title">Коли не було світла</span>`
-        + (period === 'year' ? renderMonths(entries, now) : renderDays(s.days, schedWeek))
+        + (period === 'year' ? renderMonths(entries, now)
+           : period === 'week' ? renderDaysColumns(s.days, schedWeek)
+           : renderDays(s.days, schedWeek))
         + (patched ? `<p class="pw-warn">У журналі бракувало запису — його відновлено за поточним статусом.
             Якщо таке повторюється, перевірте звʼязок під час перемикання.</p>` : '')
         + renderLog(entries);

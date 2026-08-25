@@ -4257,3 +4257,63 @@ select.field-input {
 }
 .pw-compare-sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-3); }
 
+
+/* ---------- Тиждень стовпцями: час згори вниз ---------- */
+/* По горизонталі «з котрої години» доводилося міряти на око.
+   Вертикально час читається як на годиннику. */
+.pc { margin-bottom: 12px; }
+.pc-grid { display: grid; grid-template-columns: 22px repeat(7, 1fr); gap: 3px; }
+
+/* Двадцять пікселів на годину — стільки треба, щоб підпис кожної
+   години не злипався із сусідніми. */
+.pc-axis { position: relative; height: 480px; margin-top: 26px; }
+.pc-mark {
+    position: absolute; right: 3px; transform: translateY(-50%);
+    font-size: 9px; color: var(--ink-4, #C7C7CC);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.pc-mark.is-major { color: var(--ink-3); font-weight: 700; }
+
+.pc-col { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
+.pc-name {
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    height: 26px; font-size: 9px; color: var(--ink-3); line-height: 1.15;
+}
+.pc-name b { font-size: 10.5px; font-weight: 700; color: var(--ink-2); }
+.pc-col.is-today .pc-name, .pc-col.is-today .pc-name b { color: var(--blue); }
+
+.pc-track {
+    position: relative; height: 480px;
+    border-radius: 5px; background: var(--surface-3); overflow: hidden;
+}
+.pc-line { position: absolute; left: 0; right: 0; height: 1px; background: rgba(120,120,128,0.1); }
+.pc-line.is-major { background: rgba(120,120,128,0.22); }
+.pc-plan { position: absolute; left: 0; right: 0; background: rgba(255, 149, 0, 0.24); }
+.pc-fact {
+    position: absolute; left: 0; right: 0;
+    display: flex; justify-content: center; padding-top: 1px;
+    background: var(--red); border-radius: 3px; min-height: 2px;
+}
+/* Час початку просто на смузі — не треба зіставляти зі шкалою.
+   Окремим шаром, бо смуга «поза графіком» лежить вище фактичної. */
+.pc-time {
+    position: absolute; left: 0; right: 0; padding-top: 1px;
+    text-align: center; font-style: normal;
+    font-size: 9px; font-weight: 700; color: #fff;
+    letter-spacing: -0.3px; line-height: 1.1;
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+.pc-unplanned { position: absolute; left: 0; right: 0; background: #7B2FA8; border-radius: 3px; }
+.pc-future {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(45deg,
+        rgba(120,120,128,0.12) 0 4px, transparent 4px 8px);
+}
+.pc-now { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--blue); }
+
+.pc-total {
+    height: 18px; margin-top: 4px; text-align: center;
+    font-size: 10px; font-weight: 700; color: var(--red);
+    font-variant-numeric: tabular-nums;
+}
