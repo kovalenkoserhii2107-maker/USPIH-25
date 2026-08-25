@@ -61,6 +61,7 @@ async function save(btn) {
         if (!value) {
             toast('Чергу прибрано', 'success');
             renderState(null);
+            renderAdminRow('', null);
             return;
         }
 
@@ -70,7 +71,9 @@ async function save(btn) {
         const call = httpsCallable(getFunctions(app, 'europe-central2'), 'refreshDtekSchedule');
         await call();
         const sched = await getDoc(doc(db, 'status', 'schedule'));
-        renderState(sched.exists() ? sched.data() : null);
+        const data = sched.exists() ? sched.data() : null;
+        renderState(data);
+        renderAdminRow(`GPV${value}`, data);
         toast(`Чергу ${value} збережено, графік оновлено`, 'success');
     } catch (e) {
         console.error('Черга ДТЕК:', e);
@@ -82,6 +85,36 @@ async function save(btn) {
     } finally {
         setBusy(btn, false);
     }
+}
+
+/**
+ * Рядок у картці світла правління — там само, де тумблер і статистика.
+ *
+ * Раніше налаштування черги жило в окремій картці вкладки «База»,
+ * тобто за три дотики від того місця, де правління про світло й
+ * думає. Тепер усе про світло в одному блоці.
+ */
+function renderAdminRow(cfgGroup, sched) {
+    const host = document.getElementById('adminScheduleHost');
+    if (!host) return;
+    const label = cfgGroup
+        ? `<b>Черга ${escapeHtml(cfgGroup.replace('GPV', ''))}</b><span>${
+            sched?.fetchedAt ? `графік оновлено ${escapeHtml(formatDateTime(sched.fetchedAt))}`
+                             : 'графік ще не завантажено'}</span>`
+        : `<b>Чергу не налаштовано</b><span>оберіть — і графік підтягнеться сам</span>`;
+
+    host.innerHTML = `<button type="button" class="pw-sched${cfgGroup ? '' : ' pw-sched-soon'}" id="openDtekBtn">
+        <span class="pw-sched-icon">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+        </span>
+        <span class="pw-sched-text">${label}</span>
+        <svg class="row-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>`;
+
+    document.getElementById('openDtekBtn').addEventListener('click', async () => {
+        const { openSheet } = await import('./ui.js');
+        openSheet('dtekPopup');
+    });
 }
 
 export async function loadDtekSettings() {
@@ -96,8 +129,10 @@ export async function loadDtekSettings() {
             getDoc(doc(db, 'status', 'schedule'))
         ]);
         const saved = cfg.exists() ? (cfg.data().dtekGroup || '') : '';
+        const data = sched.exists() ? sched.data() : null;
         select.value = saved.replace('GPV', '');
-        renderState(sched.exists() ? sched.data() : null);
+        renderState(data);
+        renderAdminRow(saved, data);
     } catch (e) {
         console.warn('Налаштування ДТЕК:', e);
     }
