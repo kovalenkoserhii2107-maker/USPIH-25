@@ -187,8 +187,47 @@ function renderTabs() {
  * місцях. На широких відрізках пишемо тривалість просто на них:
  * інакше «скільки саме» доводилося вгадувати за довжиною.
  */
-function renderDays(days) {
+const hhmmPct = (v) => {
+    const [h, m] = String(v).split(':').map(Number);
+    return ((h * 60 + (m || 0)) / 1440) * 100;
+};
+
+/** Понеділок = 1 … неділя = 7, як у ДТЕК (у JS неділя — 0). */
+const dtekDay = (d) => d.getDay() === 0 ? 7 : d.getDay();
+
+/**
+ * @param {Object} schedWeek тижневий графік ДТЕК або null
+ */
+/** Смуги графіка на добу у відсотках доби. */
+const planBands = (date, schedWeek) => (schedWeek?.[String(dtekDay(date))] || [])
+    .map(p => [hhmmPct(p.from), p.to === '24:00' ? 100 : hhmmPct(p.to)]);
+
+/**
+ * Частини відрізка, що НЕ вкриті графіком.
+ *
+ * Саме вони — головне, чого немає на сайті ДТЕК: відключення поза
+ * графіком це майже напевно аварія, і мешканцю варто розрізняти
+ * «так і мало бути» від «щось зламалося».
+ */
+function outsidePlan(seg, bands) {
+    let parts = [[seg.left, seg.left + seg.width]];
+    for (const [a, b] of bands) {
+        const next = [];
+        for (const [x, y] of parts) {
+            if (b <= x || a >= y) { next.push([x, y]); continue; }
+            if (a > x) next.push([x, a]);
+            if (b < y) next.push([b, y]);
+        }
+        parts = next;
+    }
+    // Хвилинні залишки на межах — це округлення, а не аварія
+    return parts.filter(([x, y]) => y - x > 0.35);
+}
+
+function renderDays(days, schedWeek) {
     const compact = days.length > 10;
+    const hasUnplanned = schedWeek && days.some(d =>
+        d.segments.some(g => outsidePlan(g, planBands(d.date, schedWeek)).length));
     return `<div class="pw-days${compact ? ' is-compact' : ''}">
         <div class="pw-hours">
             <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
@@ -197,12 +236,16 @@ function renderDays(days) {
             // Години:хвилини, а не десяткові: «4:25» читається одразу,
             // а «4,4 год» доводиться перекладати в голові.
             const total = d.offMs >= 60000 ? shortDur(d.offMs) : '';
+            const bands = planBands(d.date, schedWeek);
             const label = compact
                 ? `${String(d.date.getDate()).padStart(2, '0')}.${String(d.date.getMonth() + 1).padStart(2, '0')}`
                 : `<b>${WEEKDAYS[d.date.getDay()]}</b> ${String(d.date.getDate()).padStart(2, '0')}.${String(d.date.getMonth() + 1).padStart(2, '0')}`;
             return `<div class="pw-row${d.offMs ? ' has-off' : ''}${d.isToday ? ' is-today' : ''}">
                 <span class="pw-row-day">${label}</span>
                 <span class="pw-track">
+                    ${bands.map(([a, b]) =>
+                        `<i class="pw-plan" style="left:${a.toFixed(2)}%;width:${(b - a).toFixed(2)}%"></i>`).join('')}
+                    <i class="pw-grid"></i>
                     ${d.elapsedPct < 100
                         ? `<i class="pw-future" style="left:${d.elapsedPct.toFixed(2)}%"></i>` : ''}
                     ${d.segments.map((g, gi) => {
@@ -223,11 +266,20 @@ function renderDays(days) {
                         return `<i class="pw-seg${place}" style="left:${g.left.toFixed(2)}%;width:${Math.max(g.width, 0.6).toFixed(2)}%"
                                    title="${escapeHtml(shortDur(g.ms))}">${place ? `<b>${escapeHtml(shortDur(g.ms))}</b>` : ''}</i>`;
                     }).join('')}
+                    ${bands.length ? d.segments.flatMap(g => outsidePlan(g, bands)).map(([a, b]) =>
+                        `<i class="pw-unplanned" style="left:${a.toFixed(2)}%;width:${(b - a).toFixed(2)}%"
+                            title="поза графіком"></i>`).join('') : ''}
+                    ${d.isToday ? `<i class="pw-now" style="left:${d.elapsedPct.toFixed(2)}%"></i>` : ''}
                 </span>
                 <span class="pw-row-total">${total}</span>
             </div>`;
         }).join('')}
-        <div class="pw-legend"><span></span><span>без світла · цифра праворуч — скільки за добу</span></div>
+        <div class="pw-legend">
+            ${schedWeek ? '<span class="pw-key-item"><i class="pw-key pw-key-plan"></i>за графіком ДТЕК</span>' : ''}
+            <span class="pw-key-item"><i class="pw-key pw-key-fact"></i>фактично без світла</span>
+            ${hasUnplanned ? '<span class="pw-key-item"><i class="pw-key pw-key-unplanned"></i>поза графіком — ймовірно аварія</span>' : ''}
+        </div>
+        ${schedWeek ? `<p class="pw-plan-note">Графік показано поточний — у минулому він міг бути іншим.</p>` : ''}
     </div>`;
 }
 
@@ -255,7 +307,7 @@ function renderMonths(entries, now) {
                 <span class="pw-month-bar"><i style="width:${(m.offMs / worst * 100).toFixed(1)}%"></i></span>
                 <span class="pw-month-val">${m.offMs ? dec(m.offMs / 3600000) : ''}</span>
             </div>`).join('')}
-        <div class="pw-legend"><span></span><span>без світла · цифра праворуч — годин за місяць</span></div>
+        <div class="pw-legend"><span class="pw-key-item"><i class="pw-key pw-key-fact"></i>фактично без світла · цифра праворуч — годин за місяць</span></div>
     </div>`;
 }
 
@@ -278,7 +330,7 @@ function renderLog(entries) {
     </details>`;
 }
 
-export function renderStats(s, patched = false, entries = [], now = Date.now()) {
+export function renderStats(s, patched = false, entries = [], now = Date.now(), schedWeek = null) {
     const word = PERIODS[period].word;
     if (!s.hasData) {
         return renderTabs() + `<p class="list-empty">Записів ${escapeHtml(word)} немає.<br>
@@ -307,6 +359,19 @@ export function renderStats(s, patched = false, entries = [], now = Date.now()) 
             new Date(s.longestAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}</span>
     </div>` : '';
 
+    // Скільки годин графік обіцяв і скільки їх було насправді. Без цієї
+    // пари графік виглядає як вирок, хоча це лише вікно можливих.
+    const planned = schedWeek && period !== 'year'
+        ? s.days.reduce((sum, d) => sum + (schedWeek[String(dtekDay(d.date))] || [])
+            .reduce((x, p) => x + (p.hours || 0), 0), 0)
+        : 0;
+    const compare = planned ? `<div class="pw-compare">
+        <span class="pw-compare-cap">За графіком ${escapeHtml(word)}</span>
+        <b>${escapeHtml(planned % 1 ? dec(planned) : String(planned))} год</b>
+        <span class="pw-compare-sub">фактично без світла —
+            ${escapeHtml(compactDur(s.totalOff))} (${Math.round(s.totalOff / 36000 / planned)}% від обіцяного)</span>
+    </div>` : '';
+
     const peak = peakWindow(s.byHour);
     const peakNote = peak ? `<div class="pw-peak">
         <span class="pw-peak-cap">Найчастіше вимикають</span>
@@ -314,9 +379,9 @@ export function renderStats(s, patched = false, entries = [], now = Date.now()) 
         <span class="pw-peak-sub">${peak.share}% усього часу без світла</span>
     </div>` : '';
 
-    return renderTabs() + tiles + longest + peakNote
+    return renderTabs() + tiles + longest + compare + peakNote
         + `<span class="pw-chart-title">Коли не було світла</span>`
-        + (period === 'year' ? renderMonths(entries, now) : renderDays(s.days))
+        + (period === 'year' ? renderMonths(entries, now) : renderDays(s.days, schedWeek))
         + (patched ? `<p class="pw-warn">У журналі бракувало запису — його відновлено за поточним статусом.
             Якщо таке повторюється, перевірте звʼязок під час перемикання.</p>` : '')
         + renderLog(entries);
@@ -375,8 +440,18 @@ export async function loadPowerStats() {
         }
 
         entries.sort((a, b) => a.at - b.at);
+        // Графік ДТЕК — окремий документ; якщо його немає або він
+        // недоступний, статистика показується без нього.
+        let schedWeek = null;
+        try {
+            const sc = await getDoc(doc(db, 'status', 'schedule'));
+            if (sc.exists()) schedWeek = sc.data().week || null;
+        } catch (e) {
+            console.warn('Графік ДТЕК для статистики:', e);
+        }
+
         const now = Date.now();
-        host.innerHTML = renderStats(summarize(entries, days, now), patched, entries, now);
+        host.innerHTML = renderStats(summarize(entries, days, now), patched, entries, now, schedWeek);
     } catch (e) {
         console.error('Статистика світла:', e);
         host.innerHTML = renderTabs() + '<p class="list-empty">Не вдалося завантажити статистику</p>';

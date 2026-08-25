@@ -315,11 +315,21 @@ export function showScreen(id) {
 export function setBusy(btn, busy, busyLabel = 'Зачекайте…') {
     if (!btn) return;
     if (busy) {
-        btn.dataset.originalHtml = btn.innerHTML;
+        // Початковий вигляд запамʼятовуємо лише першого разу.
+        //
+        // Повторний виклик під час роботи — щоб змінити підпис або
+        // показати поступ («Запис 40 із 298…») — інакше зберігав би як
+        // «оригінал» уже намальований спінер. Кнопка після завершення
+        // поверталася б до спінера й крутилася назавжди.
+        if (!btn.dataset.busy) {
+            btn.dataset.originalHtml = btn.innerHTML;
+            btn.dataset.busy = '1';
+        }
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner"></span>${escapeHtml(busyLabel)}`;
     } else {
         btn.disabled = false;
         if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.busy;
     }
 }

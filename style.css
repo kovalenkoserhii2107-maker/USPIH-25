@@ -3232,10 +3232,7 @@ select.field-input {
     display: flex; align-items: center; gap: 6px;
     margin: 8px 0 0 62px; font-size: 10.5px; color: var(--ink-3); line-height: 1.3;
 }
-.pw-legend span:first-child {
-    width: 10px; height: 10px; border-radius: 3px;
-    background: var(--red); flex-shrink: 0;
-}
+
 
 /* Рік — по місяцях: 365 смуг ніхто не читає, а сезонність видно. */
 .pw-months { margin-bottom: 12px; }
@@ -4207,3 +4204,56 @@ select.field-input {
 .sched-note {
     margin: 16px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3);
 }
+
+/* ---------- Графік ДТЕК під фактичними відключеннями ---------- */
+/* Світла смуга — обіцянка, червона поверх неї — дійсність. Саме
+   накладення й показує, чи графік справджується. */
+.pw-plan {
+    position: absolute; top: 0; bottom: 0;
+    background: rgba(255, 149, 0, 0.22);
+    border-radius: 4px;
+}
+.pw-key { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.pw-key-plan { background: rgba(255, 149, 0, 0.35); }
+.pw-key-fact { background: var(--red); }
+.pw-legend { flex-wrap: wrap; gap: 6px 14px; }
+.pw-key-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pw-key-unplanned { background: #7B2FA8; }
+
+/* Поділки о 06, 12 і 18 — щоб «коли» читалося без підрахунку
+   чвертей на око. Малюємо тлом, а не трьома елементами. */
+.pw-grid {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+        linear-gradient(90deg, transparent calc(25% - 0.5px), rgba(120,120,128,0.22) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
+        linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(120,120,128,0.22) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+        linear-gradient(90deg, transparent calc(75% - 0.5px), rgba(120,120,128,0.22) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px));
+}
+
+/* Частина відключення поза графіком: те, чого сайт ДТЕК не показує. */
+.pw-unplanned {
+    position: absolute; top: 0; bottom: 0;
+    background: #7B2FA8; border-radius: 4px; min-width: 2px;
+}
+
+/* Зараз — тонка риска на сьогоднішньому рядку. */
+.pw-now {
+    position: absolute; top: -2px; bottom: -2px; width: 2px;
+    margin-left: -1px; border-radius: 1px;
+    background: var(--blue); box-shadow: 0 0 0 1.5px var(--surface);
+}
+.pw-plan-note { margin: 4px 0 0 62px; font-size: 10.5px; color: var(--ink-3); line-height: 1.35; }
+
+.pw-compare {
+    display: grid; grid-template-columns: 1fr auto;
+    align-items: baseline; gap: 2px 10px;
+    padding: 11px 13px; margin-bottom: 8px;
+    border-radius: var(--r-md); background: rgba(255, 149, 0, 0.08);
+}
+.pw-compare-cap { font-size: 12px; color: var(--ink-2); }
+.pw-compare b {
+    grid-column: 2; grid-row: 1;
+    font-size: 15px; font-weight: 700; color: #9A5A00; white-space: nowrap;
+}
+.pw-compare-sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-3); }
+
