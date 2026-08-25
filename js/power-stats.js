@@ -208,32 +208,8 @@ const dtekDay = (d) => d.getDay() === 0 ? 7 : d.getDay();
 const planBands = (date, schedWeek) => (schedWeek?.[String(dtekDay(date))] || [])
     .map(p => [hhmmPct(p.from), p.to === '24:00' ? 100 : hhmmPct(p.to)]);
 
-/**
- * Частини відрізка, що НЕ вкриті графіком.
- *
- * Саме вони — головне, чого немає на сайті ДТЕК: відключення поза
- * графіком це майже напевно аварія, і мешканцю варто розрізняти
- * «так і мало бути» від «щось зламалося».
- */
-function outsidePlan(seg, bands) {
-    let parts = [[seg.left, seg.left + seg.width]];
-    for (const [a, b] of bands) {
-        const next = [];
-        for (const [x, y] of parts) {
-            if (b <= x || a >= y) { next.push([x, y]); continue; }
-            if (a > x) next.push([x, a]);
-            if (b < y) next.push([b, y]);
-        }
-        parts = next;
-    }
-    // Хвилинні залишки на межах — це округлення, а не аварія
-    return parts.filter(([x, y]) => y - x > 0.35);
-}
-
 function renderDays(days, schedWeek) {
     const compact = days.length > 10;
-    const hasUnplanned = schedWeek && days.some(d =>
-        d.segments.some(g => outsidePlan(g, planBands(d.date, schedWeek)).length));
     return `<div class="pw-days${compact ? ' is-compact' : ''}">
         <div class="pw-hours">
             <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
@@ -272,9 +248,6 @@ function renderDays(days, schedWeek) {
                         return `<i class="pw-seg${place}" style="left:${g.left.toFixed(2)}%;width:${Math.max(g.width, 0.6).toFixed(2)}%"
                                    title="${escapeHtml(shortDur(g.ms))}">${place ? `<b>${escapeHtml(shortDur(g.ms))}</b>` : ''}</i>`;
                     }).join('')}
-                    ${bands.length ? d.segments.flatMap(g => outsidePlan(g, bands)).map(([a, b]) =>
-                        `<i class="pw-unplanned" style="left:${a.toFixed(2)}%;width:${(b - a).toFixed(2)}%"
-                            title="поза графіком"></i>`).join('') : ''}
                     ${d.isToday ? `<i class="pw-now" style="left:${d.elapsedPct.toFixed(2)}%"></i>` : ''}
                 </span>
                 <span class="pw-row-total">${total}</span>
@@ -283,7 +256,6 @@ function renderDays(days, schedWeek) {
         <div class="pw-legend">
             ${schedWeek ? '<span class="pw-key-item"><i class="pw-key pw-key-plan"></i>за графіком ДТЕК</span>' : ''}
             <span class="pw-key-item"><i class="pw-key pw-key-fact"></i>фактично без світла</span>
-            ${hasUnplanned ? '<span class="pw-key-item"><i class="pw-key pw-key-unplanned"></i>поза графіком — ймовірно аварія</span>' : ''}
         </div>
         ${schedWeek ? `<p class="pw-plan-note">Графік показано поточний — у минулому він міг бути іншим.</p>` : ''}
     </div>`;
@@ -301,8 +273,6 @@ function renderDays(days, schedWeek) {
  */
 function renderDaysColumns(days, schedWeek) {
     const pct = (v) => `${v.toFixed(2)}%`;
-    const hasUnplanned = schedWeek && days.some(d =>
-        d.segments.some(g => outsidePlan(g, planBands(d.date, schedWeek)).length));
 
     // Кожна година своїм рядком: питання «з котрої не буде світла»
     // не має розвʼязуватися прикиданням між позначками через три.
@@ -322,22 +292,16 @@ function renderDaysColumns(days, schedWeek) {
             `<i class="pc-fact" style="top:${pct(g.left)};height:${pct(Math.max(g.width, 0.5))}"
                 title="${escapeHtml(hhmmOfPct(g.left))} — ${escapeHtml(shortDur(g.ms))}"></i>`).join('');
 
-        // Підписи — окремим шаром поверх усього: смуга «поза графіком»
-        // малюється після фактичної і інакше накривала б час початку.
+        // Підписи — окремим шаром поверх смуг, щоб їх нічим не накрило.
         // Влазить приблизно від півтори години смуги.
         const labels = d.segments.filter(g => g.width >= 6).map(g =>
             `<span class="pc-time" style="top:${pct(g.left)}">${escapeHtml(hhmmOfPct(g.left))}</span>`).join('');
-
-        const unplanned = bands.length
-            ? d.segments.flatMap(g => outsidePlan(g, bands)).map(([a, b]) =>
-                `<i class="pc-unplanned" style="top:${pct(a)};height:${pct(b - a)}"></i>`).join('')
-            : '';
 
         return `<div class="pc-col${d.isToday ? ' is-today' : ''}">
             <span class="pc-name"><b>${WEEKDAYS[d.date.getDay()]}</b>${
                 String(d.date.getDate()).padStart(2, '0')}.${String(d.date.getMonth() + 1).padStart(2, '0')}</span>
             <span class="pc-track">
-                ${grid}${plan}${facts}${unplanned}${labels}
+                ${grid}${plan}${facts}${labels}
                 ${d.elapsedPct < 100 ? `<i class="pc-future" style="top:${pct(d.elapsedPct)}"></i>
                     <i class="pc-now" style="top:${pct(d.elapsedPct)}"></i>` : ''}
             </span>
@@ -353,7 +317,6 @@ function renderDaysColumns(days, schedWeek) {
         <div class="pw-legend">
             ${schedWeek ? '<span class="pw-key-item"><i class="pw-key pw-key-plan"></i>за графіком ДТЕК</span>' : ''}
             <span class="pw-key-item"><i class="pw-key pw-key-fact"></i>фактично без світла</span>
-            ${hasUnplanned ? '<span class="pw-key-item"><i class="pw-key pw-key-unplanned"></i>поза графіком — ймовірно аварія</span>' : ''}
         </div>
         ${schedWeek ? '<p class="pw-plan-note">Графік показано поточний — у минулому він міг бути іншим.</p>' : ''}
     </div>`;

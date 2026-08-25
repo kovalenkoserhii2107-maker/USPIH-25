@@ -4218,7 +4218,6 @@ select.field-input {
 .pw-key-fact { background: var(--red); }
 .pw-legend { flex-wrap: wrap; gap: 6px 14px; }
 .pw-key-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.pw-key-unplanned { background: #7B2FA8; }
 
 /* Поділки о 06, 12 і 18 — щоб «коли» читалося без підрахунку
    чвертей на око. Малюємо тлом, а не трьома елементами. */
@@ -4228,12 +4227,6 @@ select.field-input {
         linear-gradient(90deg, transparent calc(25% - 0.5px), rgba(120,120,128,0.22) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
         linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(120,120,128,0.22) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
         linear-gradient(90deg, transparent calc(75% - 0.5px), rgba(120,120,128,0.22) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px));
-}
-
-/* Частина відключення поза графіком: те, чого сайт ДТЕК не показує. */
-.pw-unplanned {
-    position: absolute; top: 0; bottom: 0;
-    background: #7B2FA8; border-radius: 4px; min-width: 2px;
 }
 
 /* Зараз — тонка риска на сьогоднішньому рядку. */
@@ -4304,7 +4297,6 @@ select.field-input {
     text-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
     pointer-events: none;
 }
-.pc-unplanned { position: absolute; left: 0; right: 0; background: #7B2FA8; border-radius: 3px; }
 .pc-future {
     position: absolute; left: 0; right: 0; bottom: 0;
     background: repeating-linear-gradient(45deg,
