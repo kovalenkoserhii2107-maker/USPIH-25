@@ -3108,19 +3108,28 @@ select.field-input {
 .funds-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* ---------- СТАТИСТИКА ВІДКЛЮЧЕНЬ ---------- */
+/* Біла з тінню, а не залита тоном картки.
+   Заливка на 12% по й так тонованому тлу читалася як частина
+   візерунка, а не як кнопка. Білий кружечок із тінню на кольоровій
+   картці однозначно каже «це лежить зверху, на це тиснуть». */
 .power-stats-btn {
-    width: 36px; height: 36px;
+    position: relative;
+    width: 40px; height: 40px;
     border-radius: 50%;
-    border: none;
-    background: rgba(120, 120, 128, 0.14);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+    background: var(--surface);
     color: var(--ink-2);
+    box-shadow: 0 2px 7px rgba(0, 0, 0, 0.12);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
-    transition: transform 0.15s ease, background 0.15s ease;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.power-stats-btn:active { transform: scale(0.9); background: rgba(120, 120, 128, 0.22); }
-.power-on .power-stats-btn { background: rgba(138, 109, 0, 0.12); color: #8A6D00; }
-.power-off .power-stats-btn { background: rgba(255, 59, 48, 0.12); color: var(--red); }
+/* Область дотику 44px — мінімум, який Apple вважає надійним.
+   Розтягуємо псевдоелементом, щоб не роздувати сам кружечок. */
+.power-stats-btn::after { content: ''; position: absolute; inset: -2px; border-radius: 50%; }
+.power-stats-btn:active { transform: scale(0.92); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+.power-on .power-stats-btn { color: #8A6D00; }
+.power-off .power-stats-btn { color: var(--red); }
 
 /* Перемикач періоду: типово тиждень — дві доби тому це ще
    «нещодавно», а два тижні одним полотном ніхто не читає. */
