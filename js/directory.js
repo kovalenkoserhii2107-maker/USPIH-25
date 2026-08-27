@@ -1,0 +1,284 @@
+// ============================================================
+// Довідник квартир для правління: список, пошук і картка
+// з даними співвласників.
+//
+// Співвласники всіх квартир читаються ОДНИМ collectionGroup-
+// запитом. Інакше на кожну квартиру довелося б робити окремий
+// запит, і відкриття довідника коштувало б сотні читань.
+// ============================================================
+import { db } from './firebase.js';
+import {
+    collection, collectionGroup, getDocs
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { escapeHtml, getInitials, avatarGradient, toast, formatDateTime, parseMoney, formatMoney } from './ui.js';
+
+
+let cache = null;          // [{ apt, entrance, area, owners: [...] }]
+
+function ownerApt(docRef) {
+    // Шлях виду apartments/{apt}/owners/{id} — номер квартири
+    // це передостанній сегмент.
+    const parts = docRef.path.split('/');
+    return parts[parts.length - 3];
+}
+
+/** Квартири з їхніми співвласниками. Кеш живе до «Оновити». */
+export async function fetchDirectory() {
+    if (cache) return cache;
+
+    const [aptSnap, ownerSnap] = await Promise.all([
+        getDocs(collection(db, 'apartments')),
+        getDocs(collectionGroup(db, 'owners'))
+    ]);
+
+    const byApt = {};
+    ownerSnap.forEach(d => {
+        const apt = ownerApt(d.ref);
+        (byApt[apt] ||= []).push(d.data());
+    });
+
+    // Обліковий запис правління — службовий, а не квартира. Він не має
+    // потрапляти ні в довідник, ні в кворум, ні в лічильники: інакше
+    // будинок «набував» зайвого співвласника й зайвої площі.
+    cache = aptSnap.docs
+        .filter(d => d.data().isAdmin !== true)
+        .map(d => {
+            const data = d.data();
+            return {
+                apt: d.id,
+                entrance: data.entrance || '',
+                area: data.area || '',
+                ownersStatus: data.ownersStatus || 'pending',
+                ownersConfirmedBy: data.ownersConfirmedBy || '',
+                balance: data.balance,
+                balanceUpdatedAt: data.balanceUpdatedAt || null,
+                personalAccount: data.personalAccount || '',
+                ownersConfirmedAt: data.ownersConfirmedAt || null,
+                owners: byApt[d.id] || []
+            };
+        })
+        .sort((a, b) => (parseInt(a.apt, 10) || 0) - (parseInt(b.apt, 10) || 0));
+
+    return cache;
+}
+
+/**
+ * Скидає кеш довідника. Потрібен після того, як правління застосувало
+ * заявку на зміну списку власників: інакше довідник і покриття
+ * показували б старі дані до перезавантаження.
+ */
+export function invalidateDirectory() { cache = null; }
+
+// Стан звірки як фільтр списку. Числа й список раніше жили в різних
+// картках, і зв'язати «27 не відповіли» зі списком доводилося очима.
+let statusFilter = 'all';
+
+const STATUS_LABEL = {
+    all: 'Усі', pending: 'Не звірено', review: 'На розгляді', confirmed: 'Звірено'
+};
+
+/**
+ * У заголовку рядка — імʼя власника, а не «Квартира 297».
+ *
+ * Номер уже стоїть на значку зліва, і повторювати його — це витрачати
+ * найпомітніше місце рядка на те, що вже видно. Правління шукає саме
+ * людину, тож туди й ставимо.
+ */
+/**
+ * Стан розрахунків у картці квартири.
+ *
+ * Правління дивиться сюди, коли розбирається з квартирою, — і зараз
+ * мусило б іти шукати цифру у «Фінансах». Тримаємо ту саму умовність,
+ * що й у мешканця: відʼємне — борг, додатне — переплата.
+ */
+function balanceRow(e) {
+    const n = parseMoney(e.balance);
+    if (e.balance === undefined || e.balance === null || e.balance === '') {
+        return '<p class="dir-balance dir-balance-none">Стан розрахунків не внесено</p>';
+    }
+    const debt = n < -0.005, credit = n > 0.005;
+    const label = debt ? 'До сплати' : credit ? 'Переплата' : 'Заборгованості немає';
+    const when = e.balanceUpdatedAt ? ` · станом на ${escapeHtml(formatDateTime(e.balanceUpdatedAt))}` : '';
+    return `<p class="dir-balance ${debt ? 'is-debt' : credit ? 'is-credit' : ''}">
+        ${label}${debt || credit ? `: <b>${formatMoney(Math.abs(n))} грн</b>` : ''}<span>${when}</span>
+    </p>`;
+}
+
+function ownersTitle(owners) {
+    if (!owners.length) return 'Власників не внесено';
+    const first = String(owners[0].name || '').trim() || 'Без імені';
+    return owners.length > 1 ? `${first} +${owners.length - 1}` : first;
+}
+
+const plural = (n, one, few, many) => {
+    const d = n % 10, h = n % 100;
+    if (d === 1 && h !== 11) return one;
+    if (d >= 2 && d <= 4 && (h < 12 || h > 14)) return few;
+    return many;
+};
+
+// У рядку списку — тільки те, за чим шукають очима. Парадна потрібна
+// рідко, тож вона переїхала в розгорнуту картку: інакше опис і плашка
+// стану не вміщаються в один рядок, і імʼя доводиться обрізати.
+function metaLine(e) {
+    const parts = [];
+    if (e.area) parts.push(`${e.area} м²`);
+    parts.push(e.owners.length
+        ? `${e.owners.length} ${plural(e.owners.length, 'власник', 'власники', 'власників')}`
+        : 'без власників');
+    return parts.join(' · ');
+}
+
+function renderFilters(all) {
+    const host = document.getElementById('dirFilters');
+    if (!host) return;
+    const n = { all: all.length, pending: 0, review: 0, confirmed: 0 };
+    all.forEach(a => { n[a.ownersStatus] = (n[a.ownersStatus] || 0) + 1; });
+
+    host.innerHTML = Object.entries(STATUS_LABEL)
+        .filter(([k]) => k === 'all' || n[k] > 0)
+        .map(([k, label]) => `<button type="button" class="dir-filter${k === statusFilter ? ' active' : ''}" data-f="${k}">
+            ${label} <span class="dir-filter-n">${n[k] || 0}</span>
+        </button>`).join('');
+}
+
+/** Шукає і за номером квартири, і за прізвищем чи документом. */
+function matches(entry, q) {
+    if (statusFilter !== 'all' && entry.ownersStatus !== statusFilter) return false;
+    if (!q) return true;
+    if (entry.apt.toLowerCase().includes(q)) return true;
+    return entry.owners.some(o =>
+        (o.name || '').toLowerCase().includes(q) ||
+        (o.docInfo || '').toLowerCase().includes(q));
+}
+
+function ownerLine(o) {
+    const share = o.shareFrac ? `<span class="dir-share">${escapeHtml(o.shareFrac)}</span>` : '';
+    return `<div class="dir-owner">
+        <span class="dir-avatar" style="background: ${avatarGradient(o.name || '')};">${escapeHtml(getInitials(o.name || ''))}</span>
+        <span class="dir-owner-text">
+            <span class="dir-owner-name">${escapeHtml(o.name || 'Без імені')}</span>
+            ${o.docInfo ? `<span class="dir-owner-doc">${escapeHtml(o.docInfo)}</span>` : ''}
+        </span>
+        ${share}
+    </div>`;
+}
+
+function render(list) {
+    const host = document.getElementById('directoryList');
+    if (!host) return;
+
+    if (!list.length) {
+        host.innerHTML = '<p class="list-empty">Нічого не знайдено</p>';
+        return;
+    }
+
+    host.innerHTML = list.map(e => `
+        <div class="dir-card" data-apt="${escapeHtml(e.apt)}">
+            <button type="button" class="dir-head">
+                <span class="dir-apt">${escapeHtml(e.apt)}</span>
+                <span class="dir-head-text">
+                    <span class="dir-title">${escapeHtml(ownersTitle(e.owners))}</span>
+                    <span class="dir-line">
+                        <span class="dir-meta">${escapeHtml(metaLine(e))}</span>
+                        <span class="dir-verify dv-${e.ownersStatus}">${
+                            { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
+                        }</span>
+                    </span>
+                </span>
+                <svg class="row-chevron dir-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <div class="dir-body" hidden>
+                <p class="dir-body-meta">${e.entrance && e.entrance !== '--'
+                    ? `Парадна ${escapeHtml(String(e.entrance))}` : 'Парадна не вказана'}</p>
+                ${balanceRow(e)}
+                ${e.owners.length
+                    ? e.owners.map(ownerLine).join('')
+                    : '<p class="muted-note">Дані про співвласників не внесено</p>'}
+                <div class="dir-actions">
+                    <button type="button" class="dir-edit" data-edit="${escapeHtml(e.apt)}">
+                        Редагувати
+                    </button>
+                    ${e.ownersStatus === 'confirmed'
+                        ? `<p class="dir-confirmed">Звірено${e.ownersConfirmedBy === 'board' ? ' правлінням' : ' мешканцем'}</p>`
+                        : `<button type="button" class="dir-confirm" data-confirm="${escapeHtml(e.apt)}">
+                               Підтвердити
+                           </button>`}
+                </div>
+            </div>
+        </div>`).join('');
+
+    host.querySelectorAll('.dir-head').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const card = btn.closest('.dir-card');
+            const body = card.querySelector('.dir-body');
+            body.hidden = !body.hidden;
+            card.classList.toggle('dir-open', !body.hidden);
+        });
+    });
+}
+
+export async function loadDirectory() {
+    const host = document.getElementById('directoryList');
+    if (!host) return;
+    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    try {
+        const all = await fetchDirectory();
+        document.getElementById('directoryCount').textContent =
+            `Квартир: ${all.length}`;
+        renderFilters(all);
+        const q = (document.getElementById('directorySearch')?.value || '').trim().toLowerCase();
+        render(all.filter(e => matches(e, q)));
+    } catch (e) {
+        console.error('Довідник квартир:', e);
+        host.innerHTML = '<p class="list-empty">Не вдалося завантажити довідник</p>';
+    }
+}
+
+export function initDirectory() {
+    document.getElementById('dirFilters')?.addEventListener('click', async (e) => {
+        const b = e.target.closest('.dir-filter');
+        if (!b || b.dataset.f === statusFilter) return;
+        statusFilter = b.dataset.f;
+        const q = (document.getElementById('directorySearch')?.value || '').trim().toLowerCase();
+        const all = await fetchDirectory();
+        renderFilters(all);
+        render(all.filter(x => matches(x, q)));
+    });
+
+    // Слухач один і на весь список: render викликається ще й при
+    // пошуку, тож чіпляти його там означало б підтверджувати квартиру
+    // стільки разів, скільки літер набрали в пошуку.
+    document.getElementById('directoryList')?.addEventListener('click', async (e) => {
+        const edit = e.target.closest('[data-edit]');
+        if (edit) {
+            const { openOwnersEditor } = await import('./verify.js');
+            openOwnersEditor(edit.dataset.edit);
+            return;
+        }
+        const btn = e.target.closest('[data-confirm]');
+        if (!btn) return;
+        const { confirmByBoard } = await import('./verify.js');
+        if (await confirmByBoard(btn.dataset.confirm)) loadDirectory();
+    });
+
+    const input = document.getElementById('directorySearch');
+    input?.addEventListener('input', async () => {
+        const q = input.value.trim().toLowerCase();
+        try {
+            const all = await fetchDirectory();
+            render(all.filter(e => matches(e, q)));
+        } catch (e) {
+            console.error(e);
+        }
+    });
+
+    document.getElementById('directoryRefreshBtn')?.addEventListener('click', async () => {
+        cache = null;
+        if (input) input.value = '';
+        await loadDirectory();
+        toast('Довідник оновлено', 'success');
+    });
+}
+
+/** Скидає кеш — щоб підрахунок кворуму брав свіжі дані. */

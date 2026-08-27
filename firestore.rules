@@ -1,0 +1,297 @@
+rules_version = '2';
+
+// ============================================================
+// ПРАВИЛА ДОСТУПУ ОСББ «Успіх-25»
+//
+// ВАЖЛИВО: саме ці правила, а не код у браузері, реально
+// захищають дані. JavaScript можна обійти через DevTools;
+// правила — ні. Скопіюйте цей файл у:
+//   Firebase Console → Firestore Database → Rules → Publish
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Номер квартири поточного користувача (з email виду "45@uspih25.com")
+    function myApt() {
+      return request.auth.token.email.split('@')[0];
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/apartments/$(myApt()))
+        && get(/databases/$(database)/documents/apartments/$(myApt())).data.isAdmin == true;
+    }
+
+    // ---------- КВАРТИРИ ----------
+    // Мешканець бачить і редагує ТІЛЬКИ свою квартиру.
+    match /apartments/{apt} {
+      allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+
+      // Мешканець змінює у своїй квартирі рівно те, що є його власною
+      // дією: пароль змінено, список власників підтверджено, тур пройдено.
+      //
+      // Раніше тут дозволялося все, крім isAdmin. Тобто мешканець міг
+      // виправити собі площу — а вона входить у кворум за площею — або
+      // обнулити власний борг. Ці поля веде бухгалтерія, не мешканець.
+      allow update: if isSignedIn() && apt == myApt()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['passwordChanged', 'ownersStatus', 'ownersConfirmedAt',
+                       'ownersConfirmedBy', 'tutorialAt', 'termsAcceptedAt'])
+        // «Підтвердило правління» мешканець про себе написати не може
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersConfirmedBy'])
+            || request.resource.data.ownersConfirmedBy == 'apt')
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersStatus'])
+            || request.resource.data.ownersStatus in ['confirmed', 'review']);
+
+      allow create: if isSignedIn() && apt == myApt()
+                    && request.resource.data.isAdmin == false;
+      allow write: if isAdmin();
+
+      // Список співвласників мешканець тільки читає.
+      //
+      // Досі він міг його й писати — тобто дописати собі співвласника,
+      // а отже й голос: кворум рахує унікальних власників. Тепер будь-яка
+      // правка йде заявкою в owner_changes, і її розглядає правління.
+      match /owners/{ownerId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      // Заявка на зміну списку власників.
+      match /owner_changes/{changeId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow create: if isSignedIn() && apt == myApt()
+                      && request.resource.data.status == 'pending'
+                      && request.resource.data.reason is string
+                      && request.resource.data.reason.size() <= 1000;
+        // Рішення за заявкою ухвалює лише правління
+        allow update, delete: if isAdmin();
+      }
+
+      // Квитанції: мешканець бачить лише свої, виставляє їх бухгалтер
+      match /receipts/{receiptId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      // Історія нарахувань і оплат — те саме право, що й у квитанцій:
+      // мешканець читає лише свою, вносить її правління вивантаженням.
+      match /ledger/{entryId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow write: if isAdmin();
+      }
+    }
+
+    // Черга заявок на зміну списків власників — теж одним запитом.
+    match /{path=**}/owner_changes/{changeId} {
+      allow read: if isAdmin();
+    }
+
+    // Правління читає всіх співвласників одним collectionGroup-запитом
+    // для довідника квартир. Мешканців це не стосується: їхній доступ
+    // до власної квартири лишається правилом вище.
+    match /{path=**}/owners/{ownerId} {
+      allow read: if isAdmin();
+    }
+
+    // ---------- ПОВІДОМЛЕННЯ ----------
+    // Читати можна лише те, де ти є серед адресатів.
+    // Саме тому клієнт робить запит array-contains-any по recipients.
+    match /messages/{msgId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && (
+              'all' in resource.data.recipients
+              || ('apt:' + myApt()) in resource.data.recipients
+              || resource.data.recipients.hasAny(['ent:' + string(
+                   get(/databases/$(database)/documents/apartments/$(myApt())).data.entrance)])
+           ));
+
+      allow create, delete: if isAdmin();
+
+      // Мешканець може лише позначити прочитання своєї квартири
+      allow update: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+            && request.resource.data.readBy.diff(resource.data.readBy)
+                 .affectedKeys().hasOnly([myApt()]));
+
+      // Коментарі — лише під оголошеннями для всього будинку.
+      // Під адресним повідомленням вони відкрили б чужу переписку
+      // тим, кому саме оголошення не призначалося.
+      match /comments/{commentId} {
+        allow read: if isSignedIn()
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients;
+
+        allow create: if isSignedIn()
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients
+          && request.resource.data.apt == myApt()
+          && (request.resource.data.isBoard == false || isAdmin())
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+
+        // Видалення тепер мʼяке: документ лишається з міткою, щоб у
+        // розмові було видно, що тут щось було. Тому дозволяємо
+        // update, але суворо обмежуємо, ЩО саме можна змінити.
+        allow update: if isSignedIn()
+          && resource.data.get('deleted', false) == false
+          && (
+            // автор виправляє власний текст
+            (resource.data.apt == myApt()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 2000)
+            ||
+            // мʼяке видалення: автор або правління. Вміст затирається,
+            // лишається сама мітка.
+            ((resource.data.apt == myApt() || isAdmin())
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['deleted', 'deletedAt', 'deletedByBoard', 'text', 'attachments'])
+              && request.resource.data.deleted == true)
+          );
+
+        // Остаточно стерти може лише правління — на випадок,
+        // коли навіть мітка недоречна.
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ---------- ЧАТ БУДИНКУ ----------
+    match /chat/{msgId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        // писати можна лише від своєї квартири
+        && request.resource.data.apt == myApt()
+        // Позначку «від правління» може поставити лише правління.
+        // Записано так, а не через isBoard == isAdmin(): у звичайного
+        // мешканця перший доданок істинний одразу, і Firestore не
+        // читає документ квартири заради кожного повідомлення.
+        && (request.resource.data.isBoard == false || isAdmin())
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
+
+        // Видалення тепер мʼяке: документ лишається з міткою, щоб у
+      // розмові було видно, що тут щось було. Тому дозволяємо
+      // update, але суворо обмежуємо, ЩО саме можна змінити.
+      allow update: if isSignedIn()
+        && resource.data.get('deleted', false) == false
+        && (
+          // автор виправляє власний текст
+          (resource.data.apt == myApt()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000)
+          ||
+          // мʼяке видалення: автор або правління. Вміст затирається,
+          // лишається сама мітка.
+          ((resource.data.apt == myApt() || isAdmin())
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['deleted', 'deletedAt', 'deletedByBoard', 'text', 'attachments'])
+            && request.resource.data.deleted == true)
+        );
+
+      // Остаточно стерти може лише правління — на випадок,
+      // коли навіть мітка недоречна.
+      allow delete: if isAdmin();
+    }
+
+    // ---------- ЗВЕРНЕННЯ ----------
+    match /requests/{reqId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
+      allow create: if isSignedIn()
+                    && request.resource.data.apt == myApt()
+                    && request.resource.data.status == 'new';
+      // Відповідати може лише правління
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- БАЗА ДОКУМЕНТІВ ОСББ ----------
+    match /osbb_documents/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- СТАТУС СВІТЛА ----------
+    match /status/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- ГОЛОСУВАННЯ ----------
+    match /polls/{pollId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+
+      // Голоси лежать окремими документами з ID = номер квартири.
+      // Саме це, а не код у браузері, робить накрутку неможливою:
+      // квартира фізично не має куди покласти другий голос.
+      match /votes/{voteId} {
+        allow read: if isSignedIn();
+
+        allow create, update: if isSignedIn()
+          // тільки за свою квартиру
+          && voteId == myApt()
+          // тільки поки опитування триває
+          && get(/databases/$(database)/documents/polls/$(pollId)).data.status == 'active'
+          // і поки не минув строк. Сервера, який закрив би опитування
+          // за розкладом, немає, тож саме ця перевірка реально
+          // зупиняє голосування в потрібну мить.
+          && (get(/databases/$(database)/documents/polls/$(pollId)).data.deadline == null
+              || request.time < get(/databases/$(database)/documents/polls/$(pollId)).data.deadline)
+          // і тільки один із запропонованих варіантів, інакше через
+          // DevTools можна було б вписати будь-який рядок і зіпсувати підрахунок
+          && request.resource.data.option
+             in get(/databases/$(database)/documents/polls/$(pollId)).data.options;
+
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ---------- ЖУРНАЛ СВІТЛА ----------
+    // Кожне перемикання лишає запис — інакше статистику відключень
+    // не буде з чого рахувати. Правити минуле не можна нікому:
+    // журнал лише поповнюється.
+    match /power_log/{entryId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ---------- ПЛАТІЖНІ РЕКВІЗИТИ ОСББ ----------
+    // Читають усі мешканці — без реквізитів немає як заплатити.
+    match /osbb_settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- ЗВІТ ПРО ВИТРАТИ ----------
+    // Публічний для мешканців: у цьому й сенс прозорості.
+    match /finance/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- ТЕХНІЧНІ СЛУЖБИ ----------
+    match /services/{serviceId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- КОНТАКТИ ПРАВЛІННЯ ----------
+    match /board_members/{memberId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

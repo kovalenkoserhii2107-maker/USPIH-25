@@ -1,0 +1,335 @@
+// ============================================================
+// Спільні утиліти інтерфейсу: екранування, формати, панелі,
+// сповіщення, індикатори завантаження.
+// ============================================================
+
+/** Екранує будь-який текст перед вставкою в innerHTML. */
+export function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+export function formatDateTime(ts) {
+    if (!ts) return 'Нещодавно';
+    const date = ts.toMillis ? new Date(ts.toMillis()) : new Date(ts);
+    return date.toLocaleString('uk-UA', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+}
+
+export function formatFileSize(bytes) {
+    if (bytes === null || bytes === undefined) return '';
+    if (bytes < 1024) return bytes + ' Б';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' КБ';
+    return (bytes / 1024 / 1024).toFixed(1) + ' МБ';
+}
+
+export function formatElapsed(ms) {
+    if (ms < 0) ms = 0;
+    const totalMin = Math.floor(ms / 60000);
+    const days = Math.floor(totalMin / 1440);
+    const hours = Math.floor((totalMin % 1440) / 60);
+    const mins = totalMin % 60;
+    if (days > 0) return `${days} дн. ${hours} год.`;
+    if (hours > 0) return `${hours} год. ${mins} хв.`;
+    return `${mins} хв.`;
+}
+
+/**
+ * Імʼя для порівняння «та сама людина».
+ *
+ * Живе тут, а не в polls.js, бо ним користуються двоє: кворум (щоб
+ * власник двох квартир мав один голос) і звірка списків (щоб зміна
+ * пробілу не читалася як заміна людини). Якби вони розійшлися,
+ * правління бачило б у заявці вигадану зміну.
+ */
+/**
+ * Гроші: розбір і показ. Живуть тут, бо ними користуються троє —
+ * фінанси, історія нарахувань і довідник квартир. Коли вони лежали у
+ * finance.js, довідник мусив імпортувати звідти, а finance імпортує
+ * довідник — виходило коло, яке трималося лише на підйомі оголошень.
+ */
+export function parseMoney(v) {
+    const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+}
+
+export function formatMoney(n) {
+    return Math.abs(n).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function normName(n) {
+    return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function getInitials(fullName) {
+    if (!fullName) return '?';
+    const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+}
+
+// Пари барв, а не готові рядки: SVG-кільце не вміє малювати
+// CSS-градієнт, йому потрібні окремі стопи.
+const AVATAR_GRADIENTS = [
+    ['#4FA3FF', '#007AFF'],
+    ['#4CD97B', '#34C759'],
+    ['#FFB157', '#FF9500'],
+    ['#C77DFF', '#AF52DE'],
+    ['#FF7A73', '#FF3B30'],
+    ['#5AC8FA', '#0091C2']
+];
+
+/** Дві барви градієнта співвласника — для SVG та інших нестандартних місць. */
+export function avatarColors(name) {
+    let sum = 0;
+    for (let i = 0; i < (name || '').length; i++) sum += name.charCodeAt(i);
+    return AVATAR_GRADIENTS[sum % AVATAR_GRADIENTS.length];
+}
+
+export function avatarGradient(name) {
+    const [from, to] = avatarColors(name);
+    return `linear-gradient(135deg, ${from}, ${to})`;
+}
+
+// ------------------------------------------------------------
+// СПОВІЩЕННЯ (замість alert)
+// ------------------------------------------------------------
+export function toast(message, type = 'info') {
+    let host = document.getElementById('toastHost');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'toastHost';
+        host.className = 'toast-host';
+        document.body.appendChild(host);
+    }
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    const icons = {
+        success: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+        error: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+        info: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="8" x2="12" y2="8"></line><line x1="12" y1="12" x2="12" y2="16"></line></svg>'
+    };
+    el.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${escapeHtml(message)}</span>`;
+    host.appendChild(el);
+    setTimeout(() => {
+        el.classList.add('toast-out');
+        setTimeout(() => el.remove(), 300);
+    }, 3200);
+}
+
+/** Підтвердження в стилі застосунку (замість системного confirm). */
+export function confirmDialog(title, message, confirmLabel = 'Видалити') {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        overlay.innerHTML = `
+            <div class="confirm-box">
+                <h3 class="confirm-title">${escapeHtml(title)}</h3>
+                <p class="confirm-text">${escapeHtml(message)}</p>
+                <div class="confirm-actions">
+                    <button class="btn-soft confirm-cancel">Скасувати</button>
+                    <button class="btn-soft btn-soft-danger confirm-ok">${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const done = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('.confirm-ok').addEventListener('click', () => done(true));
+        overlay.querySelector('.confirm-cancel').addEventListener('click', () => done(false));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    });
+}
+
+/**
+ * Те саме, але з полем для тексту. Повертає введене або null.
+ * Порожній текст не приймаємо: причина — сенс усієї заявки.
+ */
+export function promptDialog(title, message, { placeholder = '', confirmLabel = 'Надіслати', maxLength = 500 } = {}) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        overlay.innerHTML = `
+            <div class="confirm-box">
+                <h3 class="confirm-title">${escapeHtml(title)}</h3>
+                <p class="confirm-text">${escapeHtml(message)}</p>
+                <textarea class="field-input prompt-input" rows="3"
+                          maxlength="${maxLength}" placeholder="${escapeHtml(placeholder)}"></textarea>
+                <div class="confirm-actions">
+                    <button class="btn-soft confirm-cancel">Скасувати</button>
+                    <button class="btn-soft btn-soft-primary confirm-ok">${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const input = overlay.querySelector('.prompt-input');
+        const done = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('.confirm-ok').addEventListener('click', () => {
+            const text = input.value.trim();
+            if (!text) { input.focus(); return; }
+            done(text);
+        });
+        overlay.querySelector('.confirm-cancel').addEventListener('click', () => done(null));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) done(null); });
+        setTimeout(() => input.focus(), 50);
+    });
+}
+
+// ------------------------------------------------------------
+// ВИСУВНІ ПАНЕЛІ (bottom sheets)
+// Стан тримаємо в класі .is-open, а не в inline-стилях —
+// саме змішування цих двох підходів і породило попередній баг.
+// ------------------------------------------------------------
+// Список беремо з DOM, а не переліком: paymentPopup колись забули
+// дописати, і шторка перестала закриватися взагалі.
+const sheets = () => document.querySelectorAll('.sheet');
+
+// ------------------------------------------------------------
+// БЛОКУВАННЯ ПРОКРУТКИ
+//
+// Самого overflow: hidden на body для iOS Safari замало — сторінка
+// під шторкою все одно їздить. Надійно тримає лише position: fixed,
+// але тоді треба самим повернути позицію прокрутки після закриття.
+// Лічильник потрібен, бо поверх шторки може відкритися галерея.
+// ------------------------------------------------------------
+let lockCount = 0;
+let savedScroll = 0;
+
+export function lockScroll() {
+    if (lockCount++ > 0) return;
+    savedScroll = window.scrollY || window.pageYOffset || 0;
+    document.body.style.top = `-${savedScroll}px`;
+    document.body.classList.add('no-scroll');
+}
+
+export function unlockScroll(force = false) {
+    if (force) lockCount = 0;
+    else if (--lockCount > 0) return;
+    lockCount = 0;
+    document.body.classList.remove('no-scroll');
+    document.body.style.top = '';
+    window.scrollTo(0, savedScroll);
+}
+
+export function closeAllSheets() {
+    let wasOpen = false;
+    sheets().forEach(el => {
+        if (el.classList.contains('is-open')) wasOpen = true;
+        el.classList.remove('is-open');
+    });
+    document.getElementById('navBackdrop')?.classList.remove('is-open');
+    if (wasOpen) unlockScroll();
+}
+
+export function isSheetOpen(id) {
+    return document.getElementById(id)?.classList.contains('is-open') === true;
+}
+
+export function openSheet(id) {
+    closeAllSheets();
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('is-open');
+    document.getElementById('navBackdrop')?.classList.add('is-open');
+    lockScroll();
+}
+
+export function toggleSheet(id) {
+    if (isSheetOpen(id)) closeAllSheets();
+    else openSheet(id);
+}
+
+export function initSheets() {
+    document.getElementById('navBackdrop')?.addEventListener('click', closeAllSheets);
+    document.querySelectorAll('[data-close-sheet]').forEach(btn => {
+        btn.addEventListener('click', closeAllSheets);
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAllSheets();
+    });
+}
+
+// ------------------------------------------------------------
+// ЕКРАНИ
+// ------------------------------------------------------------
+const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
+                 'adminDashboardSection', 'docsSection', 'boardSection',
+                 'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection', 'chatSection',
+                 'ledgerSection', 'ownersEditSection', 'financeSection'];
+
+/**
+ * Значок у шапці — сума всіх значків у меню. Так мешканець бачить,
+ * що всередині щось нове, не відкриваючи меню, а кожен розділ
+ * керує лише своїм числом і нічого не знає про решту.
+ */
+export function updateNavBadge() {
+    const total = [...document.querySelectorAll('.menu-badge')]
+        .reduce((s, el) => s + (parseInt(el.textContent, 10) || 0), 0);
+    const nav = document.getElementById('pollsNavBadge');
+    if (!nav) return;
+    nav.textContent = total > 99 ? '99+' : total;
+    nav.style.display = total ? 'flex' : 'none';
+}
+
+/** Який екран зараз відкрито — потрібно, щоб оновлення не скидало його. */
+export function currentScreen() {
+    return SCREENS.find(id => {
+        const el = document.getElementById(id);
+        return el && el.style.display !== 'none';
+    }) || null;
+}
+
+// Скільки щонайменше видно екран завантаження.
+//
+// У встановленому застосунку сторінка піднімається з кешу, а сесія —
+// з локального сховища, тож кабінет готовий за лічені міліcекунди.
+// iOS у цей час показує власну заставку, і черепаху не встигали
+// побачити взагалі. У браузері вона видно, бо там усе повільніше.
+const LOADER_MIN_MS = 700;
+const appStarted = Date.now();
+let loaderHidden = false;
+
+function hideLoader() {
+    if (loaderHidden) return;
+    loaderHidden = true;
+    const loader = document.getElementById('appLoader');
+    if (!loader) return;
+    const left = LOADER_MIN_MS - (Date.now() - appStarted);
+    if (left > 0) setTimeout(() => { loader.style.display = 'none'; }, left);
+    else loader.style.display = 'none';
+}
+
+export function showScreen(id) {
+    SCREENS.forEach(s => {
+        const el = document.getElementById(s);
+        if (el) el.style.display = (s === id) ? 'block' : 'none';
+    });
+    hideLoader();
+    window.scrollTo({ top: 0 });
+}
+
+// ------------------------------------------------------------
+// КНОПКИ З ІНДИКАТОРОМ ЗАВАНТАЖЕННЯ
+// ------------------------------------------------------------
+export function setBusy(btn, busy, busyLabel = 'Зачекайте…') {
+    if (!btn) return;
+    if (busy) {
+        // Початковий вигляд запамʼятовуємо лише першого разу.
+        //
+        // Повторний виклик під час роботи — щоб змінити підпис або
+        // показати поступ («Запис 40 із 298…») — інакше зберігав би як
+        // «оригінал» уже намальований спінер. Кнопка після завершення
+        // поверталася б до спінера й крутилася назавжди.
+        if (!btn.dataset.busy) {
+            btn.dataset.originalHtml = btn.innerHTML;
+            btn.dataset.busy = '1';
+        }
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner"></span>${escapeHtml(busyLabel)}`;
+    } else {
+        btn.disabled = false;
+        if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.busy;
+    }
+}
