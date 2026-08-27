@@ -266,12 +266,12 @@ async function savePassword() {
         document.getElementById('confirmPass').value = '';
         document.getElementById('termsCheckbox').checked = false;
         toast('Пароль змінено', 'success');
+        setBusy(btn, false);
         await loadCabinet(currentApt());
     } catch (error) {
         console.error(error);
         errorEl.textContent = 'Не вдалося змінити пароль. Увійдіть повторно.';
         errorEl.style.display = 'block';
-    } finally {
         setBusy(btn, false);
     }
 }
