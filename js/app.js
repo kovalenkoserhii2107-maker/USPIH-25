@@ -424,6 +424,16 @@ function init() {
     initVerify();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
+    const aptInput = document.getElementById('aptInput');
+    // Поле текстове (щоб телефон показав цифрову клавіатуру), тож нецифри
+    // відсікаємо самі — і при наборі, і при вставці з буфера.
+    aptInput.addEventListener('input', () => {
+        const clean = aptInput.value.replace(/\D/g, '');
+        if (clean !== aptInput.value) aptInput.value = clean;
+    });
+    aptInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('passInput').focus();
+    });
     document.getElementById('passInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') handleLogin();
     });
