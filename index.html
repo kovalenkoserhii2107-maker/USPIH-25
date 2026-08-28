@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=88">
+    <link rel="stylesheet" href="style.css?v=89">
 </head>
 <body>
 
@@ -295,12 +295,17 @@
 
             <div class="field">
                 <label class="field-label" for="aptInput">Номер квартири</label>
-                <input type="number" id="aptInput" class="field-input" placeholder="Наприклад, 45">
+                <!-- Номер квартири — тільки цифри: type="text" + inputmode="numeric" дає на
+                     телефонах великий цифровий блок замість дрібної повної клавіатури,
+                     а заразом прибирає стрілки-лічильник і скрол колесом у type="number". -->
+                <input type="text" id="aptInput" class="field-input" inputmode="numeric"
+                       pattern="[0-9]*" maxlength="4" autocomplete="off" enterkeyhint="next"
+                       placeholder="Наприклад, 45">
             </div>
             <div class="field">
                 <label class="field-label" for="passInput">Пароль</label>
                 <div class="password-wrapper">
-                    <input type="password" id="passInput" class="field-input" placeholder="Ваш пароль">
+                    <input type="password" id="passInput" class="field-input" enterkeyhint="go" placeholder="Ваш пароль">
                     <button class="toggle-password" data-target="passInput" type="button" aria-label="Показати пароль">
                         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                     </button>
@@ -1539,6 +1544,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=88"></script>
+<script type="module" src="js/app.js?v=89"></script>
 </body>
 </html>
