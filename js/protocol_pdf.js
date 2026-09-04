@@ -28,7 +28,7 @@ import { buildRecipients } from './messages.js';
 import {
     MEETING_ANSWERS, DECISION_PCT, QUORUM_PCT, OSBB_DEFAULTS,
     agendaOf, answerFor, isPaperVote, isChairQuestion, parseArea, ownerShare,
-    quorumBreakdown, questionTally,
+    quorumBreakdown, questionTally, entrancesOf, aptsOfEntrance,
     formatMeetingDate, formatProtocolDate, formatShortDate,
     fmtNum, fmtPct, plural
 } from './meeting.js';
@@ -170,7 +170,8 @@ function pdfStyles() {
         sub: { fontSize: 9, alignment: 'center', margin: [0, 1, 0, 0] },
         docTitle: { fontSize: 13, bold: true, alignment: 'center', margin: [0, 10, 0, 2] },
         sheetTitle: { fontSize: 12, bold: true, alignment: 'center' },
-        sheetSub: { fontSize: 9, alignment: 'center', margin: [0, 2, 0, 4] },
+        sheetSub: { fontSize: 9, alignment: 'center', margin: [0, 2, 0, 2] },
+        sheetEntrance: { fontSize: 10, bold: true, alignment: 'center', margin: [0, 2, 0, 2] },
         question: { fontSize: 9.5, bold: true, margin: [0, 2, 0, 2] },
         qsub: { fontSize: 9, margin: [0, 1, 0, 0] },
         h2: { fontSize: 11, bold: true, margin: [0, 14, 0, 6] },
@@ -218,10 +219,17 @@ const sheetLayout = () => ({
  * Складання відокремлене від завантаження: так документ можна
  * зібрати й перевірити, не відкриваючи браузера.
  */
-export function buildBlankSheetsDoc(poll, apartments, osbb) {
+export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false } = {}) {
     const questions = agendaOf(poll);
     const decisions = poll.agendaDecisions || [];
-    const rows = ownerRows(apartments);
+    // Листки роздають відповідальним особам по парадних, тому кожна
+    // парадна отримує власний комплект: на одному аркуші не має бути
+    // квартир, які обходить хтось інший.
+    const entrances = byEntrance ? entrancesOf(apartments) : [''];
+    const groups = entrances.map(e => ({
+        entrance: e,
+        rows: ownerRows(byEntrance ? aptsOfEntrance(apartments, e) : apartments)
+    })).filter(g => g.rows.length);
 
     const when = [
         formatShortDate(poll.meetingDate) ? `${formatShortDate(poll.meetingDate)} року` : '',
@@ -236,7 +244,7 @@ export function buildBlankSheetsDoc(poll, apartments, osbb) {
         'Частка', 'Дата', 'Відповідь співвласника: «ЗА», «ПРОТИ», «УТРИМАВСЯ»',
         'Підпис співвласника (представника)'];
 
-    const titleCell = (question, index) => ({
+    const titleCell = (question, index, entrance) => ({
         colSpan: HEAD.length,
         margin: [0, 2, 0, 4],
         stack: [
@@ -246,44 +254,56 @@ export function buildBlankSheetsDoc(poll, apartments, osbb) {
                     + `${when ? `, що відбулись ${when}` : ''}`,
                 style: 'sheetSub'
             },
+            ...(entrance
+                ? [{ text: `Парадна ${entrance}`, style: 'sheetEntrance' }]
+                : (byEntrance ? [{ text: 'Парадну не вказано', style: 'sheetEntrance' }] : [])),
             { text: `Питання ${index + 1}. ${question}`, style: 'question' },
             ...decisionLines(decisions[index], index + 1).map(t => ({ text: t, style: 'qsub' }))
         ]
     });
 
     const content = [];
+    let first = true;
     questions.forEach((q, i) => {
-        if (i > 0) content.push({ text: '', pageBreak: 'before' });
-        content.push({
-            table: {
-                headerRows: 2,
-                widths: [24, 50, 58, '*', 150, 36, 52, 82, 84],
-                body: [
-                    [titleCell(q, i), ...Array(HEAD.length - 1).fill({})],
-                    HEAD.map(text => ({ text, style: 'th' })),
-                    ...rows.map((r, n) => [
-                        { text: String(n + 1), style: 'td', alignment: 'center' },
-                        { text: String(r.apt), style: 'td', alignment: 'center' },
-                        { text: r.area ? fmtNum(r.area, 1) : '', style: 'td', alignment: 'center' },
-                        { text: r.name, style: 'td' },
-                        { text: r.docInfo, style: 'td' },
-                        { text: r.share, style: 'td', alignment: 'center' },
-                        { text: '', style: 'td' },      // дату ставить власник
-                        { text: '', style: 'td' },      // відповідь пише власник
-                        { text: '', style: 'td' }       // підпис
-                    ])
-                ]
-            },
-            layout: sheetLayout()
-        });
-        content.push({
-            text: 'Підпис особи, яка проводила опитування: _____________________ (                              )',
-            style: 'note'
+        groups.forEach(group => {
+            if (!first) content.push({ text: '', pageBreak: 'before' });
+            first = false;
+            content.push({
+                table: {
+                    headerRows: 2,
+                    widths: [24, 50, 58, '*', 150, 36, 52, 82, 84],
+                    body: [
+                        [titleCell(q, i, group.entrance), ...Array(HEAD.length - 1).fill({})],
+                        HEAD.map(text => ({ text, style: 'th' })),
+                        ...group.rows.map((r, n) => [
+                            { text: String(n + 1), style: 'td', alignment: 'center' },
+                            { text: String(r.apt), style: 'td', alignment: 'center' },
+                            { text: r.area ? fmtNum(r.area, 1) : '', style: 'td', alignment: 'center' },
+                            { text: r.name, style: 'td' },
+                            { text: r.docInfo, style: 'td' },
+                            { text: r.share, style: 'td', alignment: 'center' },
+                            { text: '', style: 'td' },      // дату ставить власник
+                            { text: '', style: 'td' },      // відповідь пише власник
+                            { text: '', style: 'td' }       // підпис
+                        ])
+                    ]
+                },
+                layout: sheetLayout()
+            });
+            content.push({
+                text: 'Підпис особи, яка проводила опитування: _____________________ (                              )',
+                style: 'note'
+            });
         });
     });
 
-    if (!questions.length) {
-        content.push({ text: 'У зборів немає жодного питання порядку денного.', style: 'note' });
+    if (!questions.length || !groups.length) {
+        content.push({
+            text: !questions.length
+                ? 'У зборів немає жодного питання порядку денного.'
+                : 'У довіднику немає жодної квартири.',
+            style: 'note'
+        });
     }
 
     return {
@@ -301,9 +321,9 @@ export function buildBlankSheetsDoc(poll, apartments, osbb) {
 }
 
 /** Складає листки й одразу віддає файл на пристрій правління. */
-export async function generateBlankSheets(poll, apartments) {
+export async function generateBlankSheets(poll, apartments, options = {}) {
     const [pdfMake, osbb] = await Promise.all([loadPdfMake(), osbbInfo()]);
-    const dd = buildBlankSheetsDoc(poll, apartments, osbb);
+    const dd = buildBlankSheetsDoc(poll, apartments, osbb, options);
     const name = `Lystky_${fileSlug(poll.title)}_${poll.meetingDate || ''}.pdf`.replace('__', '_');
     pdfMake.createPdf(dd).download(name);
     return name;

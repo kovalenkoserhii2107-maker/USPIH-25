@@ -4393,24 +4393,24 @@ select.field-input {
     display: block; margin: 2px 0 10px;
     font-size: 12.5px; font-weight: 600; color: var(--ink-2);
 }
-.paper-list { display: flex; flex-direction: column; gap: 8px; }
+.paper-list {
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 52vh; overflow-y: auto; margin-bottom: 14px;
+    -webkit-overflow-scrolling: touch;
+}
 
 .paper-row {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px 12px;
     background: var(--surface-2);
     border: 1px solid var(--line);
     border-radius: var(--r-md);
-    overflow: hidden;
 }
-.paper-row-open { border-color: var(--blue); background: var(--surface); }
-.paper-row-done { opacity: 0.55; }
+/* Квартира, за яку голос уже є, лишається в списку — інакше рядки
+   поїхали б і не збігалися з паперовим листком у руках. */
+.paper-row-done { opacity: 0.6; }
 
-.paper-row-head {
-    display: flex; align-items: center; gap: 10px; width: 100%;
-    padding: 11px 13px;
-    background: none; border: none; text-align: left;
-    font-family: var(--font); color: var(--ink); cursor: pointer;
-}
-.paper-row-head:disabled { cursor: default; }
+.paper-row-head { display: flex; align-items: center; gap: 10px; }
 .paper-apt { font-size: 14.5px; font-weight: 700; white-space: nowrap; }
 .paper-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .paper-owners {
@@ -4419,38 +4419,26 @@ select.field-input {
 }
 .paper-area { font-size: 11.5px; color: var(--ink-3); }
 .paper-done-mark {
-    padding: 2px 8px; border-radius: 999px;
+    align-self: flex-start;
+    display: flex; align-items: baseline; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
     background: rgba(52, 199, 89, 0.16); color: #248A3D;
-    font-size: 11px; font-weight: 700;
+    font-size: 12px; font-weight: 700;
 }
-.paper-row-open .row-chevron { transform: rotate(90deg); }
-.paper-row .row-chevron { color: var(--ink-3); transition: transform 0.18s ease; }
+.paper-done-mark small { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
 
-.paper-row-body { padding: 4px 13px 13px; display: flex; flex-direction: column; gap: 12px; }
-.paper-quick-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.paper-quick {
-    padding: 6px 10px;
-    background: var(--surface-3); border: none; border-radius: 999px;
-    font-family: var(--font); font-size: 12px; font-weight: 600; color: var(--ink-2);
-    cursor: pointer;
-}
-.paper-quick:active { background: rgba(0, 122, 255, 0.14); color: var(--blue); }
-
-.paper-q { display: flex; flex-direction: column; gap: 6px; }
-.paper-q-text { font-size: 13.5px; color: var(--ink); line-height: 1.35; }
 .paper-answers { display: flex; gap: 6px; }
 .paper-answer { flex: 1; }
 .paper-answer input { position: absolute; opacity: 0; width: 0; height: 0; }
 .paper-answer span {
-    display: block; padding: 8px 4px;
-    background: var(--surface-3); border: 1.5px solid transparent; border-radius: 10px;
+    display: block; padding: 9px 4px;
+    background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px;
     text-align: center; font-size: 13px; font-weight: 600; color: var(--ink-2);
     cursor: pointer;
 }
 .paper-answer input:checked + span {
     background: rgba(0, 122, 255, 0.1); border-color: var(--blue); color: var(--blue-dark);
 }
-.paper-save { margin-top: 2px; }
 
 /* Питання порядку денного: під полем питання стоїть проєкт рішення,
    тому рядок росте вниз, а не тягнеться в лінію, як варіант відповіді. */
@@ -4476,3 +4464,31 @@ select.field-input {
 }
 .proto-q .field-label { margin-top: 4px; margin-bottom: 3px; }
 .proto-heard, .proto-decision { font-size: 14px; min-height: 52px; }
+
+/* Номер питання проставляє форма — правління не має його вписувати */
+.agenda-no {
+    min-width: 22px; font-size: 14.5px; font-weight: 700; color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Картка зборів у власній вкладці: підсумок по кожному питанню рядком */
+.meeting-card { margin-bottom: var(--gap); }
+.meeting-lines { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 4px; }
+.meeting-line {
+    display: flex; flex-direction: column; gap: 3px;
+    padding-left: 10px; border-left: 2px solid var(--line);
+}
+.meeting-line-q { font-size: 14px; color: var(--ink); line-height: 1.35; }
+.meeting-line-counts { font-size: 12.5px; color: var(--ink-2); }
+
+/* Список протоколів */
+.proto-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; margin-bottom: 8px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); text-decoration: none; color: var(--ink);
+}
+.proto-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.proto-row-title { font-size: 14.5px; font-weight: 600; }
+.proto-row-meta { font-size: 11.5px; color: var(--ink-3); }
+.proto-row .row-chevron { color: var(--ink-3); }
