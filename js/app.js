@@ -28,6 +28,7 @@ import {
     loadAdminBoard, loadAdminServices, moveAccountantToServices
 } from './contacts.js';
 import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
+import { initMeetings, loadMeetings, loadProtocols } from './meetings.js';
 import { loadDashboard } from './dashboard.js';
 import { initDirectory, loadDirectory } from './directory.js';
 import { initImportOwners } from './import-owners.js';
@@ -129,7 +130,8 @@ async function loadCabinet(apt) {
         await Promise.all([loadAdminHistory(), loadAdminRequests(),
                            populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
                            loadAdminExpenses(), loadAdminRequisites(),
-                           loadDirectory(), loadVerifyQueue(), loadDtekSettings()]);
+                           loadDirectory(), loadVerifyQueue(), loadDtekSettings(),
+                           loadMeetings(), loadProtocols()]);
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
         refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
@@ -419,6 +421,7 @@ function init() {
         }
     }
     initAdminTabs();
+    initMeetings();
     initAdminFolds();
     initLedger();
     initVerify();

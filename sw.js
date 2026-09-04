@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '91';
+const VERSION = '92';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -34,6 +34,7 @@ const SHELL = [
     './js/pull-refresh.js',
     './js/polls.js',
     './js/meeting.js',
+    './js/meetings.js',
     './js/paper_votes.js',
     './js/protocol_pdf.js',
     './js/protocol_form.js',

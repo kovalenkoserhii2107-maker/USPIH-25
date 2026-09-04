@@ -28,7 +28,7 @@ export const MEETING_ANSWERS = ['За', 'Проти', 'Утримався'];
  * обрати головуючого й секретаря — без них немає кому підписати
  * протокол. Тому питання додається саме кодом, а не руками.
  */
-export const CHAIR_QUESTION = 'Обрання голови та секретаря зборів';
+export const CHAIR_QUESTION = 'Про обрання голови та секретаря зборів';
 
 /** Скільки власників має взяти участь, щоб збори відбулися. */
 export const QUORUM_PCT = 50;
@@ -283,6 +283,30 @@ export function ownerShare(owner) {
     if (frac) return frac;
     const perc = String(owner?.sharePerc || '').trim();
     return perc ? `${perc}%` : '';
+}
+
+/**
+ * Парадні будинку в природному порядку.
+ *
+ * Листки письмового опитування роздають відповідальним особам по
+ * парадних, тому і друк, і внесення голосів ідуть тим самим розрізом.
+ * Квартири без вказаної парадної збираються в окрему групу — інакше
+ * вони просто зникли б з обходу.
+ */
+export function entrancesOf(apartments) {
+    const set = new Set();
+    (apartments || []).forEach(a => set.add(String(a.entrance || '').trim()));
+    return [...set].sort((a, b) => {
+        if (!a) return 1;                       // «без парадної» — завжди останні
+        if (!b) return -1;
+        return (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0) || a.localeCompare(b, 'uk');
+    });
+}
+
+/** Квартири однієї парадної. Порожня парадна означає «усі». */
+export function aptsOfEntrance(apartments, entrance) {
+    if (!entrance) return apartments || [];
+    return (apartments || []).filter(a => String(a.entrance || '').trim() === String(entrance));
 }
 
 /** Список власників квартири одним рядком — для таблиць і списків. */

@@ -1,157 +1,141 @@
 // ============================================================
 // Внесення паперових голосів (письмове опитування).
 //
-// Обхід квартир дає стос підписаних листків — їх треба перенести
-// в базу, щоб протокол рахувався з тих самих даних, що й онлайн.
-// Голос лягає туди ж, куди й звичайний, — polls/{id}/votes/{apt},
-// але з міткою source: 'paper'. Мітка потрібна протоколу: закон
-// розрізняє участь особисто на зборах і письмове опитування.
+// Порядок роботи повторює стос листків на столі: листки друкують
+// на КОЖНЕ питання окремо й роздають відповідальним по парадних,
+// тому й тут спершу обирається питання та парадна, а далі йде
+// суцільний список квартир — рядок за рядком, як на аркуші.
+// Позначити треба лише «За», «Проти» чи «Утримався».
 //
-// У списку — лише ті квартири, які ще не голосували. Так зроблено
-// свідомо: документ голосу один на квартиру, і повторний запис
-// не «додав» би другий голос, а мовчки затер перший — зокрема й
-// поданий мешканцем у застосунку.
+// Голос лягає туди ж, куди й звичайний, — polls/{id}/votes/{apt},
+// але з міткою source: 'paper' і лише в ті питання, за якими є
+// підпис: запис іде злиттям (merge), тож відповідь на друге питання
+// не стирає раніше внесену відповідь на перше.
+//
+// Квартири, які вже відповіли на це питання, показані окремо й без
+// перемикачів: другий запис не «додав» би голос, а мовчки затер
+// перший — зокрема й поданий мешканцем у застосунку.
 // ============================================================
 import { db, session } from './firebase.js';
 import {
-    collection, getDocs, setDoc, doc, serverTimestamp
+    collection, getDocs, doc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { fetchDirectory } from './directory.js';
-import { MEETING_ANSWERS, agendaOf, meetingWhen, ownersLine, parseArea } from './meeting.js';
+import {
+    MEETING_ANSWERS, agendaOf, answerFor, isPaperVote,
+    meetingWhen, ownersLine, parseArea, entrancesOf, aptsOfEntrance
+} from './meeting.js';
 
-let state = null;      // { poll, pending: [...], onDone }
+let state = null;   // { poll, apartments, votes, question, entrance, saved, onDone }
 
 const modal = () => document.getElementById('paperVotesModal');
+const el = (id) => document.getElementById(id);
+
+/** Відповідь квартири на поточне питання, якщо вона вже є. */
+function existing(apt) {
+    const vote = state.votes.get(String(apt));
+    if (!vote) return null;
+    const answer = answerFor(vote, state.question);
+    return answer ? { answer, paper: isPaperVote(vote) } : null;
+}
 
 function rowMarkup(apt) {
     const area = parseArea(apt.area);
-    return `<div class="paper-row" data-apt="${escapeHtml(apt.apt)}">
-        <button type="button" class="paper-row-head">
+    const done = existing(apt.apt);
+
+    const controls = done
+        ? `<span class="paper-done-mark">${escapeHtml(done.answer)}
+               <small>${done.paper ? 'письмово' : 'у застосунку'}</small></span>`
+        : `<div class="paper-answers" role="radiogroup" aria-label="Кв. ${escapeHtml(apt.apt)}">
+               ${MEETING_ANSWERS.map(ans => `
+                   <label class="paper-answer">
+                       <input type="radio" name="paper-${escapeHtml(apt.apt)}" value="${escapeHtml(ans)}">
+                       <span>${escapeHtml(ans)}</span>
+                   </label>`).join('')}
+           </div>`;
+
+    return `<div class="paper-row${done ? ' paper-row-done' : ''}" data-apt="${escapeHtml(apt.apt)}">
+        <div class="paper-row-head">
             <span class="paper-apt">Кв. ${escapeHtml(apt.apt)}</span>
             <span class="paper-row-text">
                 <span class="paper-owners">${escapeHtml(ownersLine(apt))}</span>
                 <span class="paper-area">${area ? `${area} м²` : 'площа не вказана'}</span>
             </span>
-            <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none"
-                 stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </button>
-        <div class="paper-row-body" hidden></div>
+        </div>
+        ${controls}
     </div>`;
 }
 
-function bodyMarkup(apt) {
-    const questions = agendaOf(state.poll);
-    const groups = questions.map((q, i) => `
-        <div class="paper-q">
-            <span class="paper-q-text">${i + 1}. ${escapeHtml(q)}</span>
-            <div class="paper-answers" role="radiogroup" aria-label="${escapeHtml(q)}">
-                ${MEETING_ANSWERS.map(ans => `
-                    <label class="paper-answer">
-                        <input type="radio" name="paper-${escapeHtml(apt.apt)}-${i}" value="${escapeHtml(ans)}">
-                        <span>${escapeHtml(ans)}</span>
-                    </label>`).join('')}
-            </div>
-        </div>`).join('');
-
-    // Обхідний листок частіше за все підписують однаково по всіх
-    // питаннях — швидкі кнопки економлять правлінню сотні натискань.
-    const quick = MEETING_ANSWERS.map(ans =>
-        `<button type="button" class="paper-quick" data-fill="${escapeHtml(ans)}">Всі «${escapeHtml(ans)}»</button>`
-    ).join('');
-
-    return `<div class="paper-quick-row">${quick}</div>
-        ${groups}
-        <button type="button" class="btn-primary btn-compact paper-save">Зберегти голос квартири</button>`;
+function visibleApartments() {
+    const needle = (el('paperVotesSearch')?.value || '').trim().toLowerCase();
+    let list = aptsOfEntrance(state.apartments, state.entrance);
+    if (needle) {
+        list = list.filter(a => String(a.apt).includes(needle)
+            || ownersLine(a).toLowerCase().includes(needle));
+    }
+    return list;
 }
 
-function renderList(filter = '') {
-    const host = document.getElementById('paperVotesList');
-    if (!host) return;
-    const needle = filter.trim().toLowerCase();
-    const list = needle
-        ? state.pending.filter(a =>
-            String(a.apt).includes(needle) || ownersLine(a).toLowerCase().includes(needle))
-        : state.pending;
-
-    if (!state.pending.length) {
-        host.innerHTML = '<p class="list-empty">Усі квартири вже проголосували</p>';
-        return;
-    }
+function renderList() {
+    const host = el('paperVotesList');
+    if (!host || !state) return;
+    const list = visibleApartments();
     host.innerHTML = list.length
         ? list.map(rowMarkup).join('')
-        : '<p class="list-empty">Нічого не знайдено</p>';
+        : '<p class="list-empty">Квартир не знайдено</p>';
+
+    const left = list.filter(a => !existing(a.apt)).length;
+    el('paperVotesCount').textContent = left
+        ? `Питання ${state.question + 1} · залишилося внести: ${left} з ${list.length}`
+        : `Питання ${state.question + 1} · голоси внесено за всіма квартирами списку`;
 }
 
-function updateCounter() {
-    const el = document.getElementById('paperVotesCount');
-    if (el) el.textContent = state.pending.length
-        ? `Залишилося внести: ${state.pending.length}`
-        : 'Голоси внесено за всіма квартирами';
-}
+/** Записує всі позначені рядки одним пакетом. */
+async function saveMarked(btn) {
+    const host = el('paperVotesList');
+    const marked = [];
+    host.querySelectorAll('.paper-row').forEach(row => {
+        const picked = row.querySelector('.paper-answer input:checked');
+        if (picked) marked.push({ apt: row.dataset.apt, answer: picked.value });
+    });
+    if (!marked.length) return toast('Немає жодної позначеної квартири', 'error');
 
-async function saveVote(row, btn) {
-    const apt = row.dataset.apt;
-    const questions = agendaOf(state.poll);
-    const answers = {};
-    for (let i = 0; i < questions.length; i++) {
-        const picked = row.querySelector(`input[name="paper-${CSS.escape(apt)}-${i}"]:checked`);
-        if (!picked) return toast(`Кв. ${apt}: не відмічено питання ${i + 1}`, 'error');
-        answers[String(i)] = picked.value;
-    }
-
-    setBusy(btn, true, 'Запис…');
+    setBusy(btn, true, `Запис ${marked.length}…`);
     try {
-        await setDoc(doc(db, 'polls', state.poll.id, 'votes', String(apt)), {
-            answers,
-            source: 'paper',
-            enteredBy: String(session.apt || ''),
-            votedAt: serverTimestamp()
+        // Пакетами по 400: у Firestore на один batch не більше 500 записів,
+        // а обхід великої парадної легко дає кілька сотень листків.
+        for (let i = 0; i < marked.length; i += 400) {
+            const batch = writeBatch(db);
+            marked.slice(i, i + 400).forEach(({ apt, answer }) => {
+                batch.set(doc(db, 'polls', state.poll.id, 'votes', String(apt)), {
+                    answers: { [String(state.question)]: answer },
+                    source: 'paper',
+                    enteredBy: String(session.apt || ''),
+                    votedAt: serverTimestamp()
+                }, { merge: true });
+            });
+            await batch.commit();
+        }
+
+        // Оновлюємо локальний знімок голосів, щоб рядки одразу стали
+        // «внесеними», а лічильник не брехав до перезавантаження.
+        marked.forEach(({ apt, answer }) => {
+            const vote = state.votes.get(String(apt)) || { apt: String(apt), answers: {}, source: 'paper' };
+            vote.answers = { ...(vote.answers || {}), [String(state.question)]: answer };
+            state.votes.set(String(apt), vote);
         });
-        state.pending = state.pending.filter(a => String(a.apt) !== String(apt));
-        state.saved++;
-        row.classList.add('paper-row-done');
-        row.querySelector('.paper-row-body').hidden = true;
-        row.querySelector('.paper-row-head').disabled = true;
-        row.querySelector('.paper-apt').insertAdjacentHTML('afterend',
-            '<span class="paper-done-mark">внесено</span>');
-        updateCounter();
+        state.saved += marked.length;
+        renderList();
+        toast(`Внесено голосів: ${marked.length}`, 'success');
     } catch (e) {
-        console.error('Паперовий голос:', e);
+        console.error('Паперові голоси:', e);
         toast(e.code === 'permission-denied'
-            ? 'Немає прав на запис голосу'
-            : 'Не вдалося зберегти голос', 'error');
+            ? 'Немає прав на запис голосів'
+            : 'Не вдалося зберегти голоси', 'error');
+    } finally {
         setBusy(btn, false);
     }
-}
-
-function onListClick(e) {
-    const head = e.target.closest('.paper-row-head');
-    if (head) {
-        const row = head.closest('.paper-row');
-        const body = row.querySelector('.paper-row-body');
-        // Вміст малюємо при першому розкритті: три сотні квартир,
-        // помножені на питання й радіокнопки, склали б десятки тисяч
-        // вузлів — вікно відкривалося б секундами.
-        if (!body.dataset.ready) {
-            const apt = state.pending.find(a => String(a.apt) === row.dataset.apt);
-            if (apt) { body.innerHTML = bodyMarkup(apt); body.dataset.ready = '1'; }
-        }
-        body.hidden = !body.hidden;
-        row.classList.toggle('paper-row-open', !body.hidden);
-        return;
-    }
-
-    const quick = e.target.closest('.paper-quick');
-    if (quick) {
-        const row = quick.closest('.paper-row');
-        row.querySelectorAll(`.paper-answer input[value="${CSS.escape(quick.dataset.fill)}"]`)
-            .forEach(input => { input.checked = true; });
-        return;
-    }
-
-    const save = e.target.closest('.paper-save');
-    if (save) saveVote(save.closest('.paper-row'), save);
 }
 
 export function closePaperVotes() {
@@ -171,13 +155,11 @@ export async function openPaperVotes(poll, onDone = () => {}) {
     const box = modal();
     if (!box) return;
 
-    document.getElementById('paperVotesTitle').textContent = 'Паперові голоси';
-    document.getElementById('paperVotesMeta').textContent =
+    el('paperVotesMeta').textContent =
         `${poll.title}${meetingWhen(poll) ? ` · ${meetingWhen(poll)}` : ''}`;
-    const search = document.getElementById('paperVotesSearch');
-    search.value = '';
-    document.getElementById('paperVotesList').innerHTML = '<p class="list-empty">Завантаження…</p>';
-    document.getElementById('paperVotesCount').textContent = '';
+    el('paperVotesSearch').value = '';
+    el('paperVotesList').innerHTML = '<p class="list-empty">Завантаження…</p>';
+    el('paperVotesCount').textContent = '';
     box.classList.add('is-open');
     lockScroll();
 
@@ -186,18 +168,28 @@ export async function openPaperVotes(poll, onDone = () => {}) {
             fetchDirectory(),
             getDocs(collection(db, 'polls', poll.id, 'votes'))
         ]);
-        const voted = new Set(voteSnap.docs.map(d => d.id));
         state = {
-            poll,
-            saved: 0,
-            onDone,
-            pending: apartments.filter(a => !voted.has(String(a.apt)))
+            poll, apartments, onDone, saved: 0,
+            question: 0,
+            entrance: '',
+            votes: new Map(voteSnap.docs.map(d => [d.id, { apt: d.id, ...d.data() }]))
         };
+
+        el('paperQuestion').innerHTML = agendaOf(poll)
+            .map((q, i) => `<option value="${i}">Питання ${i + 1}. ${escapeHtml(q)}</option>`)
+            .join('');
+
+        const entrances = entrancesOf(apartments).filter(Boolean);
+        el('paperEntrance').innerHTML = ['<option value="">Усі парадні</option>',
+            ...entrances.map(e => `<option value="${escapeHtml(e)}">Парадна ${escapeHtml(e)}</option>`)]
+            .join('');
+        // Листки роздають по парадних, тож із однією парадною вибір зайвий
+        el('paperEntrance').closest('.field').hidden = entrances.length < 2;
+
         renderList();
-        updateCounter();
     } catch (e) {
         console.error('Список для паперових голосів:', e);
-        document.getElementById('paperVotesList').innerHTML =
+        el('paperVotesList').innerHTML =
             '<p class="list-empty">Не вдалося завантажити список квартир</p>';
     }
 }
@@ -208,10 +200,18 @@ export function initPaperVotes() {
     if (!box || box.dataset.ready) return;
     box.dataset.ready = '1';
 
-    document.getElementById('closePaperVotesBtn')?.addEventListener('click', closePaperVotes);
+    el('closePaperVotesBtn')?.addEventListener('click', closePaperVotes);
     box.addEventListener('click', (e) => { if (e.target === box) closePaperVotes(); });
-    document.getElementById('paperVotesList')?.addEventListener('click', onListClick);
-    document.getElementById('paperVotesSearch')?.addEventListener('input', function () {
-        if (state) renderList(this.value);
+    el('paperQuestion')?.addEventListener('change', function () {
+        if (!state) return;
+        state.question = parseInt(this.value, 10) || 0;
+        renderList();
     });
+    el('paperEntrance')?.addEventListener('change', function () {
+        if (!state) return;
+        state.entrance = this.value;
+        renderList();
+    });
+    el('paperVotesSearch')?.addEventListener('input', () => { if (state) renderList(); });
+    el('paperSaveBtn')?.addEventListener('click', function () { saveMarked(this); });
 }

@@ -25,7 +25,7 @@ import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
 import {
-    MEETING_ANSWERS, CHAIR_QUESTION, QUORUM_PCT, DECISION_PCT,
+    MEETING_ANSWERS, QUORUM_PCT, DECISION_PCT,
     computeQuorum, isMeeting, agendaOf, answerFor, questionTally, isChairQuestion,
     formatMeetingDate, fmtPct
 } from './meeting.js';
@@ -473,51 +473,26 @@ function optionInputs() {
     return Array.from(document.querySelectorAll('#pollOptionsList .poll-option-input'));
 }
 
-/** Питання порядку денного разом із проєктами рішень, у порядку рядків. */
-function agendaInputs() {
-    return Array.from(document.querySelectorAll('#pollOptionsList .poll-option-row')).map(row => ({
-        question: row.querySelector('.poll-option-input')?.value.trim() || '',
-        decision: row.querySelector('.poll-decision-input')?.value.trim() || ''
-    })).filter(x => x.question);
-}
-
 function refreshOptionRows() {
     const rows = document.querySelectorAll('#pollOptionsList .poll-option-row');
-    // Двох варіантів — мінімум для голосування; у зборів же вистачає
-    // одного питання: друге, про голову й секретаря, додає код.
-    const min = currentPollKind() === 'meeting' ? 1 : 2;
+    // Двох варіантів — мінімум для голосування, менше видаляти не даємо
     rows.forEach(r => {
         const del = r.querySelector('.poll-option-del');
-        if (del) del.disabled = rows.length <= min;
+        if (del) del.disabled = rows.length <= 2;
     });
 }
 
-function addOptionRow(value = '', decision = '') {
+function addOptionRow(value = '') {
     const list = document.getElementById('pollOptionsList');
-    const meeting = currentPollKind() === 'meeting';
     const row = document.createElement('div');
-    row.className = `poll-option-row${meeting ? ' poll-option-row-meeting' : ''}`;
-
-    const del = `<button type="button" class="poll-option-del" aria-label="Прибрати ${meeting ? 'питання' : 'варіант'}">
+    row.className = 'poll-option-row';
+    row.innerHTML = `
+        <input type="text" class="field-input poll-option-input"
+               placeholder="Варіант відповіді" value="${escapeHtml(value)}">
+        <button type="button" class="poll-option-del" aria-label="Прибрати варіант">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
                  stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>`;
-
-    // У зборів під питанням стоїть проєкт рішення: саме він друкується
-    // на листку опитування, під яким розписується співвласник, і саме
-    // він потім лягає в протокол рядком «Вирішили».
-    row.innerHTML = meeting
-        ? `<div class="poll-option-main">
-               <input type="text" class="field-input poll-option-input"
-                      placeholder="Питання порядку денного" value="${escapeHtml(value)}">
-               ${del}
-           </div>
-           <textarea class="field-input poll-decision-input" rows="2"
-                     placeholder="Проєкт рішення — кожен пункт з нового рядка">${escapeHtml(decision)}</textarea>`
-        : `<input type="text" class="field-input poll-option-input"
-                  placeholder="Варіант відповіді" value="${escapeHtml(value)}">
-           ${del}`;
-
     row.querySelector('.poll-option-del').addEventListener('click', () => {
         row.remove();
         refreshOptionRows();
@@ -528,86 +503,19 @@ function addOptionRow(value = '', decision = '') {
 }
 
 function resetPollForm() {
-    const meeting = currentPollKind() === 'meeting';
-    document.getElementById('pollTitle').value = meeting ? 'Загальні збори співвласників' : '';
+    document.getElementById('pollTitle').value = '';
     const desc = document.getElementById('pollDescription');
     desc.value = '';
     desc.style.height = '';
-
     document.getElementById('pollOptionsList').innerHTML = '';
-    if (meeting) {
-        // Питання про голову й секретаря в списку не показуємо: воно
-        // додається при публікації, і редагувати його ніхто не має.
-        addOptionRow();
-    } else {
-        addOptionRow('За');
-        addOptionRow('Проти');
-        addOptionRow('Утримався');
-    }
-
+    addOptionRow('За');
+    addOptionRow('Проти');
+    addOptionRow('Утримався');
     const dl = document.getElementById('pollDeadline');
     if (dl) dl.value = '';
-    ['meetingDate', 'meetingTimeStart', 'meetingTimeEnd', 'meetingPlaceOther'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    const place = document.getElementById('meetingPlace');
-    if (place) { place.selectedIndex = 0; togglePlaceOther(); }
-    const notify = document.getElementById('meetingNotify');
-    if (notify) notify.checked = true;
-
     document.querySelectorAll('#pollQuickTerms .poll-term').forEach(b => b.classList.remove('active'));
     pendingPollFiles = [];
     refreshPollChips();
-}
-
-/** Поле «інше місце» потрібне лише тоді, коли обрано саме «Інше…». */
-function togglePlaceOther() {
-    const select = document.getElementById('meetingPlace');
-    const other = document.getElementById('meetingPlaceOther');
-    if (!select || !other) return;
-    other.hidden = select.value !== 'other';
-    if (!other.hidden) other.focus();
-}
-
-/**
- * Перемикає форму між опитуванням і зборами.
- *
- * Форма при цьому очищується: у зборів і опитування різні за змістом
- * поля — «За / Проти / Утримався» як варіанти відповіді в порядку
- * денному виглядали б безглуздо, і навпаки.
- */
-function setPollKind(kind) {
-    document.querySelectorAll('#pollKindSwitch .poll-kind')
-        .forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
-
-    const meeting = kind === 'meeting';
-    const fields = document.getElementById('pollMeetingFields');
-    if (fields) fields.hidden = !meeting;
-
-    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    set('pollFormTitle', meeting ? 'Нові загальні збори' : 'Нове опитування');
-    set('pollFormSub', meeting
-        ? 'Порядок денний, листки для обходу квартир і протокол'
-        : 'Кожна квартира має один голос');
-    set('pollTitleLabel', meeting ? 'Назва зборів' : 'Питання');
-    set('pollOptionsLabel', meeting ? 'Порядок денний' : 'Варіанти відповіді');
-    set('addPollOptionBtn', meeting ? '+ Додати питання' : '+ Додати варіант');
-    set('createPollBtn', meeting ? 'Створити збори' : 'Опублікувати опитування');
-    set('pollDeadlineHint', meeting
-        ? 'До цього моменту приймаються голоси — і в застосунку, і паперові. Можна не вказувати.'
-        : 'Можна не вказувати — тоді опитування триватиме, доки не завершите вручну.');
-
-    const hint = document.getElementById('pollAgendaHint');
-    if (hint) hint.hidden = !meeting;
-    const title = document.getElementById('pollTitle');
-    if (title) {
-        title.placeholder = meeting
-            ? 'Напр. Загальні збори співвласників'
-            : 'Напр. Чи встановлювати шлагбаум?';
-    }
-
-    resetPollForm();
 }
 
 function refreshPollChips() {
@@ -626,98 +534,17 @@ function localInputValue(date) {
          + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** Обраний у формі тип: звичайне опитування чи загальні збори. */
-function currentPollKind() {
-    return document.querySelector('#pollKindSwitch .poll-kind.active')?.dataset.kind || 'poll';
-}
-
-/** Місце проведення: зі списку або дописане вручну. */
-function meetingPlace() {
-    const select = document.getElementById('meetingPlace');
-    if (!select) return '';
-    return select.value === 'other'
-        ? document.getElementById('meetingPlaceOther').value.trim()
-        : select.value;
-}
-
-/**
- * Порядок денний.
- *
- * Питання про голову й секретаря дописуємо самі й завжди першим:
- * без нього збори нікому вести й нікому підписувати протокол, а
- * покладатися, що правління щоразу згадає внести його руками, —
- * означає рано чи пізно отримати протокол, який не має сили.
- */
-function buildAgenda(entered) {
-    const own = entered.filter(x => x.question.toLowerCase() !== CHAIR_QUESTION.toLowerCase());
-    // Рішення йде тим самим індексом, що й питання: у протоколі вони
-    // читаються парою, і зсув на одиницю зіпсував би весь документ.
-    return [{ question: CHAIR_QUESTION, decision: '' }, ...own];
-}
-
-/** Запрошення на збори — звичайною розсилкою всьому будинку. */
-async function announceMeeting(poll) {
-    const when = [
-        `Дата: ${formatMeetingDate(poll.meetingDate)}`,
-        poll.timeStart ? `Час: ${poll.timeStart}${poll.timeEnd ? `–${poll.timeEnd}` : ''}` : '',
-        poll.location ? `Місце: ${poll.location}` : ''
-    ].filter(Boolean).join('\n');
-
-    const agenda = poll.options.map((q, i) => `${i + 1}. ${q}`).join('\n');
-
-    await addDoc(collection(db, 'messages'), {
-        title: `Скликання загальних зборів — ${formatMeetingDate(poll.meetingDate)}`,
-        body: `Правління скликає загальні збори співвласників багатоквартирного будинку.\n\n`
-            + `${when}\n\n`
-            + (poll.description ? `${poll.description}\n\n` : '')
-            + `ПОРЯДОК ДЕННИЙ\n${agenda}\n\n`
-            + `Проголосувати можна в застосунку — розділ «Голосування» — або письмово, `
-            + `підписавши листок опитування під час обходу квартир.`,
-        targetType: 'all',
-        targetValue: '',
-        recipients: buildRecipients('all', ''),
-        attachments: [],
-        linkedDoc: null,
-        createdAt: serverTimestamp(),
-        readBy: {}
-    });
-}
-
 export async function createPoll(btn) {
-    const kind = currentPollKind();
-    const meeting = kind === 'meeting';
     const title = document.getElementById('pollTitle').value.trim();
     const description = document.getElementById('pollDescription').value.trim();
-    const entered = meeting
-        ? agendaInputs()
-        : optionInputs().map(i => i.value.trim()).filter(Boolean);
+    const options = optionInputs().map(i => i.value.trim()).filter(Boolean);
     const deadlineRaw = document.getElementById('pollDeadline').value;
 
-    if (!title) return toast(meeting ? 'Вкажіть назву зборів' : 'Вкажіть питання', 'error');
-
-    const meetingDate = document.getElementById('meetingDate')?.value || '';
-    const timeStart = document.getElementById('meetingTimeStart')?.value || '';
-    const timeEnd = document.getElementById('meetingTimeEnd')?.value || '';
-    const location = meeting ? meetingPlace() : '';
-
-    if (meeting) {
-        if (!meetingDate) return toast('Вкажіть дату зборів', 'error');
-        if (!timeStart) return toast('Вкажіть час початку зборів', 'error');
-        if (timeEnd && timeEnd <= timeStart) {
-            return toast('Час закінчення має бути пізніше за початок', 'error');
-        }
-        if (!location) return toast('Вкажіть місце проведення', 'error');
-        if (!entered.length) return toast('Додайте хоча б одне питання порядку денного', 'error');
-    } else {
-        if (entered.length < 2) return toast('Потрібно щонайменше два варіанти', 'error');
+    if (!title) return toast('Вкажіть питання', 'error');
+    if (options.length < 2) return toast('Потрібно щонайменше два варіанти', 'error');
+    if (new Set(options).size !== options.length) {
+        return toast('Варіанти не мають повторюватися', 'error');
     }
-    const texts = meeting ? entered.map(x => x.question) : entered;
-    if (new Set(texts).size !== texts.length) {
-        return toast(meeting ? 'Питання не мають повторюватися' : 'Варіанти не мають повторюватися', 'error');
-    }
-
-    const agenda = meeting ? buildAgenda(entered) : [];
-    const options = meeting ? agenda.map(x => x.question) : entered;
 
     let deadline = null;
     if (deadlineRaw) {
@@ -740,40 +567,15 @@ export async function createPoll(btn) {
             });
         }
 
-        const payload = {
+        await addDoc(collection(db, 'polls'), {
             title, description, options, attachments,
             deadline,
+            isMeeting: false,
             status: 'active',
             resultsSent: false,
-            isMeeting: meeting,
-            agendaDecisions: meeting ? agenda.map(x => x.decision) : [],
-            agendaHeard: [],
-            protocolNumber: '',
-            chairName: '',
-            secretaryName: '',
-            meetingDate: meeting ? meetingDate : null,
-            timeStart: meeting ? timeStart : '',
-            timeEnd: meeting ? timeEnd : '',
-            location,
             createdAt: serverTimestamp()
-        };
-        const ref = await addDoc(collection(db, 'polls'), payload);
-
-        // Розсилка окремо від запису: якщо вона впаде, збори вже
-        // створені й нікуди не зникнуть — запрошення правління
-        // повторить звичайним оголошенням.
-        if (meeting && document.getElementById('meetingNotify')?.checked) {
-            try {
-                await announceMeeting({ id: ref.id, ...payload });
-                toast('Збори створено, запрошення надіслано', 'success');
-            } catch (e) {
-                console.error('Запрошення на збори:', e);
-                toast('Збори створено, але запрошення не пішло', 'error');
-            }
-        } else {
-            toast(meeting ? 'Збори створено' : 'Опитування опубліковано', 'success');
-        }
-
+        });
+        toast('Опитування опубліковано', 'success');
         resetPollForm();
         await loadAdminPolls();
     } catch (e) {
@@ -877,7 +679,7 @@ async function broadcastResults(poll, quorum, apartments = []) {
  * внесе паперові голоси. Але мешканець має дізнатися результат у
  * день закінчення, а не через тиждень.
  */
-async function broadcastMeetingResults(poll, quorum, apartments) {
+export async function broadcastMeetingResults(poll, quorum, apartments) {
     const questions = agendaOf(poll);
     const lines = questions.map((q, i) => {
         const t = questionTally(poll.votes, apartments, i, isChairQuestion(i));
@@ -911,48 +713,11 @@ async function broadcastMeetingResults(poll, quorum, apartments) {
     });
 }
 
-/** Кнопки під карткою: у зборів свій набір дій. */
+/** Кнопка під карткою опитування. Збори ведуться у власній вкладці. */
 function adminPollActions(poll) {
-    if (!isMeeting(poll)) {
-        return isClosed(poll) ? '' : `<div class="poll-actions">
-            <button type="button" class="btn-soft btn-compact poll-close-btn"
-                    data-poll="${poll.id}">Завершити опитування</button></div>`;
-    }
-
-    const actions = [
-        `<button type="button" class="btn-soft btn-compact poll-sheets-btn"
-                 data-poll="${poll.id}">Друк листків опитування</button>`
-    ];
-    // Після публікації протоколу дописувати голоси немає сенсу:
-    // документ уже розісланий, і нові голоси в ньому не враховані.
-    if (!poll.protocolUrl) {
-        actions.push(`<button type="button" class="btn-soft btn-compact poll-paper-btn"
-                 data-poll="${poll.id}">Внести паперові голоси</button>`);
-    }
-    if (!isClosed(poll)) {
-        actions.push(`<button type="button" class="btn-soft btn-compact poll-close-btn"
-                 data-poll="${poll.id}">Завершити збори</button>`);
-    } else {
-        actions.push(`<button type="button" class="btn-primary btn-compact poll-protocol-btn"
-                 data-poll="${poll.id}">${poll.protocolUrl
-                     ? 'Сформувати протокол заново'
-                     : 'Сформувати протокол та опублікувати'}</button>`);
-    }
-
-    const link = poll.protocolUrl
-        ? `<a class="meeting-protocol-link" href="${escapeHtml(poll.protocolUrl)}"
-              target="_blank" rel="noopener">Протокол опубліковано — відкрити PDF</a>`
-        : '';
-    return `<div class="poll-actions">${actions.join('')}</div>${link}`;
-}
-
-/** Скільки голосів подано в застосунку, а скільки внесено з паперу. */
-function participationLine(poll) {
-    if (!isMeeting(poll)) return '';
-    const paper = (poll.votes || []).filter(v => v.source === 'paper').length;
-    const online = (poll.votes || []).length - paper;
-    return `<span class="meeting-split">Особисто на зборах: <b>${online}</b>
-        · письмове опитування: <b>${paper}</b></span>`;
+    return isClosed(poll) ? '' : `<div class="poll-actions">
+        <button type="button" class="btn-soft btn-compact poll-close-btn"
+                data-poll="${poll.id}">Завершити опитування</button></div>`;
 }
 
 export async function loadAdminPolls() {
@@ -964,6 +729,8 @@ export async function loadAdminPolls() {
         let polls = await fetchPollsWithVotes();
         // Якщо щось довелося закрити — перечитуємо, щоб показати свіжі статуси
         if (await closeExpiredPolls(polls)) polls = await fetchPollsWithVotes();
+        // Збори мають власну вкладку з іншим життєвим циклом — тут лише опитування
+        polls = polls.filter(p => !isMeeting(p));
 
         // Правління бачить явку наживо, не чекаючи завершення
         const apartments = await fetchDirectory().catch(e => {
@@ -983,13 +750,10 @@ export async function loadAdminPolls() {
                     <span class="poll-date">${formatDateTime(poll.createdAt)}</span>
                 </div>
                 <h3 class="poll-title">${escapeHtml(poll.title)}</h3>
-                ${meetingMeta(poll)}
                 ${poll.deadline ? `<span class="poll-deadline${isExpired(poll) ? ' poll-deadline-over' : ''}">${escapeHtml(formatDeadline(poll))}</span>` : ''}
                 ${poll.description ? `<p class="poll-desc">${escapeHtml(poll.description)}</p>` : ''}
                 <div class="attach-block poll-attach" data-poll-att="${poll.id}"></div>
-                ${isMeeting(poll)
-                    ? renderMeetingResults(poll, poll.votes, null, apartments) + participationLine(poll)
-                    : renderResults(poll.options || [], poll.votes)}
+                ${renderResults(poll.options || [], poll.votes)}
                 ${apartments.length ? renderQuorum(computeQuorum(poll.votes, apartments)) : ''}
                 ${adminPollActions(poll)}
             </div>`).join('');
@@ -1002,47 +766,6 @@ export async function loadAdminPolls() {
 
         host.querySelectorAll('.poll-close-btn').forEach(btn => {
             btn.addEventListener('click', function () { closePoll(this.dataset.poll, this); });
-        });
-
-        const pollById = (id) => polls.find(p => p.id === id);
-
-        host.querySelectorAll('.poll-sheets-btn').forEach(btn => {
-            btn.addEventListener('click', async function () {
-                if (!apartments.length) return toast('Довідник квартир недоступний', 'error');
-                setBusy(this, true, 'Готуємо PDF…');
-                try {
-                    const { generateBlankSheets } = await import('./protocol_pdf.js');
-                    await generateBlankSheets(pollById(this.dataset.poll), apartments);
-                    toast('Листки опитування завантажено', 'success');
-                } catch (e) {
-                    console.error('Листки опитування:', e);
-                    toast('Не вдалося сформувати листки', 'error');
-                } finally {
-                    setBusy(this, false);
-                }
-            });
-        });
-
-        host.querySelectorAll('.poll-paper-btn').forEach(btn => {
-            btn.addEventListener('click', async function () {
-                setBusy(this, true, 'Відкриваємо…');
-                try {
-                    const { initPaperVotes, openPaperVotes } = await import('./paper_votes.js');
-                    initPaperVotes();
-                    // Перемальовуємо список лише якщо голоси справді внесли:
-                    // інакше кожне закриття вікна смикало б увесь екран.
-                    await openPaperVotes(pollById(this.dataset.poll), () => loadAdminPolls());
-                } catch (e) {
-                    console.error('Паперові голоси:', e);
-                    toast('Не вдалося відкрити вікно', 'error');
-                } finally {
-                    setBusy(this, false);
-                }
-            });
-        });
-
-        host.querySelectorAll('.poll-protocol-btn').forEach(btn => {
-            btn.addEventListener('click', function () { publishProtocol(this.dataset.poll, this); });
         });
     } catch (e) {
         console.error('Завантаження опитувань:', e);
@@ -1085,63 +808,12 @@ async function closePoll(pollId, btn) {
     }
 }
 
-/**
- * Готує протокол зборів: читає свіжі дані й відкриває вікно, де
- * правління дописує номер, голову, секретаря та «Слухали».
- *
- * Дані перечитуємо з бази, а не беремо з намальованої картки:
- * між відкриттям панелі й натисканням кнопки могли зʼявитися
- * паперові голоси, внесені з іншого пристрою.
- */
-async function publishProtocol(pollId, btn) {
-    setBusy(btn, true, 'Читання даних…');
-    try {
-        const [snap, votes, apartments] = await Promise.all([
-            getDoc(doc(db, 'polls', pollId)),
-            fetchVotes(pollId),
-            fetchDirectory().catch(() => [])
-        ]);
-        if (!snap.exists()) throw new Error('Збори не знайдено');
-        if (!apartments.length) {
-            toast('Довідник квартир недоступний — протокол не буде з чого скласти', 'error');
-            return;
-        }
-
-        const { initProtocolForm, openProtocolForm } = await import('./protocol_form.js');
-        initProtocolForm();
-        openProtocolForm({
-            poll: { id: pollId, ...snap.data() },
-            apartments,
-            votes,
-            onDone: async () => {
-                // Документ щойно зʼявився в Базі — випадаючий список у
-                // розсилці має його побачити без перезавантаження сторінки.
-                try {
-                    const { populateDocsDropdown } = await import('./requests.js');
-                    await populateDocsDropdown();
-                } catch (e) { console.warn('Оновлення списку документів:', e); }
-                await loadAdminPolls();
-            }
-        });
-    } catch (e) {
-        console.error('Підготовка протоколу:', e);
-        toast('Не вдалося підготувати протокол', 'error');
-    } finally {
-        setBusy(btn, false);
-    }
-}
-
 // ------------------------------------------------------------
 // ІНІЦІАЛІЗАЦІЯ
 // ------------------------------------------------------------
 export function initPolls() {
     const list = document.getElementById('pollOptionsList');
     if (list && !list.children.length) resetPollForm();
-
-    document.querySelectorAll('#pollKindSwitch .poll-kind').forEach(btn => {
-        btn.addEventListener('click', () => setPollKind(btn.dataset.kind));
-    });
-    document.getElementById('meetingPlace')?.addEventListener('change', togglePlaceOther);
 
     document.getElementById('addPollOptionBtn')?.addEventListener('click', () => {
         const row = addOptionRow();
