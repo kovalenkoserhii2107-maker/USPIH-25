@@ -27,7 +27,7 @@ import { fetchDirectory } from './directory.js';
 import {
     MEETING_ANSWERS, QUORUM_PCT, DECISION_PCT,
     computeQuorum, isMeeting, agendaOf, answerFor, questionTally, isChairQuestion,
-    formatMeetingDate, fmtPct
+    formatMeetingDate, fmtPct, beforeStart, startLabel
 } from './meeting.js';
 
 let pendingPollFiles = [];
@@ -197,6 +197,34 @@ const MEETING_COLORS = {
     [MEETING_ANSWERS[2]]: 'var(--ink-3)'
 };
 
+/** Проєкт рішення під питанням — мешканець має бачити, за що голосує. */
+function draftDecision(poll, index) {
+    const text = (poll.agendaDecisions || [])[index];
+    if (!text) return '';
+    return `<span class="meeting-q-draft">${(String(text).split('\n')
+        .filter(l => l.trim())
+        .map(l => escapeHtml(l.trim()))
+        .join('<br>'))}</span>`;
+}
+
+/**
+ * Порядок денний до початку зборів — без бюлетеня.
+ *
+ * Голос, поданий до зборів, — це голос до обговорення: людина не чула
+ * ні доповіді, ні заперечень сусідів. Тому до часу початку показуємо
+ * лише те, що виноситься на розгляд, і коли відкриється голосування.
+ */
+function agendaPreview(poll) {
+    return `<div class="meeting-preview">
+        <span class="meeting-wait">Голосування відкриється ${escapeHtml(startLabel(poll))}</span>
+        ${agendaOf(poll).map((q, i) => `
+            <div class="meeting-q">
+                <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
+                ${draftDecision(poll, i)}
+            </div>`).join('')}
+    </div>`;
+}
+
 /** Бюлетень: по три відповіді на кожне питання порядку денного. */
 function agendaBallot(poll) {
     const questions = agendaOf(poll);
@@ -204,6 +232,7 @@ function agendaBallot(poll) {
         ${questions.map((q, i) => `
             <div class="meeting-q">
                 <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
+                ${draftDecision(poll, i)}
                 <div class="poll-options meeting-answers" role="radiogroup"
                      aria-label="${escapeHtml(q)}">
                     ${MEETING_ANSWERS.map(ans => `
@@ -295,9 +324,13 @@ async function fetchPollsWithVotes() {
 }
 
 function statusBadge(poll) {
-    return isClosed(poll)
-        ? '<span class="poll-badge poll-badge-closed">Завершено</span>'
-        : '<span class="poll-badge poll-badge-active">Триває</span>';
+    if (isClosed(poll)) return '<span class="poll-badge poll-badge-closed">Завершено</span>';
+    // «Триває» на зборах, які ще не почалися, збиває з пантелику:
+    // мешканець шукає кнопку голосування й не знаходить її.
+    if (isMeeting(poll) && beforeStart(poll)) {
+        return '<span class="poll-badge poll-badge-soon">Незабаром</span>';
+    }
+    return '<span class="poll-badge poll-badge-active">Триває</span>';
 }
 
 // ------------------------------------------------------------
@@ -319,7 +352,10 @@ export async function refreshPollsBadge() {
         const snap = await getDocs(query(collection(db, 'polls'), where('status', '==', 'active')));
         // Прострочені сюди ще потрапляють: статус міняє панель правління,
         // а не сервер. Голосувати в них уже не можна, тож не рахуємо.
-        const live = snap.docs.filter(d => !isExpired(d.data()));
+        // Збори, які ще не почалися, теж не рахуємо: смикати мешканця
+        // лічильником за тиждень до зборів немає сенсу — голосувати
+        // однаково нікуди.
+        const live = snap.docs.filter(d => !isExpired(d.data()) && !beforeStart(d.data()));
         const mine = await Promise.all(live.map(
             d => getDoc(doc(db, 'polls', d.id, 'votes', String(session.apt)))
         ));
@@ -357,7 +393,9 @@ export async function loadUserPolls() {
             // Збори голосуються по кожному питанню порядку денного,
             // тому і бюлетень, і підсумки в них свої.
             const body = isMeeting(poll)
-                ? (canVote
+                ? (canVote && beforeStart(poll)
+                    ? agendaPreview(poll)
+                    : canVote
                     ? agendaBallot(poll)
                       + `<button type="button" class="btn-primary btn-compact meeting-vote-btn"
                                  data-poll="${poll.id}">Проголосувати з усіх питань</button>`

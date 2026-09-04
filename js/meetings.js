@@ -26,7 +26,7 @@ import { fetchDirectory } from './directory.js';
 import {
     CHAIR_QUESTION, MEETING_ANSWERS, DECISION_PCT, isMeeting, agendaOf,
     computeQuorum, questionTally, isChairQuestion, meetingWhen,
-    formatMeetingDate, fmtPct, entrancesOf
+    formatMeetingDate, fmtPct, entrancesOf, meetingStart, beforeStart, startLabel
 } from './meeting.js';
 
 let pendingFiles = [];
@@ -119,6 +119,39 @@ function chairTexts(chair, secretary) {
     };
 }
 
+/**
+ * Поля «хто проводить опитування».
+ *
+ * Листки роздають по парадних, тому й відповідальних зазвичай кілька.
+ * Коли парадна одна або друк іде суцільним списком, лишається одне
+ * поле — ключ '' означає «для всіх».
+ */
+function renderSurveyors(hostId, values = {}, byEntrance = true) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const entrances = byEntrance ? entrancesOf(cache.apartments).filter(Boolean) : [];
+    const rows = entrances.length > 1
+        ? entrances.map(e => ({ key: e, label: `Парадна ${e}` }))
+        : [{ key: '', label: 'Відповідальна особа' }];
+
+    host.innerHTML = rows.map(r => `
+        <label class="surveyor-row">
+            <span class="surveyor-label">${escapeHtml(r.label)}</span>
+            <input type="text" class="field-input surveyor-input" list="meetingOwnersList"
+                   data-entrance="${escapeHtml(r.key)}" placeholder="Прізвище та ініціали"
+                   value="${escapeHtml(values[r.key] || values[''] || '')}">
+        </label>`).join('');
+}
+
+function readSurveyors(hostId) {
+    const out = {};
+    document.querySelectorAll(`#${hostId} .surveyor-input`).forEach(input => {
+        const v = input.value.trim();
+        if (v) out[input.dataset.entrance] = v;
+    });
+    return out;
+}
+
 // ------------------------------------------------------------
 // СТВОРЕННЯ
 // ------------------------------------------------------------
@@ -144,6 +177,7 @@ function resetForm() {
     document.getElementById('meetingByEntrance').checked = true;
     document.getElementById('meetingAgendaList').innerHTML = '';
     agendaRow('meetingAgendaList');
+    renderSurveyors('meetingSurveyors', {}, true);
     pendingFiles = [];
     refreshChips();
 }
@@ -249,6 +283,11 @@ async function createMeeting(btn) {
             agendaHeard: agenda.map(x => x.heard),
             isMeeting: true,
             meetingDate, timeStart, timeEnd, location,
+            // Голосування відкривається в час початку зборів — до того
+            // мешканець лише читає порядок денний. Дату рахуємо тут і
+            // кладемо в документ: правила Firestore звіряються саме з нею.
+            votingOpensAt: meetingStart({ meetingDate, timeStart }),
+            surveyors: readSurveyors('meetingSurveyors'),
             chairName, secretaryName,
             protocolNumber: '',
             sheetsByEntrance: document.getElementById('meetingByEntrance').checked,
@@ -341,6 +380,8 @@ function meetingCard(poll, apartments) {
         <div class="poll-head">
             ${isClosed(poll)
                 ? '<span class="poll-badge poll-badge-closed">Завершено</span>'
+                : beforeStart(poll)
+                ? '<span class="poll-badge poll-badge-soon">Незабаром</span>'
                 : '<span class="poll-badge poll-badge-active">Триває</span>'}
             <span class="poll-date">${formatDateTime(poll.createdAt)}</span>
         </div>
@@ -351,6 +392,10 @@ function meetingCard(poll, apartments) {
             poll.location
         ].filter(Boolean).map(c => `<span class="meeting-chip">${escapeHtml(c)}</span>`).join('')}</div>
         ${poll.description ? `<p class="poll-desc">${escapeHtml(poll.description)}</p>` : ''}
+        ${beforeStart(poll) && !isClosed(poll)
+            ? `<span class="meeting-wait">Голосування відкриється ${escapeHtml(startLabel(poll))}
+                   — зараз мешканці бачать лише порядок денний</span>`
+            : ''}
         <div class="attach-block poll-attach" data-meet-att="${poll.id}"></div>
         <div class="meeting-lines">${results}</div>
         <span class="meeting-split">Особисто на зборах: <b>${online}</b>
@@ -383,6 +428,12 @@ export async function loadMeetings() {
         });
         cache = { meetings, apartments };
         fillOwnersDatalist(apartments);
+        // Поля відповідальних залежать від списку парадних, а він
+        // відомий лише разом із довідником — тому малюємо їх тут.
+        if (!document.getElementById('meetingSurveyors')?.children.length) {
+            renderSurveyors('meetingSurveyors', {},
+                document.getElementById('meetingByEntrance')?.checked !== false);
+        }
 
         const live = meetings.filter(m => !isClosed(m));
         const past = meetings.filter(isClosed);
@@ -454,6 +505,7 @@ function openEdit(poll) {
     set('editMeetingChair', poll.chairName);
     set('editMeetingSecretary', poll.secretaryName);
     document.getElementById('editMeetingByEntrance').checked = poll.sheetsByEntrance !== false;
+    renderSurveyors('editSurveyors', poll.surveyors || {}, poll.sheetsByEntrance !== false);
 
     const dl = poll.deadline?.toDate ? poll.deadline.toDate() : (poll.deadline ? new Date(poll.deadline) : null);
     const pad = (n) => String(n).padStart(2, '0');
@@ -512,6 +564,11 @@ async function saveEdit(btn) {
             timeEnd: document.getElementById('editMeetingTimeEnd').value,
             location: document.getElementById('editMeetingPlace').value.trim(),
             chairName, secretaryName,
+            votingOpensAt: meetingStart({
+                meetingDate,
+                timeStart: document.getElementById('editMeetingTimeStart').value
+            }),
+            surveyors: readSurveyors('editSurveyors'),
             sheetsByEntrance: document.getElementById('editMeetingByEntrance').checked,
             options: [CHAIR_QUESTION, ...entered.map(x => x.question)],
             agendaDecisions: [
@@ -644,6 +701,12 @@ export function initMeetings() {
         agendaRow('editAgendaList').querySelector('.poll-option-input').focus();
     });
     document.getElementById('meetingPlace')?.addEventListener('change', togglePlaceOther);
+    document.getElementById('meetingByEntrance')?.addEventListener('change', function () {
+        renderSurveyors('meetingSurveyors', readSurveyors('meetingSurveyors'), this.checked);
+    });
+    document.getElementById('editMeetingByEntrance')?.addEventListener('change', function () {
+        renderSurveyors('editSurveyors', readSurveyors('editSurveyors'), this.checked);
+    });
     document.getElementById('createMeetingBtn')?.addEventListener('click', function () {
         createMeeting(this);
     });

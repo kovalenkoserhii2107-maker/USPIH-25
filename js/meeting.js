@@ -259,6 +259,41 @@ export function meetingWhen(poll) {
 const MONTHS_GEN = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
     'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
 
+/**
+ * Мить, коли відкривається голосування, — початок зборів.
+ *
+ * До цього часу порядок денний уже опублікований: мешканець має
+ * прочитати, що виноситься на розгляд, і прийти на збори з готовою
+ * думкою. Але голос до відкриття зборів — це голос до обговорення,
+ * тому кнопку показуємо лише з початку, а сервер підстраховує
+ * перевіркою votingOpensAt у правилах.
+ */
+export function meetingStart(poll) {
+    if (!poll?.meetingDate) return null;
+    const at = new Date(`${poll.meetingDate}T${poll.timeStart || '00:00'}:00`);
+    return isNaN(at.getTime()) ? null : at;
+}
+
+/** Голосування ще не відкрилося? */
+export function beforeStart(poll) {
+    const at = poll?.votingOpensAt?.toDate ? poll.votingOpensAt.toDate() : meetingStart(poll);
+    return at ? Date.now() < at.getTime() : false;
+}
+
+/** «20 вересня 2026 р. о 18:00» — коли відкриється голосування. */
+export function startLabel(poll) {
+    const at = poll?.votingOpensAt?.toDate ? poll.votingOpensAt.toDate() : meetingStart(poll);
+    if (!at) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${formatMeetingDate(at)} о ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** Хто проводить опитування в цій парадній. Ключ '' — «для всіх». */
+export function surveyorFor(poll, entrance = '') {
+    const map = poll?.surveyors || {};
+    return String(map[entrance] || map[''] || '').trim();
+}
+
 /** «22» серпня 2026 р. — саме так дата стоїть у шапці протоколу. */
 export function formatProtocolDate(value) {
     if (!value) return '«___» _____________ 20___ р.';

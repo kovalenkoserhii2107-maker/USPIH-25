@@ -28,7 +28,7 @@ import { buildRecipients } from './messages.js';
 import {
     MEETING_ANSWERS, DECISION_PCT, QUORUM_PCT, OSBB_DEFAULTS,
     agendaOf, answerFor, isPaperVote, isChairQuestion, parseArea, ownerShare,
-    quorumBreakdown, questionTally, entrancesOf, aptsOfEntrance,
+    quorumBreakdown, questionTally, entrancesOf, aptsOfEntrance, surveyorFor,
     formatMeetingDate, formatProtocolDate, formatShortDate,
     fmtNum, fmtPct, plural
 } from './meeting.js';
@@ -172,6 +172,7 @@ function pdfStyles() {
         sheetTitle: { fontSize: 12, bold: true, alignment: 'center' },
         sheetSub: { fontSize: 9, alignment: 'center', margin: [0, 2, 0, 2] },
         sheetEntrance: { fontSize: 10, bold: true, alignment: 'center', margin: [0, 2, 0, 2] },
+        surveyor: { fontSize: 8.5, margin: [0, 4, 0, 0] },
         question: { fontSize: 9.5, bold: true, margin: [0, 2, 0, 2] },
         qsub: { fontSize: 9, margin: [0, 1, 0, 0] },
         h2: { fontSize: 11, bold: true, margin: [0, 14, 0, 6] },
@@ -244,6 +245,19 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
         'Частка', 'Дата', 'Відповідь співвласника: «ЗА», «ПРОТИ», «УТРИМАВСЯ»',
         'Підпис співвласника (представника)'];
 
+    // Підпис особи, яка проводить опитування, має стояти на КОЖНІЙ
+    // сторінці: аркуші роздають окремо, і сторінка без підпису — це
+    // аркуш невідомого походження. Тому рядок лежить у шапці таблиці
+    // (headerRows), яку pdfmake повторює сам.
+    const surveyorLine = (entrance) => {
+        const name = surveyorFor(poll, entrance);
+        return {
+            text: `Опитування проводить: ${name || '_______________________________'}`
+                + `          Підпис: _____________________`,
+            style: 'surveyor'
+        };
+    };
+
     const titleCell = (question, index, entrance) => ({
         colSpan: HEAD.length,
         margin: [0, 2, 0, 4],
@@ -258,7 +272,8 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
                 ? [{ text: `Парадна ${entrance}`, style: 'sheetEntrance' }]
                 : (byEntrance ? [{ text: 'Парадну не вказано', style: 'sheetEntrance' }] : [])),
             { text: `Питання ${index + 1}. ${question}`, style: 'question' },
-            ...decisionLines(decisions[index], index + 1).map(t => ({ text: t, style: 'qsub' }))
+            ...decisionLines(decisions[index], index + 1).map(t => ({ text: t, style: 'qsub' })),
+            surveyorLine(entrance)
         ]
     });
 
@@ -290,8 +305,10 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
                 },
                 layout: sheetLayout()
             });
+            const name = surveyorFor(poll, group.entrance);
             content.push({
-                text: 'Підпис особи, яка проводила опитування: _____________________ (                              )',
+                text: 'Підпис особи, яка проводила опитування: _____________________ '
+                    + `(${name || '                              '})`,
                 style: 'note'
             });
         });
@@ -448,15 +465,23 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
             text: `Питання ${index + 1}. ${question}`,
             style: 'para', bold: true, margin: [0, 12, 0, 4]
         });
-        if (safe(heard[index])) {
-            content.push({ text: 'Слухали:', style: 'label' });
-            content.push({ text: safe(heard[index]), style: 'para' });
-        }
+        // Обидві частини стоять у протоколі завжди: «Слухали» і
+        // «Вирішили» — обов'язкові розділи, і документ без них
+        // доведеться переписувати. Якщо текст не заповнили, лишається
+        // видимий прочерк, а не тиха порожнеча.
+        content.push({ text: 'Слухали:', style: 'label' });
+        content.push({
+            text: safe(heard[index])
+                || `Доповідача з питання ${index + 1} порядку денного зборів.`,
+            style: 'para'
+        });
 
+        content.push({ text: 'Вирішили:', style: 'label' });
         const lines = decisionLines(decisions[index], index + 1);
         if (lines.length) {
-            content.push({ text: 'Вирішили:', style: 'label' });
             lines.forEach(line => content.push({ text: line, style: 'para' }));
+        } else {
+            content.push({ text: '____________________________________________', style: 'para' });
         }
 
         content.push({

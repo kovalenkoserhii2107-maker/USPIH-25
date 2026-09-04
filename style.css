@@ -2463,6 +2463,7 @@ select.field-input {
 }
 .poll-badge-active { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
 .poll-badge-closed { background: rgba(120, 120, 128, 0.14); color: var(--ink-2); }
+.poll-badge-soon { background: rgba(255, 149, 0, 0.16); color: #A85B00; }
 .poll-date { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
 
 .poll-title {
@@ -4492,3 +4493,24 @@ select.field-input {
 .proto-row-title { font-size: 14.5px; font-weight: 600; }
 .proto-row-meta { font-size: 11.5px; color: var(--ink-3); }
 .proto-row .row-chevron { color: var(--ink-3); }
+
+/* До початку зборів мешканець бачить порядок денний без бюлетеня */
+.meeting-preview { display: flex; flex-direction: column; gap: 14px; }
+.meeting-wait {
+    display: block; padding: 10px 12px; margin-bottom: 2px;
+    background: rgba(255, 149, 0, 0.12); border-radius: var(--r-sm);
+    font-size: 13px; font-weight: 600; color: #A85B00; line-height: 1.35;
+}
+/* Проєкт рішення під питанням: за що саме голосує мешканець */
+.meeting-q-draft {
+    font-size: 13px; color: var(--ink-2); line-height: 1.4;
+    padding-left: 10px; border-left: 2px solid var(--line);
+}
+
+/* Хто проводить письмове опитування — по одному полю на парадну */
+.surveyor-list { display: flex; flex-direction: column; gap: 8px; }
+.surveyor-row { display: flex; align-items: center; gap: 10px; }
+.surveyor-label {
+    min-width: 96px; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+}
+.surveyor-row .field-input { flex: 1; min-width: 0; }

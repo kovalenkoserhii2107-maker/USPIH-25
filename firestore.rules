@@ -256,6 +256,12 @@ service cloud.firestore {
           // зупиняє голосування в потрібну мить.
           && (get(/databases/$(database)/documents/polls/$(pollId)).data.deadline == null
               || request.time < get(/databases/$(database)/documents/polls/$(pollId)).data.deadline)
+          // Збори: голосування відкривається в час їх початку. До того
+          // мешканець лише читає порядок денний. Кнопки в застосунку
+          // ще немає, але саме це правило робить перевірку справжньою.
+          && (!('votingOpensAt' in get(/databases/$(database)/documents/polls/$(pollId)).data)
+              || get(/databases/$(database)/documents/polls/$(pollId)).data.votingOpensAt == null
+              || request.time >= get(/databases/$(database)/documents/polls/$(pollId)).data.votingOpensAt)
           && (
             // Звичайне опитування: тільки один із запропонованих
             // варіантів, інакше через DevTools можна було б вписати

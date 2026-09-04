@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=93">
+    <link rel="stylesheet" href="style.css?v=94">
 </head>
 <body>
 
@@ -830,6 +830,14 @@
                 </div>
 
                 <div class="field">
+                    <span class="field-label">Хто проводить письмове опитування</span>
+                    <span class="field-hint">ПІБ друкується на кожній сторінці листка опитування —
+                        поруч із місцем для підпису. Якщо листки друкуються по парадних,
+                        для кожної можна вказати свою відповідальну особу.</span>
+                    <div id="meetingSurveyors" class="surveyor-list"></div>
+                </div>
+
+                <div class="field">
                     <span class="field-label">Порядок денний</span>
                     <span class="field-hint">Нумерація проставляється сама. Проєкт рішення друкується
                         на листку опитування й лягає в протокол рядком «Вирішили».</span>
@@ -1635,6 +1643,11 @@
         </div>
 
         <div class="field">
+            <span class="field-label">Хто проводить письмове опитування</span>
+            <div id="editSurveyors" class="surveyor-list"></div>
+        </div>
+
+        <div class="field">
             <span class="field-label">Порядок денний</span>
             <span class="field-hint" id="editAgendaWarn">Питання, за яке вже голосували, краще не
                 переписувати: подані голоси лишаться прив’язаними до його номера.</span>
@@ -1828,6 +1841,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=93"></script>
+<script type="module" src="js/app.js?v=94"></script>
 </body>
 </html>

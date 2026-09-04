@@ -58,6 +58,13 @@ async function submit(btn) {
     if (!patch.chairName || !patch.secretaryName) {
         return toast('Вкажіть голову й секретаря зборів', 'error');
     }
+    // «Слухали» і «Вирішили» — обов'язкові розділи протоколу. Порожні
+    // вони роблять документ непридатним, а помітити це вже після
+    // публікації означає передруковувати й перепідписувати.
+    const missing = questions.findIndex((_, i) => !agendaHeard[i] || !agendaDecisions[i]);
+    if (missing >= 0) {
+        return toast(`Питання ${missing + 1}: заповніть «Слухали» і «Вирішили»`, 'error');
+    }
 
     setBusy(btn, true, 'Запис даних…');
     try {
@@ -94,8 +101,13 @@ export function openProtocolForm({ poll, apartments, votes, onDone }) {
 
     const heard = poll.agendaHeard || [];
     const decisions = poll.agendaDecisions || [];
+    const chair = (poll.chairName || '').trim();
     document.getElementById('protocolQuestions').innerHTML = agendaOf(poll)
-        .map((q, i) => questionBlock(q, i, heard[i] || '', decisions[i] || ''))
+        .map((q, i) => questionBlock(q, i,
+            // Порожнє «Слухали» підказуємо заготовкою: правлінню лишається
+            // виправити формулювання, а не писати розділ з нуля.
+            heard[i] || (chair ? `Голову зборів ${chair} з питання ${i + 1} порядку денного.` : ''),
+            decisions[i] || ''))
         .join('');
 
     box.classList.add('is-open');
