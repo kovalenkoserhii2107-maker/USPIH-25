@@ -131,7 +131,7 @@ async function saveMarked(btn) {
     } catch (e) {
         console.error('Паперові голоси:', e);
         toast(e.code === 'permission-denied'
-            ? 'Немає прав на запис голосів'
+            ? 'Сервер відхилив запис: опублікуйте оновлені правила Firestore'
             : 'Не вдалося зберегти голоси', 'error');
     } finally {
         setBusy(btn, false);

@@ -428,6 +428,35 @@ export async function loadUserPolls() {
     }
 }
 
+/**
+ * Чому сервер відмовив у голосі.
+ *
+ * permission-denied прилітає з кількох різних причин, і показувати
+ * на всі «опитування завершено» — означає збрехати мешканцю: він
+ * бачить строк «лишилось 13 днів» і не розуміє, що відбувається.
+ * Тому перечитуємо опитування й розрізняємо випадки. Найчастіший
+ * серед «інших» — у Firebase не опублікували свіжі firestore.rules,
+ * і саме це має прочитати правління.
+ */
+async function rejectionMessage(pollId, meeting) {
+    try {
+        const snap = await getDoc(doc(db, 'polls', pollId));
+        if (!snap.exists()) return meeting ? 'Збори не знайдено' : 'Опитування не знайдено';
+        const poll = snap.data();
+        if (poll.status !== 'active') {
+            return meeting ? 'Збори вже завершено' : 'Опитування вже завершено';
+        }
+        if (isExpired(poll)) {
+            return meeting ? 'Строк голосування минув' : 'Строк опитування минув';
+        }
+    } catch (e) {
+        console.warn('Причина відмови:', e);
+    }
+    return meeting
+        ? 'Сервер відхилив голос. Правлінню: опублікуйте оновлені правила Firestore'
+        : 'Сервер відхилив голос. Спробуйте пізніше';
+}
+
 export async function submitVote(pollId, option, btn) {
     setBusy(btn, true, 'Надсилання…');
     try {
@@ -441,7 +470,7 @@ export async function submitVote(pollId, option, btn) {
     } catch (e) {
         console.error('Голосування:', e);
         toast(e.code === 'permission-denied'
-            ? 'Опитування вже завершено'
+            ? await rejectionMessage(pollId, false)
             : 'Не вдалося проголосувати', 'error');
         setBusy(btn, false);
     }
@@ -460,7 +489,7 @@ export async function submitMeetingVote(pollId, answers, btn) {
     } catch (e) {
         console.error('Голосування на зборах:', e);
         toast(e.code === 'permission-denied'
-            ? 'Збори вже завершено'
+            ? await rejectionMessage(pollId, true)
             : 'Не вдалося проголосувати', 'error');
         setBusy(btn, false);
     }
