@@ -239,6 +239,13 @@ service cloud.firestore {
       match /votes/{voteId} {
         allow read: if isSignedIn();
 
+        // Правління вносить голоси, зібрані на папері під час обходу
+        // квартир (source: 'paper'). Це єдиний випадок, коли голос
+        // за квартиру подає не вона сама, і перевірити підпис на
+        // листку сервер однаково не може — відповідальність тут
+        // на правлінні, як і за сам протокол.
+        allow create, update: if isAdmin();
+
         allow create, update: if isSignedIn()
           // тільки за свою квартиру
           && voteId == myApt()
@@ -249,10 +256,26 @@ service cloud.firestore {
           // зупиняє голосування в потрібну мить.
           && (get(/databases/$(database)/documents/polls/$(pollId)).data.deadline == null
               || request.time < get(/databases/$(database)/documents/polls/$(pollId)).data.deadline)
-          // і тільки один із запропонованих варіантів, інакше через
-          // DevTools можна було б вписати будь-який рядок і зіпсувати підрахунок
-          && request.resource.data.option
-             in get(/databases/$(database)/documents/polls/$(pollId)).data.options;
+          && (
+            // Звичайне опитування: тільки один із запропонованих
+            // варіантів, інакше через DevTools можна було б вписати
+            // будь-який рядок і зіпсувати підрахунок.
+            (('option' in request.resource.data)
+              && request.resource.data.option
+                 in get(/databases/$(database)/documents/polls/$(pollId)).data.options)
+            ||
+            // Збори: відповідь на кожне питання порядку денного.
+            // Ключі мапи — номери питань, значення — рівно три
+            // дозволені відповіді й нічого крім них.
+            (('answers' in request.resource.data)
+              && request.resource.data.answers is map
+              && request.resource.data.answers.size() > 0
+              && request.resource.data.answers.values()
+                   .hasOnly(['За', 'Проти', 'Утримався'])
+              // мітку «паперовий голос» мешканець собі поставити не може:
+              // у протоколі це інша форма участі
+              && !('source' in request.resource.data))
+          );
 
         allow delete: if isAdmin();
       }
