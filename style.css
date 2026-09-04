@@ -4330,3 +4330,124 @@ select.field-input {
     font-size: 10px; font-weight: 700; color: var(--red);
     font-variant-numeric: tabular-nums;
 }
+
+/* ============================================================
+   ЗАГАЛЬНІ ЗБОРИ СПІВВЛАСНИКІВ
+   Порядок денний, бюлетень по кожному питанню та вікно
+   внесення паперових голосів.
+   ============================================================ */
+
+/* Два поля в рядок — час початку й закінчення читаються як пара */
+.field-row { display: flex; gap: 10px; }
+.field-row > .field { flex: 1; min-width: 0; }
+.meeting-place-other { margin-top: 8px; }
+
+/* Дата, час і місце — під заголовком картки, як реквізити документа */
+.meeting-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.meeting-chip {
+    padding: 4px 10px;
+    background: rgba(0, 122, 255, 0.09);
+    border-radius: 999px;
+    font-size: 12.5px; font-weight: 600; color: var(--blue-dark);
+}
+
+.meeting-ballot { display: flex; flex-direction: column; gap: 16px; margin-bottom: 4px; }
+.meeting-q, .meeting-q-result { display: flex; flex-direction: column; gap: 8px; }
+.meeting-q-text {
+    font-size: 14.5px; font-weight: 500; color: var(--ink); line-height: 1.4;
+}
+.meeting-q-text b { font-weight: 700; }
+/* Відповідей завжди три й вони короткі — в рядок замість стовпчика */
+.meeting-answers { flex-direction: row; flex-wrap: wrap; gap: 6px; margin-bottom: 0; }
+.meeting-answers .poll-option { flex: 1; min-width: 96px; padding: 9px 10px; }
+.meeting-answers .poll-option-text { font-size: 14.5px; }
+
+.meeting-results { display: flex; flex-direction: column; gap: 18px; }
+.meeting-q-result + .meeting-q-result { padding-top: 16px; border-top: 1px solid var(--line); }
+
+.meeting-verdict {
+    display: flex; flex-direction: column; gap: 2px;
+    font-size: 14px; font-weight: 700;
+}
+.meeting-verdict small { font-size: 11.5px; font-weight: 500; color: var(--ink-2); }
+.meeting-verdict.is-ok { color: #248A3D; }
+.meeting-verdict.is-no { color: #C93400; }
+
+.meeting-split {
+    display: block; margin-top: 12px;
+    font-size: 12.5px; color: var(--ink-2);
+}
+.meeting-split b { color: var(--ink); }
+
+.poll-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.poll-actions .btn-soft, .poll-actions .btn-primary {
+    flex: 1 1 46%; margin-top: 0; white-space: nowrap;
+}
+.meeting-protocol-link {
+    display: block; margin-top: 10px;
+    font-size: 13px; font-weight: 600; color: var(--blue); text-decoration: none;
+}
+
+/* ---- Вікно внесення паперових голосів ---- */
+.paper-count {
+    display: block; margin: 2px 0 10px;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+}
+.paper-list { display: flex; flex-direction: column; gap: 8px; }
+
+.paper-row {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    overflow: hidden;
+}
+.paper-row-open { border-color: var(--blue); background: var(--surface); }
+.paper-row-done { opacity: 0.55; }
+
+.paper-row-head {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 11px 13px;
+    background: none; border: none; text-align: left;
+    font-family: var(--font); color: var(--ink); cursor: pointer;
+}
+.paper-row-head:disabled { cursor: default; }
+.paper-apt { font-size: 14.5px; font-weight: 700; white-space: nowrap; }
+.paper-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.paper-owners {
+    font-size: 13px; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.paper-area { font-size: 11.5px; color: var(--ink-3); }
+.paper-done-mark {
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(52, 199, 89, 0.16); color: #248A3D;
+    font-size: 11px; font-weight: 700;
+}
+.paper-row-open .row-chevron { transform: rotate(90deg); }
+.paper-row .row-chevron { color: var(--ink-3); transition: transform 0.18s ease; }
+
+.paper-row-body { padding: 4px 13px 13px; display: flex; flex-direction: column; gap: 12px; }
+.paper-quick-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.paper-quick {
+    padding: 6px 10px;
+    background: var(--surface-3); border: none; border-radius: 999px;
+    font-family: var(--font); font-size: 12px; font-weight: 600; color: var(--ink-2);
+    cursor: pointer;
+}
+.paper-quick:active { background: rgba(0, 122, 255, 0.14); color: var(--blue); }
+
+.paper-q { display: flex; flex-direction: column; gap: 6px; }
+.paper-q-text { font-size: 13.5px; color: var(--ink); line-height: 1.35; }
+.paper-answers { display: flex; gap: 6px; }
+.paper-answer { flex: 1; }
+.paper-answer input { position: absolute; opacity: 0; width: 0; height: 0; }
+.paper-answer span {
+    display: block; padding: 8px 4px;
+    background: var(--surface-3); border: 1.5px solid transparent; border-radius: 10px;
+    text-align: center; font-size: 13px; font-weight: 600; color: var(--ink-2);
+    cursor: pointer;
+}
+.paper-answer input:checked + span {
+    background: rgba(0, 122, 255, 0.1); border-color: var(--blue); color: var(--blue-dark);
+}
+.paper-save { margin-top: 2px; }

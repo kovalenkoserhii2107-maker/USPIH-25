@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=89">
+    <link rel="stylesheet" href="style.css?v=90">
 </head>
 <body>
 
@@ -698,8 +698,8 @@
             <div class="card admin-fold open">
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
-                        <span class="admin-card-headings"><h2 class="admin-card-title">Нове опитування</h2>
-                    <span class="admin-card-sub">Кожна квартира має один голос</span></span>
+                        <span class="admin-card-headings"><h2 class="admin-card-title" id="pollFormTitle">Нове опитування</h2>
+                    <span class="admin-card-sub" id="pollFormSub">Кожна квартира має один голос</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
                 </div>
@@ -707,7 +707,15 @@
 
 
                 <div class="field">
-                    <label class="field-label" for="pollTitle">Питання</label>
+                    <span class="field-label">Що створюємо</span>
+                    <div class="segmented" id="pollKindSwitch">
+                        <button type="button" class="segmented-item poll-kind active" data-kind="poll">Опитування</button>
+                        <button type="button" class="segmented-item poll-kind" data-kind="meeting">Загальні збори</button>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="pollTitle" id="pollTitleLabel">Питання</label>
                     <input type="text" id="pollTitle" class="field-input" placeholder="Напр. Чи встановлювати шлагбаум?">
                 </div>
                 <div class="field">
@@ -715,8 +723,45 @@
                     <textarea id="pollDescription" class="field-input" rows="3" placeholder="Вартість, терміни, що це дасть мешканцям…"></textarea>
                 </div>
 
+                <!-- Дата, час і місце — обов'язкові реквізити протоколу зборів:
+                     без них документ не має юридичної сили. Для звичайного
+                     опитування блок сховано. -->
+                <div id="pollMeetingFields" hidden>
+                    <div class="field">
+                        <label class="field-label" for="meetingDate">Дата зборів</label>
+                        <input type="date" id="meetingDate" class="field-input">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="field-label" for="meetingTimeStart">Час початку</label>
+                            <input type="time" id="meetingTimeStart" class="field-input">
+                        </div>
+                        <div class="field">
+                            <label class="field-label" for="meetingTimeEnd">Час закінчення</label>
+                            <input type="time" id="meetingTimeEnd" class="field-input">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="meetingPlace">Місце проведення</label>
+                        <select id="meetingPlace" class="field-input field-select">
+                            <option value="внутрішній двір будинку">Внутрішній двір будинку</option>
+                            <option value="приміщення правління">Приміщення правління</option>
+                            <option value="other">Інше…</option>
+                        </select>
+                        <input type="text" id="meetingPlaceOther" class="field-input meeting-place-other"
+                               placeholder="Вкажіть місце проведення" hidden>
+                    </div>
+                    <label class="req-close-toggle">
+                        <input type="checkbox" id="meetingNotify" checked>
+                        <span>Автоматично розіслати повідомлення про скликання зборів</span>
+                    </label>
+                </div>
+
                 <div class="field">
-                    <span class="field-label">Варіанти відповіді</span>
+                    <span class="field-label" id="pollOptionsLabel">Варіанти відповіді</span>
+                    <span class="field-hint" id="pollAgendaHint" hidden>Питання «Обрання голови та секретаря
+                        зборів» додається першим автоматично. Відповіді на кожне питання —
+                        «За», «Проти», «Утримався».</span>
                     <div id="pollOptionsList" class="poll-options-list"></div>
                     <button type="button" id="addPollOptionBtn" class="btn-ghost-small poll-add-option">
                         + Додати варіант
@@ -731,7 +776,7 @@
                         <button type="button" class="poll-term" data-days="30">Місяць</button>
                     </div>
                     <input type="datetime-local" id="pollDeadline" class="field-input poll-deadline-input">
-                    <span class="field-hint">Можна не вказувати — тоді опитування триватиме, доки не завершите вручну.</span>
+                    <span class="field-hint" id="pollDeadlineHint">Можна не вказувати — тоді опитування триватиме, доки не завершите вручну.</span>
                 </div>
 
                 <div class="field">
@@ -1374,6 +1419,28 @@
     </div>
 </div>
 
+<!-- ============ ПАПЕРОВІ ГОЛОСИ ============ -->
+<div id="paperVotesModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="paperVotesTitle">Паперові голоси</h3>
+            <button id="closePaperVotesBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <span class="modal-date" id="paperVotesMeta"></span>
+
+        <div class="field">
+            <label class="field-label" for="paperVotesSearch">Пошук квартири</label>
+            <input type="text" id="paperVotesSearch" class="field-input"
+                   inputmode="search" placeholder="Номер квартири або прізвище">
+        </div>
+        <span class="paper-count" id="paperVotesCount"></span>
+
+        <div id="paperVotesList" class="paper-list">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+    </div>
+</div>
+
 <!-- ============ ГАЛЕРЕЯ ФОТО ============ -->
 <div id="imageGalleryModal" class="gallery-modal">
     <button id="galleryCloseBtn" class="gallery-close-btn" type="button" aria-label="Закрити">✕</button>
@@ -1544,6 +1611,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=89"></script>
+<script type="module" src="js/app.js?v=90"></script>
 </body>
 </html>

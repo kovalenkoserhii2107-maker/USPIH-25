@@ -1,5 +1,10 @@
 // ============================================================
-// Голосування та опитування.
+// Голосування, опитування та загальні збори співвласників.
+//
+// Збори — це те саме опитування з isMeeting: true, де options
+// містить не варіанти відповіді, а порядок денний; відповіді на
+// кожне його питання завжди «За / Проти / Утримався». Розрахунки
+// зборів і формат голосу описані в meeting.js.
 //
 // Голос лежить окремим документом у polls/{id}/votes/{apt},
 // де ID документа — номер квартири. Тому одна квартира фізично
@@ -15,10 +20,14 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, normName } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
+import {
+    MEETING_ANSWERS, CHAIR_QUESTION, QUORUM_PCT, DECISION_PCT,
+    computeQuorum, isMeeting, agendaOf, answerFor, questionTally, formatMeetingDate
+} from './meeting.js';
 
 let pendingPollFiles = [];
 
@@ -59,55 +68,11 @@ function formatDeadline(poll) {
 // ------------------------------------------------------------
 // КВОРУМ
 //
-// Голос лежить на КВАРТИРІ, а не на власнику, тож «один власник —
-// один голос» рахуємо так: проголосувала квартира — голос
-// зараховано всім її співвласникам. Власника, що має кілька
-// квартир, ототожнюємо за прізвищем: іншого спільного
-// ідентифікатора в базі немає.
+// Сама математика живе в meeting.js: її читає і ця панель, і
+// протокол зборів, і рахувати її двічі не можна — розійдуться.
+// Тут лишається тільки те, що малюється на екрані.
 // ------------------------------------------------------------
-const QUORUM_PCT = 50;
-
-function parseArea(v) {
-    const n = parseFloat(String(v ?? '').replace(',', '.'));
-    return isNaN(n) ? 0 : n;
-}
-
-/** Рахує явку за власниками і за площею. */
-export function computeQuorum(votes, apartments) {
-    const votedApts = new Set((votes || []).map(v => String(v.apt)));
-    const allOwners = new Set();
-    const votedOwners = new Set();
-    let totalArea = 0, votedArea = 0;
-
-    (apartments || []).forEach(a => {
-        const area = parseArea(a.area);
-        totalArea += area;
-        const voted = votedApts.has(String(a.apt));
-        if (voted) votedArea += area;
-
-        (a.owners || []).forEach(o => {
-            const key = normName(o.name);
-            if (!key) return;                 // безіменний запис не рахуємо
-            allOwners.add(key);
-            if (voted) votedOwners.add(key);
-        });
-    });
-
-    const ownersPct = allOwners.size ? (votedOwners.size / allOwners.size) * 100 : 0;
-    const areaPct = totalArea ? (votedArea / totalArea) * 100 : 0;
-
-    return {
-        totalOwners: allOwners.size,
-        votedOwners: votedOwners.size,
-        ownersPct: Math.round(ownersPct * 10) / 10,
-        totalArea: Math.round(totalArea * 10) / 10,
-        votedArea: Math.round(votedArea * 10) / 10,
-        areaPct: Math.round(areaPct * 10) / 10,
-        votedApts: votedApts.size,
-        totalApts: (apartments || []).length,
-        hasQuorum: ownersPct >= QUORUM_PCT
-    };
-}
+export { computeQuorum };
 
 let ringSeq = 0;
 
@@ -207,6 +172,104 @@ export function renderResults(options, voteDocs, myChoice = null) {
 }
 
 // ------------------------------------------------------------
+// ЗБОРИ: РОЗМІТКА
+// ------------------------------------------------------------
+/** Дата, час і місце зборів — рядком під заголовком картки. */
+function meetingMeta(poll) {
+    if (!isMeeting(poll)) return '';
+    const chips = [
+        formatMeetingDate(poll.meetingDate),
+        poll.timeStart ? (poll.timeEnd ? `${poll.timeStart}–${poll.timeEnd}` : `з ${poll.timeStart}`) : '',
+        poll.location
+    ].filter(Boolean);
+    if (!chips.length) return '';
+    return `<div class="meeting-meta">${chips.map(c =>
+        `<span class="meeting-chip">${escapeHtml(c)}</span>`).join('')}</div>`;
+}
+
+// На зборах відповіді не довільні, тому й кольори тут за змістом,
+// а не за номером варіанта, як у звичайному опитуванні: зелений
+// «проти» на смузі читається як схвалення.
+const MEETING_COLORS = {
+    [MEETING_ANSWERS[0]]: 'var(--green)',
+    [MEETING_ANSWERS[1]]: 'var(--red)',
+    [MEETING_ANSWERS[2]]: 'var(--ink-3)'
+};
+
+/** Бюлетень: по три відповіді на кожне питання порядку денного. */
+function agendaBallot(poll) {
+    const questions = agendaOf(poll);
+    return `<div class="meeting-ballot">
+        ${questions.map((q, i) => `
+            <div class="meeting-q">
+                <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
+                <div class="poll-options meeting-answers" role="radiogroup"
+                     aria-label="${escapeHtml(q)}">
+                    ${MEETING_ANSWERS.map(ans => `
+                        <label class="poll-option">
+                            <input type="radio" name="meet-${poll.id}-${i}" value="${escapeHtml(ans)}">
+                            <span class="poll-option-mark"></span>
+                            <span class="poll-option-text">${escapeHtml(ans)}</span>
+                        </label>`).join('')}
+                </div>
+            </div>`).join('')}
+    </div>`;
+}
+
+/**
+ * Результати зборів — окремий підрахунок для кожного питання.
+ *
+ * Мешканцю показуємо частку від тих, хто голосував: площі всіх
+ * квартир він читати не має права. Правлінню, якому довідник
+ * доступний, додаємо ще й відсоток площі будинку — саме з ним
+ * закон порівнює поріг прийняття рішення.
+ */
+function renderMeetingResults(poll, votes, myVote = null, apartments = null) {
+    const questions = agendaOf(poll);
+    if (!questions.length) return '<p class="list-empty">Порядок денний порожній</p>';
+
+    return `<div class="meeting-results">${questions.map((q, i) => {
+        const counts = Object.fromEntries(MEETING_ANSWERS.map(a => [a, 0]));
+        let total = 0;
+        (votes || []).forEach(v => {
+            const ans = answerFor(v, i);
+            if (ans in counts) { counts[ans]++; total++; }
+        });
+        const mine = myVote ? answerFor(myVote, i) : null;
+        const legal = apartments?.length ? questionTally(votes, apartments, i) : null;
+
+        const bars = MEETING_ANSWERS.map((ans) => {
+            const pct = total ? (counts[ans] / total) * 100 : 0;
+            return `<div class="poll-result">
+                <div class="poll-result-head">
+                    <span class="poll-result-name">${escapeHtml(ans)}${
+                        mine === ans ? '<span class="poll-mine">ваш голос</span>' : ''}</span>
+                    <span class="poll-result-num">${Math.round(pct)}<small>%</small>
+                        <span class="poll-result-count">${counts[ans]}</span></span>
+                </div>
+                <div class="poll-track">
+                    <span class="poll-fill" style="width: ${pct}%; background: ${MEETING_COLORS[ans]};"></span>
+                </div>
+            </div>`;
+        }).join('');
+
+        const verdict = legal
+            ? `<span class="meeting-verdict ${legal.accepted ? 'is-ok' : 'is-no'}">
+                   ${legal.accepted ? 'Рішення прийнято' : 'Рішення не прийнято'}
+                   <small>«за» — ${legal.rows[MEETING_ANSWERS[0]].pct}% площі будинку,
+                   потрібно понад ${DECISION_PCT}%</small>
+               </span>`
+            : '';
+
+        return `<div class="meeting-q-result">
+            <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
+            <div class="poll-results">${bars}</div>
+            ${verdict}
+        </div>`;
+    }).join('')}</div>`;
+}
+
+// ------------------------------------------------------------
 // ЗАВАНТАЖЕННЯ ГОЛОСІВ
 // ------------------------------------------------------------
 async function fetchVotes(pollId) {
@@ -285,7 +348,16 @@ export async function loadUserPolls() {
             const options = poll.options || [];
             const canVote = !isClosed(poll) && !myVote;
 
-            const body = canVote
+            // Збори голосуються по кожному питанню порядку денного,
+            // тому і бюлетень, і підсумки в них свої.
+            const body = isMeeting(poll)
+                ? (canVote
+                    ? agendaBallot(poll)
+                      + `<button type="button" class="btn-primary btn-compact meeting-vote-btn"
+                                 data-poll="${poll.id}">Проголосувати з усіх питань</button>`
+                    : renderMeetingResults(poll, poll.votes, myVote)
+                      + (poll.quorum ? renderQuorum(poll.quorum) : ''))
+                : canVote
                 ? `<div class="poll-options" role="radiogroup" aria-label="${escapeHtml(poll.title)}">
                        ${options.map((opt, i) => `
                            <label class="poll-option">
@@ -307,6 +379,7 @@ export async function loadUserPolls() {
                     <span class="poll-date">${formatDateTime(poll.createdAt)}</span>
                 </div>
                 <h3 class="poll-title">${escapeHtml(poll.title)}</h3>
+                ${meetingMeta(poll)}
                 ${poll.deadline ? `<span class="poll-deadline${isExpired(poll) ? ' poll-deadline-over' : ''}">${escapeHtml(formatDeadline(poll))}</span>` : ''}
                 ${poll.description ? `<p class="poll-desc">${escapeHtml(poll.description)}</p>` : ''}
                 <div class="attach-block poll-attach" data-poll-att="${poll.id}"></div>
@@ -325,6 +398,22 @@ export async function loadUserPolls() {
                 const picked = host.querySelector(`input[name="poll-${this.dataset.poll}"]:checked`);
                 if (!picked) return toast('Оберіть варіант', 'error');
                 submitVote(this.dataset.poll, picked.value, this);
+            });
+        });
+
+        host.querySelectorAll('.meeting-vote-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const poll = polls.find(p => p.id === this.dataset.poll);
+                const questions = agendaOf(poll);
+                const answers = {};
+                for (let i = 0; i < questions.length; i++) {
+                    const picked = host.querySelector(`input[name="meet-${poll.id}-${i}"]:checked`);
+                    // Половина бюлетеня — не голос: у протоколі така
+                    // квартира однаково пішла б у «не голосував».
+                    if (!picked) return toast(`Не відмічено питання ${i + 1}`, 'error');
+                    answers[String(i)] = picked.value;
+                }
+                submitMeetingVote(poll.id, answers, this);
             });
         });
     } catch (e) {
@@ -352,6 +441,25 @@ export async function submitVote(pollId, option, btn) {
     }
 }
 
+/** Голос на зборах: одна відповідь на кожне питання порядку денного. */
+export async function submitMeetingVote(pollId, answers, btn) {
+    setBusy(btn, true, 'Надсилання…');
+    try {
+        await setDoc(doc(db, 'polls', pollId, 'votes', String(session.apt)), {
+            answers,
+            votedAt: serverTimestamp()
+        });
+        toast('Ваш голос враховано', 'success');
+        await Promise.all([loadUserPolls(), refreshPollsBadge()]);
+    } catch (e) {
+        console.error('Голосування на зборах:', e);
+        toast(e.code === 'permission-denied'
+            ? 'Збори вже завершено'
+            : 'Не вдалося проголосувати', 'error');
+        setBusy(btn, false);
+    }
+}
+
 // ------------------------------------------------------------
 // АДМІН: створення
 // ------------------------------------------------------------
@@ -361,10 +469,12 @@ function optionInputs() {
 
 function refreshOptionRows() {
     const rows = document.querySelectorAll('#pollOptionsList .poll-option-row');
-    // Двох варіантів — мінімум для голосування, менше видаляти не даємо
+    // Двох варіантів — мінімум для голосування; у зборів же вистачає
+    // одного питання: друге, про голову й секретаря, додає код.
+    const min = currentPollKind() === 'meeting' ? 1 : 2;
     rows.forEach(r => {
         const del = r.querySelector('.poll-option-del');
-        if (del) del.disabled = rows.length <= 2;
+        if (del) del.disabled = rows.length <= min;
     });
 }
 
@@ -374,7 +484,8 @@ function addOptionRow(value = '') {
     row.className = 'poll-option-row';
     row.innerHTML = `
         <input type="text" class="field-input poll-option-input"
-               placeholder="Варіант відповіді" value="${escapeHtml(value)}">
+               placeholder="${currentPollKind() === 'meeting' ? 'Питання порядку денного' : 'Варіант відповіді'}"
+               value="${escapeHtml(value)}">
         <button type="button" class="poll-option-del" aria-label="Прибрати варіант">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
                  stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -389,19 +500,86 @@ function addOptionRow(value = '') {
 }
 
 function resetPollForm() {
-    document.getElementById('pollTitle').value = '';
+    const meeting = currentPollKind() === 'meeting';
+    document.getElementById('pollTitle').value = meeting ? 'Загальні збори співвласників' : '';
     const desc = document.getElementById('pollDescription');
     desc.value = '';
     desc.style.height = '';
+
     document.getElementById('pollOptionsList').innerHTML = '';
-    addOptionRow('За');
-    addOptionRow('Проти');
-    addOptionRow('Утримався');
+    if (meeting) {
+        // Питання про голову й секретаря в списку не показуємо: воно
+        // додається при публікації, і редагувати його ніхто не має.
+        addOptionRow();
+    } else {
+        addOptionRow('За');
+        addOptionRow('Проти');
+        addOptionRow('Утримався');
+    }
+
     const dl = document.getElementById('pollDeadline');
     if (dl) dl.value = '';
+    ['meetingDate', 'meetingTimeStart', 'meetingTimeEnd', 'meetingPlaceOther'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const place = document.getElementById('meetingPlace');
+    if (place) { place.selectedIndex = 0; togglePlaceOther(); }
+    const notify = document.getElementById('meetingNotify');
+    if (notify) notify.checked = true;
+
     document.querySelectorAll('#pollQuickTerms .poll-term').forEach(b => b.classList.remove('active'));
     pendingPollFiles = [];
     refreshPollChips();
+}
+
+/** Поле «інше місце» потрібне лише тоді, коли обрано саме «Інше…». */
+function togglePlaceOther() {
+    const select = document.getElementById('meetingPlace');
+    const other = document.getElementById('meetingPlaceOther');
+    if (!select || !other) return;
+    other.hidden = select.value !== 'other';
+    if (!other.hidden) other.focus();
+}
+
+/**
+ * Перемикає форму між опитуванням і зборами.
+ *
+ * Форма при цьому очищується: у зборів і опитування різні за змістом
+ * поля — «За / Проти / Утримався» як варіанти відповіді в порядку
+ * денному виглядали б безглуздо, і навпаки.
+ */
+function setPollKind(kind) {
+    document.querySelectorAll('#pollKindSwitch .poll-kind')
+        .forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
+
+    const meeting = kind === 'meeting';
+    const fields = document.getElementById('pollMeetingFields');
+    if (fields) fields.hidden = !meeting;
+
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('pollFormTitle', meeting ? 'Нові загальні збори' : 'Нове опитування');
+    set('pollFormSub', meeting
+        ? 'Порядок денний, листки для обходу квартир і протокол'
+        : 'Кожна квартира має один голос');
+    set('pollTitleLabel', meeting ? 'Назва зборів' : 'Питання');
+    set('pollOptionsLabel', meeting ? 'Порядок денний' : 'Варіанти відповіді');
+    set('addPollOptionBtn', meeting ? '+ Додати питання' : '+ Додати варіант');
+    set('createPollBtn', meeting ? 'Створити збори' : 'Опублікувати опитування');
+    set('pollDeadlineHint', meeting
+        ? 'До цього моменту приймаються голоси — і в застосунку, і паперові. Можна не вказувати.'
+        : 'Можна не вказувати — тоді опитування триватиме, доки не завершите вручну.');
+
+    const hint = document.getElementById('pollAgendaHint');
+    if (hint) hint.hidden = !meeting;
+    const title = document.getElementById('pollTitle');
+    if (title) {
+        title.placeholder = meeting
+            ? 'Напр. Загальні збори співвласників'
+            : 'Напр. Чи встановлювати шлагбаум?';
+    }
+
+    resetPollForm();
 }
 
 function refreshPollChips() {
@@ -420,17 +598,92 @@ function localInputValue(date) {
          + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** Обраний у формі тип: звичайне опитування чи загальні збори. */
+function currentPollKind() {
+    return document.querySelector('#pollKindSwitch .poll-kind.active')?.dataset.kind || 'poll';
+}
+
+/** Місце проведення: зі списку або дописане вручну. */
+function meetingPlace() {
+    const select = document.getElementById('meetingPlace');
+    if (!select) return '';
+    return select.value === 'other'
+        ? document.getElementById('meetingPlaceOther').value.trim()
+        : select.value;
+}
+
+/**
+ * Порядок денний.
+ *
+ * Питання про голову й секретаря дописуємо самі й завжди першим:
+ * без нього збори нікому вести й нікому підписувати протокол, а
+ * покладатися, що правління щоразу згадає внести його руками, —
+ * означає рано чи пізно отримати протокол, який не має сили.
+ */
+function buildAgenda(entered) {
+    const own = entered.filter(q => q.toLowerCase() !== CHAIR_QUESTION.toLowerCase());
+    return [CHAIR_QUESTION, ...own];
+}
+
+/** Запрошення на збори — звичайною розсилкою всьому будинку. */
+async function announceMeeting(poll) {
+    const when = [
+        `Дата: ${formatMeetingDate(poll.meetingDate)}`,
+        poll.timeStart ? `Час: ${poll.timeStart}${poll.timeEnd ? `–${poll.timeEnd}` : ''}` : '',
+        poll.location ? `Місце: ${poll.location}` : ''
+    ].filter(Boolean).join('\n');
+
+    const agenda = poll.options.map((q, i) => `${i + 1}. ${q}`).join('\n');
+
+    await addDoc(collection(db, 'messages'), {
+        title: `Скликання загальних зборів — ${formatMeetingDate(poll.meetingDate)}`,
+        body: `Правління скликає загальні збори співвласників багатоквартирного будинку.\n\n`
+            + `${when}\n\n`
+            + (poll.description ? `${poll.description}\n\n` : '')
+            + `ПОРЯДОК ДЕННИЙ\n${agenda}\n\n`
+            + `Проголосувати можна в застосунку — розділ «Голосування» — або письмово, `
+            + `підписавши листок опитування під час обходу квартир.`,
+        targetType: 'all',
+        targetValue: '',
+        recipients: buildRecipients('all', ''),
+        attachments: [],
+        linkedDoc: null,
+        createdAt: serverTimestamp(),
+        readBy: {}
+    });
+}
+
 export async function createPoll(btn) {
+    const kind = currentPollKind();
+    const meeting = kind === 'meeting';
     const title = document.getElementById('pollTitle').value.trim();
     const description = document.getElementById('pollDescription').value.trim();
-    const options = optionInputs().map(i => i.value.trim()).filter(Boolean);
+    const entered = optionInputs().map(i => i.value.trim()).filter(Boolean);
     const deadlineRaw = document.getElementById('pollDeadline').value;
 
-    if (!title) return toast('Вкажіть питання', 'error');
-    if (options.length < 2) return toast('Потрібно щонайменше два варіанти', 'error');
-    if (new Set(options).size !== options.length) {
-        return toast('Варіанти не мають повторюватися', 'error');
+    if (!title) return toast(meeting ? 'Вкажіть назву зборів' : 'Вкажіть питання', 'error');
+
+    const meetingDate = document.getElementById('meetingDate')?.value || '';
+    const timeStart = document.getElementById('meetingTimeStart')?.value || '';
+    const timeEnd = document.getElementById('meetingTimeEnd')?.value || '';
+    const location = meeting ? meetingPlace() : '';
+
+    if (meeting) {
+        if (!meetingDate) return toast('Вкажіть дату зборів', 'error');
+        if (!timeStart) return toast('Вкажіть час початку зборів', 'error');
+        if (timeEnd && timeEnd <= timeStart) {
+            return toast('Час закінчення має бути пізніше за початок', 'error');
+        }
+        if (!location) return toast('Вкажіть місце проведення', 'error');
+        if (!entered.length) return toast('Додайте хоча б одне питання порядку денного', 'error');
+    } else {
+        if (entered.length < 2) return toast('Потрібно щонайменше два варіанти', 'error');
     }
+    if (new Set(entered).size !== entered.length) {
+        return toast(meeting ? 'Питання не мають повторюватися' : 'Варіанти не мають повторюватися', 'error');
+    }
+
+    const options = meeting ? buildAgenda(entered) : entered;
 
     let deadline = null;
     if (deadlineRaw) {
@@ -453,14 +706,35 @@ export async function createPoll(btn) {
             });
         }
 
-        await addDoc(collection(db, 'polls'), {
+        const payload = {
             title, description, options, attachments,
             deadline,
             status: 'active',
             resultsSent: false,
+            isMeeting: meeting,
+            meetingDate: meeting ? meetingDate : null,
+            timeStart: meeting ? timeStart : '',
+            timeEnd: meeting ? timeEnd : '',
+            location,
             createdAt: serverTimestamp()
-        });
-        toast('Опитування опубліковано', 'success');
+        };
+        const ref = await addDoc(collection(db, 'polls'), payload);
+
+        // Розсилка окремо від запису: якщо вона впаде, збори вже
+        // створені й нікуди не зникнуть — запрошення правління
+        // повторить звичайним оголошенням.
+        if (meeting && document.getElementById('meetingNotify')?.checked) {
+            try {
+                await announceMeeting({ id: ref.id, ...payload });
+                toast('Збори створено, запрошення надіслано', 'success');
+            } catch (e) {
+                console.error('Запрошення на збори:', e);
+                toast('Збори створено, але запрошення не пішло', 'error');
+            }
+        } else {
+            toast(meeting ? 'Збори створено' : 'Опитування опубліковано', 'success');
+        }
+
         resetPollForm();
         await loadAdminPolls();
     } catch (e) {
@@ -515,7 +789,7 @@ async function closeExpiredPolls(polls) {
                 return !already;
             });
 
-            if (mine) await broadcastResults(poll, quorum);
+            if (mine) await broadcastResults(poll, quorum, apartments);
         } catch (e) {
             console.error(`Автозакриття «${poll.title}»:`, e);
         }
@@ -524,7 +798,8 @@ async function closeExpiredPolls(polls) {
 }
 
 /** Надсилає підсумки всім мешканцям звичайною розсилкою. */
-async function broadcastResults(poll, quorum) {
+async function broadcastResults(poll, quorum, apartments = []) {
+    if (isMeeting(poll)) return broadcastMeetingResults(poll, quorum, apartments);
     const options = poll.options || [];
     const { tally, total } = tallyVotes(options, poll.votes || []);
     const lines = options
@@ -556,6 +831,90 @@ async function broadcastResults(poll, quorum) {
     });
 }
 
+/**
+ * Підсумки зборів: рішення по кожному питанню порядку денного.
+ *
+ * Це ще не протокол — його правління формує окремою кнопкою, коли
+ * внесе паперові голоси. Але мешканець має дізнатися результат у
+ * день закінчення, а не через тиждень.
+ */
+async function broadcastMeetingResults(poll, quorum, apartments) {
+    const questions = agendaOf(poll);
+    const lines = questions.map((q, i) => {
+        const t = questionTally(poll.votes, apartments, i);
+        const counts = MEETING_ANSWERS.map(a => `${a.toLowerCase()} ${t.rows[a].count}`).join(', ');
+        const verdict = apartments.length
+            ? (t.accepted ? 'ПРИЙНЯТО' : 'НЕ ПРИЙНЯТО')
+            : 'підсумок буде в протоколі';
+        return `${i + 1}. ${q}\n   ${verdict} (${counts})`;
+    }).join('\n');
+
+    const quorumText = quorum
+        ? `\n\nЯВКА\n`
+          + `${quorum.hasQuorum ? 'Кворум зібрано' : 'Кворуму немає'} `
+          + `(потрібно ${QUORUM_PCT}% власників)\n`
+          + `Власники: ${quorum.votedOwners} з ${quorum.totalOwners} — ${quorum.ownersPct}%\n`
+          + `Площа: ${quorum.votedArea} з ${quorum.totalArea} м² — ${quorum.areaPct}%`
+        : '';
+
+    await addDoc(collection(db, 'messages'), {
+        title: `Підсумки зборів: ${poll.title}`,
+        body: `Голосування завершено.\n\nРІШЕННЯ\n${lines}${quorumText}\n\n`
+            + `Протокол зборів буде опубліковано в Базі документів ОСББ.`,
+        targetType: 'all',
+        targetValue: '',
+        recipients: buildRecipients('all', ''),
+        attachments: [],
+        linkedDoc: null,
+        createdAt: serverTimestamp(),
+        readBy: {}
+    });
+}
+
+/** Кнопки під карткою: у зборів свій набір дій. */
+function adminPollActions(poll) {
+    if (!isMeeting(poll)) {
+        return isClosed(poll) ? '' : `<div class="poll-actions">
+            <button type="button" class="btn-soft btn-compact poll-close-btn"
+                    data-poll="${poll.id}">Завершити опитування</button></div>`;
+    }
+
+    const actions = [
+        `<button type="button" class="btn-soft btn-compact poll-sheets-btn"
+                 data-poll="${poll.id}">Друк листків опитування</button>`
+    ];
+    // Після публікації протоколу дописувати голоси немає сенсу:
+    // документ уже розісланий, і нові голоси в ньому не враховані.
+    if (!poll.protocolUrl) {
+        actions.push(`<button type="button" class="btn-soft btn-compact poll-paper-btn"
+                 data-poll="${poll.id}">Внести паперові голоси</button>`);
+    }
+    if (!isClosed(poll)) {
+        actions.push(`<button type="button" class="btn-soft btn-compact poll-close-btn"
+                 data-poll="${poll.id}">Завершити збори</button>`);
+    } else {
+        actions.push(`<button type="button" class="btn-primary btn-compact poll-protocol-btn"
+                 data-poll="${poll.id}">${poll.protocolUrl
+                     ? 'Сформувати протокол заново'
+                     : 'Сформувати протокол та опублікувати'}</button>`);
+    }
+
+    const link = poll.protocolUrl
+        ? `<a class="meeting-protocol-link" href="${escapeHtml(poll.protocolUrl)}"
+              target="_blank" rel="noopener">Протокол опубліковано — відкрити PDF</a>`
+        : '';
+    return `<div class="poll-actions">${actions.join('')}</div>${link}`;
+}
+
+/** Скільки голосів подано в застосунку, а скільки внесено з паперу. */
+function participationLine(poll) {
+    if (!isMeeting(poll)) return '';
+    const paper = (poll.votes || []).filter(v => v.source === 'paper').length;
+    const online = (poll.votes || []).length - paper;
+    return `<span class="meeting-split">Особисто на зборах: <b>${online}</b>
+        · письмове опитування: <b>${paper}</b></span>`;
+}
+
 export async function loadAdminPolls() {
     const host = document.getElementById('adminPollsContainer');
     if (!host) return;
@@ -584,15 +943,15 @@ export async function loadAdminPolls() {
                     <span class="poll-date">${formatDateTime(poll.createdAt)}</span>
                 </div>
                 <h3 class="poll-title">${escapeHtml(poll.title)}</h3>
+                ${meetingMeta(poll)}
                 ${poll.deadline ? `<span class="poll-deadline${isExpired(poll) ? ' poll-deadline-over' : ''}">${escapeHtml(formatDeadline(poll))}</span>` : ''}
                 ${poll.description ? `<p class="poll-desc">${escapeHtml(poll.description)}</p>` : ''}
                 <div class="attach-block poll-attach" data-poll-att="${poll.id}"></div>
-                ${renderResults(poll.options || [], poll.votes)}
+                ${isMeeting(poll)
+                    ? renderMeetingResults(poll, poll.votes, null, apartments) + participationLine(poll)
+                    : renderResults(poll.options || [], poll.votes)}
                 ${apartments.length ? renderQuorum(computeQuorum(poll.votes, apartments)) : ''}
-                ${!isClosed(poll)
-                    ? `<button type="button" class="btn-soft btn-compact poll-close-btn"
-                               data-poll="${poll.id}">Завершити опитування</button>`
-                    : ''}
+                ${adminPollActions(poll)}
             </div>`).join('');
 
         polls.forEach(p => {
@@ -604,6 +963,47 @@ export async function loadAdminPolls() {
         host.querySelectorAll('.poll-close-btn').forEach(btn => {
             btn.addEventListener('click', function () { closePoll(this.dataset.poll, this); });
         });
+
+        const pollById = (id) => polls.find(p => p.id === id);
+
+        host.querySelectorAll('.poll-sheets-btn').forEach(btn => {
+            btn.addEventListener('click', async function () {
+                if (!apartments.length) return toast('Довідник квартир недоступний', 'error');
+                setBusy(this, true, 'Готуємо PDF…');
+                try {
+                    const { generateBlankSheets } = await import('./protocol_pdf.js');
+                    await generateBlankSheets(pollById(this.dataset.poll), apartments);
+                    toast('Листки опитування завантажено', 'success');
+                } catch (e) {
+                    console.error('Листки опитування:', e);
+                    toast('Не вдалося сформувати листки', 'error');
+                } finally {
+                    setBusy(this, false);
+                }
+            });
+        });
+
+        host.querySelectorAll('.poll-paper-btn').forEach(btn => {
+            btn.addEventListener('click', async function () {
+                setBusy(this, true, 'Відкриваємо…');
+                try {
+                    const { initPaperVotes, openPaperVotes } = await import('./paper_votes.js');
+                    initPaperVotes();
+                    // Перемальовуємо список лише якщо голоси справді внесли:
+                    // інакше кожне закриття вікна смикало б увесь екран.
+                    await openPaperVotes(pollById(this.dataset.poll), () => loadAdminPolls());
+                } catch (e) {
+                    console.error('Паперові голоси:', e);
+                    toast('Не вдалося відкрити вікно', 'error');
+                } finally {
+                    setBusy(this, false);
+                }
+            });
+        });
+
+        host.querySelectorAll('.poll-protocol-btn').forEach(btn => {
+            btn.addEventListener('click', function () { publishProtocol(this.dataset.poll, this); });
+        });
     } catch (e) {
         console.error('Завантаження опитувань:', e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити опитування</p>';
@@ -611,28 +1011,81 @@ export async function loadAdminPolls() {
 }
 
 async function closePoll(pollId, btn) {
-    const ok = await confirmDialog('Завершити опитування?',
-        'Мешканці більше не зможуть голосувати, а підсумки підуть у розсилку.');
+    const snapBefore = await getDoc(doc(db, 'polls', pollId));
+    const meeting = snapBefore.exists() && isMeeting(snapBefore.data());
+
+    const ok = await confirmDialog(
+        meeting ? 'Завершити збори?' : 'Завершити опитування?',
+        meeting
+            ? 'Голосувати більше не можна — ні в застосунку, ні паперовим листком. '
+              + 'Підсумки підуть у розсилку, протокол формується окремою кнопкою.'
+            : 'Мешканці більше не зможуть голосувати, а підсумки підуть у розсилку.',
+        'Завершити');
     if (!ok) return;
 
     setBusy(btn, true, 'Завершення…');
     try {
-        const snap = await getDoc(doc(db, 'polls', pollId));
-        const poll = { id: pollId, ...snap.data(), votes: await fetchVotes(pollId) };
-        const quorum = computeQuorum(poll.votes, await fetchDirectory().catch(() => []));
+        const poll = { id: pollId, ...snapBefore.data(), votes: await fetchVotes(pollId) };
+        const apartments = await fetchDirectory().catch(() => []);
+        const quorum = computeQuorum(poll.votes, apartments);
         await updateDoc(doc(db, 'polls', pollId), { status: 'closed', quorum });
 
         // Підсумки надсилаємо один раз: resultsSent береже від повторів,
         // якщо правління натисне кнопку вдруге або спрацює автозакриття.
         if (!poll.resultsSent) {
-            await broadcastResults(poll, quorum);
+            await broadcastResults(poll, quorum, apartments);
             await updateDoc(doc(db, 'polls', pollId), { resultsSent: true });
         }
-        toast('Опитування завершено, підсумки надіслано', 'success');
+        toast(meeting ? 'Збори завершено, підсумки надіслано' : 'Опитування завершено, підсумки надіслано', 'success');
         await loadAdminPolls();
     } catch (e) {
         console.error('Завершення опитування:', e);
         toast('Не вдалося завершити', 'error');
+        setBusy(btn, false);
+    }
+}
+
+/**
+ * Формує протокол зборів, кладе його в Базу документів і розсилає.
+ *
+ * Дані перечитуємо з бази, а не беремо з намальованої картки:
+ * між відкриттям панелі й натисканням кнопки могли зʼявитися
+ * паперові голоси, внесені з іншого пристрою.
+ */
+async function publishProtocol(pollId, btn) {
+    const ok = await confirmDialog('Сформувати протокол?',
+        'Протокол зборів буде опубліковано в Базі документів ОСББ і надіслано всім мешканцям.',
+        'Сформувати');
+    if (!ok) return;
+
+    setBusy(btn, true, 'Читання даних…');
+    try {
+        const [snap, votes, apartments] = await Promise.all([
+            getDoc(doc(db, 'polls', pollId)),
+            fetchVotes(pollId),
+            fetchDirectory().catch(() => [])
+        ]);
+        if (!snap.exists()) throw new Error('Збори не знайдено');
+        if (!apartments.length) {
+            toast('Довідник квартир недоступний — протокол не буде з чого скласти', 'error');
+            return setBusy(btn, false);
+        }
+
+        const poll = { id: pollId, ...snap.data() };
+        const { generateAndPublishProtocol } = await import('./protocol_pdf.js');
+        await generateAndPublishProtocol(poll, apartments, votes, (step) => setBusy(btn, true, step));
+
+        toast('Протокол опубліковано та надіслано мешканцям', 'success');
+        // Документ щойно зʼявився в Базі — випадаючий список у розсилці
+        // має його побачити без перезавантаження сторінки.
+        try {
+            const { populateDocsDropdown } = await import('./requests.js');
+            await populateDocsDropdown();
+        } catch (e) { console.warn('Оновлення списку документів:', e); }
+        await loadAdminPolls();
+    } catch (e) {
+        console.error('Формування протоколу:', e);
+        toast('Не вдалося сформувати протокол', 'error');
         setBusy(btn, false);
     }
 }
@@ -643,6 +1096,11 @@ async function closePoll(pollId, btn) {
 export function initPolls() {
     const list = document.getElementById('pollOptionsList');
     if (list && !list.children.length) resetPollForm();
+
+    document.querySelectorAll('#pollKindSwitch .poll-kind').forEach(btn => {
+        btn.addEventListener('click', () => setPollKind(btn.dataset.kind));
+    });
+    document.getElementById('meetingPlace')?.addEventListener('change', togglePlaceOther);
 
     document.getElementById('addPollOptionBtn')?.addEventListener('click', () => {
         const row = addOptionRow();
