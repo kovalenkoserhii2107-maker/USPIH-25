@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=90">
+    <link rel="stylesheet" href="style.css?v=91">
 </head>
 <body>
 
@@ -1419,6 +1419,36 @@
     </div>
 </div>
 
+<!-- ============ ДАНІ ДЛЯ ПРОТОКОЛУ ============ -->
+<div id="protocolModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title">Дані для протоколу</h3>
+            <button id="closeProtocolModalBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <span class="modal-date" id="protoMeta"></span>
+
+        <div class="field">
+            <label class="field-label" for="protoNumber">Номер протоколу</label>
+            <input type="text" id="protoNumber" class="field-input" inputmode="numeric" placeholder="Напр. 1">
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label class="field-label" for="protoChair">Голова зборів</label>
+                <input type="text" id="protoChair" class="field-input" placeholder="Прізвище І. П.">
+            </div>
+            <div class="field">
+                <label class="field-label" for="protoSecretary">Секретар зборів</label>
+                <input type="text" id="protoSecretary" class="field-input" placeholder="Прізвище І. П.">
+            </div>
+        </div>
+
+        <div id="protocolQuestions" class="proto-list"></div>
+
+        <button id="protoSubmitBtn" class="btn-primary" type="button">Сформувати та опублікувати</button>
+    </div>
+</div>
+
 <!-- ============ ПАПЕРОВІ ГОЛОСИ ============ -->
 <div id="paperVotesModal" class="modal">
     <div class="modal-box">
@@ -1611,6 +1641,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=90"></script>
+<script type="module" src="js/app.js?v=91"></script>
 </body>
 </html>

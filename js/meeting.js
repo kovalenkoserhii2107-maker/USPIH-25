@@ -34,13 +34,17 @@ export const CHAIR_QUESTION = 'Обрання голови та секретар
 export const QUORUM_PCT = 50;
 
 /**
- * Скільки площі має бути «за», щоб рішення вважалося прийнятим.
+ * Скільки голосів має бути «за», щоб рішення вважалося прийнятим.
  *
- * Закон рахує не від тих, хто прийшов, а від усього будинку: рішення
- * приймається, якщо за нього проголосували власники, яким належить
- * понад половину загальної площі. Окремі питання (наприклад,
- * про надбудову) потребують трьох чвертей — це правління перевіряє
- * окремо, автоматично такі питання не розпізнати.
+ * За п. 3.2.11 Статуту ОСББ «Успіх-25» кожний співвласник має один
+ * голос незалежно від кількості та площі своїх приміщень, а рішення
+ * ухвалюється більшістю голосів ВІД ЗАГАЛЬНОЇ кількості співвласників,
+ * а не від тих, хто взяв участь. Тому рахуємо співвласників, а площу
+ * показуємо поруч — вона теж має бути в протоколі.
+ *
+ * Виняток — обрання голови та секретаря: за п. 3.2.9 Статуту їх
+ * обирає більшість ПРИСУТНІХ, інакше збори неможливо було б навіть
+ * розпочати. Саме тому питання про голову завжди стоїть першим.
  */
 export const DECISION_PCT = 50;
 
@@ -147,34 +151,90 @@ export function quorumBreakdown(votes, apartments) {
 }
 
 /**
- * Підсумок одного питання: скільки квартир, скільки площі й відсоток
- * від усього будинку за кожною відповіддю.
+ * Підсумок одного питання: скільки співвласників, квартир і площі за
+ * кожною відповіддю та два відсотки — від кількості голосів і від площі.
  *
- * Відсоток рахуємо від загальної площі будинку, а не від тих, хто
- * голосував: саме так його рахує закон, і саме з ним порівнюється
- * поріг прийняття рішення.
+ * Співвласників рахуємо так само, як у кворумі: проголосувала квартира
+ * — голос зараховано всім, хто в ній записаний, а однофамільця з двох
+ * квартир не рахуємо двічі.
+ *
+ * @param {boolean} amongPresent база відсотка: присутні (питання про
+ *        голову зборів) чи весь будинок (решта питань).
  */
-export function questionTally(votes, apartments, index) {
-    const areaByApt = new Map((apartments || []).map(a => [String(a.apt), parseArea(a.area)]));
-    const totalArea = [...areaByApt.values()].reduce((s, n) => s + n, 0);
+export function questionTally(votes, apartments, index, amongPresent = false) {
+    const byApt = new Map();
+    (apartments || []).forEach(a => byApt.set(String(a.apt), a));
+
+    const totals = computeQuorum(votes, apartments);
+    const baseOwners = amongPresent ? totals.votedOwners : totals.totalOwners;
+    const baseArea = amongPresent ? totals.votedArea : totals.totalArea;
 
     const rows = {};
-    MEETING_ANSWERS.forEach(ans => { rows[ans] = { count: 0, area: 0, pct: 0 }; });
+    MEETING_ANSWERS.forEach(ans => {
+        rows[ans] = { apts: 0, area: 0, owners: new Set(), ownersPct: 0, areaPct: 0, count: 0 };
+    });
 
     (votes || []).forEach(v => {
         const ans = answerFor(v, index);
-        if (!rows[ans]) return;               // відповідь не з нашого списку — не рахуємо
-        rows[ans].count++;
-        rows[ans].area += areaByApt.get(String(v.apt)) || 0;
+        const row = rows[ans];
+        if (!row) return;                     // відповідь не з нашого списку
+        const apt = byApt.get(String(v.apt));
+        row.apts++;
+        row.count++;                          // сумісність: раніше поле звалося count
+        row.area += parseArea(apt?.area);
+        (apt?.owners || []).forEach(o => {
+            const key = normName(o.name);
+            if (key) row.owners.add(key);
+        });
     });
 
+    const round = (n) => Math.round(n * 100) / 100;
     MEETING_ANSWERS.forEach(ans => {
-        rows[ans].area = Math.round(rows[ans].area * 10) / 10;
-        rows[ans].pct = totalArea ? Math.round((rows[ans].area / totalArea) * 1000) / 10 : 0;
+        const r = rows[ans];
+        r.area = round(r.area);
+        r.ownersCount = r.owners.size;
+        r.ownersPct = baseOwners ? round((r.owners.size / baseOwners) * 100) : 0;
+        r.areaPct = baseArea ? round((r.area / baseArea) * 100) : 0;
+        r.pct = r.areaPct;                    // сумісність зі старою розміткою
+        delete r.owners;
     });
 
-    const accepted = rows[MEETING_ANSWERS[0]].pct > DECISION_PCT;
-    return { rows, totalArea: Math.round(totalArea * 10) / 10, accepted };
+    const yes = rows[MEETING_ANSWERS[0]];
+    return {
+        rows,
+        baseOwners,
+        baseArea: round(baseArea),
+        totalArea: round(totals.totalArea),
+        amongPresent,
+        // Рішення приймається голосами співвласників, не метрами.
+        accepted: yes.ownersPct > DECISION_PCT
+    };
+}
+
+/** Питання про обрання голови та секретаря вирішують присутні. */
+export const isChairQuestion = (index) => index === 0;
+
+/** «9 472,20» — числа в документі пишуться з комою й нерозривним пробілом. */
+export function fmtNum(n, decimals = 2) {
+    const value = Number(n) || 0;
+    const fixed = value.toFixed(decimals);
+    const [int, frac] = fixed.split('.');
+    const spaced = int.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
+    return frac ? `${spaced},${frac}` : spaced;
+}
+
+/** Відсоток без зайвих нулів: «59,65», «100», «0». */
+export function fmtPct(n) {
+    const value = Math.round((Number(n) || 0) * 100) / 100;
+    return String(value).replace('.', ',');
+}
+
+/** Українське відмінювання після числа: 1 особа, 2 особи, 5 осіб. */
+export function plural(n, one, few, many) {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
 }
 
 /** «20 вересня 2026 р.» — так дата виглядає в юридичному документі. */
@@ -194,6 +254,35 @@ export function meetingWhen(poll) {
     if (poll.timeStart) parts.push(poll.timeEnd ? `${poll.timeStart}–${poll.timeEnd}` : poll.timeStart);
     if (poll.location) parts.push(poll.location);
     return parts.filter(Boolean).join(', ');
+}
+
+const MONTHS_GEN = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
+    'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
+
+/** «22» серпня 2026 р. — саме так дата стоїть у шапці протоколу. */
+export function formatProtocolDate(value) {
+    if (!value) return '«___» _____________ 20___ р.';
+    const at = value instanceof Date ? value : new Date(`${value}T00:00:00`);
+    if (isNaN(at.getTime())) return String(value);
+    const day = String(at.getDate()).padStart(2, '0');
+    return `«${day}» ${MONTHS_GEN[at.getMonth()]} ${at.getFullYear()} р.`;
+}
+
+/** «22.08.2026» — для листка опитування. */
+export function formatShortDate(value) {
+    if (!value) return '';
+    const at = value instanceof Date ? value : new Date(`${value}T00:00:00`);
+    if (isNaN(at.getTime())) return String(value);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(at.getDate())}.${pad(at.getMonth() + 1)}.${at.getFullYear()}`;
+}
+
+/** Частка співвласника: у документах її пишуть дробом («1/3»). */
+export function ownerShare(owner) {
+    const frac = String(owner?.shareFrac || '').trim();
+    if (frac) return frac;
+    const perc = String(owner?.sharePerc || '').trim();
+    return perc ? `${perc}%` : '';
 }
 
 /** Список власників квартири одним рядком — для таблиць і списків. */

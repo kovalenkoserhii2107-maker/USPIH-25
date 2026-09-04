@@ -4451,3 +4451,28 @@ select.field-input {
     background: rgba(0, 122, 255, 0.1); border-color: var(--blue); color: var(--blue-dark);
 }
 .paper-save { margin-top: 2px; }
+
+/* Питання порядку денного: під полем питання стоїть проєкт рішення,
+   тому рядок росте вниз, а не тягнеться в лінію, як варіант відповіді. */
+.poll-option-row-meeting {
+    flex-direction: column; align-items: stretch; gap: 6px;
+    padding: 10px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.poll-option-main { display: flex; align-items: center; gap: 8px; }
+.poll-option-main .field-input { flex: 1; min-width: 0; }
+.poll-decision-input { font-size: 14px; min-height: 56px; }
+
+/* ---- Вікно «Дані для протоколу» ---- */
+.proto-list { display: flex; flex-direction: column; gap: 14px; margin: 6px 0 16px; }
+.proto-q {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 12px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.proto-q-title {
+    font-size: 14px; font-weight: 700; color: var(--ink);
+    line-height: 1.35; margin-bottom: 4px;
+}
+.proto-q .field-label { margin-top: 4px; margin-bottom: 3px; }
+.proto-heard, .proto-decision { font-size: 14px; min-height: 52px; }
