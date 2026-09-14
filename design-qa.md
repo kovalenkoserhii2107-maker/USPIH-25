@@ -38,6 +38,8 @@
 1. Перша browser-render ітерація: P2 — KPI та картка зборів були надто низькими, через що нижня половина desktop-viewport виглядала порожньою.
 2. Fix: header збільшено до пропорції джерела, KPI — до 150 px, картку зборів — до 680 px; операційні рядки розподілено по висоті, зайву desktop-смугу статистики приховано.
 3. Post-fix evidence: `admin-desktop-implementation.png` і `design-qa-comparison.png`; композиція заповнює viewport аналогічно джерелу, відкритих P0/P1/P2 немає.
+4. Regression check after user screenshot: P0 — desktop `display: grid !important` перекривав прихований стан адмінки, тому вона зʼявлялася під формою входу всередині 480 px контейнера.
+5. Fix: desktop grid тепер активується лише селектором `body.admin-mode #adminDashboardSection`; звичайний URL показує тільки форму входу, preview URL — тільки адмін-панель. Cache version оновлено до 94.
 
 **Primary interactions tested**
 

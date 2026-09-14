@@ -4599,7 +4599,7 @@ select.field-input {
 @media (min-width: 960px) {
     body.admin-mode { overflow-x: hidden; background: #f7f9fc; }
     body.admin-mode .container { max-width: none; margin: 0; padding: 0; }
-    #adminDashboardSection {
+    body.admin-mode #adminDashboardSection {
         min-height: 100vh; display: grid !important;
         grid-template-columns: 264px minmax(0, 1fr);
         grid-template-rows: auto 1fr; background: #f7f9fc;
