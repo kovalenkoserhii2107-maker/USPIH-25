@@ -7,12 +7,12 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, query, where, getCountFromServer
+    collection, query, where, getCountFromServer, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import { pendingChangesCount } from './verify.js';
-import { loadExpenses } from './finance.js';
+import { isMeeting, agendaOf, computeQuorum, formatMeetingDate } from './meeting.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
 function openTab(name, scrollToSelector) {
@@ -153,7 +153,7 @@ export async function loadDashboard() {
     try {
         // getCountFromServer рахує на сервері й коштує один читок,
         // а не стільки, скільки документів у колекції.
-        const [apts, openReqs, activePolls] = await Promise.all([
+        const [apts, openReqs, activePollsSnap] = await Promise.all([
             // Беремо з довідника, а не окремим запитом.
             //
             // where('isAdmin','==',false) не повертає записи, де цього
@@ -162,13 +162,16 @@ export async function loadDashboard() {
             // Одне джерело — і розійтися вони більше не можуть.
             fetchDirectory(),
             getCountFromServer(query(collection(db, 'requests'), where('status', 'in', ['new', 'in_progress']))),
-            getCountFromServer(query(collection(db, 'polls'), where('status', '==', 'active')))
+            getDocs(query(collection(db, 'polls'), where('status', '==', 'active')))
         ]);
 
         const aptCount = apts.length;
         const reqCount = openReqs.data().count;
-        const pollCount = activePolls.data().count;
+        const activePolls = activePollsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const activeMeetings = activePolls.filter(isMeeting);
+        const pollCount = activePolls.filter(p => !isMeeting(p)).length;
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
+        const verifiedPct = aptCount ? Math.round(verified / aptCount * 100) : 0;
         const changes = pendingChangesCount();
         const ownerCount = apts.reduce((sum, a) => sum + (a.owners?.length || 0), 0);
         const area = apts.reduce((sum, a) => sum + parseMoney(a.area), 0);
@@ -180,33 +183,99 @@ export async function loadDashboard() {
         const debtors = apts.filter(a => parseMoney(a.balance) < -0.005);
         const debtSum = debtors.reduce((sum, a) => sum - parseMoney(a.balance), 0);
 
-        host.innerHTML = houseCard({ aptCount, ownerCount, area, verified }) + `
-            <div class="dash-grid">
-                ${tile({ icon: 'owners', id: 'dashOwners', label: 'Заявок на звірку', value: changes,
-                         hint: changes ? 'Чекають рішення' : (verified < aptCount ? 'Нагадайте решті' : 'Усе звірено'),
-                         tone: changes ? 'warn' : (verified < aptCount ? 'info' : 'ok'),
-                         tab: 'directory', target: changes ? '.vf-card' : '.vf-cover' })}
-                ${tile({ icon: 'requests', id: 'dashReqs', label: 'Звернень у роботі', value: reqCount,
-                         hint: reqCount ? 'Потребують відповіді' : 'Усе опрацьовано',
-                         tone: reqCount ? 'warn' : 'ok', tab: 'requests',
-                         target: '.req-item' })}
-                ${tile({ icon: 'polls', id: 'dashPolls', label: 'Активних голосувань', value: pollCount,
-                         hint: pollCount ? 'Триває' : 'Немає активних',
-                         tone: pollCount ? 'info' : 'neutral', tab: 'polls',
-                         target: '.poll-card-admin' })}
-                ${tile({ icon: 'debt', id: 'dashDebt', label: 'Заборгованість, грн', value: compactMoney(debtSum),
-                         hint: debtors.length
-                             ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')} у мінусі`
-                             : 'Боргів немає',
-                         tone: debtors.length ? 'warn' : 'ok', tab: 'finance',
-                         target: '#balanceBulk' })}
-            </div>
-            <div id="adminBudgetHost"></div>`;
+        const current = activeMeetings[0] || null;
+        let votes = [];
+        if (current) {
+            const voteSnap = await getDocs(collection(db, 'polls', current.id, 'votes'));
+            votes = voteSnap.docs.map(d => ({ apt: d.id, ...d.data() }));
+        }
+        const quorum = current ? computeQuorum(votes, apts) : null;
+        const agendaCount = current ? agendaOf(current).length : 0;
+        const deadline = current?.deadline?.toDate ? current.deadline.toDate()
+            : (current?.deadline ? new Date(current.deadline) : null);
+        const daysLeft = deadline && !isNaN(deadline)
+            ? Math.max(0, Math.ceil((deadline - new Date()) / 86400000)) : null;
+        const urgent = [];
+        if (current && !current.protocolUrl) urgent.push({
+            tone: 'danger', tab: 'meetings', target: '#meetingsActive',
+            title: 'Перевірити дані для протоколу', note: 'Підсумки зборів і голосування ще не опубліковані'
+        });
+        if (changes) urgent.push({
+            tone: 'neutral', tab: 'directory', target: '.vf-card',
+            title: `Звірити ${changes} ${plural(changes, 'заявку', 'заявки', 'заявок')}`,
+            note: 'Зміни у списку співвласників чекають рішення'
+        });
+        if (reqCount) urgent.push({
+            tone: 'neutral', tab: 'requests', target: '.req-item',
+            title: `Відповісти на ${reqCount} ${plural(reqCount, 'звернення', 'звернення', 'звернень')}`,
+            note: 'Мешканці очікують відповідь правління'
+        });
 
-        // Той самий звіт, що бачить мешканець. Правління має дивитися на
-        // те саме, що й будинок, — інакше воно не помітить, що звіт
-        // застарів або показує не те.
-        loadExpenses('adminBudgetHost');
+        const metric = (tone, label, value, hint, tab, icon) => `
+            <button class="admin-metric metric-${tone}" type="button" data-tab="${tab}">
+                <span class="admin-metric-icon">${icon}</span>
+                <span class="admin-metric-copy"><small>${escapeHtml(label)}</small><b>${value}</b><span>${escapeHtml(hint)}</span></span>
+                ${CHEVRON}
+            </button>`;
+        const taskRows = urgent.length ? urgent.slice(0, 3).map(item => `
+            <button type="button" class="admin-task" data-tab="${item.tab}" data-target="${item.target}">
+                <span class="admin-task-mark task-${item.tone}">!</span>
+                <span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.note)}</small></span>
+                ${CHEVRON}
+            </button>`).join('') : `<div class="admin-all-clear"><b>Усе під контролем</b><span>Термінових завдань немає</span></div>`;
+
+        const meetingContent = current ? `
+            <div class="admin-meeting-head">
+                <div><span class="admin-section-kicker">Поточні збори</span>
+                    <h2>${escapeHtml(current.title || 'Загальні збори співвласників')}</h2></div>
+                <span class="admin-status status-live">Голосування триває</span>
+            </div>
+            <div class="admin-meeting-meta">
+                <span>◷ ${escapeHtml(formatMeetingDate(current.meetingDate) || 'Дата уточнюється')}</span>
+                <span>⌖ ${escapeHtml(current.location || 'Місце уточнюється')}</span>
+                <span>♙ ${num(ownerCount)} співвласників</span>
+                <span>▤ ${agendaCount} ${plural(agendaCount, 'питання', 'питання', 'питань')}</span>
+            </div>
+            <div class="admin-meeting-rule"></div>
+            <div class="admin-meeting-row quorum-row">
+                <span class="meeting-row-label">Кворум</span>
+                <span class="admin-progress"><i style="width:${Math.min(100, quorum.ownersPct)}%"></i></span>
+                <b>${quorum.votedOwners} з ${quorum.totalOwners}</b><strong>${String(quorum.ownersPct).replace('.', ',')}%</strong>
+                <small class="meeting-row-note ${quorum.hasQuorum ? 'note-ok' : ''}">${quorum.hasQuorum ? 'Кворум досягнуто. Голосування є правомочним.' : 'Для кворуму потрібно щонайменше 50% голосів.'}</small>
+            </div>
+            <div class="admin-meeting-row"><span class="meeting-row-label">Кінцевий термін</span>
+                <span class="meeting-row-value"><b>${deadline ? deadline.toLocaleString('uk-UA', {day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Не встановлено'}</b>${daysLeft !== null ? `<small>${daysLeft} ${plural(daysLeft, 'день', 'дні', 'днів')} залишилось</small>` : ''}</span></div>
+            <div class="admin-meeting-row"><span class="meeting-row-label">Порядок денний</span>
+                <span class="meeting-row-value"><b>${agendaCount} з ${agendaCount} питань підготовлено</b><button data-tab="meetings" data-target="#meetingAgendaList">Переглянути порядок денний →</button></span></div>
+            <div class="admin-meeting-row"><span class="meeting-row-label">Статус протоколу</span>
+                <span class="meeting-row-value"><span class="admin-status status-review">${current.protocolUrl ? 'Опубліковано' : 'Потребує перевірки'}</span><small>${current.protocolUrl ? 'Протокол доступний співвласникам.' : 'Перевірте результати голосування перед затвердженням.'}</small></span></div>
+            <div class="admin-meeting-actions">
+                <button type="button" class="btn-primary" data-tab="meetings" data-target="#meetingsActive">Продовжити роботу з протоколом →</button>
+                <button type="button" class="btn-secondary" data-tab="meetings" data-target="#meetingsActive">Переглянути результати</button>
+            </div>` : `
+            <div class="admin-meeting-empty">
+                <span class="admin-section-kicker">Загальні збори</span>
+                <h2>Активних зборів немає</h2>
+                <p>Створіть збори, підготуйте порядок денний і автоматично сформуйте листки голосування та протокол.</p>
+                <button type="button" class="btn-primary" data-tab="meetings" data-target="#meetingTitle">Створити загальні збори →</button>
+            </div>`;
+
+        host.innerHTML = `
+            <div class="admin-metrics">
+                ${metric('blue', 'Активні збори', activeMeetings.length, activeMeetings.length ? 'Триває голосування' : 'Немає активних', 'meetings', '♙')}
+                ${metric('green', 'Кворум', current ? `${quorum.votedOwners} з ${quorum.totalOwners}` : '—', current ? `${String(quorum.ownersPct).replace('.', ',')}% голосів` : 'Немає зборів', 'meetings', '✓')}
+                ${metric('violet', 'Порядок денний', current ? `${agendaCount} з ${agendaCount}` : '—', current ? 'Питань підготовлено' : 'Немає зборів', 'meetings', '▤')}
+                ${metric('amber', 'Кінцевий термін', deadline ? deadline.toLocaleDateString('uk-UA') : '—', daysLeft !== null ? `${daysLeft} ${plural(daysLeft, 'день', 'дні', 'днів')} залишилось` : 'Не встановлено', 'meetings', '◷')}
+            </div>
+            <div class="admin-focus-grid">
+                <section class="admin-meeting-card">${meetingContent}</section>
+                <aside class="admin-tasks-card">
+                    <div class="admin-tasks-head"><h2>Термінові завдання</h2><span>${urgent.length}</span></div>
+                    ${taskRows}
+                    <button type="button" class="admin-all-tasks" data-tab="requests">Усі завдання →</button>
+                </aside>
+            </div>
+            <div class="admin-house-strip"><span><b>${num(aptCount)}</b> квартир</span><span><b>${num(ownerCount)}</b> співвласників</span><span><b>${verifiedPct}%</b> списків звірено</span><button data-tab="finance"><b>${compactMoney(debtSum)} грн</b> заборгованості →</button></div>`;
 
         host.querySelectorAll('[data-tab]').forEach(el => {
             el.addEventListener('click', () => openTab(el.dataset.tab, el.dataset.target));

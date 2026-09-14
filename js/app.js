@@ -343,6 +343,10 @@ function initNavigation() {
 // ВКЛАДКИ АДМІНКИ
 // ------------------------------------------------------------
 function initAdminTabs() {
+    const today = document.getElementById('adminToday');
+    if (today) today.textContent = new Date().toLocaleDateString('uk-UA', {
+        day: 'numeric', month: 'long', year: 'numeric', weekday: 'short'
+    });
     document.querySelectorAll('.admin-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             // Чат — окремий екран, а не картка в панелі: у картці
@@ -358,7 +362,8 @@ function initAdminTabs() {
                 p.classList.toggle('active', p.dataset.panel === tab.dataset.tab);
             });
             const tabs = document.getElementById('adminTabs');
-            window.scrollTo({ top: Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
+            const desktop = window.matchMedia('(min-width: 960px)').matches;
+            window.scrollTo({ top: desktop ? 0 : Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
 
         });
     });
