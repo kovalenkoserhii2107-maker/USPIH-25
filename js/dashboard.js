@@ -7,12 +7,12 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, query, where, getCountFromServer, getDocs
+    collection, doc, query, where, getCountFromServer, getDoc, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { escapeHtml, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import { pendingChangesCount } from './verify.js';
-import { isMeeting, agendaOf, computeQuorum, formatMeetingDate } from './meeting.js';
+import { isMeeting, agendaOf, computeQuorum } from './meeting.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
 function openTab(name, scrollToSelector) {
@@ -53,142 +53,44 @@ function plural(n, one, few, many) {
     return many;
 }
 
-const ADDRESS = 'вул. Інглезі, 3/3 · м. Одеса';
-
 const num = (v) => new Intl.NumberFormat('uk-UA').format(v);
 
 const CHEVRON = '<svg class="dash-go" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
-const DASH_ICONS = {
-    meetings: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path></svg>',
-    quorum: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
-    agenda: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>',
-    calendar: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><line x1="3" y1="9" x2="21" y2="9"></line></svg>',
-    place: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>'
-};
-
-// Значок читається швидше за підпис і робить плитки різними на вигляд —
-// без нього чотири однакові прямокутники доводиться перечитувати щоразу.
-const ICONS = {
-    owners: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline>',
-    requests: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
-    polls: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>',
-    debt: '<rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line>'
-};
-
-/**
- * Сума для плитки.
- *
- * У рядку зі значком і стрілкою на число лишається ~90px — туди не
- * влазить навіть «12 400 грн». Тому гривні переїхали в підпис плитки,
- * а великі суми стискаються: на дашборді потрібен порядок величини,
- * точна цифра — за один дотик у «Фінансах».
- */
-function compactMoney(v) {
-    const n = Math.round(v);
-    if (n < 100000) return num(n);
-    // Поріг перевіряємо ПІСЛЯ округлення до тисяч: 999 999 інакше давало
-    // «1000 тис» — формально вірно, читається як помилка.
-    const k = Math.round(n / 1000);
-    if (k < 1000) return `${num(k)} тис`;
-    const m = n / 1000000;
-    // Від десяти мільйонів десята частка вже не влазить і нічого не додає
-    return m >= 10 ? `${Math.round(m)} млн` : `${m.toFixed(1).replace('.', ',')} млн`;
-}
-
-/**
- * Картка будинку — те, чим правління розпоряджається.
- *
- * Раніше дашборд складався лише з плиток «що зробити». Але перше,
- * що має бачити правління, — сам будинок: скільки квартир, скільки
- * співвласників, скільки площі. Це не заклик до дії, а опора, з
- * якою решта цифр набуває сенсу.
- */
-function houseCard({ aptCount, ownerCount, area, verified }) {
-    const pct = aptCount ? Math.round(verified / aptCount * 100) : 0;
-    const left = aptCount - verified;
-    const done = aptCount > 0 && left === 0;
-    const fact = (value, label) => `<span class="dash-fact">
-        <b>${value}</b><small>${escapeHtml(label)}</small>
-    </span>`;
-
-    return `<div class="dash-house">
-        <div class="dash-house-head">
-            <span class="dash-house-name">ОСББ «Успіх-25»</span>
-            <span class="dash-house-addr">${escapeHtml(ADDRESS)}</span>
-        </div>
-
-        <button type="button" class="dash-facts" data-tab="directory">
-            ${fact(num(aptCount), plural(aptCount, 'квартира', 'квартири', 'квартир'))}
-            ${fact(num(ownerCount), plural(ownerCount, 'співвласник', 'співвласники', 'співвласників'))}
-            ${fact(area ? num(Math.round(area)) : '—', 'м² житла')}
-        </button>
-
-        <button type="button" class="dash-cover${done ? ' is-done' : ''}"
-                data-tab="directory" data-target=".vf-cover">
-            <span class="dash-cover-top">
-                <span class="dash-cover-title">Списки власників звірено</span>
-                <b class="dash-cover-pct">${pct}%</b>
-            </span>
-            <span class="dash-bar"><i style="width:${pct}%"></i></span>
-            <span class="dash-cover-note">
-                <span>${verified} із ${aptCount} ${plural(aptCount, 'квартири', 'квартир', 'квартир')}${
-                    done ? '' : ` · ${left} ще не ${plural(left, 'підтвердила', 'підтвердили', 'підтвердили')}`}</span>
-                ${CHEVRON}
-            </span>
-        </button>
-    </div>`;
-}
-
-const tile = ({ id, label, value, hint, tone, tab, target, icon }) => `
-    <button type="button" class="dash-tile dash-${tone}" id="${id}"
-            data-tab="${tab}"${target ? ` data-target="${target}"` : ''}>
-        <span class="dash-tile-top">
-            <span class="dash-icon">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon] || ''}</svg>
-            </span>
-            <span class="dash-value">${value}</span>
-            ${CHEVRON}
-        </span>
-        <span class="dash-label">${escapeHtml(label)}</span>
-        ${hint ? `<span class="dash-hint">${escapeHtml(hint)}</span>` : ''}
-    </button>`;
 
 export async function loadDashboard() {
     const host = document.getElementById('adminDashboard');
     if (!host) return;
 
     try {
-        // getCountFromServer рахує на сервері й коштує один читок,
-        // а не стільки, скільки документів у колекції.
-        const [apts, openReqs, activePollsSnap] = await Promise.all([
-            // Беремо з довідника, а не окремим запитом.
-            //
-            // where('isAdmin','==',false) не повертає записи, де цього
-            // поля взагалі немає, — а довідник їх показує (isAdmin !== true).
-            // Через це дашборд писав «1 квартира», коли в довіднику їх дві.
-            // Одне джерело — і розійтися вони більше не можуть.
+        const [apts, newReqsSnap, workReqsSnap, activePollsSnap, financeSnap] = await Promise.all([
             fetchDirectory(),
-            getCountFromServer(query(collection(db, 'requests'), where('status', 'in', ['new', 'in_progress']))),
-            getDocs(query(collection(db, 'polls'), where('status', '==', 'active')))
+            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'new'))),
+            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'in_progress'))),
+            getDocs(query(collection(db, 'polls'), where('status', '==', 'active'))),
+            getDoc(doc(db, 'finance', 'current'))
         ]);
 
         const aptCount = apts.length;
-        const reqCount = openReqs.data().count;
+        const newReqCount = newReqsSnap.data().count;
+        const workReqCount = workReqsSnap.data().count;
+        const reqCount = newReqCount + workReqCount;
         const activePolls = activePollsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const activeMeetings = activePolls.filter(isMeeting);
-        const pollCount = activePolls.filter(p => !isMeeting(p)).length;
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
         const verifiedPct = aptCount ? Math.round(verified / aptCount * 100) : 0;
+        const verificationLeft = Math.max(0, aptCount - verified);
         const changes = pendingChangesCount();
-        const ownerCount = apts.reduce((sum, a) => sum + (a.owners?.length || 0), 0);
-        const area = apts.reduce((sum, a) => sum + parseMoney(a.area), 0);
-
-        // Заборгованість — теж стан будинку, і правління має бачити її
-        // без походу у фінанси. Рахуємо лише мінусові баланси: переплати
-        // не гасять чужий борг, і складати їх в одну цифру означало б
-        // применшувати проблему.
         const debtors = apts.filter(a => parseMoney(a.balance) < -0.005);
         const debtSum = debtors.reduce((sum, a) => sum - parseMoney(a.balance), 0);
+
+        const finance = financeSnap.exists() ? financeSnap.data() : {};
+        const money = (value) => (value === undefined || value === null || value === '')
+            ? null : parseMoney(value);
+        const income = money(finance.income);
+        const spent = (finance.items || []).reduce((sum, item) => sum + parseMoney(item.amount), 0);
+        const funds = money(finance.funds);
+        const spentShare = income && income > 0 ? Math.min(100, Math.round(spent / income * 100)) : 0;
+        const moneyText = (value) => value === null ? '—' : `${num(Math.round(value))} грн`;
 
         const current = activeMeetings[0] || null;
         let votes = [];
@@ -202,6 +104,7 @@ export async function loadDashboard() {
             : (current?.deadline ? new Date(current.deadline) : null);
         const daysLeft = deadline && !isNaN(deadline)
             ? Math.max(0, Math.ceil((deadline - new Date()) / 86400000)) : null;
+
         const urgent = [];
         if (current && !current.protocolUrl) urgent.push({
             tone: 'danger', tab: 'meetings', target: '#meetingsActive',
@@ -218,12 +121,6 @@ export async function loadDashboard() {
             note: 'Мешканці очікують відповідь правління'
         });
 
-        const metric = (tone, label, value, hint, tab, icon) => `
-            <button class="admin-metric metric-${tone}" type="button" data-tab="${tab}">
-                <span class="admin-metric-icon">${icon}</span>
-                <span class="admin-metric-copy"><small>${escapeHtml(label)}</small><b>${value}</b><span>${escapeHtml(hint)}</span></span>
-                ${CHEVRON}
-            </button>`;
         const taskRows = urgent.length ? urgent.slice(0, 3).map(item => `
             <button type="button" class="admin-task" data-tab="${item.tab}" data-target="${item.target}">
                 <span class="admin-task-mark task-${item.tone}">!</span>
@@ -232,57 +129,58 @@ export async function loadDashboard() {
             </button>`).join('') : `<div class="admin-all-clear"><b>Усе під контролем</b><span>Термінових завдань немає</span></div>`;
 
         const meetingContent = current ? `
-            <div class="admin-meeting-head">
-                <div><span class="admin-section-kicker">Поточні збори</span>
-                    <h2>${escapeHtml(current.title || 'Загальні збори співвласників')}</h2></div>
-                <span class="admin-status status-live">Голосування триває</span>
+            <div class="overview-card-head">
+                <div><span class="overview-kicker">Активні збори</span><h2>${escapeHtml(current.title || 'Загальні збори співвласників')}</h2></div>
+                <span class="admin-status status-live">Тривають</span>
             </div>
-            <div class="admin-meeting-meta">
-                <span>${DASH_ICONS.calendar}${escapeHtml(formatMeetingDate(current.meetingDate) || 'Дата уточнюється')}</span>
-                <span>${DASH_ICONS.place}${escapeHtml(current.location || 'Місце уточнюється')}</span>
-                <span>${DASH_ICONS.meetings}${num(ownerCount)} співвласників</span>
-                <span>${DASH_ICONS.agenda}${agendaCount} ${plural(agendaCount, 'питання', 'питання', 'питань')}</span>
+            <div class="overview-meeting-stats">
+                <span><b>${String(quorum.ownersPct).replace('.', ',')}%</b><small>кворум</small></span>
+                <span><b>${agendaCount}</b><small>${plural(agendaCount, 'питання', 'питання', 'питань')}</small></span>
+                <span><b>${daysLeft === null ? '—' : daysLeft}</b><small>${daysLeft === 1 ? 'день лишився' : 'днів лишилось'}</small></span>
             </div>
-            <div class="admin-meeting-rule"></div>
-            <div class="admin-meeting-row quorum-row">
-                <span class="meeting-row-label">Кворум</span>
-                <span class="admin-progress"><i style="width:${Math.min(100, quorum.ownersPct)}%"></i></span>
-                <b>${quorum.votedOwners} з ${quorum.totalOwners}</b><strong>${String(quorum.ownersPct).replace('.', ',')}%</strong>
-                <small class="meeting-row-note ${quorum.hasQuorum ? 'note-ok' : ''}">${quorum.hasQuorum ? 'Кворум досягнуто. Голосування є правомочним.' : 'Для кворуму потрібно щонайменше 50% голосів.'}</small>
-            </div>
-            <div class="admin-meeting-row"><span class="meeting-row-label">Кінцевий термін</span>
-                <span class="meeting-row-value"><b>${deadline ? deadline.toLocaleString('uk-UA', {day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Не встановлено'}</b>${daysLeft !== null ? `<small>${daysLeft} ${plural(daysLeft, 'день', 'дні', 'днів')} залишилось</small>` : ''}</span></div>
-            <div class="admin-meeting-row"><span class="meeting-row-label">Порядок денний</span>
-                <span class="meeting-row-value"><b>${agendaCount} з ${agendaCount} питань підготовлено</b><button data-tab="meetings" data-target="#meetingAgendaList">Переглянути порядок денний →</button></span></div>
-            <div class="admin-meeting-row"><span class="meeting-row-label">Статус протоколу</span>
-                <span class="meeting-row-value"><span class="admin-status status-review">${current.protocolUrl ? 'Опубліковано' : 'Потребує перевірки'}</span><small>${current.protocolUrl ? 'Протокол доступний співвласникам.' : 'Перевірте результати голосування перед затвердженням.'}</small></span></div>
-            <div class="admin-meeting-actions">
-                <button type="button" class="btn-primary" data-tab="meetings" data-target="#meetingsActive">Продовжити роботу з протоколом →</button>
-                <button type="button" class="btn-secondary" data-tab="meetings" data-target="#meetingsActive">Переглянути результати</button>
-            </div>` : `
-            <div class="admin-meeting-empty">
-                <span class="admin-section-kicker">Загальні збори</span>
-                <h2>Активних зборів немає</h2>
-                <p>Створіть збори, підготуйте порядок денний і автоматично сформуйте листки голосування та протокол.</p>
-                <button type="button" class="btn-primary" data-tab="meetings" data-target="#meetingTitle">Створити загальні збори →</button>
-            </div>`;
+            <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingsActive">Продовжити роботу ${CHEVRON}</button>` : `
+            <div class="overview-card-head"><div><span class="overview-kicker">Загальні збори</span><h2>Активних зборів немає</h2></div></div>
+            <p class="overview-empty-copy">Підготуйте порядок денний, голосування та протокол в одному процесі.</p>
+            <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingTitle">Створити збори ${CHEVRON}</button>`;
 
         host.innerHTML = `
-            <div class="admin-metrics">
-                ${metric('blue', 'Активні збори', activeMeetings.length, activeMeetings.length ? 'Триває голосування' : 'Немає активних', 'meetings', DASH_ICONS.meetings)}
-                ${metric('green', 'Кворум', current ? `${quorum.votedOwners} з ${quorum.totalOwners}` : '—', current ? `${String(quorum.ownersPct).replace('.', ',')}% голосів` : 'Немає зборів', 'meetings', DASH_ICONS.quorum)}
-                ${metric('violet', 'Порядок денний', current ? `${agendaCount} з ${agendaCount}` : '—', current ? 'Питань підготовлено' : 'Немає зборів', 'meetings', DASH_ICONS.agenda)}
-                ${metric('amber', 'Кінцевий термін', deadline ? deadline.toLocaleDateString('uk-UA') : '—', daysLeft !== null ? `${daysLeft} ${plural(daysLeft, 'день', 'дні', 'днів')} залишилось` : 'Не встановлено', 'meetings', DASH_ICONS.calendar)}
+            <div class="admin-overview-head">
+                <div><span class="overview-kicker">Огляд будинку</span><h2>Що потребує уваги сьогодні</h2></div>
+                <span class="overview-updated">Оновлено щойно</span>
             </div>
-            <div class="admin-focus-grid">
-                <section class="admin-meeting-card">${meetingContent}</section>
-                <aside class="admin-tasks-card">
+            <div class="overview-status-grid">
+                <section class="overview-card overview-data-card">
+                    <div class="overview-card-head"><div><span class="overview-kicker">Оновлення даних</span><h2>${verified} з ${aptCount} квартир</h2></div><span class="overview-percent">${verifiedPct}%</span></div>
+                    <div class="overview-progress" role="progressbar" aria-label="Звірено квартир" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${verifiedPct}"><i style="width:${verifiedPct}%"></i></div>
+                    <p>${verificationLeft ? `${verificationLeft} ${plural(verificationLeft, 'квартира потребує', 'квартири потребують', 'квартир потребують')} перевірки` : 'Усі квартири перевірено'}${changes ? ` · ${changes} змін очікують рішення` : ''}</p>
+                    <button type="button" class="overview-link" data-tab="directory" data-target=".vf-cover">Продовжити звірку ${CHEVRON}</button>
+                </section>
+                <section class="overview-card overview-requests-card">
+                    <div class="overview-card-head"><div><span class="overview-kicker">Звернення мешканців</span><h2>${reqCount} відкритих</h2></div></div>
+                    <div class="overview-request-values"><span class="is-new"><b>${newReqCount}</b><small>нові</small></span><span><b>${workReqCount}</b><small>у роботі</small></span></div>
+                    <button type="button" class="overview-link" data-tab="requests" data-target=".req-item">Опрацювати звернення ${CHEVRON}</button>
+                </section>
+            </div>
+            <section class="overview-finance-card">
+                <div class="overview-finance-head"><div><span class="overview-kicker">Фінанси ОСББ</span><h2>${escapeHtml(finance.period || 'Поточний період')}</h2></div><button type="button" class="overview-link" data-tab="finance">Відкрити фінанси ${CHEVRON}</button></div>
+                <div class="overview-finance-body">
+                    <div class="overview-balance"><small>Залишок на рахунку</small><strong>${moneyText(funds)}</strong><span>${finance.fundsDate ? `Станом на ${escapeHtml(finance.fundsDate)}` : 'За останньою внесеною випискою'}</span></div>
+                    <div class="overview-finance-metrics">
+                        <div class="finance-stat is-income"><small>Надходження</small><b>${moneyText(income)}</b></div>
+                        <div class="finance-stat is-expense"><small>Витрати</small><b>${moneyText(spent)}</b></div>
+                        <div class="finance-stat is-debt"><small>Заборгованість</small><b>${moneyText(debtSum)}</b><span>${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')}</span></div>
+                    </div>
+                </div>
+                ${income !== null ? `<div class="overview-finance-ratio"><span>Витрачено ${spentShare}% надходжень</span><div class="overview-progress"><i style="width:${spentShare}%"></i></div></div>` : ''}
+            </section>
+            <div class="overview-lower-grid">
+                <section class="overview-card overview-meeting-card">${meetingContent}</section>
+                <aside class="overview-card overview-tasks-card">
                     <div class="admin-tasks-head"><h2>Термінові завдання</h2><span>${urgent.length}</span></div>
                     ${taskRows}
                     <button type="button" class="admin-all-tasks" data-tab="requests">Усі завдання →</button>
                 </aside>
-            </div>
-            <div class="admin-house-strip"><span><b>${num(aptCount)}</b> квартир</span><span><b>${num(ownerCount)}</b> співвласників</span><span><b>${verifiedPct}%</b> списків звірено</span><button data-tab="finance"><b>${compactMoney(debtSum)} грн</b> заборгованості →</button></div>`;
+            </div>`;
 
         host.querySelectorAll('[data-tab]').forEach(el => {
             el.addEventListener('click', () => openTab(el.dataset.tab, el.dataset.target));

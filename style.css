@@ -4584,6 +4584,79 @@ select.field-input {
 .admin-house-strip button { margin-left: auto; border: 0; background: none; color: #0877ef; font: inherit; cursor: pointer; }
 .admin-house-strip button b { color: inherit; }
 
+/* Головна правління: спочатку операційний стан, потім гроші й дії. */
+.admin-overview-head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 18px;
+    margin-bottom: 13px;
+}
+.admin-overview-head h2 { margin: 3px 0 0; color: #101c32; font-size: 22px; line-height: 1.15; letter-spacing: -.45px; }
+.overview-kicker { color: #73829a; font-size: 10px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
+.overview-updated { color: #7d8ba0; font-size: 11px; white-space: nowrap; }
+.overview-card, .overview-finance-card {
+    min-width: 0; border: 1px solid #e1e7ef; border-radius: 15px; background: #fff;
+    box-shadow: 0 5px 20px rgba(35,57,91,.04);
+}
+.overview-status-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .85fr); gap: 13px; }
+.overview-card { padding: 16px 18px; }
+.overview-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.overview-card-head h2 { margin: 5px 0 0; color: #111d34; font-size: 20px; line-height: 1.16; letter-spacing: -.35px; }
+.overview-percent {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 28px;
+    border-radius: 9px; background: #e8f7ee; color: #21844a; font-size: 12px; font-weight: 800;
+}
+.overview-progress { height: 8px; overflow: hidden; border-radius: 999px; background: #e8edf3; }
+.overview-progress i { display: block; height: 100%; border-radius: inherit; background: #39a969; }
+.overview-data-card .overview-progress { margin-top: 14px; }
+.overview-data-card p { margin: 9px 0 8px; color: #687890; font-size: 11px; line-height: 1.4; }
+.overview-link {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0; border: 0;
+    background: transparent; color: #0877ef; font: 750 11.5px var(--font); cursor: pointer; text-align: left;
+}
+.overview-link .dash-go { width: 14px; height: 14px; }
+.overview-request-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 10px 0 5px; }
+.overview-request-values > span { display: flex; flex-direction: column; gap: 2px; padding: 3px 12px; border-left: 1px solid #e6ebf1; }
+.overview-request-values > span:first-child { padding-left: 0; border-left: 0; }
+.overview-request-values b { color: #1b2a42; font-size: 24px; line-height: 1; }
+.overview-request-values .is-new b { color: #d84f4f; }
+.overview-request-values small { color: #728199; font-size: 10.5px; }
+
+.overview-finance-card { margin: 13px 0; padding: 17px 18px 14px; }
+.overview-finance-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.overview-finance-head h2 { margin: 4px 0 0; color: #111d34; font-size: 17px; }
+.overview-finance-body { display: grid; grid-template-columns: minmax(210px, .9fr) minmax(0, 2fr); gap: 14px; }
+.overview-balance {
+    display: flex; flex-direction: column; justify-content: center; min-height: 94px; padding: 14px 17px;
+    border-radius: 13px; background: #126fe8; color: white;
+}
+.overview-balance small { font-size: 10.5px; opacity: .8; }
+.overview-balance strong { margin: 5px 0 4px; font-size: 25px; line-height: 1; letter-spacing: -.55px; }
+.overview-balance span { font-size: 9.5px; opacity: .75; }
+.overview-finance-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); align-items: stretch; }
+.finance-stat { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 11px 15px; border-left: 1px solid #e5eaf1; }
+.finance-stat:first-child { border-left: 0; }
+.finance-stat small { color: #718099; font-size: 10px; }
+.finance-stat b { margin-top: 7px; color: #18263e; font-size: 17px; line-height: 1.15; white-space: nowrap; }
+.finance-stat span { margin-top: 5px; color: #8793a5; font-size: 9.5px; }
+.finance-stat.is-income b { color: #238a50; }
+.finance-stat.is-debt b { color: #c74b4b; }
+.overview-finance-ratio { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 16px; align-items: center; margin-top: 11px; color: #66758c; font-size: 10.5px; }
+
+.overview-lower-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .8fr); gap: 13px; }
+.overview-meeting-card .overview-card-head h2 { max-width: 620px; font-size: 18px; }
+.overview-meeting-stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); margin: 14px 0 7px; border-top: 1px solid #e7ecf2; border-bottom: 1px solid #e7ecf2; }
+.overview-meeting-stats span { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px; border-left: 1px solid #e7ecf2; }
+.overview-meeting-stats span:first-child { padding-left: 0; border-left: 0; }
+.overview-meeting-stats b { color: #14223a; font-size: 17px; }
+.overview-meeting-stats small { color: #75839a; font-size: 10px; }
+.overview-empty-copy { color: #6f7e94; font-size: 12px; line-height: 1.45; }
+.overview-tasks-card { padding: 15px 17px; }
+.overview-tasks-card .admin-task { padding-block: 10px; }
+.overview-tasks-card .admin-task-mark { width: 24px; height: 24px; font-size: 11px; }
+
+.overview-card button:focus-visible, .overview-finance-card button:focus-visible {
+    outline: 3px solid rgba(8,119,239,.32); outline-offset: 2px; border-radius: 7px;
+}
+
 .admin-page-head {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
     margin-bottom: 16px;
@@ -4614,23 +4687,63 @@ select.field-input {
 @media (max-width: 959px) {
     .admin-today, .admin-account-copy { display: none; }
     .admin-header { align-items: center; margin-bottom: 10px; padding-top: 2px; }
-    .admin-title { font-size: 24px; }
-    .admin-subtitle { max-width: 245px; font-size: 11.5px; line-height: 1.35; }
+    .admin-title { font-size: 22px; }
+    .admin-subtitle { display: none; }
     .admin-avatar { width: 36px; height: 36px; font-size: 13px; }
     #adminDashboardSection > .admin-tabs {
-        display: flex; gap: 6px; margin: 0 -15px 14px; padding: 4px 15px 8px;
+        position: sticky; top: 6px; z-index: 44; display: flex; gap: 3px; margin: 0 0 12px; padding: 4px;
         overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
-        background: transparent; border-radius: 0; scrollbar-width: none;
+        border: 1px solid #dfe6ee; border-radius: 14px; background: rgba(239,243,248,.94);
+        box-shadow: 0 5px 18px rgba(42,61,91,.07); backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px); scrollbar-width: none;
     }
     #adminDashboardSection > .admin-tabs::-webkit-scrollbar { display: none; }
     #adminDashboardSection .admin-tab {
-        flex: 0 0 auto; flex-direction: row; gap: 7px; min-height: 42px; padding: 0 12px;
-        border: 1px solid #e0e5ec; border-radius: 11px; background: rgba(255,255,255,.75);
+        flex: 0 0 auto; flex-direction: row; gap: 6px; min-height: 44px; padding: 0 12px;
+        border: 0; border-radius: 10px; background: transparent;
         box-shadow: none; scroll-snap-align: start;
     }
-    #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) { font-size: 11.5px; white-space: nowrap; }
-    #adminDashboardSection .admin-tab.active { border-color: #bfdcff; background: #e5f1ff; box-shadow: none; }
+    #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) { font-size: 12px; white-space: nowrap; }
+    #adminDashboardSection .admin-tab.active { background: #fff; color: #0877ef; box-shadow: 0 2px 8px rgba(35,57,91,.1); }
     #adminDashboardSection .admin-tab-badge { top: -5px; right: -5px; }
+    .admin-overview-head { align-items: center; margin: 2px 1px 11px; }
+    .admin-overview-head h2 { margin-top: 2px; font-size: 20px; }
+    .overview-updated { font-size: 10.5px; }
+    .overview-status-grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+    .overview-card { padding: 13px; border-radius: 14px; }
+    .overview-card-head { gap: 7px; }
+    .overview-card-head h2 { margin-top: 4px; font-size: 16px; line-height: 1.18; }
+    .overview-kicker { font-size: 9.5px; letter-spacing: .06em; }
+    .overview-percent { min-width: 40px; height: 25px; font-size: 10.5px; }
+    .overview-data-card .overview-progress { margin-top: 12px; }
+    .overview-data-card p { min-height: 44px; margin: 8px 0 5px; font-size: 11px; line-height: 1.42; }
+    .overview-link { min-height: 44px; font-size: 11.5px; }
+    .overview-request-values { margin: 14px 0 12px; }
+    .overview-request-values > span { padding-inline: 9px; }
+    .overview-request-values b { font-size: 23px; }
+    .overview-request-values small { font-size: 10.5px; }
+    .overview-finance-card { margin: 10px 0; padding: 14px; border-radius: 14px; }
+    .overview-finance-head { align-items: center; margin-bottom: 10px; }
+    .overview-finance-head h2 { font-size: 15px; }
+    .overview-finance-head .overview-link { justify-content: flex-end; white-space: nowrap; }
+    .overview-finance-body { grid-template-columns: 1fr; gap: 8px; }
+    .overview-balance { min-height: 78px; padding: 13px 15px; }
+    .overview-balance strong { font-size: 24px; }
+    .overview-finance-metrics { grid-template-columns: repeat(2, minmax(0,1fr)); border: 1px solid #e6ebf1; border-radius: 11px; }
+    .finance-stat { min-height: 61px; padding: 10px 12px; border-left: 1px solid #e6ebf1; }
+    .finance-stat:first-child { border-left: 0; }
+    .finance-stat.is-debt { grid-column: 1 / -1; border-top: 1px solid #e6ebf1; border-left: 0; }
+    .finance-stat b { margin-top: 5px; font-size: 15px; }
+    .finance-stat small, .finance-stat span { font-size: 10.5px; }
+    .overview-finance-ratio { grid-template-columns: 1fr; gap: 6px; margin-top: 9px; }
+    .overview-lower-grid { grid-template-columns: 1fr; gap: 10px; }
+    .overview-meeting-card .overview-card-head { flex-direction: column-reverse; }
+    .overview-meeting-card .overview-card-head h2 { font-size: 17px; }
+    .overview-meeting-stats { margin-top: 12px; }
+    .overview-meeting-stats span { flex-direction: column; gap: 2px; padding: 9px; }
+    .overview-meeting-stats b { font-size: 16px; }
+    .overview-meeting-stats small { font-size: 10px; line-height: 1.2; }
+    .overview-tasks-card { padding: 13px; }
     .admin-metrics {
         display: flex; gap: 10px; margin: 0 -15px 14px; padding: 0 15px 2px;
         overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
