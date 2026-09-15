@@ -1,57 +1,66 @@
 **Джерело та стан**
 
 - source visual truth path: `/Users/Serhii/Desktop/USPIH-25/design-source.png`
-- implementation screenshot path: `/Users/Serhii/Desktop/USPIH-25/admin-desktop-implementation.png`
-- combined comparison: `/Users/Serhii/Desktop/USPIH-25/design-qa-comparison.png`
-- focused comparison: `/Users/Serhii/Desktop/USPIH-25/design-qa-focus.png`
+- implementation screenshot path: `/Users/Serhii/Desktop/USPIH-25/audit-admin-v2/05-desktop-home-after.png`
+- meetings screenshot path: `/Users/Serhii/Desktop/USPIH-25/audit-admin-v2/06-desktop-meetings-after.png`
+- mobile screenshots: `/Users/Serhii/Desktop/USPIH-25/audit-admin-v2/07-mobile-home-after.png`, `/Users/Serhii/Desktop/USPIH-25/audit-admin-v2/08-mobile-meetings-after.png`
+- combined comparison: `/Users/Serhii/Desktop/USPIH-25/design-qa-comparison-v2.png`
 - URL: `http://127.0.0.1:8000/index.html?preview=admin`
-- viewport: 1440 × 1024 CSS px, devicePixelRatio 1
-- source: 1487 × 1058 px; implementation: 1440 × 1024 px
-- normalization: однакове співвідношення сторін; обидва зображення вписані в однакові за шириною колонки без обрізання
-- state: desktop, світла тема, головний екран правління, активні загальні збори
+- desktop viewport: 1280 × 720 CSS px; browser reports DPR 2; screenshot API normalized output to 1280 × 720 px
+- mobile app viewport: 390 × 844 CSS px inside the same-origin preview frame; evidence cropped to 390 × 844 px
+- source: 1487 × 1058 px; normalized source in combined comparison: 1012 × 720 px, full frame preserved, no crop
+- state: світла тема, правління ОСББ, активні загальні збори
 
 **Full-view comparison evidence**
 
-- Збережено ту саму композицію: sidebar близько 18% ширини, верхня службова панель, чотири KPI, основна зона 2.25:0.95 із домінантною карткою зборів і правою чергою завдань.
-- Основний сценарій лишився над згином: кворум, дедлайн, порядок денний, статус протоколу та дві наступні дії.
+- `design-qa-comparison-v2.png` містить source і browser-rendered implementation в одному зображенні з однаковою висотою 720 px.
+- Реалізація зберігає композицію концепту: постійний sidebar, службовий header, чотири KPI, домінантну картку поточних зборів і праву чергу термінових завдань.
+- Основний сценарій лишається над згином: кворум, дедлайн, порядок денний, статус протоколу та дві наступні дії.
+- Відмінність у ширині колонок очікувана: source має співвідношення сторін 1.41, browser viewport — 1.78; структура й пріоритети не змінені.
 
 **Focused region comparison evidence**
 
-- Окремо зіставлено зону «Поточні збори»: ієрархія заголовка, progress-кворум, чотири операційні рядки та CTA відповідають джерелу.
-- Текст реалізації навмисно використовує реальні реквізити ОСББ «Успіх-25» та чинні назви сутностей проєкту замість вигаданих персональних даних із концепту.
+- Окремий crop не потрібен: source та implementation відкриті також у native resolution, а всі критичні деталі картки зборів, KPI, навігації, кнопок і станів читаються у full-view comparison.
+- Додатково окремо відкрито `06-desktop-meetings-after.png` і `08-mobile-meetings-after.png` для перевірки вкладок, переносів, tap-targets та щільності робочої картки.
 
 **Findings**
 
-- P3 — стандартні піктограми в KPI мають трохи простіше накреслення, ніж у згенерованому концепті. Це не змінює семантику чи ієрархію; використано наявну систему іконок проєкту.
-- Немає відкритих P0/P1/P2 розбіжностей для desktop-стану.
+- Немає відкритих P0/P1/P2 розбіжностей.
+- P3 — реалізація використовує чинний brand-mark «У» і реальні реквізити ОСББ замість вигаданого building-mark та персональних даних концепту. Це навмисне збереження ідентичності продукту.
+- P3 — mobile-навігація показує частину наступного контенту через горизонтальний scroll; це навмисний affordance, а не обрізання.
 
 **П’ять поверхонь fidelity**
 
-- Fonts and typography: системний SF/Segoe стек, ваги, розміри, переноси та ієрархія близькі до джерела; заголовок зборів зберігає домінування.
-- Spacing and layout rhythm: після ітерації вирівняно висоту header, KPI та основної картки; ключові блоки займають ту саму частку 1440 × 1024.
-- Colors and visual tokens: світле холодне тло, білі поверхні, синя primary-дія, зелений кворум, жовтий review і червоний urgent відповідають концепту та мають достатній контраст.
-- Image quality and asset fidelity: у джерелі немає фотографій чи нестандартних ілюстрацій; растрові заміни не потрібні. Логотип реалізований наявною текстово-знаковою системою продукту.
-- Copy and content: терміни узгоджені з чинним українським інтерфейсом і моделлю даних проєкту; ключові дії названі за результатом користувача.
+- Fonts and typography: системний SF/Segoe стек, ваги, line-height, ієрархія та переноси близькі до source; на 390 px назва зборів переноситься без обрізання.
+- Spacing and layout rhythm: desktop-картки більше не розтягуються штучно; на mobile header, navigation, KPI й workspace мають компактний послідовний ритм.
+- Colors and visual tokens: холодне світле тло, білі поверхні, синя primary-дія, зелений quorum, жовтий review і червоний urgent відповідають концепту.
+- Image quality and asset fidelity: у source немає фотографій або нестандартних ілюстрацій; стандартні UI-іконки реалізовані єдиною stroke-системою проєкту, без emoji та текстових glyph-замін.
+- Copy and content: терміни відповідають чинній українській моделі продукту; ключові дії названі за результатом користувача.
 
 **Comparison history**
 
-1. Перша browser-render ітерація: P2 — KPI та картка зборів були надто низькими, через що нижня половина desktop-viewport виглядала порожньою.
-2. Fix: header збільшено до пропорції джерела, KPI — до 150 px, картку зборів — до 680 px; операційні рядки розподілено по висоті, зайву desktop-смугу статистики приховано.
-3. Post-fix evidence: `admin-desktop-implementation.png` і `design-qa-comparison.png`; композиція заповнює viewport аналогічно джерелу, відкритих P0/P1/P2 немає.
-4. Regression check after user screenshot: P0 — desktop `display: grid !important` перекривав прихований стан адмінки, тому вона зʼявлялася під формою входу всередині 480 px контейнера.
-5. Fix: desktop grid тепер активується лише селектором `body.admin-mode #adminDashboardSection`; звичайний URL показує тільки форму входу, preview URL — тільки адмін-панель. Cache version оновлено до 94.
+1. Попередня browser-render ітерація: P2 — desktop-картки були примусово розтягнуті й створювали великі порожні зони. Fix: прибрано min-height зі зборів і задач, KPI ущільнено. Post-fix: `05-desktop-home-after.png`.
+2. UX-аудит: P1 — розділ зборів завжди починався з довгої форми створення. Fix: додано workspace modes «Активні / Протоколи / Архів» і окремий CTA створення. Post-fix: `06-desktop-meetings-after.png`, `08-mobile-meetings-after.png`.
+3. UX-аудит: P1 — mobile-навігація займала три ряди; P2 — KPI обрізали контекст. Fix: horizontal scroll navigation і KPI carousel зі scroll-snap. Post-fix: `07-mobile-home-after.png`.
+4. Regression pass: P0 — preview задавав `display:grid` inline, через що mobile grid розтягувався до 718 px. Fix: preview використовує `display:block`, а desktop-grid активується тільки CSS breakpoint; mobile scroll width після виправлення 390 px при client width 390 px.
+5. Accessibility pass: P2 — внутрішні вкладки не мали roving focus і arrow-key navigation. Fix: додано повний tab/tabpanel звʼязок, `aria-controls`, `tabindex` та ArrowLeft/ArrowRight/Home/End. Post-fix: ArrowRight обирає і фокусує «Протоколи», видима одна panel.
 
 **Primary interactions tested**
 
-- «Головна» → «Збори й протоколи»: відкривається робоча форма зборів, активні збори, архів і протоколи.
-- «Збори й протоколи» → «Головна»: повертається dashboard без перезавантаження.
-- Console errors checked: помилок і попереджень у preview-режимі немає.
+- Desktop і mobile: «Головна» → «Збори й протоколи».
+- Desktop і mobile: «Активні» → «Протоколи» → «Архів» → «+ Створити збори».
+- Keyboard: `Tab` focus ring; ArrowRight між meeting-tabs.
+- Responsive sweep: девʼять основних admin panels без document overflow на 1280 px і 390 px.
+- Regression: звичайний `/` показує login і тримає `adminDashboardSection` прихованим.
+- Console checked: desktop — без warn/error. Чистий mobile iframe-wrapper фіксує одну службову помилку `MutationObserver` без URL; у кодовій базі немає `MutationObserver`, помилка походить від browser instrumentation і не впливає на app flow.
 
 **Implementation Checklist**
 
-- Desktop-композиція та постійна навігація — виконано.
-- Meeting-first dashboard і прямі переходи до протоколу — виконано.
-- Дані з Firebase залишено в наявних модулях; preview використовує лише локальні демонстраційні дані — виконано.
-- Окрему деталізацію мобільного UX винесено в наступний етап згідно з обраною послідовністю — очікує окремої ітерації.
+- Desktop workspace і щільність — виконано.
+- Mobile navigation, KPI та 390 px layout — виконано.
+- Meeting-first flow, protocols/archive/create modes — виконано.
+- Semantic tabs, focus states і keyboard navigation — виконано.
+- Cache version синхронізовано до 98 — виконано.
+- Browser-rendered evidence та console check — виконано.
 
 final result: passed

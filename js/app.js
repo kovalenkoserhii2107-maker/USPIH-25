@@ -370,6 +370,49 @@ function initAdminTabs() {
     document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminHistory);
 }
 
+// Усередині найскладнішого розділу показуємо один робочий контекст
+// за раз. Правління зазвичай продовжує активні збори, тому форма
+// створення більше не перекриває результати й протоколи на вході.
+function initMeetingWorkspace() {
+    const panel = document.querySelector('.admin-panel[data-panel="meetings"]');
+    if (!panel) return;
+
+    const tabs = [...panel.querySelectorAll('[data-meeting-view]')];
+    const views = [...panel.querySelectorAll('[data-meeting-panel]')];
+
+    const show = (name, focus = false) => {
+        views.forEach(view => { view.hidden = view.dataset.meetingPanel !== name; });
+        tabs.forEach(tab => {
+            const active = tab.dataset.meetingView === name;
+            tab.classList.toggle('active', active);
+            if (tab.getAttribute('role') === 'tab') {
+                tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                tab.tabIndex = active ? 0 : -1;
+            }
+        });
+        if (focus) {
+            const target = panel.querySelector(`[data-meeting-panel="${name}"]`);
+            target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    tabs.forEach(tab => tab.addEventListener('click', () => show(tab.dataset.meetingView, true)));
+    const tablist = panel.querySelector('[role="tablist"]');
+    tablist?.addEventListener('keydown', event => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+        const meetingTabs = [...tablist.querySelectorAll('[role="tab"]')];
+        const current = meetingTabs.indexOf(document.activeElement);
+        if (current < 0) return;
+        event.preventDefault();
+        let next = event.key === 'Home' ? 0 : event.key === 'End' ? meetingTabs.length - 1
+            : (current + (event.key === 'ArrowRight' ? 1 : -1) + meetingTabs.length) % meetingTabs.length;
+        meetingTabs[next].click();
+        meetingTabs[next].focus();
+    });
+    show('active');
+}
+
 /**
  * Згортання блоків адмінки. Слухач один і делегований на документ —
  * інакше картки, розмітку яких перемальовує JS, лишалися б без нього.
@@ -426,6 +469,7 @@ function init() {
         }
     }
     initAdminTabs();
+    initMeetingWorkspace();
     initMeetings();
     initAdminFolds();
     initLedger();

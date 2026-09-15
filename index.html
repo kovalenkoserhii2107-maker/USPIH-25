@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=94">
+    <link rel="stylesheet" href="style.css?v=98">
 </head>
 <body>
 
@@ -791,7 +791,21 @@
 
         <!-- Вкладка: загальні збори -->
         <div class="admin-panel" data-panel="meetings">
-            <div class="card admin-fold open">
+            <div class="admin-page-head meeting-page-head">
+                <div>
+                    <span class="eyebrow">Робочий простір</span>
+                    <h2>Збори й протоколи</h2>
+                    <p>Підготовка, голосування та юридичні документи в одному процесі</p>
+                </div>
+                <button class="admin-page-action" type="button" data-meeting-view="create">+ Створити збори</button>
+            </div>
+            <div class="meeting-view-tabs" role="tablist" aria-label="Розділи зборів">
+                <button id="meetingTabActive" class="meeting-view-tab active" type="button" role="tab" aria-selected="true" aria-controls="meetingPanelActive" tabindex="0" data-meeting-view="active">Активні</button>
+                <button id="meetingTabProtocols" class="meeting-view-tab" type="button" role="tab" aria-selected="false" aria-controls="meetingPanelProtocols" tabindex="-1" data-meeting-view="protocols">Протоколи</button>
+                <button id="meetingTabArchive" class="meeting-view-tab" type="button" role="tab" aria-selected="false" aria-controls="meetingPanelArchive" tabindex="-1" data-meeting-view="archive">Архів</button>
+            </div>
+
+            <div class="card admin-fold open meeting-workspace-panel" role="region" aria-label="Створення нових зборів" data-meeting-panel="create" hidden>
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Нові загальні збори</h2>
@@ -889,7 +903,7 @@
 
                 </div></div>
             </div>
-            <div class="card admin-fold open">
+            <div id="meetingPanelActive" class="card admin-fold open meeting-workspace-panel" role="tabpanel" aria-labelledby="meetingTabActive" data-meeting-panel="active">
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Активні збори</h2>
@@ -903,9 +917,9 @@
                 </div>
                 </div></div>
             </div>
-            <div class="card admin-fold">
+            <div id="meetingPanelArchive" class="card admin-fold open meeting-workspace-panel" role="tabpanel" aria-labelledby="meetingTabArchive" data-meeting-panel="archive" hidden>
                 <div class="admin-card-head">
-                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Архів зборів</h2>
                     <span class="admin-card-sub">Завершені — з протоколами та підсумками</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -917,9 +931,9 @@
                 </div>
                 </div></div>
             </div>
-            <div class="card admin-fold">
+            <div id="meetingPanelProtocols" class="card admin-fold open meeting-workspace-panel" role="tabpanel" aria-labelledby="meetingTabProtocols" data-meeting-panel="protocols" hidden>
                 <div class="admin-card-head">
-                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Протоколи</h2>
                     <span class="admin-card-sub">Протоколи зборів і засідань правління</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1849,7 +1863,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=94' : './js/app.js?v=94');
+    import(preview === 'admin' ? './js/admin-preview.js?v=98' : './js/app.js?v=98');
 </script>
 </body>
 </html>

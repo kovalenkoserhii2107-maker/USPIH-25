@@ -58,6 +58,13 @@ const ADDRESS = 'вул. Інглезі, 3/3 · м. Одеса';
 const num = (v) => new Intl.NumberFormat('uk-UA').format(v);
 
 const CHEVRON = '<svg class="dash-go" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+const DASH_ICONS = {
+    meetings: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path></svg>',
+    quorum: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+    agenda: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>',
+    calendar: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><line x1="3" y1="9" x2="21" y2="9"></line></svg>',
+    place: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>'
+};
 
 // Значок читається швидше за підпис і робить плитки різними на вигляд —
 // без нього чотири однакові прямокутники доводиться перечитувати щоразу.
@@ -231,10 +238,10 @@ export async function loadDashboard() {
                 <span class="admin-status status-live">Голосування триває</span>
             </div>
             <div class="admin-meeting-meta">
-                <span>◷ ${escapeHtml(formatMeetingDate(current.meetingDate) || 'Дата уточнюється')}</span>
-                <span>⌖ ${escapeHtml(current.location || 'Місце уточнюється')}</span>
-                <span>♙ ${num(ownerCount)} співвласників</span>
-                <span>▤ ${agendaCount} ${plural(agendaCount, 'питання', 'питання', 'питань')}</span>
+                <span>${DASH_ICONS.calendar}${escapeHtml(formatMeetingDate(current.meetingDate) || 'Дата уточнюється')}</span>
+                <span>${DASH_ICONS.place}${escapeHtml(current.location || 'Місце уточнюється')}</span>
+                <span>${DASH_ICONS.meetings}${num(ownerCount)} співвласників</span>
+                <span>${DASH_ICONS.agenda}${agendaCount} ${plural(agendaCount, 'питання', 'питання', 'питань')}</span>
             </div>
             <div class="admin-meeting-rule"></div>
             <div class="admin-meeting-row quorum-row">
@@ -262,10 +269,10 @@ export async function loadDashboard() {
 
         host.innerHTML = `
             <div class="admin-metrics">
-                ${metric('blue', 'Активні збори', activeMeetings.length, activeMeetings.length ? 'Триває голосування' : 'Немає активних', 'meetings', '♙')}
-                ${metric('green', 'Кворум', current ? `${quorum.votedOwners} з ${quorum.totalOwners}` : '—', current ? `${String(quorum.ownersPct).replace('.', ',')}% голосів` : 'Немає зборів', 'meetings', '✓')}
-                ${metric('violet', 'Порядок денний', current ? `${agendaCount} з ${agendaCount}` : '—', current ? 'Питань підготовлено' : 'Немає зборів', 'meetings', '▤')}
-                ${metric('amber', 'Кінцевий термін', deadline ? deadline.toLocaleDateString('uk-UA') : '—', daysLeft !== null ? `${daysLeft} ${plural(daysLeft, 'день', 'дні', 'днів')} залишилось` : 'Не встановлено', 'meetings', '◷')}
+                ${metric('blue', 'Активні збори', activeMeetings.length, activeMeetings.length ? 'Триває голосування' : 'Немає активних', 'meetings', DASH_ICONS.meetings)}
+                ${metric('green', 'Кворум', current ? `${quorum.votedOwners} з ${quorum.totalOwners}` : '—', current ? `${String(quorum.ownersPct).replace('.', ',')}% голосів` : 'Немає зборів', 'meetings', DASH_ICONS.quorum)}
+                ${metric('violet', 'Порядок денний', current ? `${agendaCount} з ${agendaCount}` : '—', current ? 'Питань підготовлено' : 'Немає зборів', 'meetings', DASH_ICONS.agenda)}
+                ${metric('amber', 'Кінцевий термін', deadline ? deadline.toLocaleDateString('uk-UA') : '—', daysLeft !== null ? `${daysLeft} ${plural(daysLeft, 'день', 'дні', 'днів')} залишилось` : 'Не встановлено', 'meetings', DASH_ICONS.calendar)}
             </div>
             <div class="admin-focus-grid">
                 <section class="admin-meeting-card">${meetingContent}</section>
