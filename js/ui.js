@@ -301,6 +301,7 @@ function hideLoader() {
 }
 
 export function showScreen(id) {
+    document.body.classList.toggle('admin-mode', id === 'adminDashboardSection');
     SCREENS.forEach(s => {
         const el = document.getElementById(s);
         if (el) el.style.display = (s === id) ? 'block' : 'none';
