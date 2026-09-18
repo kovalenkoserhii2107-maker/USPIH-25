@@ -4789,22 +4789,46 @@ select.field-input {
     .admin-title { font-size: 22px; }
     .admin-subtitle { display: none; }
     .admin-avatar { width: 36px; height: 36px; font-size: 13px; }
+    /* Вкладки — сіткою, а не стрічкою з прокруткою вбік.
+       Стрічка показувала три вкладки з десяти, і про решту треба було
+       здогадатися й дотягтися пальцем: горизонтальна прокрутка на
+       телефоні — найгірше місце, щоб ховати навігацію. Десять вкладок
+       рівно лягають у пʼять колонок на два ряди й лишаються на очах
+       усі одразу. Підписи короткі, значок над словом — так плитка
+       вдвічі вужча за рядок «значок + підпис». */
     #adminDashboardSection > .admin-tabs {
-        position: sticky; top: 6px; z-index: 44; display: flex; gap: 3px; margin: 0 0 12px; padding: 4px;
-        overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
+        position: static; margin: 0 0 12px; padding: 4px;
+        overflow: visible;
         border: 1px solid #dfe6ee; border-radius: 14px; background: rgba(239,243,248,.94);
-        box-shadow: 0 5px 18px rgba(42,61,91,.07); backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px); scrollbar-width: none;
+        box-shadow: 0 5px 18px rgba(42,61,91,.07);
+        backdrop-filter: none; -webkit-backdrop-filter: none;
     }
-    #adminDashboardSection > .admin-tabs::-webkit-scrollbar { display: none; }
     #adminDashboardSection .admin-tab {
-        flex: 0 0 auto; flex-direction: row; gap: 6px; min-height: 44px; padding: 0 12px;
-        border: 0; border-radius: 10px; background: transparent;
-        box-shadow: none; scroll-snap-align: start;
+        flex-direction: column; justify-content: center; gap: 4px;
+        min-height: 56px; padding: 7px 2px;
+        border: 0; border-radius: 10px; background: transparent; box-shadow: none;
     }
-    #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) { font-size: 12px; white-space: nowrap; }
+    #adminDashboardSection .admin-tab svg { width: 18px; height: 18px; }
+    #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) {
+        /* 10,5px — розмір підпису в системній панелі вкладок iOS.
+           На 11px «Оголошення» й «Опитування» не вміщалися в колонку
+           й обрізалися трьома крапками. */
+        font-size: 10.5px; line-height: 1.1; letter-spacing: -0.2px; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    }
+    /* Уточнення в підписі потрібне бічному меню, а не плитці 66 px */
+    .admin-tab-extra { display: none; }
     #adminDashboardSection .admin-tab.active { background: #fff; color: var(--blue-ink); box-shadow: 0 2px 8px rgba(35,57,91,.1); }
-    #adminDashboardSection .admin-tab-badge { top: -5px; right: -5px; }
+    #adminDashboardSection .admin-tab-badge { top: 3px; right: calc(50% - 20px); }
+
+    /* На вузьких екранах пʼять колонок стискають найдовші підписи
+       («Оголошення», «Опитування») — там краще чотири колонки на три
+       ряди: плитка ширшає, слово вміщається повністю. */
+    @media (max-width: 383px) {
+        #adminDashboardSection > .admin-tabs { grid-template-columns: repeat(4, 1fr); }
+        #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) { font-size: 10.5px; }
+    }
     .admin-overview-head { align-items: center; margin: 2px 1px 11px; }
     .admin-overview-head h2 { margin-top: 2px; font-size: 20px; }
     .overview-updated { font-size: 10.5px; }
