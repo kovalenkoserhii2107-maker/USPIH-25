@@ -4597,7 +4597,7 @@ select.field-input {
    На мобільному лишається компактна сітка; з 960px інтерфейс
    перетворюється на робоче місце з постійною навігацією.
    ============================================================ */
-.admin-subtitle { display: block; color: #71809a; font-size: 14px; margin-top: 4px; }
+.admin-subtitle { display: block; color: #5b6a82; font-size: 14px; margin-top: 4px; }
 .admin-account { display: flex; align-items: center; gap: 11px; }
 .admin-today { color: #61718a; font-size: 13px; }
 .admin-avatar {
@@ -4606,7 +4606,7 @@ select.field-input {
 }
 .admin-account-copy { display: flex; flex-direction: column; line-height: 1.2; }
 .admin-account-copy b { font-size: 13px; }
-.admin-account-copy small { margin-top: 3px; color: #71809a; font-size: 11px; }
+.admin-account-copy small { margin-top: 3px; color: #5b6a82; font-size: 11px; }
 .admin-nav-brand, .admin-nav-label, .admin-nav-help { display: none; }
 
 .admin-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
@@ -4625,7 +4625,7 @@ select.field-input {
 .admin-metric-copy { display: flex; flex-direction: column; min-width: 0; }
 .admin-metric-copy small { font-size: 11px; color: #53647e; }
 .admin-metric-copy b { margin: 3px 0; font-size: 21px; letter-spacing: -.5px; white-space: nowrap; }
-.admin-metric-copy span { color: #71809a; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-metric-copy span { color: #5b6a82; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-metric .dash-go { color: #76859b; }
 
 .admin-focus-grid { display: grid; gap: 14px; }
@@ -4647,8 +4647,8 @@ select.field-input {
 .admin-meeting-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 16px; padding: 13px 0; }
 .meeting-row-label { color: #263a59; font-size: 12px; font-weight: 700; }
 .meeting-row-value { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; color: #15233c; font-size: 12px; }
-.meeting-row-value small { color: #71809a; line-height: 1.4; }
-.meeting-row-value button { padding: 0; border: 0; background: none; color: #0877ef; font: inherit; cursor: pointer; }
+.meeting-row-value small { color: #5b6a82; line-height: 1.4; }
+.meeting-row-value button { padding: 0; border: 0; background: none; color: var(--blue-ink); font: inherit; cursor: pointer; }
 .quorum-row { grid-template-columns: 170px minmax(110px, 1fr) auto auto; align-items: center; }
 .admin-progress { height: 14px; overflow: hidden; border-radius: 999px; background: #e7ecf3; }
 .admin-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #34a867, #42b874); }
@@ -4673,14 +4673,14 @@ select.field-input {
 .admin-task-mark.task-danger { background: #f35c5c; color: white; }
 .admin-task > span:nth-child(2) { display: flex; flex-direction: column; gap: 4px; }
 .admin-task b { font-size: 12px; line-height: 1.35; }
-.admin-task small { color: #71809a; font-size: 10.5px; line-height: 1.35; }
+.admin-task small { color: #5b6a82; font-size: 10.5px; line-height: 1.35; }
 .admin-task .dash-go { align-self: center; color: #60718a; }
-.admin-all-tasks { padding: 13px 0 2px; border: 0; background: none; color: #0877ef; font: 700 12px var(--font); cursor: pointer; }
+.admin-all-tasks { padding: 13px 0 2px; border: 0; background: none; color: var(--blue-ink); font: 700 12px var(--font); cursor: pointer; }
 .admin-all-clear { display: flex; flex-direction: column; gap: 5px; padding: 28px 4px; color: #23864c; }
-.admin-all-clear span { color: #71809a; font-size: 12px; }
-.admin-house-strip { display: flex; flex-wrap: wrap; gap: 14px 28px; margin-top: 14px; padding: 14px 18px; color: #71809a; font-size: 11px; }
+.admin-all-clear span { color: #5b6a82; font-size: 12px; }
+.admin-house-strip { display: flex; flex-wrap: wrap; gap: 14px 28px; margin-top: 14px; padding: 14px 18px; color: #5b6a82; font-size: 11px; }
 .admin-house-strip b { color: #21334f; }
-.admin-house-strip button { margin-left: auto; border: 0; background: none; color: #0877ef; font: inherit; cursor: pointer; }
+.admin-house-strip button { margin-left: auto; border: 0; background: none; color: var(--blue-ink); font: inherit; cursor: pointer; }
 .admin-house-strip button b { color: inherit; }
 
 /* Головна правління: спочатку операційний стан, потім гроші й дії. */
@@ -4709,7 +4709,7 @@ select.field-input {
 .overview-data-card p { margin: 9px 0 8px; color: #687890; font-size: 11px; line-height: 1.4; }
 .overview-link {
     display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0; border: 0;
-    background: transparent; color: #0877ef; font: 750 11.5px var(--font); cursor: pointer; text-align: left;
+    background: transparent; color: var(--blue-ink); font: 750 11.5px var(--font); cursor: pointer; text-align: left;
 }
 .overview-link .dash-go { width: 14px; height: 14px; }
 .overview-request-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 10px 0 5px; }
@@ -4753,7 +4753,7 @@ select.field-input {
 .overview-tasks-card .admin-task-mark { width: 24px; height: 24px; font-size: 11px; }
 
 .overview-card button:focus-visible, .overview-finance-card button:focus-visible {
-    outline: 3px solid rgba(8,119,239,.32); outline-offset: 2px; border-radius: 7px;
+    outline: 2.5px solid var(--blue-ink); outline-offset: 2px; border-radius: 7px;
 }
 
 .admin-page-head {
@@ -4761,10 +4761,10 @@ select.field-input {
     margin-bottom: 16px;
 }
 .admin-page-head h2 { margin: 0; color: #111d34; font-size: 28px; line-height: 1.15; letter-spacing: -.65px; }
-.admin-page-head p { margin: 6px 0 0; color: #71809a; font-size: 13px; }
+.admin-page-head p { margin: 6px 0 0; color: #5b6a82; font-size: 13px; }
 .admin-page-action {
-    flex: 0 0 auto; min-height: 42px; padding: 0 17px; border: 0; border-radius: 11px;
-    background: #0877ef; color: white; font: 700 13px var(--font); cursor: pointer;
+    flex: 0 0 auto; min-height: 44px; padding: 0 17px; border: 0; border-radius: 11px;
+    background: var(--blue-ink); color: white; font: 700 13px var(--font); cursor: pointer;
     box-shadow: 0 6px 16px rgba(8,119,239,.18);
 }
 .meeting-view-tabs {
@@ -4772,15 +4772,15 @@ select.field-input {
     border: 1px solid #e1e7ef; border-radius: 12px; background: #eef2f7;
 }
 .meeting-view-tab {
-    min-height: 36px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent;
-    color: #5b6c84; font: 700 12px var(--font); cursor: pointer;
+    min-height: 44px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent;
+    color: #4a5a70; font: 700 12.5px var(--font); cursor: pointer;
 }
-.meeting-view-tab.active { background: white; color: #0877ef; box-shadow: 0 2px 8px rgba(31,52,82,.1); }
+.meeting-view-tab.active { background: white; color: var(--blue-ink); box-shadow: 0 2px 8px rgba(31,52,82,.1); }
 .meeting-workspace-panel { scroll-margin-top: 16px; }
 
 .admin-tab:focus-visible, .admin-metric:focus-visible, .admin-task:focus-visible,
 .admin-page-action:focus-visible, .meeting-view-tab:focus-visible, .btn-secondary:focus-visible {
-    outline: 3px solid rgba(8,119,239,.32); outline-offset: 2px;
+    outline: 2.5px solid var(--blue-ink); outline-offset: 2px;
 }
 
 @media (max-width: 959px) {
@@ -4803,7 +4803,7 @@ select.field-input {
         box-shadow: none; scroll-snap-align: start;
     }
     #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) { font-size: 12px; white-space: nowrap; }
-    #adminDashboardSection .admin-tab.active { background: #fff; color: #0877ef; box-shadow: 0 2px 8px rgba(35,57,91,.1); }
+    #adminDashboardSection .admin-tab.active { background: #fff; color: var(--blue-ink); box-shadow: 0 2px 8px rgba(35,57,91,.1); }
     #adminDashboardSection .admin-tab-badge { top: -5px; right: -5px; }
     .admin-overview-head { align-items: center; margin: 2px 1px 11px; }
     .admin-overview-head h2 { margin-top: 2px; font-size: 20px; }
@@ -4867,7 +4867,7 @@ select.field-input {
     .admin-page-head { align-items: center; gap: 12px; margin-bottom: 12px; }
     .admin-page-head .eyebrow, .admin-page-head p { display: none; }
     .admin-page-head h2 { font-size: 22px; }
-    .admin-page-action { min-height: 40px; padding-inline: 13px; font-size: 12px; }
+    .admin-page-action { min-height: 44px; padding-inline: 14px; font-size: 12.5px; }
     .meeting-view-tabs {
         position: sticky; top: 0; z-index: 45; width: auto; margin: 0 -3px 12px;
         overflow-x: auto; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -4901,17 +4901,17 @@ select.field-input {
     .admin-brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; background: #1679ea; color: white; font-size: 19px; font-weight: 850; box-shadow: 0 6px 14px rgba(22,121,234,.23); }
     .admin-nav-brand > span:last-child { display: flex; flex-direction: column; min-width: 0; }
     .admin-nav-brand b { color: #12203a; font-size: 15px; white-space: nowrap; }
-    .admin-nav-brand small { margin-top: 3px; color: #71809a; font-size: 10px; }
-    .admin-nav-label { display: block; margin: 13px 11px 5px; color: #8a98aa; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .admin-nav-brand small { margin-top: 3px; color: #5b6a82; font-size: 11px; }
+    .admin-nav-label { display: block; margin: 13px 11px 5px; color: #5b6a82; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
     .admin-tab {
         flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: 12px;
-        min-height: 42px; padding: 0 13px; border-radius: 9px; color: #405574;
+        min-height: 44px; padding: 0 13px; border-radius: 9px; color: #3b4d68;
     }
     .admin-tab > span:not(.admin-tab-badge) { font-size: 13px; font-weight: 600; white-space: nowrap; }
-    .admin-tab.active { background: #dcecff; color: #0b6edc; box-shadow: none; }
+    .admin-tab.active { background: #dcecff; color: var(--blue-ink); box-shadow: none; }
     .admin-tab-badge { top: 11px; right: 11px; }
     .admin-nav-help { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding: 15px 10px 4px; border-top: 1px solid #d9e2ed; color: #405574; font-size: 12px; font-weight: 700; }
-    .admin-nav-help small { color: #8491a3; font-size: 9.5px; font-weight: 500; line-height: 1.35; }
+    .admin-nav-help small { color: #5b6a82; font-size: 11px; font-weight: 500; line-height: 1.35; }
     #adminDashboardSection > .admin-panel { grid-column: 2; grid-row: 2; min-width: 0; padding: 20px 28px 40px; }
     #adminDashboardSection > .admin-panel:not(.admin-overview) { max-width: 1040px; width: calc(100% - 56px); justify-self: center; }
     #adminDashboardSection > .admin-panel:not(.admin-overview) > .card { border: 1px solid #e3e9f1; box-shadow: 0 5px 20px rgba(35,57,91,.04); }
