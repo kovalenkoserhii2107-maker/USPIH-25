@@ -15,11 +15,23 @@
     --surface-2: #F7F7F9;
     --surface-3: #EFEFF4;
     --ink: #1D1D1F;
-    --ink-2: #6E6E73;
-    --ink-3: #A1A1A6;
+    /* Дві сходинки сірого, і обидві читаються.
+       Було #6E6E73 і #A1A1A6: світліший давав 2,6:1 на білому — під
+       ним ховалися дати, підписи й метадані, тобто половина дрібного
+       тексту адмінки. Норма для такого тексту — 4,5:1. */
+    --ink-2: #5A5A5F;
+    --ink-3: #6B6B70;
+    /* Суто декоративний сірий: шеврони, розділові лінії, іконки.
+       Тексту ним не пишемо — саме тому він може лишатися світлим. */
+    --ink-4: #9A9AA0;
     --line: #E5E5EA;
 
     --blue: #007AFF;
+    /* Той самий синій, але темніший рівно настільки, щоб пройти 4,5:1
+       і з білим текстом на ньому, і як текст — причому не лише на
+       білому, а й на сірих підкладках кнопок (#EFEFF4), де системний
+       #007AFF дає всього 3,5:1. */
+    --blue-ink: #0066D0;
     --blue-dark: #0056B3;
     --green: #34C759;
     --red: #FF3B30;
@@ -47,6 +59,16 @@
 }
 
 * { -webkit-tap-highlight-color: transparent; }
+
+/* Фокус із клавіатури має бути видимим (WCAG 2.4.7). Раніше його не
+   було ніде: браузерну обводку знімали скидання стилів, а своєї не
+   додали — керувати панеллю з клавіатури було неможливо наосліп.
+   :focus-visible, а не :focus, щоб миша не малювала рамок. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2.5px solid var(--blue-ink);
+    outline-offset: 2px;
+    border-radius: 8px;
+}
 
 /* Щоб щілина над зсунутим вмістом мала колір тла, а не білий. */
 html { background: var(--bg); }
@@ -82,7 +104,7 @@ body.no-scroll {
 /* ---------- ТИПОГРАФІКА ---------- */
 .eyebrow {
     display: block;
-    font-size: 10.5px;
+    font-size: 11.5px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -163,11 +185,13 @@ body.no-scroll {
 /* ---------- КНОПКИ ---------- */
 .icon-btn {
     position: relative;
-    width: 38px; height: 38px;
+    /* 44×44 — мінімальна ціль для пальця. Було 38: у шапці, поруч
+       із краєм екрана, у неї доводилося цілитися. */
+    width: 44px; height: 44px;
     border-radius: 50%;
     background: rgba(120, 120, 128, 0.12);
     border: none;
-    color: var(--blue);
+    color: var(--blue-ink);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
     flex-shrink: 0;
@@ -208,35 +232,38 @@ body.no-scroll {
     transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
 }
 .btn-primary {
-    background: var(--blue);
+    background: var(--blue-ink);
     color: #fff;
     box-shadow: 0 6px 16px rgba(0, 122, 255, 0.26);
 }
 .btn-primary:active { transform: scale(0.98); opacity: 0.9; }
 .btn-primary:disabled { opacity: 0.55; box-shadow: none; }
 
-.btn-soft { background: var(--surface-3); color: var(--blue); }
+.btn-soft { background: var(--surface-3); color: var(--blue-ink); }
 .btn-soft:active { background: #E3E3E8; transform: scale(0.98); }
 .btn-soft-danger { color: var(--red); }
 
 .btn-ghost {
     background: transparent;
-    color: var(--blue);
+    color: var(--blue-ink);
     padding: 10px;
     font-size: 15px;
 }
-.btn-compact { padding: 11px; font-size: 14.5px; border-radius: 12px; margin-top: 8px; }
+.btn-compact {
+    min-height: 44px; padding: 11px 14px;
+    font-size: 14.5px; border-radius: 12px; margin-top: 8px;
+}
 .btn-row { display: flex; gap: 10px; margin-top: 18px; }
 .btn-row > * { flex: 1; }
 
 .btn-ghost-small {
     background: rgba(120, 120, 128, 0.12);
     border: none;
-    color: var(--blue);
+    color: var(--blue-ink);
     border-radius: var(--r-sm);
-    padding: 7px 14px;
+    min-height: 44px; padding: 7px 16px;
     font-family: var(--font);
-    font-size: 13.5px; font-weight: 600;
+    font-size: 14px; font-weight: 600;
     cursor: pointer;
     flex-shrink: 0;
 }
@@ -244,7 +271,7 @@ body.no-scroll {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    background: var(--blue);
+    background: var(--blue-ink);
     color: #fff;
     text-decoration: none;
     padding: 12px 24px;
@@ -255,7 +282,7 @@ body.no-scroll {
 .btn-add-round {
     width: 38px; height: 38px;
     border-radius: 50%;
-    background: var(--blue);
+    background: var(--blue-ink);
     color: #fff;
     border: none;
     display: flex; align-items: center; justify-content: center;
@@ -273,17 +300,18 @@ body.no-scroll {
     animation: spin 0.7s linear infinite;
     display: inline-block;
 }
-.btn-soft .spinner { border-color: rgba(0, 122, 255, 0.3); border-top-color: var(--blue); }
+.btn-soft .spinner { border-color: rgba(0, 122, 255, 0.3); border-top-color: var(--blue-ink); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- ФОРМИ ---------- */
 .field { margin-bottom: 16px; }
 .field-label {
     display: block;
-    font-size: 11px; font-weight: 700;
+    /* 11px верхнім регістром із розрядкою читалося важко — 12px мінімум */
+    font-size: 12px; font-weight: 700;
     color: var(--ink-2);
     text-transform: uppercase;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.5px;
     margin-bottom: 7px;
 }
 input.field-input, textarea.field-input, select.field-input {
@@ -303,7 +331,7 @@ input.field-input, textarea.field-input, select.field-input {
 }
 input.field-input:focus, textarea.field-input:focus, select.field-input:focus {
     background: var(--surface);
-    border-color: var(--blue);
+    border-color: var(--blue-ink);
     box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.12);
 }
 .field-input::placeholder { color: var(--ink-3); }
@@ -335,7 +363,7 @@ select.field-input {
     color: var(--ink-2);
     display: flex;
 }
-.toggle-password.active { color: var(--blue); }
+.toggle-password.active { color: var(--blue-ink); }
 
 /* Сегментований перемикач */
 .segmented {
@@ -350,7 +378,7 @@ select.field-input {
     border: none;
     background: transparent;
     border-radius: 9px;
-    padding: 9px 4px;
+    min-height: 44px; padding: 9px 4px;
     font-family: var(--font);
     font-size: 13.5px; font-weight: 600;
     color: var(--ink-2);
@@ -382,13 +410,13 @@ select.field-input {
     border-radius: var(--r-md);
     padding: 18px 16px;
     cursor: pointer;
-    color: var(--blue);
+    color: var(--blue-ink);
     text-align: center;
     text-transform: none;
     letter-spacing: normal;
     transition: border-color 0.18s ease, background 0.18s ease;
 }
-.dropzone:active { background: var(--surface-3); border-color: var(--blue); }
+.dropzone:active { background: var(--surface-3); border-color: var(--blue-ink); }
 .dropzone-text { font-size: 14.5px; font-weight: 600; }
 .dropzone-hint { font-size: 11.5px; color: var(--ink-2); font-weight: 500; }
 
@@ -418,7 +446,7 @@ select.field-input {
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
 }
-.file-chip-view { color: var(--blue); }
+.file-chip-view { color: var(--blue-ink); }
 .file-chip-remove:active { background: rgba(255, 59, 48, 0.16); color: var(--red); }
 
 /* Іконки типів файлів */
@@ -507,7 +535,7 @@ select.field-input {
 }
 .back-btn {
     background: none; border: none;
-    color: var(--blue);
+    color: var(--blue-ink);
     display: flex; align-items: center;
     padding: 4px; margin-left: -6px;
     cursor: pointer;
@@ -664,6 +692,11 @@ select.field-input {
     display: inline-block;
     width: 50px; height: 30px;
     flex-shrink: 0;
+}
+/* Вигляд перемикача платформенний (50×30), але ціль для пальця має
+   бути 44 — добираємо її невидимим полем навколо, а не розміром. */
+.power-toggle-switch::after {
+    content: ''; position: absolute; inset: -7px -4px;
 }
 .power-toggle-switch input { opacity: 0; width: 0; height: 0; }
 .power-toggle-slider {
@@ -976,7 +1009,7 @@ select.field-input {
 /* Непрочитане: синя крапка й насичена назва замість заливки всього
    рядка — так помітно, але список не рябіє. */
 .msg-unread { border-color: rgba(0, 122, 255, 0.22); }
-.msg-unread .msg-title { color: var(--blue); }
+.msg-unread .msg-title { color: var(--blue-ink); }
 .msg-dot {
     position: absolute; top: 14px; right: 13px;
     width: 8px; height: 8px;
@@ -993,7 +1026,7 @@ select.field-input {
 }
 .req-status-new { background: rgba(255, 149, 0, 0.15); color: #C93400; }
 .req-status-in_progress { background: rgba(0, 122, 255, 0.13); color: #0040A0; }
-.req-status-done { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.req-status-done { background: rgba(52, 199, 89, 0.15); color: #1E7A35; }
 
 /* ---------- ЗВЕРНЕННЯ (мешканець) ---------- */
 /* Форма переїхала в панель: більшість заходить сюди подивитися відповідь,
@@ -1038,7 +1071,7 @@ select.field-input {
 .ureq-stat.us-new { background: rgba(255, 149, 0, 0.10); }
 .ureq-stat.us-new b { color: var(--orange); }
 .ureq-stat.us-in_progress { background: rgba(0, 122, 255, 0.09); }
-.ureq-stat.us-in_progress b { color: var(--blue); }
+.ureq-stat.us-in_progress b { color: var(--blue-ink); }
 .ureq-stat.us-done { background: rgba(52, 199, 89, 0.10); }
 .ureq-stat.us-done b { color: var(--green); }
 
@@ -1055,7 +1088,7 @@ select.field-input {
 .ureq-date { margin-left: auto; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
 .ureq-new {
     padding: 3px 8px; border-radius: 7px;
-    background: var(--blue); color: #fff;
+    background: var(--blue-ink); color: #fff;
     font-size: 10.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.4px;
 }
@@ -1078,7 +1111,7 @@ select.field-input {
 .ureq-reply-head {
     display: flex; align-items: center; gap: 6px;
     margin-bottom: 6px;
-    font-size: 11.5px; font-weight: 700; color: #248A3D;
+    font-size: 11.5px; font-weight: 700; color: #1E7A35;
 }
 .ureq-reply-avatar {
     width: 21px; height: 21px; flex-shrink: 0;
@@ -1115,7 +1148,7 @@ select.field-input {
 .dir-filter {
     flex-shrink: 0;
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 7px 12px;
+    min-height: 44px; padding: 7px 14px;
     background: var(--surface-2);
     border: none; border-radius: 999px;
     color: var(--ink-2);
@@ -1229,7 +1262,7 @@ select.field-input {
     font-size: 11.5px; font-weight: 600; text-decoration: none;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.vf-file-new { background: rgba(0, 122, 255, 0.1); color: var(--blue); }
+.vf-file-new { background: rgba(0, 122, 255, 0.1); color: var(--blue-ink); }
 .vf-file-gone { background: rgba(255, 59, 48, 0.09); color: #A3382F; text-decoration: line-through; }
 .vf-f-note { font-size: 11px; color: var(--ink-3); }
 
@@ -1262,7 +1295,7 @@ select.field-input {
 .own-banner-icon {
     width: 30px; height: 30px; flex-shrink: 0;
     border-radius: 9px;
-    background: var(--blue); color: #fff;
+    background: var(--blue-ink); color: #fff;
     display: flex; align-items: center; justify-content: center;
 }
 .own-banner-text { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.35; }
@@ -1286,19 +1319,19 @@ select.field-input {
     font-size: 11px; font-weight: 600;
     white-space: nowrap;
 }
-.dv-confirmed { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.dv-confirmed { background: rgba(52, 199, 89, 0.15); color: #1E7A35; }
 .dv-review { background: rgba(0, 122, 255, 0.13); color: #0040A0; }
 .dv-pending { background: rgba(120, 120, 128, 0.14); color: var(--ink-2); }
 .dir-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .dir-edit, .dir-confirm {
     flex: 1; padding: 10px;
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
-    color: var(--blue);
+    color: var(--blue-ink);
     font-family: var(--font); font-size: 13.5px; font-weight: 600;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
 .dir-edit:active, .dir-confirm:active { background: var(--surface-3); }
-.dir-confirmed { margin: 0; flex: 1; text-align: center; font-size: 12.5px; color: #248A3D; }
+.dir-confirmed { margin: 0; flex: 1; text-align: center; font-size: 12.5px; color: #1E7A35; }
 
 /* Редактор списку від імені правління */
 .own-edit-note {
@@ -1320,7 +1353,7 @@ select.field-input {
     flex-shrink: 0;
     padding: 8px 14px;
     background: rgba(0, 122, 255, 0.10); border: none; border-radius: 999px;
-    color: var(--blue);
+    color: var(--blue-ink);
     font-family: var(--font); font-size: 13px; font-weight: 600;
     white-space: nowrap;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
@@ -1414,12 +1447,15 @@ select.field-input {
 .pos-group-head:not(:first-child) { margin-top: 26px; }
 .pos-group-sub { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
 .pos-add {
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     flex-shrink: 0;
-    padding: 8px 14px;
-    background: var(--blue);
+    min-height: 44px; padding: 8px 16px;
+    /* Тональна, а не залита: «Додати» повторюється в кожній групі, і
+       два насичені сині овали поруч перетягували увагу з вмісту.
+       Суцільний синій лишається за головною дією картки. */
+    background: rgba(0, 102, 208, 0.12);
     border: none; border-radius: 999px;
-    color: #fff;
+    color: var(--blue-ink);
     font-family: var(--font); font-size: 13.5px; font-weight: 600;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -1441,7 +1477,7 @@ select.field-input {
 /* Одна кнопка «вгору»: нею збирається будь-який порядок, а екран
    лишається спокійним. Для першої посади вона вимкнена. */
 .pos-up {
-    width: 34px; height: 34px; flex-shrink: 0;
+    width: 44px; height: 44px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     background: var(--surface-2);
     border: none; border-radius: 10px;
@@ -1592,7 +1628,7 @@ select.field-input {
 .req-filter {
     flex: 1;
     display: flex; align-items: center; justify-content: center; gap: 5px;
-    padding: 8px 6px;
+    min-height: 44px; padding: 8px 6px;
     background: var(--surface-2);
     border: none; border-radius: 10px;
     color: var(--ink-2);
@@ -1619,9 +1655,10 @@ select.field-input {
 }
 .req-search {
     flex: 1; min-width: 0;
-    padding: 10px 0;
+    /* 16px — не примха: на менший шрифт iOS зумить сторінку при фокусі */
+    min-height: 44px; padding: 10px 0;
     background: none; border: none; outline: none;
-    font-family: var(--font); font-size: 14px; color: var(--ink);
+    font-family: var(--font); font-size: 16px; color: var(--ink);
     -webkit-appearance: none;
 }
 
@@ -1650,7 +1687,7 @@ select.field-input {
 .req-avatar {
     width: 36px; height: 36px; flex-shrink: 0;
     border-radius: 11px;
-    background: linear-gradient(135deg, #4FA3FF, var(--blue));
+    background: linear-gradient(135deg, #2F86EE, var(--blue-ink));
     color: #fff;
     display: flex; align-items: center; justify-content: center;
     font-size: 13px; font-weight: 700;
@@ -1674,7 +1711,7 @@ select.field-input {
 }
 .st-new  { background: rgba(255, 149, 0, 0.15); color: #C93400; }
 .st-work { background: rgba(0, 122, 255, 0.13); color: #0040A0; }
-.st-done { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.st-done { background: rgba(52, 199, 89, 0.15); color: #1E7A35; }
 .req-clip { display: flex; align-items: center; gap: 2px; font-size: 11px; color: var(--ink-3); }
 
 /* Розкриття — тією ж механікою, що й блоки адмінки: висота лишається
@@ -1722,7 +1759,7 @@ select.field-input {
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .req-st-btn.active.st-new  { background: var(--orange); border-color: var(--orange); color: #fff; }
-.req-st-btn.active.st-work { background: var(--blue);   border-color: var(--blue);   color: #fff; }
+.req-st-btn.active.st-work { background: var(--blue-ink);   border-color: var(--blue-ink);   color: #fff; }
 .req-st-btn.active.st-done { background: var(--green);  border-color: var(--green);  color: #fff; }
 .req-actions {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -1732,12 +1769,13 @@ select.field-input {
 
 /* Вибір у модалці відповіді: закривати звернення чи лишити в роботі. */
 .req-close-toggle {
+    min-height: 44px;
     display: flex; align-items: center; gap: 9px;
     margin: 4px 0 14px;
     font-size: 14px; color: var(--ink);
     cursor: pointer;
 }
-.req-close-toggle input { width: 19px; height: 19px; accent-color: var(--green); flex-shrink: 0; }
+.req-close-toggle input { width: 22px; height: 22px; accent-color: var(--green); flex-shrink: 0; }
 
 /* ---------- ІСТОРІЯ РОЗСИЛОК ---------- */
 .hist-card {
@@ -1752,7 +1790,7 @@ select.field-input {
 .hist-target {
     display: block;
     font-size: 11px; font-weight: 700;
-    color: var(--blue);
+    color: var(--blue-ink);
     text-transform: uppercase; letter-spacing: 0.5px;
     margin: 6px 0 8px 0;
 }
@@ -1766,7 +1804,7 @@ select.field-input {
 .read-badge {
     display: inline-flex; align-items: baseline; gap: 4px;
     background: rgba(52, 199, 89, 0.12);
-    color: #248A3D;
+    color: #1E7A35;
     padding: 4px 8px; border-radius: 8px;
     font-size: 11px; font-weight: 700;
 }
@@ -1793,13 +1831,17 @@ select.field-input {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
 }
-/* Вкладок сім — у рядок вони не вміщаються, а горизонтальна
+/* Вкладок дев'ять — у рядок вони не вміщаються, а горизонтальна
    прокрутка ховає половину з них. Сітка тримає всі на очах.
+   Три колонки, а не чотири: дев'ять на чотири давало два повні ряди
+   й одну самотню вкладку в третьому, і око щоразу спотикалося об
+   порожнечу поруч. Три на три — рівний прямокутник, а підписам
+   дісталося більше місця.
    Липкість прибрано свідомо: два ряди вкладок з'їдали б забагато
    екрана, а швидкий перехід дає дашборд угорі. */
 .admin-tabs {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     position: static;
 }
 .admin-tab {
@@ -1819,17 +1861,17 @@ select.field-input {
     min-width: 0;
 }
 .admin-tab > span:not(.admin-tab-badge) {
-    font-size: 11px; font-weight: 600;
+    font-size: 11.5px; font-weight: 600;
     letter-spacing: -0.1px; white-space: nowrap;
 }
 .admin-tab.active {
     background: var(--surface);
-    color: var(--blue);
+    color: var(--blue-ink);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 .admin-tab-badge {
     position: absolute;
-    top: 2px; right: calc(50% - 24px);
+    top: 2px; right: calc(50% - 28px);
     min-width: 17px; height: 17px;
     padding: 0 4px;
     background: var(--red);
@@ -1850,7 +1892,7 @@ select.field-input {
 .admin-card-toggle {
     display: flex; align-items: center; gap: 12px;
     width: 100%; box-sizing: border-box;
-    padding: 0; border: none; background: none;
+    min-height: 44px; padding: 0; border: none; background: none;
     color: inherit; text-align: left; cursor: pointer;
     font-family: var(--font);
     -webkit-tap-highlight-color: transparent;
@@ -1858,7 +1900,7 @@ select.field-input {
 .admin-card-headings { flex: 1; min-width: 0; }
 .admin-card-head-row .admin-card-toggle { flex: 1; }
 .admin-card-chevron {
-    flex-shrink: 0; color: var(--ink-3);
+    flex-shrink: 0; color: var(--ink-4);
     transition: transform 0.34s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .admin-fold.open .admin-card-chevron { transform: rotate(180deg); }
@@ -1881,7 +1923,17 @@ select.field-input {
 @media (prefers-reduced-motion: reduce) {
     .admin-card-body, .admin-card-chevron { transition: none; }
 }
-.admin-card-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+/* Шапка з двома керуваннями: сам перемикач згортання й дія над карткою
+   (наприклад, «підняти вище»). Вирівнюємо по центру — інакше при
+   підзаголовку у два рядки сусідня кнопка з'їжджала вгору. */
+.admin-card-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Дія над списком — у тілі картки, а не в шапці.
+   У шапці вона стояла праворуч від шеврона, і виходило два керування
+   поряд: незрозуміло, що згортає картку, а що оновлює список. */
+.list-actions { display: flex; justify-content: flex-end; margin: -6px -8px 6px; }
+.list-actions .btn-ghost-small { background: none; padding: 7px 8px; }
+.list-actions .btn-ghost-small:active { background: rgba(120, 120, 128, 0.12); }
 .admin-card-title {
     font-size: 19px; font-weight: 700; margin: 0;
     color: var(--ink); letter-spacing: -0.4px;
@@ -2055,6 +2107,17 @@ select.field-input {
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
 }
+/* Головна дія довгої модалки лишається на очах.
+   Раніше «Зберегти» лежало в самому кінці: відмітивши тридцять
+   квартир, правління прокручувало весь список назад, щоб її знайти. */
+.modal-foot {
+    position: sticky; bottom: -22px; z-index: 2;
+    margin: 16px -22px -22px;
+    padding: 10px 22px calc(22px + env(safe-area-inset-bottom));
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0, var(--surface) 12px);
+}
+.modal-foot .btn-primary { margin-top: 0; }
+
 .modal-head {
     display: flex; justify-content: space-between;
     align-items: flex-start; gap: 12px;
@@ -2229,7 +2292,7 @@ select.field-input {
 .confirm-title { margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: var(--ink); }
 .confirm-text { margin: 0 0 20px 0; font-size: 14.5px; color: var(--ink-2); line-height: 1.45; }
 .prompt-input { margin: 4px 0 14px; width: 100%; box-sizing: border-box; }
-.btn-soft-primary { background: var(--blue); color: #fff; }
+.btn-soft-primary { background: var(--blue-ink); color: #fff; }
 .confirm-actions { display: flex; gap: 10px; }
 .confirm-actions > * { flex: 1; padding: 12px; font-size: 15px; }
 
@@ -2280,7 +2343,7 @@ select.field-input {
     border-radius: var(--r-md);
     font-weight: 600; font-size: 14px;
     background: var(--surface-3);
-    color: var(--blue);
+    color: var(--blue-ink);
     transition: transform 0.15s ease;
     white-space: nowrap;
 }
@@ -2385,7 +2448,7 @@ select.field-input {
     width: 100%;
     border: none;
     border-radius: var(--r-md);
-    background: var(--blue);
+    background: var(--blue-ink);
     color: #fff;
     padding: 11px;
     font-family: var(--font);
@@ -2407,7 +2470,7 @@ select.field-input {
     border-radius: var(--r-sm);
     padding: 9px 11px;
 }
-.install-steps svg { vertical-align: -3px; color: var(--blue); margin: 0 1px; }
+.install-steps svg { vertical-align: -3px; color: var(--blue-ink); margin: 0 1px; }
 
 /* ---------- ПОТЯГНУТИ, ЩОБ ОНОВИТИ ---------- */
 /* z-index нижчий за підкладку панелей (200): індикатор не має
@@ -2439,7 +2502,7 @@ select.field-input {
     transition: border-top-color 0.2s ease;
 }
 /* Протягнуто достатньо — колір підказує, що можна відпускати */
-.ptr-ready .ptr-spinner { border-top-color: var(--blue); }
+.ptr-ready .ptr-spinner { border-top-color: var(--blue-ink); }
 .ptr-loading .ptr-spinner { animation: spin 0.7s linear infinite; }
 
 /* ---------- ГОЛОСУВАННЯ ---------- */
@@ -2457,14 +2520,14 @@ select.field-input {
     gap: 10px; margin-bottom: 8px;
 }
 .poll-badge {
-    font-size: 10.5px; font-weight: 700;
+    font-size: 11.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.5px;
     padding: 4px 9px; border-radius: 8px; flex-shrink: 0;
 }
-.poll-badge-active { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.poll-badge-active { background: rgba(52, 199, 89, 0.15); color: #1E7A35; }
 .poll-badge-closed { background: rgba(120, 120, 128, 0.14); color: var(--ink-2); }
 .poll-badge-soon { background: rgba(255, 149, 0, 0.16); color: #A85B00; }
-.poll-date { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+.poll-date { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 
 .poll-title {
     margin: 0 0 4px 0;
@@ -2513,13 +2576,13 @@ select.field-input {
 /* Сам перемикач — через сусідній селектор: працює скрізь,
    зокрема на iOS до 15.4, де :has() ще немає. */
 .poll-option input:checked + .poll-option-mark {
-    border-color: var(--blue);
+    border-color: var(--blue-ink);
     background: var(--blue);
 }
 .poll-option input:checked + .poll-option-mark::after { transform: scale(1); }
 /* Підсвітка всього рядка — приємний додаток; якщо :has() не
    підтримується, зникає лише вона, а перемикач працює далі. */
-.poll-option:has(input:checked) { background: rgba(0, 122, 255, 0.08); border-color: var(--blue); }
+.poll-option:has(input:checked) { background: rgba(0, 122, 255, 0.08); border-color: var(--blue-ink); }
 
 /* Результати */
 .poll-results { display: flex; flex-direction: column; gap: 12px; }
@@ -2537,7 +2600,7 @@ select.field-input {
     margin-left: 7px;
     font-size: 10px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.4px;
-    color: var(--blue);
+    color: var(--blue-ink);
     background: rgba(0, 122, 255, 0.1);
     padding: 2px 6px; border-radius: 6px;
     vertical-align: 1px;
@@ -2579,6 +2642,7 @@ select.field-input {
 .poll-option-row { display: flex; align-items: center; gap: 8px; }
 .poll-option-row .field-input { flex: 1; min-width: 0; }
 .poll-option-del {
+    min-width: 44px; min-height: 44px;
     width: 34px; height: 34px;
     border-radius: 50%;
     border: none;
@@ -2608,10 +2672,11 @@ select.field-input {
 /* Строк голосування */
 .poll-terms { display: flex; gap: 7px; margin-bottom: 9px; }
 .poll-term {
+    min-height: 44px;
     flex: 1;
     border: none;
     background: var(--surface-3);
-    color: var(--blue);
+    color: var(--blue-ink);
     border-radius: var(--r-sm);
     padding: 9px 4px;
     font-family: var(--font);
@@ -2620,12 +2685,12 @@ select.field-input {
     transition: background 0.15s ease, color 0.15s ease;
     white-space: nowrap;
 }
-.poll-term.active { background: var(--blue); color: #fff; }
+.poll-term.active { background: var(--blue-ink); color: #fff; }
 .poll-deadline-input { font-family: var(--font); }
 .poll-deadline {
     display: block;
     font-size: 12.5px; font-weight: 600;
-    color: var(--blue);
+    color: var(--blue-ink);
     margin-bottom: 8px;
 }
 .poll-deadline-over { color: var(--ink-2); font-weight: 500; }
@@ -2757,10 +2822,10 @@ select.field-input {
 .dash-neutral .dash-value { color: var(--ink); }
 .dash-ok .dash-value { color: var(--green); }
 .dash-warn .dash-value { color: var(--orange); }
-.dash-info .dash-value { color: var(--blue); }
+.dash-info .dash-value { color: var(--blue-ink); }
 .dash-ok .dash-icon { background: rgba(52, 199, 89, 0.14); color: #1E7A36; }
 .dash-warn .dash-icon { background: rgba(255, 149, 0, 0.16); color: #9A5A00; }
-.dash-info .dash-icon { background: rgba(0, 122, 255, 0.12); color: var(--blue); }
+.dash-info .dash-icon { background: rgba(0, 122, 255, 0.12); color: var(--blue-ink); }
 
 /* ---------- ДОВІДНИК КВАРТИР ---------- */
 .dir-card {
@@ -2780,7 +2845,7 @@ select.field-input {
 .dir-apt {
     width: 42px; height: 42px;
     border-radius: 12px;
-    background: linear-gradient(135deg, #4FA3FF, var(--blue));
+    background: linear-gradient(135deg, #2F86EE, var(--blue-ink));
     color: #fff;
     display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 700;
@@ -2811,7 +2876,7 @@ select.field-input {
 .dir-owner-name { font-size: 14.5px; font-weight: 600; color: var(--ink); word-break: break-word; }
 .dir-owner-doc { font-size: 11.5px; color: var(--ink-2); word-break: break-word; }
 .dir-share {
-    font-size: 13px; font-weight: 700; color: var(--blue);
+    font-size: 13px; font-weight: 700; color: var(--blue-ink);
     background: rgba(0, 122, 255, 0.1);
     padding: 4px 9px; border-radius: 8px;
     flex-shrink: 0;
@@ -2835,7 +2900,7 @@ select.field-input {
     color: var(--ink-2); margin-top: 1px;
     letter-spacing: 0;
 }
-.quorum-ok { color: #248A3D; }
+.quorum-ok { color: #1E7A35; }
 .quorum-fail { color: #C93400; }
 
 .quorum-rings {
@@ -2944,7 +3009,7 @@ select.field-input {
     color: var(--ink-2);
 }
 .balance-debt .balance-sum { color: var(--red); }
-.balance-credit .balance-sum { color: #248A3D; }
+.balance-credit .balance-sum { color: #1E7A35; }
 .balance-zero .balance-sum { color: var(--ink); }
 .balance-date { font-size: 11.5px; color: var(--ink-2); margin-top: 5px; }
 /* «Квитанції» стоять поруч з оплатою, а не окремим рядком: власний
@@ -2954,7 +3019,7 @@ select.field-input {
 .balance-receipts {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 0 14px; border: none; border-radius: 14px;
-    background: rgba(120, 120, 128, 0.14); color: var(--blue);
+    background: rgba(120, 120, 128, 0.14); color: var(--blue-ink);
     cursor: pointer; white-space: nowrap;
     transition: transform 0.15s ease, background 0.15s ease;
 }
@@ -3016,7 +3081,7 @@ select.field-input {
 .bulk-ok, .bulk-bad {
     font-weight: 700; padding: 3px 8px; border-radius: 7px;
 }
-.bulk-ok { background: rgba(52, 199, 89, 0.15); color: #248A3D; }
+.bulk-ok { background: rgba(52, 199, 89, 0.15); color: #1E7A35; }
 .bulk-bad { background: rgba(255, 59, 48, 0.13); color: #C93400; }
 .bulk-row { width: 100%; color: var(--ink-2); }
 .bulk-more { font-style: italic; }
@@ -3095,7 +3160,7 @@ select.field-input {
     width: 34px; height: 34px;
     border-radius: 50%;
     background: rgba(120, 120, 128, 0.12);
-    color: var(--blue);
+    color: var(--blue-ink);
     flex-shrink: 0;
 }
 .pay-field-done .pay-copy { background: rgba(52, 199, 89, 0.16); color: var(--green); }
@@ -3121,7 +3186,7 @@ select.field-input {
    картці однозначно каже «це лежить зверху, на це тиснуть». */
 .power-stats-btn {
     position: relative;
-    width: 40px; height: 40px;
+    width: 44px; height: 44px;
     border-radius: 50%;
     border: 0.5px solid rgba(0, 0, 0, 0.06);
     background: var(--surface);
@@ -3206,7 +3271,7 @@ select.field-input {
     font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums;
 }
 .pw-row-day b { color: var(--ink-2); font-weight: 700; }
-.pw-row.is-today .pw-row-day b { color: var(--blue); }
+.pw-row.is-today .pw-row-day b { color: var(--blue-ink); }
 .pw-track {
     position: relative; flex: 1; height: 18px;
     border-radius: 5px; background: var(--surface-3); overflow: hidden;
@@ -3319,7 +3384,7 @@ select.field-input {
 .faq-ref {
     display: inline-block;
     font-size: 11px; font-weight: 700;
-    color: var(--blue);
+    color: var(--blue-ink);
     background: rgba(0, 122, 255, 0.1);
     padding: 4px 9px; border-radius: 7px;
 }
@@ -3342,7 +3407,7 @@ select.field-input {
     margin-top: 12px;
     padding: 12px;
     font-size: 14.5px; font-weight: 600;
-    color: var(--blue);
+    color: var(--blue-ink);
     text-decoration: none;
 }
 .pay-portmone:active { opacity: 0.5; }
@@ -3436,7 +3501,7 @@ select.field-input {
 .chat-author {
     display: block;
     font-size: 11px; font-weight: 700;
-    color: var(--blue);
+    color: var(--blue-ink);
     margin-bottom: 2px;
 }
 .chat-board .chat-author { color: #8A6D00; }
@@ -3470,7 +3535,7 @@ select.field-input {
     outline: none;
     max-height: 120px;
 }
-.chat-input:focus { border-color: var(--blue); }
+.chat-input:focus { border-color: var(--blue-ink); }
 .chat-send, .chat-attach-btn {
     width: 40px; height: 40px;
     border-radius: 50%;
@@ -3478,7 +3543,7 @@ select.field-input {
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
 }
-.chat-send { background: var(--blue); color: #fff; }
+.chat-send { background: var(--blue-ink); color: #fff; }
 .chat-send:active { transform: scale(0.92); }
 .chat-attach-btn { background: rgba(120, 120, 128, 0.12); color: var(--ink-2); }
 
@@ -3522,7 +3587,7 @@ select.field-input {
     cursor: pointer;
     font-family: var(--font);
 }
-.chat-quote-who { font-size: 11px; font-weight: 700; color: var(--blue); }
+.chat-quote-who { font-size: 11px; font-weight: 700; color: var(--blue-ink); }
 .chat-quote-text {
     font-size: 12.5px; color: var(--ink-2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -3547,7 +3612,7 @@ select.field-input {
     padding: 8px 10px;
     margin-bottom: 8px;
 }
-.compose-ctx-icon { font-size: 15px; color: var(--blue); flex-shrink: 0; }
+.compose-ctx-icon { font-size: 15px; color: var(--blue-ink); flex-shrink: 0; }
 .compose-ctx-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .compose-ctx-text b { font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .compose-ctx-text small {
@@ -3613,7 +3678,7 @@ select.field-input {
 .action-cancel {
     justify-content: center;
     border-bottom: none;
-    font-weight: 600; color: var(--blue);
+    font-weight: 600; color: var(--blue-ink);
 }
 
 /* Відгук на утримання — видно одразу, ще до появи меню */
@@ -3696,7 +3761,7 @@ select.field-input {
 .pw-log { margin-top: 16px; }
 .pw-log summary {
     font-size: 13px; font-weight: 600;
-    color: var(--blue);
+    color: var(--blue-ink);
     cursor: pointer;
     padding: 8px 0;
     list-style: none;
@@ -3735,7 +3800,7 @@ select.field-input {
 .bud-mark {
     display: inline-flex; align-items: center; justify-content: center;
     width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
-    background: rgba(0, 122, 255, 0.1); color: var(--blue);
+    background: rgba(0, 122, 255, 0.1); color: var(--blue-ink);
 }
 .bud-head { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .bud-label {
@@ -3785,7 +3850,7 @@ select.field-input {
     display: flex; align-items: center; justify-content: center; gap: 4px;
     width: 100%; margin-top: 16px; padding: 12px;
     border: none; border-radius: 14px;
-    background: rgba(0, 122, 255, 0.09); color: var(--blue);
+    background: rgba(0, 122, 255, 0.09); color: var(--blue-ink);
     font-size: 14.5px; font-weight: 600; cursor: pointer;
     transition: transform 0.15s ease, background 0.15s ease;
 }
@@ -3802,7 +3867,7 @@ select.field-input {
 .fin-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .fin-row-label { font-size: 14px; color: var(--ink-2); min-width: 0; }
 .fin-row-sum { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; white-space: nowrap; }
-.fin-in { color: #248A3D; }
+.fin-in { color: #1E7A35; }
 .fin-out { color: #C2410C; }
 .fin-row-total {
     padding-top: 10px; margin-top: 2px;
@@ -3931,7 +3996,7 @@ select.field-input {
 .sc-bal-cap { display: block; width: 42px; height: 4px; border-radius: 2px; background: rgba(30,122,54,0.35); }
 .sc-bal-sum {
     display: block; margin-top: 3px;
-    font-size: 17px; font-weight: 800; color: #248A3D; letter-spacing: -0.5px;
+    font-size: 17px; font-weight: 800; color: #1E7A35; letter-spacing: -0.5px;
 }
 .sc-bal-btns { display: flex; gap: 5px; margin-top: 7px; }
 .sc-bal-btns .sc-pay { flex: 1.6; height: 15px; border-radius: 6px; background: var(--blue); }
@@ -4088,7 +4153,7 @@ select.field-input {
 
 .imp-details { margin-bottom: 14px; }
 .imp-details summary {
-    font-size: 13px; font-weight: 600; color: var(--blue);
+    font-size: 13px; font-weight: 600; color: var(--blue-ink);
     cursor: pointer; padding: 6px 0;
 }
 .imp-rows { max-height: 260px; overflow-y: auto; }
@@ -4104,11 +4169,13 @@ select.field-input {
 .imp-row.is-warn b { color: #9A5A00; }
 
 .imp-check {
-    display: flex; align-items: flex-start; gap: 9px;
-    margin-bottom: 14px; font-size: 13px; line-height: 1.4; color: var(--ink-2);
+    display: flex; align-items: center; gap: 9px;
+    min-height: 44px; margin-bottom: 14px;
+    font-size: 13.5px; line-height: 1.4; color: var(--ink-2);
     cursor: pointer;
 }
-.imp-check input { margin-top: 1px; flex-shrink: 0; }
+/* Прапорець за замовчуванням — 13px: надто дрібно, щоб побачити стан */
+.imp-check input { width: 22px; height: 22px; accent-color: var(--blue-ink); flex-shrink: 0; }
 
 /* ------------------------------------------------------------
    ВИВАНТАЖЕННЯ БАЗИ
@@ -4116,11 +4183,11 @@ select.field-input {
 .exp-grain { display: flex; gap: 8px; }
 .exp-grain label {
     flex: 1; display: flex; align-items: center; gap: 7px;
-    padding: 10px 12px; border-radius: var(--r-sm);
+    min-height: 44px; padding: 10px 12px; border-radius: var(--r-sm);
     background: var(--surface-2); cursor: pointer;
     font-size: 14px; color: var(--ink);
 }
-.exp-grain input { flex-shrink: 0; }
+.exp-grain input { width: 22px; height: 22px; accent-color: var(--blue-ink); flex-shrink: 0; }
 
 /* Порядок у списку і є порядком колонок у файлі — тож список
    виглядає рівно так, як лягатимуть дані. */
@@ -4131,12 +4198,12 @@ select.field-input {
 }
 .exp-field {
     display: flex; align-items: center; gap: 8px;
-    padding: 7px 8px; border-radius: 8px;
+    min-height: 44px; padding: 7px 8px; border-radius: 8px;
     transition: background 0.15s ease;
 }
 .exp-field.is-on { background: var(--surface); }
 .exp-pick { flex: 1; display: flex; align-items: center; gap: 9px; min-width: 0; cursor: pointer; }
-.exp-pick input { flex-shrink: 0; }
+.exp-pick input { width: 22px; height: 22px; accent-color: var(--blue-ink); flex-shrink: 0; }
 .exp-pick span { font-size: 13.5px; color: var(--ink-2); }
 .exp-field.is-on .exp-pick span { color: var(--ink); font-weight: 500; }
 .exp-level {
@@ -4146,7 +4213,7 @@ select.field-input {
 }
 .exp-up {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; flex-shrink: 0;
+    width: 44px; height: 44px; flex-shrink: 0;
     border: none; border-radius: 7px;
     background: rgba(120, 120, 128, 0.12); color: var(--ink-2);
     cursor: pointer;
@@ -4215,7 +4282,7 @@ select.field-input {
 }
 .sched-day.is-today { background: rgba(0, 122, 255, 0.06); }
 .sched-day-name { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.sched-day.is-today .sched-day-name { color: var(--blue); }
+.sched-day.is-today .sched-day-name { color: var(--blue-ink); }
 .sched-slots { display: flex; flex-wrap: wrap; gap: 6px; }
 .sched-slot {
     padding: 4px 10px; border-radius: 8px;
@@ -4295,7 +4362,7 @@ select.field-input {
     height: 26px; font-size: 9px; color: var(--ink-3); line-height: 1.15;
 }
 .pc-name b { font-size: 10.5px; font-weight: 700; color: var(--ink-2); }
-.pc-col.is-today .pc-name, .pc-col.is-today .pc-name b { color: var(--blue); }
+.pc-col.is-today .pc-name, .pc-col.is-today .pc-name b { color: var(--blue-ink); }
 
 .pc-track {
     position: relative; height: 480px;
@@ -4371,7 +4438,7 @@ select.field-input {
     font-size: 14px; font-weight: 700;
 }
 .meeting-verdict small { font-size: 11.5px; font-weight: 500; color: var(--ink-2); }
-.meeting-verdict.is-ok { color: #248A3D; }
+.meeting-verdict.is-ok { color: #1E7A35; }
 .meeting-verdict.is-no { color: #C93400; }
 
 .meeting-split {
@@ -4380,13 +4447,23 @@ select.field-input {
 }
 .meeting-split b { color: var(--ink); }
 
-.poll-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.poll-actions .btn-soft, .poll-actions .btn-primary {
-    flex: 1 1 46%; margin-top: 0; white-space: nowrap;
+/* Дії картки — сітка у дві колонки. Раніше це був flex із basis 46%:
+   непарна кнопка розтягувалася на всю ширину випадково, і ряд виглядав
+   рваним. Тепер остання кнопка займає весь рядок навмисно — і завжди
+   це найважливіша дія, бо вона ж і остання за порядком. */
+.poll-actions {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; margin-top: 14px;
 }
+.poll-actions .btn-soft, .poll-actions .btn-primary {
+    margin-top: 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+}
+.poll-actions > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 .meeting-protocol-link {
-    display: block; margin-top: 10px;
-    font-size: 13px; font-weight: 600; color: var(--blue); text-decoration: none;
+    /* Посилання теж натискають пальцем — рядку потрібна висота */
+    display: flex; align-items: center; min-height: 44px; margin-top: 4px;
+    font-size: 13.5px; font-weight: 600; color: var(--blue-ink); text-decoration: none;
 }
 
 /* ---- Вікно внесення паперових голосів ---- */
@@ -4423,7 +4500,7 @@ select.field-input {
     align-self: flex-start;
     display: flex; align-items: baseline; gap: 6px;
     padding: 3px 10px; border-radius: 999px;
-    background: rgba(52, 199, 89, 0.16); color: #248A3D;
+    background: rgba(52, 199, 89, 0.16); color: #1E7A35;
     font-size: 12px; font-weight: 700;
 }
 .paper-done-mark small { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
@@ -4432,13 +4509,14 @@ select.field-input {
 .paper-answer { flex: 1; }
 .paper-answer input { position: absolute; opacity: 0; width: 0; height: 0; }
 .paper-answer span {
-    display: block; padding: 9px 4px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: 9px 4px;
     background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px;
     text-align: center; font-size: 13px; font-weight: 600; color: var(--ink-2);
     cursor: pointer;
 }
 .paper-answer input:checked + span {
-    background: rgba(0, 122, 255, 0.1); border-color: var(--blue); color: var(--blue-dark);
+    background: rgba(0, 122, 255, 0.1); border-color: var(--blue-ink); color: var(--blue-dark);
 }
 
 /* Питання порядку денного: під полем питання стоїть проєкт рішення,

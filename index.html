@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=94">
+    <link rel="stylesheet" href="style.css?v=95">
 </head>
 <body>
 
@@ -523,7 +523,9 @@
                 <span>Опитування</span>
             </button>
             <button class="admin-tab" data-tab="meetings" type="button">
-                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <!-- Календар із галочкою, а не люди: значок «Контактів» був
+                     точно таким самим, і дві вкладки різнилися лише підписом. -->
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><polyline points="8.5 15.5 10.5 17.5 15 13"></polyline></svg>
                 <span>Збори</span>
             </button>
             <button class="admin-tab" data-tab="directory" type="button">
@@ -608,15 +610,15 @@
                 </div></div>
             </div>
             <div class="card admin-fold">
-                <div class="admin-card-head admin-card-head-row">
+                <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="false">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Історія розсилок</h2>
                         <span class="admin-card-sub">Хто і коли прочитав</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
-                    <button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button>
                 </div>
                 <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="list-actions"><button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button></div>
 
                 <div id="adminMsgHistoryContainer" class="admin-scroll-list">
                     <p class="list-empty">Історія порожня</p>
@@ -925,15 +927,15 @@
         <!-- Вкладка: довідник квартир -->
         <div class="admin-panel" data-panel="directory">
             <div class="card admin-fold open">
-                <div class="admin-card-head admin-card-head-row">
+                <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Заявки на зміну<span id="verifyQueueCount" class="vf-count"></span></h2>
                         <span class="admin-card-sub">Мешканці пропонують — рішення за вами</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
-                    <button id="verifyRefreshBtn" class="btn-ghost-small" type="button">Оновити</button>
                 </div>
                 <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="list-actions"><button id="verifyRefreshBtn" class="btn-ghost-small" type="button">Оновити</button></div>
                 <div id="verifyQueue"><p class="list-empty">Завантаження…</p></div>
                 </div></div>
             </div>
@@ -1010,15 +1012,15 @@
             </div>
 
             <div class="card admin-fold open">
-                <div class="admin-card-head admin-card-head-row">
+                <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="true">
                         <span class="admin-card-headings"><h2 class="admin-card-title">Квартири</h2>
                         <span class="admin-card-sub" id="directoryCount">Завантаження…</span></span>
                         <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
-                    <button id="directoryRefreshBtn" class="btn-ghost-small" type="button">Оновити</button>
                 </div>
                 <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="list-actions"><button id="directoryRefreshBtn" class="btn-ghost-small" type="button">Оновити</button></div>
 
                 <div id="verifyStats"></div>
 
@@ -1526,7 +1528,7 @@
             <span>Позначити вирішеним</span>
         </label>
 
-        <button id="sendReplyBtn" class="btn-primary" type="button">Надіслати відповідь</button>
+        <div class="modal-foot"><button id="sendReplyBtn" class="btn-primary" type="button">Надіслати відповідь</button></div>
     </div>
 </div>
 
@@ -1556,7 +1558,7 @@
 
         <div id="protocolQuestions" class="proto-list"></div>
 
-        <button id="protoSubmitBtn" class="btn-primary" type="button">Сформувати та опублікувати</button>
+        <div class="modal-foot"><button id="protoSubmitBtn" class="btn-primary" type="button">Сформувати та опублікувати</button></div>
     </div>
 </div>
 
@@ -1583,7 +1585,7 @@
             <div class="field">
                 <label class="field-label" for="paperVotesSearch">Пошук</label>
                 <input type="text" id="paperVotesSearch" class="field-input"
-                       inputmode="search" placeholder="Квартира або прізвище">
+                       inputmode="search" placeholder="Кв. або прізвище">
             </div>
         </div>
         <span class="paper-count" id="paperVotesCount"></span>
@@ -1592,7 +1594,7 @@
             <p class="list-empty">Завантаження…</p>
         </div>
 
-        <button id="paperSaveBtn" class="btn-primary" type="button">Зберегти внесені голоси</button>
+        <div class="modal-foot"><button id="paperSaveBtn" class="btn-primary" type="button">Зберегти внесені голоси</button></div>
     </div>
 </div>
 
@@ -1667,7 +1669,7 @@
             <span>Друкувати листки опитування окремо по парадних</span>
         </label>
 
-        <button id="saveMeetingEditBtn" class="btn-primary" type="button">Зберегти зміни</button>
+        <div class="modal-foot"><button id="saveMeetingEditBtn" class="btn-primary" type="button">Зберегти зміни</button></div>
     </div>
 </div>
 
@@ -1841,6 +1843,6 @@
     }, 8000);
 })();
 </script>
-<script type="module" src="js/app.js?v=94"></script>
+<script type="module" src="js/app.js?v=95"></script>
 </body>
 </html>
