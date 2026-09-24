@@ -16,7 +16,7 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, safeFileUrl } from './ui.js';
 import {
     renderFileManager, openGallery, isImageFile, openDocViewer, getDocKind, docIconSvg
 } from './attachments.js';
@@ -113,6 +113,7 @@ const SEEN_KEY = () => `chat_seen_${session.apt}`;
 
 let unsubscribe = null;
 let pendingFiles = [];
+const MAX_FILES = 10;   // стільки ж пропускають правила Firestore
 let lastRendered = [];
 
 // Куди відповідаємо і що редагуємо. Тримаємо окремо для чату й
@@ -169,12 +170,12 @@ export async function refreshChatBadge() {
 // ------------------------------------------------------------
 /** Фото в бульбашці: квадратні мініатюри без підписів і рамок. */
 function chatPhotos(files, id) {
-    const imgs = (files || []).filter(isImageFile);
+    const imgs = (files || []).filter(f => isImageFile(f) && safeFileUrl(f.url));
     if (!imgs.length) return '';
     const cls = imgs.length === 1 ? 'chat-photos-one' : '';
     return `<div class="chat-photos ${cls}" data-photos="${id}">
         ${imgs.map((f, i) => `<button type="button" class="chat-photo" data-i="${i}">
-            <img src="${escapeHtml(f.url)}" loading="lazy" alt="">
+            <img src="${escapeHtml(safeFileUrl(f.url))}" loading="lazy" alt="">
         </button>`).join('')}
     </div>`;
 }
@@ -264,7 +265,8 @@ function renderList(host, items, ctx) {
 
     // Фото відкриваються повноекранною галереєю
     items.forEach(i => {
-        const imgs = (i.data.attachments || []).filter(isImageFile);
+        // той самий відбір, що й у chatPhotos — інакше data-i вказував би не туди
+        const imgs = (i.data.attachments || []).filter(f => isImageFile(f) && safeFileUrl(f.url));
         if (!imgs.length || i.data.deleted) return;
         host.querySelectorAll(`.chat-photos[data-photos="${i.id}"] .chat-photo`).forEach(b => {
             b.addEventListener('click', (e) => {
@@ -720,6 +722,10 @@ export function initChat() {
         files?.addEventListener('change', () => {
             pendingFiles.push(...Array.from(files.files));
             files.value = '';
+            if (pendingFiles.length > MAX_FILES) {
+                pendingFiles = pendingFiles.slice(0, MAX_FILES);
+                toast(`Не більше ${MAX_FILES} файлів в одному повідомленні`, 'error');
+            }
             refreshChips();
         });
     });

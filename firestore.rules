@@ -27,6 +27,57 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/apartments/$(myApt())).data.isAdmin == true;
     }
 
+    // Посилання на файл у сховищі саме цього застосунку. Без цієї
+    // перевірки мешканець міг би підкласти у «вкладення» посилання
+    // на сторонній сайт — і сусіди відкривали б його як файл ОСББ.
+    function isOwnFileUrl(u) {
+      return u is string
+        && u.matches('https://firebasestorage[.]googleapis[.]com/v0/b/uspih-25[.](firebasestorage[.]app|appspot[.]com)/o/.*');
+    }
+
+    function isOwnFile(f) {
+      return f is map && isOwnFileUrl(f.get('url', null));
+    }
+
+    // Правила не вміють циклів, тож перевіряємо кожну позицію окремо.
+    // && зупиняється на першому false, тож до неіснуючих елементів
+    // справа не доходить.
+    function okAttachments(list) {
+      return list is list && list.size() <= 10
+        && (list.size() < 1 || isOwnFile(list[0]))
+        && (list.size() < 2 || isOwnFile(list[1]))
+        && (list.size() < 3 || isOwnFile(list[2]))
+        && (list.size() < 4 || isOwnFile(list[3]))
+        && (list.size() < 5 || isOwnFile(list[4]))
+        && (list.size() < 6 || isOwnFile(list[5]))
+        && (list.size() < 7 || isOwnFile(list[6]))
+        && (list.size() < 8 || isOwnFile(list[7]))
+        && (list.size() < 9 || isOwnFile(list[8]))
+        && (list.size() < 10 || isOwnFile(list[9]));
+    }
+
+    // Цитата, на яку відповідають: лише службові поля й короткий текст
+    function okReplyTo(r) {
+      return r == null
+        || (r is map
+            && r.keys().hasOnly(['id', 'apt', 'isBoard', 'text'])
+            && r.get('text', '') is string
+            && r.get('text', '').size() <= 200);
+    }
+
+    // Спільне для нового повідомлення в чаті й коментаря
+    function okChatPost(d) {
+      return d.keys().hasOnly(['apt', 'isBoard', 'text', 'attachments', 'replyTo', 'createdAt'])
+        && d.apt == myApt()
+        && d.isBoard is bool
+        && d.text is string
+        && d.text.size() > 0
+        && d.text.size() <= 2000
+        && okAttachments(d.get('attachments', []))
+        && okReplyTo(d.get('replyTo', null))
+        && d.createdAt == request.time;
+    }
+
     // ---------- КВАРТИРИ ----------
     // Мешканець бачить і редагує ТІЛЬКИ свою квартиру.
     match /apartments/{apt} {
@@ -128,12 +179,10 @@ service cloud.firestore {
           && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients;
 
         allow create: if isSignedIn()
-          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients
-          && request.resource.data.apt == myApt()
+          && okChatPost(request.resource.data)
+          && request.resource.data.get('attachments', []).size() == 0
           && (request.resource.data.isBoard == false || isAdmin())
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients;
 
         // Видалення тепер мʼяке: документ лишається з міткою, щоб у
         // розмові було видно, що тут щось було. Тому дозволяємо
@@ -168,16 +217,14 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       allow create: if isSignedIn()
-        // писати можна лише від своєї квартири
-        && request.resource.data.apt == myApt()
+        // писати можна лише від своєї квартири, лише відомі поля,
+        // вкладення — лише з нашого сховища
+        && okChatPost(request.resource.data)
         // Позначку «від правління» може поставити лише правління.
         // Записано так, а не через isBoard == isAdmin(): у звичайного
         // мешканця перший доданок істинний одразу, і Firestore не
         // читає документ квартири заради кожного повідомлення.
-        && (request.resource.data.isBoard == false || isAdmin())
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 2000;
+        && (request.resource.data.isBoard == false || isAdmin());
 
         // Видалення тепер мʼяке: документ лишається з міткою, щоб у
       // розмові було видно, що тут щось було. Тому дозволяємо
@@ -210,8 +257,14 @@ service cloud.firestore {
     match /requests/{reqId} {
       allow read: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
       allow create: if isSignedIn()
+                    && request.resource.data.keys().hasOnly(['apt', 'text', 'attachments', 'status', 'createdAt'])
                     && request.resource.data.apt == myApt()
-                    && request.resource.data.status == 'new';
+                    && request.resource.data.status == 'new'
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 5000
+                    && okAttachments(request.resource.data.get('attachments', []))
+                    && request.resource.data.createdAt == request.time;
       // Відповідати може лише правління
       allow update, delete: if isAdmin();
     }

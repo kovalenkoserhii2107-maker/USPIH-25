@@ -18,7 +18,7 @@ import { initPowerToggle, startPowerListener, stopPowerListener } from './power.
 import { initPowerStats } from './power-stats.js';
 import { initFaq, loadFaq } from './faq.js';
 import { initChat, loadChat, stopChat, refreshChatBadge } from './chat.js';
-import { initMessages, loadUserMessages, loadAdminHistory, backfillRecipients } from './messages.js';
+import { initMessages, loadUserMessages, loadAdminHistory } from './messages.js';
 import {
     initRequests, loadUserRequests, loadAdminRequests, refreshRequestsBadge,
     loadOsbbDocs, populateDocsDropdown
@@ -135,7 +135,6 @@ async function loadCabinet(apt) {
         // Дашборд рахує вже закриті прострочені опитування, тому — після них
         await loadDashboard();
         refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
-        backfillRecipients(); // тиха міграція старих повідомлень
     } else {
         showScreen('dataSection');
         document.getElementById('topNav').style.display = 'block';

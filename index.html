@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=101">
+    <link rel="stylesheet" href="style.css?v=102">
 </head>
 <body>
 
@@ -163,7 +163,7 @@
     <div class="sheet-body">
             <div class="field">
                 <label class="field-label" for="userReqBody">Ваше питання</label>
-                <textarea id="userReqBody" class="field-input" rows="4" placeholder="Опишіть проблему або питання…"></textarea>
+                <textarea id="userReqBody" class="field-input" rows="4" maxlength="5000" placeholder="Опишіть проблему або питання…"></textarea>
             </div>
             <div class="field">
                 <span class="field-label">Фото або документи</span>
@@ -1879,7 +1879,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=101' : './js/app.js?v=101');
+    import(preview === 'admin' ? './js/admin-preview.js?v=102' : './js/app.js?v=102');
 </script>
 </body>
 </html>

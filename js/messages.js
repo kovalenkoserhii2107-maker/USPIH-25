@@ -5,7 +5,7 @@
 import { db, storage, session } from './firebase.js';
 import {
     collection, addDoc, getDocs, doc, query, orderBy, where,
-    serverTimestamp, writeBatch
+    serverTimestamp, writeBatch, limit, startAfter
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
@@ -302,14 +302,31 @@ export async function notifyApartment({ apt, title, body, kind = 'owners' }) {
 // ------------------------------------------------------------
 // ІСТОРІЯ РОЗСИЛОК (адмін)
 // ------------------------------------------------------------
-export async function loadAdminHistory() {
+// Історію розсилок читаємо сторінками. Раніше при кожному вході правління
+// вона підвантажувалася вся — за рік це сотні оголошень, і кожне з них
+// окреме читання з квоти Firestore, хоча дивляться лише кілька останніх.
+const HISTORY_PAGE = 30;
+let historyCursor = null;
+
+/**
+ * @param {boolean} more true — дочитати давніші під уже показаними.
+ *        Слухач кліку «Оновити» передає сюди подію, тож порівнюємо
+ *        строго з true, інакше оновлення дописувало б, а не оновлювало.
+ */
+export async function loadAdminHistory(more = false) {
     const host = document.getElementById('adminMsgHistoryContainer');
     if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    const append = more === true;
+    if (!append) {
+        host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+        historyCursor = null;
+    }
 
     try {
-        const snap = await getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc')));
-        if (snap.empty) { host.innerHTML = '<p class="list-empty">Історія порожня</p>'; return; }
+        const snap = await getDocs(historyCursor
+            ? query(collection(db, 'messages'), orderBy('createdAt', 'desc'), startAfter(historyCursor), limit(HISTORY_PAGE))
+            : query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(HISTORY_PAGE)));
+        if (snap.empty && !append) { host.innerHTML = '<p class="list-empty">Історія порожня</p>'; return; }
 
         let html = '';
         const attachMap = [];
@@ -342,7 +359,20 @@ export async function loadAdminHistory() {
             </div>`;
         });
 
-        host.innerHTML = html;
+        historyCursor = snap.docs.at(-1) || historyCursor;
+        const moreBtn = snap.size === HISTORY_PAGE
+            ? '<button type="button" class="btn-soft btn-compact list-more" id="histMoreBtn">Показати давніші</button>'
+            : '';
+        if (append) {
+            host.querySelector('#histMoreBtn')?.remove();
+            host.insertAdjacentHTML('beforeend', html + moreBtn);
+        } else {
+            host.innerHTML = html + moreBtn;
+        }
+        document.getElementById('histMoreBtn')?.addEventListener('click', function () {
+            setBusy(this, true, 'Завантаження…');
+            loadAdminHistory(true);
+        });
         attachMap.forEach(item => {
             if (item.files.length) {
                 renderAttachments(host.querySelector(`.hist-attach[data-hist-id="${item.id}"]`), item.files);
@@ -354,31 +384,6 @@ export async function loadAdminHistory() {
     }
 }
 
-/**
- * Одноразове дозаповнення поля recipients для повідомлень,
- * створених до переходу на серверну фільтрацію. Запускається
- * тихо при вході адміна, щоб старі оголошення не зникли.
- */
-export async function backfillRecipients() {
-    try {
-        const snap = await getDocs(collection(db, 'messages'));
-        const batch = writeBatch(db);
-        let count = 0;
-        snap.forEach(d => {
-            const msg = d.data();
-            if (!msg.recipients) {
-                batch.update(d.ref, { recipients: buildRecipients(msg.targetType, msg.targetValue) });
-                count++;
-            }
-        });
-        if (count) {
-            await batch.commit();
-            console.info(`Міграція: оновлено ${count} повідомлень.`);
-        }
-    } catch (e) {
-        console.error('Міграція recipients:', e);
-    }
-}
 
 // ------------------------------------------------------------
 // ІНІЦІАЛІЗАЦІЯ

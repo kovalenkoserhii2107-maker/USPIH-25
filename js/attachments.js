@@ -3,7 +3,7 @@
 // та переглядач документів. Використовується і в повідомленнях,
 // і у зверненнях, і в картках співвласників.
 // ============================================================
-import { escapeHtml, formatFileSize, lockScroll, unlockScroll } from './ui.js';
+import { escapeHtml, formatFileSize, lockScroll, unlockScroll, safeFileUrl } from './ui.js';
 
 const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'];
 
@@ -63,7 +63,15 @@ export function docIconSvg(kind) {
 export function renderAttachments(container, files) {
     if (!container) return;
     container.innerHTML = '';
-    if (!files || files.length === 0) {
+    // Файл із чужим посиланням не показуємо зовсім — ні мініатюрою, ні
+    // рядком: інакше його все одно можна було б відкрити натисканням.
+    const all = files || [];
+    files = all.filter(f => safeFileUrl(f?.url));
+    if (files.length < all.length) {
+        console.warn('Відкинуто вкладення з посиланням поза сховищем застосунку:',
+            all.length - files.length);
+    }
+    if (files.length === 0) {
         container.classList.remove('has-content');
         return;
     }
@@ -117,7 +125,8 @@ export function renderAttachments(container, files) {
 const gallery = { images: [], index: 0, startX: 0, currentX: 0, dragging: false };
 
 export function openGallery(images, startIndex = 0) {
-    if (!images || !images.length) return;
+    images = (images || []).filter(img => safeFileUrl(img?.url));
+    if (!images.length) return;
     gallery.images = images;
     gallery.index = startIndex || 0;
 
@@ -169,22 +178,39 @@ function closeGallery() {
 // ------------------------------------------------------------
 export function openDocViewer(docFile) {
     if (!docFile) return;
+    const url = safeFileUrl(docFile.url);
     const kind = getDocKind(docFile);
     document.getElementById('docViewerTitle').textContent = docFile.name || 'Документ';
-    document.getElementById('docViewerOpenExternal').href = docFile.url;
+    const external = document.getElementById('docViewerOpenExternal');
     const body = document.getElementById('docViewerBody');
 
+    if (!url) {
+        // Посилання веде за межі сховища застосунку — не відкриваємо й не
+        // даємо відкрити. Кнопку «назовні» ховаємо, щоб не лишилося
+        // старої адреси від попереднього файлу.
+        external.removeAttribute('href');
+        external.hidden = true;
+        body.innerHTML = `<div class="doc-viewer-generic">
+                <span class="file-icon icon-file file-icon-lg">${docIconSvg('file')}</span>
+                <p>Цей файл не з сховища застосунку, тому відкрити його не можна.</p>
+            </div>`;
+        document.getElementById('docViewerModal').classList.add('is-open');
+        lockScroll();
+        return;
+    }
+    external.hidden = false;
+    external.href = url;
     if (['pdf', 'word', 'excel', 'powerpoint'].includes(kind)) {
         // Google Docs Viewer гортає всі сторінки як звичайну веб-сторінку.
         // Прямий iframe на PDF у багатьох мобільних webview показує лише першу.
-        const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(docFile.url)}&embedded=true`;
+        const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
         body.innerHTML = `<iframe src="${escapeHtml(viewerUrl)}" class="doc-viewer-iframe"></iframe>
             <p class="doc-viewer-note">Якщо файл не відкрився — натисніть стрілку вгорі, щоб відкрити його у відповідному застосунку.</p>`;
     } else {
         body.innerHTML = `<div class="doc-viewer-generic">
                 <span class="file-icon icon-${kind} file-icon-lg">${docIconSvg(kind)}</span>
                 <p>Перегляд цього типу файлів у застосунку недоступний.</p>
-                <a href="${escapeHtml(docFile.url)}" target="_blank" class="btn-primary-inline">Відкрити файл</a>
+                <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="btn-primary-inline">Відкрити файл</a>
             </div>`;
     }
 
