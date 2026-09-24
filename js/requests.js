@@ -3,7 +3,8 @@
 // ============================================================
 import { db, storage, session } from './firebase.js';
 import {
-    collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp
+    collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp,
+    limit, startAfter
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
@@ -25,6 +26,7 @@ const OVERDUE_MS = 3 * 24 * 60 * 60 * 1000;
 const normStatus = (s) => (s === 'replied' ? 'done' : (STATUS[s] ? s : 'new'));
 
 let userReqFiles = [];
+const MAX_FILES = 10;   // стільки ж пропускають правила Firestore
 let replyFiles = [];
 let osbbDocFile = null;
 
@@ -209,6 +211,14 @@ export async function refreshRequestsBadge() {
 // ------------------------------------------------------------
 let adminReqs = [];
 let reqFilter = 'active';
+
+// Звернення читаємо не цілком. Незакриті приходять завжди всі — пропустити
+// давнє, але не вирішене звернення не можна. Решта — сторінками від
+// найновіших: вирішені за кілька років правлінню щоразу не потрібні, а
+// кожне з них — окреме читання з квоти Firestore.
+const REQ_PAGE = 50;
+let reqCursor = null;       // останній документ показаної сторінки
+let reqHasMore = false;
 let reqSearchText = '';
 let reqOpenId = null;
 
@@ -302,7 +312,10 @@ function renderAdminRequests() {
     };
     document.querySelectorAll('#reqFilters .req-filter').forEach(b => {
         const n = b.querySelector('.req-filter-n');
-        if (n) n.textContent = counts[b.dataset.filter] ?? 0;
+        // Активні підвантажені всі — їхнє число точне. Вирішених і всіх
+        // може бути більше, ніж на показаних сторінках, — чесно кажемо «+».
+        const partial = reqHasMore && b.dataset.filter !== 'active';
+        if (n) n.textContent = `${counts[b.dataset.filter] ?? 0}${partial ? '+' : ''}`;
         b.classList.toggle('active', b.dataset.filter === reqFilter);
     });
 
@@ -316,7 +329,14 @@ function renderAdminRequests() {
         return;
     }
 
-    host.innerHTML = list.map(requestHtml).join('');
+    host.innerHTML = list.map(requestHtml).join('')
+        + (reqHasMore && reqFilter !== 'active'
+            ? '<button type="button" class="btn-soft btn-compact list-more" id="reqMoreBtn">Показати давніші</button>'
+            : '');
+    document.getElementById('reqMoreBtn')?.addEventListener('click', function () {
+        setBusy(this, true, 'Завантаження…');
+        loadAdminRequests(true);
+    });
     // Вкладення малюємо лише для розгорнутого — решта їх не показує,
     // і тягнути прев’ю для всієї черги нема сенсу.
     const opened = list.find(r => r.id === reqOpenId);
@@ -334,20 +354,47 @@ function renderAdminRequests() {
     }
 }
 
-export async function loadAdminRequests() {
+const toReq = (d) => {
+    const r = d.data();
+    return {
+        id: d.id, ...r,
+        st: normStatus(r.status),
+        createdMs: r.createdAt?.toDate ? r.createdAt.toDate().getTime() : null
+    };
+};
+
+/**
+ * @param {boolean} more true — дочитати наступну сторінку давніших, не
+ *        скидаючи вже показане. Слухач кліку передає сюди подію, тому
+ *        порівнюємо строго з true.
+ */
+export async function loadAdminRequests(more = false) {
     const host = document.getElementById('adminRequestsContainer');
     if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    const append = more === true;
+    if (!append) {
+        host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+        reqCursor = null;
+    }
     try {
-        const snap = await getDocs(query(collection(db, 'requests'), orderBy('createdAt', 'desc')));
-        adminReqs = snap.docs.map(d => {
-            const r = d.data();
-            return {
-                id: d.id, ...r,
-                st: normStatus(r.status),
-                createdMs: r.createdAt?.toDate ? r.createdAt.toDate().getTime() : null
-            };
-        });
+        const pageQuery = reqCursor
+            ? query(collection(db, 'requests'), orderBy('createdAt', 'desc'), startAfter(reqCursor), limit(REQ_PAGE))
+            : query(collection(db, 'requests'), orderBy('createdAt', 'desc'), limit(REQ_PAGE));
+        // Незакриті — окремим запитом за статусом: вони мають бути в списку,
+        // навіть якщо старші за будь-яку підвантажену сторінку. Одне поле
+        // в умові — Firestore обходиться без складеного індексу.
+        const [openSnap, pageSnap] = await Promise.all([
+            append ? null : getDocs(query(collection(db, 'requests'),
+                where('status', 'in', ['new', 'in_progress']))),
+            getDocs(pageQuery)
+        ]);
+
+        const byId = new Map(append ? adminReqs.map(r => [r.id, r]) : []);
+        [...(openSnap?.docs || []), ...pageSnap.docs].forEach(d => byId.set(d.id, toReq(d)));
+        adminReqs = [...byId.values()].sort((a, b) => (b.createdMs || 0) - (a.createdMs || 0));
+
+        reqCursor = pageSnap.docs.at(-1) || reqCursor;
+        reqHasMore = pageSnap.size === REQ_PAGE;
         renderAdminRequests();
     } catch (e) {
         console.error(e);
@@ -590,6 +637,10 @@ export function initRequests() {
     userInput?.addEventListener('change', () => {
         userReqFiles.push(...Array.from(userInput.files));
         userInput.value = '';
+        if (userReqFiles.length > MAX_FILES) {
+            userReqFiles = userReqFiles.slice(0, MAX_FILES);
+            toast(`Не більше ${MAX_FILES} файлів у зверненні`, 'error');
+        }
         refreshUserReqChips();
     });
 

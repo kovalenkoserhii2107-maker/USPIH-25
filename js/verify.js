@@ -12,7 +12,7 @@ import {
     collection, collectionGroup, doc, getDocs,
     updateDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { escapeHtml, toast, setBusy, promptDialog, normName } from './ui.js';
+import { escapeHtml, toast, setBusy, promptDialog, normName, safeFileUrl } from './ui.js';
 import { fileNameFromUrl } from './attachments.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
 import { prefillAnnouncement, notifyApartment } from './messages.js';
@@ -44,8 +44,11 @@ const val = (v) => v ? escapeHtml(v) : '<i class="vf-empty">не вказано<
 
 /** Посилання на скан: правління має мати змогу відкрити й перевірити. */
 function fileLinks(list, cls) {
-    if (!list.length) return '';
-    return list.map((u, i) => `<a class="vf-file ${cls}" href="${escapeHtml(u)}"
+    // Заявку пише мешканець — посилання на скан перевіряємо так само,
+    // як вкладення: лише сховище застосунку.
+    const safe = list.map(safeFileUrl).filter(Boolean);
+    if (!safe.length) return '';
+    return safe.map((u, i) => `<a class="vf-file ${cls}" href="${escapeHtml(u)}"
         target="_blank" rel="noopener">${escapeHtml(fileNameFromUrl(u, i))}</a>`).join('');
 }
 

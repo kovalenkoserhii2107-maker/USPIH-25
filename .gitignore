@@ -5,3 +5,10 @@ firestore-debug.log*
 
 # macOS
 .DS_Store
+
+# Скриншоти й звіти дизайн-аудиту — не для сайту (GitHub Pages публікує все з репозиторію)
+/audit-*/
+/design-qa*
+/design-source*
+/admin-*.png
+/admin-mobile-preview.html
