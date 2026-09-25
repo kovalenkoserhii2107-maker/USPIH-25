@@ -231,18 +231,40 @@ let activePeriod = 'all';
 
 const dayLabel = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
+/**
+ * Банківська примітка часто починається з рахунку й повної адреси.
+ * Для списку корисніші платник і призначення; повний текст лишається
+ * нижче у розкривних деталях.
+ */
+function readableNote(note) {
+    const source = String(note || '').replace(/\s+/g, ' ').trim();
+    if (!source) return '';
+    const payer = source.match(/(?:^|[,·])\s*від\s+(.+?)(?=,\s*за\s+|$)/i)?.[1]?.trim();
+    const purpose = source.match(/,\s*за\s+(.+)$/i)?.[1]?.trim();
+    if (payer) return purpose ? `${payer} · ${purpose}` : payer;
+    if (source.length <= 88) return source;
+    const shortened = source.slice(0, 85).replace(/\s+\S*$/, '').trim();
+    return `${shortened || source.slice(0, 85)}…`;
+}
+
 function rowHtml(e) {
     const k = KIND[e.kind] || KIND.charge;
-    return `<div class="lg-row">
-        <span class="lg-dot ${k.cls}"></span>
+    const isoDate = `${e.at.getFullYear()}-${String(e.at.getMonth() + 1).padStart(2, '0')}-${String(e.at.getDate()).padStart(2, '0')}`;
+    const note = String(e.note || '').trim();
+    return `<article class="lg-row">
+        <span class="lg-dot ${k.cls}" aria-hidden="true"></span>
         <span class="lg-main">
             <span class="lg-top">
-                <b>${k.label}</b>
+                <b class="lg-kind">${k.label}</b>
                 <b class="lg-amount ${k.cls}">${formatMoney(e.amount)}<small> грн</small></b>
             </span>
-            <span class="lg-meta">${escapeHtml(dayLabel(e.at))}${e.note ? ' · ' + escapeHtml(e.note) : ''}</span>
+            <time class="lg-date" datetime="${isoDate}">${escapeHtml(dayLabel(e.at))}</time>
+            ${note ? `<details class="lg-note">
+                <summary><span>${escapeHtml(readableNote(note))}</span><b>Деталі</b></summary>
+                <p>${escapeHtml(note)}</p>
+            </details>` : ''}
         </span>
-    </div>`;
+    </article>`;
 }
 
 function summaryHtml(list) {
@@ -253,11 +275,11 @@ function summaryHtml(list) {
     return `<div class="lg-summary">
         <div class="lg-stat">
             <span>Нараховано</span>
-            <b>${formatMoney(s.charged)}</b>
+            <b>${formatMoney(s.charged)}<small> грн</small></b>
         </div>
         <div class="lg-stat">
             <span>Сплачено</span>
-            <b class="lg-payment">${formatMoney(s.paid)}</b>
+            <b class="lg-payment">${formatMoney(s.paid)}<small> грн</small></b>
         </div>
     </div>
     <div class="lg-diff ${sign}">
