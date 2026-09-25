@@ -9,11 +9,12 @@
 import { db } from './firebase.js';
 import {
     collection, collectionGroup, getDocs
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, getInitials, avatarGradient, toast, formatDateTime, parseMoney, formatMoney } from './ui.js';
 
 
 let cache = null;          // [{ apt, entrance, area, owners: [...] }]
+let inFlight = null;       // спільний запит для одночасних споживачів
 
 function ownerApt(docRef) {
     // Шлях виду apartments/{apt}/owners/{id} — номер квартири
@@ -25,41 +26,44 @@ function ownerApt(docRef) {
 /** Квартири з їхніми співвласниками. Кеш живе до «Оновити». */
 export async function fetchDirectory() {
     if (cache) return cache;
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+        const [aptSnap, ownerSnap] = await Promise.all([
+            getDocs(collection(db, 'apartments')),
+            getDocs(collectionGroup(db, 'owners'))
+        ]);
 
-    const [aptSnap, ownerSnap] = await Promise.all([
-        getDocs(collection(db, 'apartments')),
-        getDocs(collectionGroup(db, 'owners'))
-    ]);
+        const byApt = {};
+        ownerSnap.forEach(d => {
+            const apt = ownerApt(d.ref);
+            (byApt[apt] ||= []).push(d.data());
+        });
 
-    const byApt = {};
-    ownerSnap.forEach(d => {
-        const apt = ownerApt(d.ref);
-        (byApt[apt] ||= []).push(d.data());
-    });
-
-    // Обліковий запис правління — службовий, а не квартира. Він не має
-    // потрапляти ні в довідник, ні в кворум, ні в лічильники: інакше
-    // будинок «набував» зайвого співвласника й зайвої площі.
-    cache = aptSnap.docs
-        .filter(d => d.data().isAdmin !== true)
-        .map(d => {
-            const data = d.data();
-            return {
-                apt: d.id,
-                entrance: data.entrance || '',
-                area: data.area || '',
-                ownersStatus: data.ownersStatus || 'pending',
-                ownersConfirmedBy: data.ownersConfirmedBy || '',
-                balance: data.balance,
-                balanceUpdatedAt: data.balanceUpdatedAt || null,
-                personalAccount: data.personalAccount || '',
-                ownersConfirmedAt: data.ownersConfirmedAt || null,
-                owners: byApt[d.id] || []
-            };
-        })
-        .sort((a, b) => (parseInt(a.apt, 10) || 0) - (parseInt(b.apt, 10) || 0));
-
-    return cache;
+        cache = aptSnap.docs
+            .filter(d => d.data().isAdmin !== true)
+            .map(d => {
+                const data = d.data();
+                return {
+                    apt: d.id,
+                    entrance: data.entrance || '',
+                    area: data.area || '',
+                    ownersStatus: data.ownersStatus || 'pending',
+                    ownersConfirmedBy: data.ownersConfirmedBy || '',
+                    balance: data.balance,
+                    balanceUpdatedAt: data.balanceUpdatedAt || null,
+                    personalAccount: data.personalAccount || '',
+                    ownersConfirmedAt: data.ownersConfirmedAt || null,
+                    owners: byApt[d.id] || []
+                };
+            })
+            .sort((a, b) => (parseInt(a.apt, 10) || 0) - (parseInt(b.apt, 10) || 0));
+        return cache;
+    })();
+    try {
+        return await inFlight;
+    } finally {
+        inFlight = null;
+    }
 }
 
 /**
@@ -67,7 +71,7 @@ export async function fetchDirectory() {
  * заявку на зміну списку власників: інакше довідник і покриття
  * показували б старі дані до перезавантаження.
  */
-export function invalidateDirectory() { cache = null; }
+export function invalidateDirectory() { cache = null; inFlight = null; }
 
 // Стан звірки як фільтр списку. Числа й список раніше жили в різних
 // картках, і зв'язати «27 не відповіли» зі списком доводилося очима.

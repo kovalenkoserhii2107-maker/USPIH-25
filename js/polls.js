@@ -15,11 +15,11 @@
 import { db, storage, session } from './firebase.js';
 import {
     collection, addDoc, getDocs, getDoc, setDoc, updateDoc, doc, runTransaction,
-    query, where, orderBy, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    query, where, orderBy, serverTimestamp, limit, startAfter
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
@@ -313,15 +313,25 @@ async function fetchVotes(pollId) {
 }
 
 /** Опитування разом з голосами, найновіші згори. */
-async function fetchPollsWithVotes() {
-    const snap = await getDocs(query(collection(db, 'polls'), orderBy('createdAt', 'desc')));
+async function fetchPollsWithVotes(cursor = null) {
+    const constraints = [orderBy('createdAt', 'desc')];
+    if (cursor) constraints.push(startAfter(cursor));
+    constraints.push(limit(30));
+    const snap = await getDocs(query(collection(db, 'polls'), ...constraints));
     const polls = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     // Паралельно, а не по черзі: інакше десяток опитувань
     // означав би десяток послідовних запитів.
     const votes = await Promise.all(polls.map(p => fetchVotes(p.id)));
     polls.forEach((p, i) => { p.votes = votes[i]; });
-    return polls;
+    return {
+        polls,
+        cursor: snap.docs[snap.docs.length - 1] || cursor,
+        hasMore: snap.size === 30
+    };
 }
+
+const userPages = { polls: [], cursor: null, hasMore: false };
+const adminPages = { polls: [], cursor: null, hasMore: false };
 
 function statusBadge(poll) {
     if (isClosed(poll)) return '<span class="poll-badge poll-badge-closed">Завершено</span>';
@@ -373,13 +383,20 @@ export async function refreshPollsBadge() {
 // ------------------------------------------------------------
 // МЕШКАНЕЦЬ
 // ------------------------------------------------------------
-export async function loadUserPolls() {
+export async function loadUserPolls(append = false) {
     const host = document.getElementById('userPollsContainer');
     if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    if (!append) {
+        host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+        Object.assign(userPages, { polls: [], cursor: null, hasMore: false });
+    }
 
     try {
-        const polls = await fetchPollsWithVotes();
+        const page = await fetchPollsWithVotes(append ? userPages.cursor : null);
+        userPages.polls.push(...page.polls);
+        userPages.cursor = page.cursor;
+        userPages.hasMore = page.hasMore;
+        const polls = userPages.polls;
         if (!polls.length) {
             host.innerHTML = '<p class="list-empty">Опитувань поки немає</p>';
             return;
@@ -429,7 +446,8 @@ export async function loadUserPolls() {
                 <div class="attach-block poll-attach" data-poll-att="${poll.id}"></div>
                 ${body}
             </div>`;
-        }).join('');
+        }).join('') + (userPages.hasMore
+            ? '<button type="button" class="btn-soft user-polls-more">Показати давніші</button>' : '');
 
         polls.forEach(p => {
             if (p.attachments?.length) {
@@ -460,6 +478,7 @@ export async function loadUserPolls() {
                 submitMeetingVote(poll.id, answers, this);
             });
         });
+        host.querySelector('.user-polls-more')?.addEventListener('click', () => loadUserPolls(true));
     } catch (e) {
         console.error('Завантаження опитувань:', e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити опитування</p>';
@@ -787,15 +806,24 @@ function adminPollActions(poll) {
                 data-poll="${poll.id}">Завершити опитування</button></div>`;
 }
 
-export async function loadAdminPolls() {
+export async function loadAdminPolls(append = false) {
     const host = document.getElementById('adminPollsContainer');
     if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    if (!append) {
+        host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+        Object.assign(adminPages, { polls: [], cursor: null, hasMore: false });
+    }
 
     try {
-        let polls = await fetchPollsWithVotes();
-        // Якщо щось довелося закрити — перечитуємо, щоб показати свіжі статуси
-        if (await closeExpiredPolls(polls)) polls = await fetchPollsWithVotes();
+        const page = await fetchPollsWithVotes(append ? adminPages.cursor : null);
+        await closeExpiredPolls(page.polls);
+        page.polls.forEach(poll => {
+            if (poll.status === 'active' && isExpired(poll)) poll.status = 'closed';
+        });
+        adminPages.polls.push(...page.polls);
+        adminPages.cursor = page.cursor;
+        adminPages.hasMore = page.hasMore;
+        let polls = adminPages.polls;
         // Збори мають власну вкладку з іншим життєвим циклом — тут лише опитування
         polls = polls.filter(p => !isMeeting(p));
 
@@ -806,7 +834,10 @@ export async function loadAdminPolls() {
         });
 
         if (!polls.length) {
-            host.innerHTML = '<p class="list-empty">Опитувань ще не створено</p>';
+            host.innerHTML = '<p class="list-empty">Опитувань ще не створено</p>'
+                + (adminPages.hasMore
+                    ? '<button type="button" class="btn-soft admin-polls-more">Показати давніші</button>' : '');
+            host.querySelector('.admin-polls-more')?.addEventListener('click', () => loadAdminPolls(true));
             return;
         }
 
@@ -823,7 +854,8 @@ export async function loadAdminPolls() {
                 ${renderResults(poll.options || [], poll.votes)}
                 ${apartments.length ? renderQuorum(computeQuorum(poll.votes, apartments)) : ''}
                 ${adminPollActions(poll)}
-            </div>`).join('');
+            </div>`).join('') + (adminPages.hasMore
+                ? '<button type="button" class="btn-soft admin-polls-more">Показати давніші</button>' : '');
 
         polls.forEach(p => {
             if (p.attachments?.length) {
@@ -834,6 +866,7 @@ export async function loadAdminPolls() {
         host.querySelectorAll('.poll-close-btn').forEach(btn => {
             btn.addEventListener('click', function () { closePoll(this.dataset.poll, this); });
         });
+        host.querySelector('.admin-polls-more')?.addEventListener('click', () => loadAdminPolls(true));
     } catch (e) {
         console.error('Завантаження опитувань:', e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити опитування</p>';

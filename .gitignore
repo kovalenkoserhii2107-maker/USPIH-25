@@ -2,6 +2,8 @@
 firebase-debug.log*
 firestore-debug.log*
 .firebase/
+node_modules/
+functions/node_modules/
 
 # macOS
 .DS_Store

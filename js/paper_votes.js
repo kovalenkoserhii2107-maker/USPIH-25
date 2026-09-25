@@ -19,7 +19,7 @@
 import { db, session } from './firebase.js';
 import {
     collection, getDocs, doc, writeBatch, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import {

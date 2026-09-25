@@ -11,7 +11,7 @@
 import { db, session } from './firebase.js';
 import {
     collection, doc, getDocs, query, orderBy, writeBatch, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, parseMoney, formatMoney } from './ui.js';
 import { loadKnownApts } from './finance.js';
 

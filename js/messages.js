@@ -6,10 +6,10 @@ import { db, storage, session } from './firebase.js';
 import {
     collection, addDoc, getDocs, doc, query, orderBy, where,
     serverTimestamp, writeBatch, limit, startAfter
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, openSheet, isSheetOpen, closeAllSheets, lockScroll, unlockScroll } from './ui.js';
 import { renderAttachments, renderFileManager, isImageFile } from './attachments.js';
 

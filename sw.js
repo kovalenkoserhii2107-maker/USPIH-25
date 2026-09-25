@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '106';
+const VERSION = '107';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -24,6 +24,7 @@ const SHELL = [
     `./style-chat.css?v=${VERSION}`,
     `./js/app.js?v=${VERSION}`,
     './js/firebase.js',
+    './js/backend.js',
     './js/ui.js',
     './js/attachments.js',
     './js/owners.js',
@@ -54,6 +55,14 @@ const SHELL = [
     './js/dtek.js'
 ];
 
+const FIREBASE_SDK = [
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js'
+];
+
 // ------------------------------------------------------------
 // ВСТАНОВЛЕННЯ
 // Кожен файл додаємо окремо: якщо один шлях зіпсовано, це не
@@ -67,13 +76,20 @@ const SHELL = [
 self.addEventListener('install', (event) => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE);
-        await Promise.all(SHELL.map(async (url) => {
-            try {
-                const res = await fetch(url, { cache: 'no-cache', credentials: 'same-origin' });
-                if (res.ok) await cache.put(url, res);
-            } catch (e) {
-                console.warn('SW: не закешовано', url, e);
-            }
+        // Оболонка атомарна: один отсутствующий модуль отменяет установку,
+        // поэтому прежний полностью рабочий worker остаётся активным.
+        const shellResponses = await Promise.all(SHELL.map(async url => {
+            const response = await fetch(url, { cache: 'no-cache', credentials: 'same-origin' });
+            if (!response.ok) throw new Error(`SW: ${url} — HTTP ${response.status}`);
+            return [url, response];
+        }));
+        await Promise.all(shellResponses.map(([url, response]) => cache.put(url, response)));
+
+        // SDK не является частью атомарной оболочки: при блокировке CDN
+        // установка всё равно завершается, а онлайн-запуск использует сеть.
+        await Promise.allSettled(FIREBASE_SDK.map(async url => {
+            const response = await fetch(url, { cache: 'no-cache', mode: 'cors' });
+            if (response.ok) await cache.put(url, response);
         }));
         await self.skipWaiting();
     })());
@@ -103,10 +119,12 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(req.url);
 
-    // Чужі домени — Firestore, Storage, Auth, SDK з gstatic —
-    // пропускаємо повз воркер. Кешувати живі дані не можна, а
-    // втручання в потокові запити Firestore ламає онлайн-оновлення.
-    if (url.origin !== self.location.origin) return;
+    // Кешуємо лише точні URL модулів SDK. Firestore/Auth/Storage API
+    // й усі інші чужі запити проходять напряму та ніколи не кешуються.
+    if (url.origin !== self.location.origin) {
+        if (FIREBASE_SDK.includes(url.href)) event.respondWith(cacheFirst(req));
+        return;
+    }
 
     // Мережа-перша для ВСЬОГО свого домену, а не лише для сторінок.
     //
@@ -117,6 +135,17 @@ self.addEventListener('fetch', (event) => {
     // завантаженні. Кеш тепер потрібен лише для роботи без мережі.
     event.respondWith(networkFirst(req));
 });
+
+async function cacheFirst(req) {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    const response = await fetch(req);
+    if (response && (response.ok || response.type === 'opaque')) {
+        await cache.put(req, response.clone());
+    }
+    return response;
+}
 
 async function networkFirst(req) {
     const cache = await caches.open(CACHE);

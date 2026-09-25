@@ -11,10 +11,10 @@
 import { db, storage } from './firebase.js';
 import {
     doc, getDoc, getDocs, setDoc, deleteDoc, collection, writeBatch
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, getInitials, avatarGradient, toast, setBusy, confirmDialog } from './ui.js';
 
 export const GROUPS = {

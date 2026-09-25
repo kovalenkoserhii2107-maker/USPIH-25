@@ -5,10 +5,10 @@ import { db, storage, session } from './firebase.js';
 import {
     collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp,
     limit, startAfter
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, lockScroll, unlockScroll,
          openSheet, closeAllSheets } from './ui.js';
 import { renderAttachments, renderFileManager, getDocKind, docIconSvg } from './attachments.js';
@@ -29,6 +29,9 @@ let userReqFiles = [];
 const MAX_FILES = 10;   // стільки ж пропускають правила Firestore
 let replyFiles = [];
 let osbbDocFile = null;
+let osbbDocs = [];
+let osbbDocsCursor = null;
+let osbbDocsHaveMore = false;
 
 async function uploadAll(files, folder) {
     return Promise.all(files.map(async (file) => {
@@ -509,17 +512,26 @@ export async function uploadOsbbDoc(btn) {
     }
 }
 
-export async function loadOsbbDocs() {
+export async function loadOsbbDocs(append = false) {
     const host = document.getElementById('osbbDocsContainer');
     if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження документів…</p>';
+    if (!append) {
+        host.innerHTML = '<p class="list-empty">Завантаження документів…</p>';
+        osbbDocs = [];
+        osbbDocsCursor = null;
+    }
     try {
-        const snap = await getDocs(query(collection(db, 'osbb_documents'), orderBy('createdAt', 'desc')));
-        if (snap.empty) { host.innerHTML = '<p class="list-empty">База документів порожня</p>'; return; }
+        const constraints = [orderBy('createdAt', 'desc')];
+        if (append && osbbDocsCursor) constraints.push(startAfter(osbbDocsCursor));
+        constraints.push(limit(40));
+        const snap = await getDocs(query(collection(db, 'osbb_documents'), ...constraints));
+        osbbDocsCursor = snap.docs[snap.docs.length - 1] || osbbDocsCursor;
+        osbbDocsHaveMore = snap.size === 40;
+        osbbDocs.push(...snap.docs.map(d => d.data()));
+        if (!osbbDocs.length) { host.innerHTML = '<p class="list-empty">База документів порожня</p>'; return; }
 
         const groups = {};
-        snap.forEach(d => {
-            const doc = d.data();
+        osbbDocs.forEach(doc => {
             (groups[doc.category || 'Інше'] ||= []).push(doc);
         });
 
@@ -540,7 +552,8 @@ export async function loadOsbbDocs() {
                         </button>`;
                     }).join('')}
                 </div>
-            </div>`).join('');
+            </div>`).join('') + (osbbDocsHaveMore
+            ? '<button type="button" class="btn-soft osbb-docs-more">Показати ще</button>' : '');
 
         host.querySelectorAll('.osbb-doc-row').forEach(row => {
             row.addEventListener('click', async () => {
@@ -549,6 +562,7 @@ export async function loadOsbbDocs() {
                 openDocViewer({ name: d.fileName || d.title, url: d.url, type: d.type, size: d.size });
             });
         });
+        host.querySelector('.osbb-docs-more')?.addEventListener('click', () => loadOsbbDocs(true));
     } catch (e) {
         console.error(e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити базу</p>';
@@ -559,7 +573,7 @@ export async function populateDocsDropdown() {
     const select = document.getElementById('adminMsgLinkedDoc');
     if (!select) return;
     try {
-        const snap = await getDocs(query(collection(db, 'osbb_documents'), orderBy('createdAt', 'desc')));
+        const snap = await getDocs(query(collection(db, 'osbb_documents'), orderBy('createdAt', 'desc'), limit(200)));
         select.innerHTML = '<option value="">Не прикріплювати</option>';
         snap.forEach(d => {
             const doc = d.data();

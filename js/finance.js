@@ -11,10 +11,10 @@ import { db, storage, session } from './firebase.js';
 import {
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
     query, orderBy, serverTimestamp, writeBatch
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, parseMoney, formatMoney } from './ui.js';
 import { renderAttachments } from './attachments.js';
 import { fetchDirectory } from './directory.js';
@@ -417,7 +417,7 @@ export async function applyBalances(btn) {
             const batch = writeBatch(db);
             valid.slice(i, i + 400).forEach(r => {
                 batch.set(doc(db, 'apartments', r.apt),
-                    { balance: r.balance, balanceUpdatedAt: new Date() }, { merge: true });
+                    { balance: r.balance, balanceUpdatedAt: serverTimestamp() }, { merge: true });
             });
             await batch.commit();
         }
@@ -960,7 +960,7 @@ export async function uploadDebtsCSV(file, btn) {
             const batch = writeBatch(db);
             valid.slice(i, i + 400).forEach(r => {
                 batch.set(doc(db, 'apartments', r.apt),
-                    { balance: r.balance, balanceUpdatedAt: new Date() }, { merge: true });
+                    { balance: r.balance, balanceUpdatedAt: serverTimestamp() }, { merge: true });
             });
             await batch.commit();
         }

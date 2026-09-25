@@ -14,15 +14,16 @@
 import { db, storage } from './firebase.js';
 import {
     collection, addDoc, getDocs, getDoc, doc, updateDoc,
-    query, orderBy, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    query, orderBy, serverTimestamp, where, limit, startAfter
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, lockScroll, unlockScroll } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
+import { callBackend } from './backend.js';
 import {
     CHAIR_QUESTION, MEETING_ANSWERS, DECISION_PCT, isMeeting, agendaOf,
     computeQuorum, questionTally, isChairQuestion, meetingWhen,
@@ -32,6 +33,11 @@ import {
 let pendingFiles = [];
 let cache = { meetings: [], apartments: [] };
 let editing = null;             // збори, відкриті у вікні редагування
+let meetingCursor = null;
+let meetingsHaveMore = false;
+let protocolDocs = [];
+let protocolCursor = null;
+let protocolsHaveMore = false;
 
 // ------------------------------------------------------------
 // ФОРМА: ПОРЯДОК ДЕННИЙ
@@ -372,6 +378,9 @@ function meetingCard(poll, apartments) {
     if (!isClosed(poll)) {
         actions.push(`<button type="button" class="btn-soft btn-compact meet-close" data-id="${poll.id}">Завершити збори</button>`);
     } else {
+        if (!poll.resultsSent) {
+            actions.push(`<button type="button" class="btn-soft btn-compact meet-close" data-id="${poll.id}">Надіслати підсумки</button>`);
+        }
         actions.push(`<button type="button" class="btn-primary btn-compact meet-protocol" data-id="${poll.id}">${
             poll.protocolUrl ? 'Сформувати протокол заново' : 'Сформувати протокол'}</button>`);
     }
@@ -409,18 +418,28 @@ function meetingCard(poll, apartments) {
     </div>`;
 }
 
-export async function loadMeetings() {
+export async function loadMeetings(append = false) {
     const active = document.getElementById('meetingsActive');
     const archive = document.getElementById('meetingsArchive');
     if (!active || !archive) return;
-    active.innerHTML = '<p class="list-empty">Завантаження…</p>';
-    archive.innerHTML = '';
+    if (!append) {
+        active.innerHTML = '<p class="list-empty">Завантаження…</p>';
+        archive.innerHTML = '';
+        meetingCursor = null;
+        cache.meetings = [];
+    }
 
     try {
-        const snap = await getDocs(query(collection(db, 'polls'), orderBy('createdAt', 'desc')));
-        const meetings = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isMeeting);
-        const votes = await Promise.all(meetings.map(m => fetchVotes(m.id)));
-        meetings.forEach((m, i) => { m.votes = votes[i]; });
+        const parts = [collection(db, 'polls'), where('isMeeting', '==', true), orderBy('createdAt', 'desc')];
+        if (append && meetingCursor) parts.push(startAfter(meetingCursor));
+        parts.push(limit(40));
+        const snap = await getDocs(query(...parts));
+        meetingCursor = snap.docs[snap.docs.length - 1] || meetingCursor;
+        meetingsHaveMore = snap.size === 40;
+        const page = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const votes = await Promise.all(page.map(m => fetchVotes(m.id)));
+        page.forEach((m, i) => { m.votes = votes[i]; });
+        const meetings = [...cache.meetings, ...page];
 
         const apartments = await fetchDirectory().catch(e => {
             console.warn('Довідник для зборів:', e);
@@ -441,9 +460,10 @@ export async function loadMeetings() {
         active.innerHTML = live.length
             ? live.map(m => meetingCard(m, apartments)).join('')
             : '<p class="list-empty">Активних зборів немає</p>';
-        archive.innerHTML = past.length
+        archive.innerHTML = (past.length
             ? past.map(m => meetingCard(m, apartments)).join('')
-            : '<p class="list-empty">Архів порожній</p>';
+            : '<p class="list-empty">Архів порожній</p>')
+            + (meetingsHaveMore ? '<button type="button" class="btn-soft meetings-more">Показати давніші збори</button>' : '');
 
         meetings.forEach(m => {
             if (!m.attachments?.length) return;
@@ -457,23 +477,32 @@ export async function loadMeetings() {
 }
 
 /** Протоколи зборів і засідань правління — одним списком. */
-export async function loadProtocols() {
+export async function loadProtocols(append = false) {
     const host = document.getElementById('meetingsProtocols');
     if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+    if (!append) {
+        host.innerHTML = '<p class="list-empty">Завантаження…</p>';
+        protocolDocs = [];
+        protocolCursor = null;
+    }
     try {
-        const snap = await getDocs(query(collection(db, 'osbb_documents'), orderBy('createdAt', 'desc')));
-        const docs = snap.docs
+        const parts = [collection(db, 'osbb_documents'), orderBy('createdAt', 'desc')];
+        if (append && protocolCursor) parts.push(startAfter(protocolCursor));
+        parts.push(limit(40));
+        const snap = await getDocs(query(...parts));
+        protocolCursor = snap.docs[snap.docs.length - 1] || protocolCursor;
+        protocolsHaveMore = snap.size === 40;
+        protocolDocs.push(...snap.docs
             .map(d => ({ id: d.id, ...d.data() }))
-            .filter(d => /протокол/i.test(d.category || '') || /протокол/i.test(d.title || ''));
+            .filter(d => /протокол/i.test(d.category || '') || /протокол/i.test(d.title || '')));
 
-        if (!docs.length) {
+        if (!protocolDocs.length) {
             host.innerHTML = '<p class="list-empty">Протоколів ще немає. '
                 + 'Протокол зборів зʼявиться тут після формування, '
                 + 'а протокол правління можна завантажити у вкладці «База».</p>';
             return;
         }
-        host.innerHTML = docs.map(d => `
+        host.innerHTML = protocolDocs.map(d => `
             <a class="proto-row" href="${escapeHtml(d.url)}" target="_blank" rel="noopener">
                 <span class="proto-row-text">
                     <span class="proto-row-title">${escapeHtml(d.title)}</span>
@@ -482,7 +511,8 @@ export async function loadProtocols() {
                 </span>
                 <svg class="row-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none"
                      stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            </a>`).join('');
+            </a>`).join('')
+            + (protocolsHaveMore ? '<button type="button" class="btn-soft protocols-more">Показати ще</button>' : '');
     } catch (e) {
         console.error('Завантаження протоколів:', e);
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити протоколи</p>';
@@ -616,7 +646,8 @@ async function printSheets(poll, btn) {
 }
 
 async function closeMeeting(poll, btn) {
-    const ok = await confirmDialog('Завершити збори?',
+    const retry = poll.status === 'closed' && !poll.resultsSent;
+    const ok = retry || await confirmDialog('Завершити збори?',
         'Голосувати більше не можна — ні в застосунку, ні паперовим листком. '
         + 'Підсумки підуть у розсилку, протокол формується окремою кнопкою.',
         'Завершити');
@@ -624,20 +655,12 @@ async function closeMeeting(poll, btn) {
 
     setBusy(btn, true, 'Завершення…');
     try {
-        const votes = await fetchVotes(poll.id);
-        const quorum = computeQuorum(votes, cache.apartments);
-        await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', quorum });
-
-        if (!poll.resultsSent) {
-            const { broadcastMeetingResults } = await import('./polls.js');
-            await broadcastMeetingResults({ ...poll, votes }, quorum, cache.apartments);
-            await updateDoc(doc(db, 'polls', poll.id), { resultsSent: true });
-        }
+        await callBackend('finalizeMeeting', { pollId: poll.id });
         toast('Збори завершено, підсумки надіслано', 'success');
         await loadMeetings();
     } catch (e) {
         console.error('Завершення зборів:', e);
-        toast('Не вдалося завершити', 'error');
+        toast(e.message || 'Не вдалося завершити', 'error');
         setBusy(btn, false);
     }
 }
@@ -728,6 +751,7 @@ export function initMeetings() {
     // і власні слухачі на кнопках доводилося б вішати щоразу заново.
     ['meetingsActive', 'meetingsArchive'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
+            if (e.target.closest('.meetings-more')) { loadMeetings(true); return; }
             const btn = e.target.closest('button[data-id]');
             if (!btn) return;
             const poll = byId(btn.dataset.id);
@@ -738,5 +762,8 @@ export function initMeetings() {
             else if (btn.classList.contains('meet-close')) closeMeeting(poll, btn);
             else if (btn.classList.contains('meet-protocol')) openProtocol(poll, btn);
         });
+    });
+    document.getElementById('meetingsProtocols')?.addEventListener('click', event => {
+        if (event.target.closest('.protocols-more')) loadProtocols(true);
     });
 }

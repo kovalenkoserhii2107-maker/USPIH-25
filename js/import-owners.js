@@ -14,8 +14,8 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, doc, getDocs, writeBatch
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    collection, doc, getDocs, writeBatch, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, parseMoney, normName } from './ui.js';
 import { calculateShares } from './owners.js';
 import { invalidateDirectory } from './directory.js';
@@ -241,7 +241,7 @@ export async function writeImport(apts, overwriteConfirmed, onProgress) {
         if (a.balance !== null) {
             aptData.balance = a.balance;
             const d = parseDate(a.balanceDate);
-            aptData.balanceUpdatedAt = d || new Date();
+            aptData.balanceUpdatedAt = d || serverTimestamp();
         }
         // Список змінився — попередню звірку він скасовує: мешканець
         // підтверджував інші дані.

@@ -14,7 +14,7 @@
 import { db } from './firebase.js';
 import {
     collection, doc, query, where, orderBy, getDocs, getDoc
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { formatElapsed, escapeHtml } from './ui.js';
 
 const DAY_MS = 86400000;

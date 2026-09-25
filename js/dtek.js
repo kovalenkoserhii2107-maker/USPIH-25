@@ -9,10 +9,10 @@
 // помилка тут гірша за один вибір руками.
 // ============================================================
 import { db, app } from './firebase.js';
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     getFunctions, httpsCallable
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
 import { escapeHtml, toast, setBusy, formatDateTime } from './ui.js';
 
 // Дванадцять черг, як їх називає сам ДТЕК. Список стабільний і
@@ -97,10 +97,13 @@ async function save(btn) {
 function renderAdminRow(cfgGroup, sched) {
     const host = document.getElementById('adminScheduleHost');
     if (!host) return;
+    const failure = sched?.lastError
+        ? `<em class="pw-sched-error">Автооновлення не вдалося${sched.lastErrorAt
+            ? ` · ${escapeHtml(formatDateTime(sched.lastErrorAt))}` : ''}</em>` : '';
     const label = cfgGroup
         ? `<b>Черга ${escapeHtml(cfgGroup.replace('GPV', ''))}</b><span>${
             sched?.fetchedAt ? `графік оновлено ${escapeHtml(formatDateTime(sched.fetchedAt))}`
-                             : 'графік ще не завантажено'}</span>`
+                             : 'графік ще не завантажено'}</span>${failure}`
         : `<b>Чергу не налаштовано</b><span>оберіть — і графік підтягнеться сам</span>`;
 
     host.innerHTML = `<button type="button" class="pw-sched${cfgGroup ? '' : ' pw-sched-soon'}" id="openDtekBtn">

@@ -1,0 +1,16 @@
+{
+  "name": "uspih-25-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check-project.mjs",
+    "test": "node --test tests/unit/*.test.mjs functions/*.test.js",
+    "test:rules": "node --test tests/rules/*.test.mjs",
+    "ci": "npm run check && npm test"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.31.0"
+  }
+}

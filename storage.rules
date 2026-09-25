@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email is string;
+    }
+
+    function myApt() {
+      return request.auth.token.email.split('@')[0];
+    }
+
+    function admin() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/apartments/$(myApt()))
+        && firestore.get(/databases/(default)/documents/apartments/$(myApt())).data.isAdmin == true;
+    }
+
+    function safeUpload(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024
+        && request.resource.contentType is string;
+    }
+
+    match /requests/{apt}/{file=**} {
+      allow read: if signedIn() && (apt == myApt() || admin());
+      allow create, update: if signedIn() && (apt == myApt() || admin()) && safeUpload(15);
+      allow delete: if admin();
+    }
+
+    match /replies/{requestId}/{file=**} {
+      allow read: if signedIn();
+      allow create, update, delete: if admin() && (request.resource == null || safeUpload(15));
+    }
+
+    match /chat/{apt}/{file=**} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && apt == myApt() && safeUpload(15);
+      allow delete: if admin() || (signedIn() && apt == myApt());
+    }
+
+    match /apartments/{apt}/{file=**} {
+      allow read: if signedIn() && (apt == myApt() || admin());
+      allow create, update: if signedIn() && (apt == myApt() || admin()) && safeUpload(15);
+      allow delete: if admin();
+    }
+
+    match /receipts/{apt}/{file=**} {
+      allow read: if signedIn() && (apt == myApt() || admin());
+      allow write: if admin() && (request.resource == null || safeUpload(20));
+    }
+
+    match /messages/{file=**} {
+      allow read: if signedIn();
+      allow write: if admin() && (request.resource == null || safeUpload(20));
+    }
+
+    match /polls/{file=**} {
+      allow read: if signedIn();
+      allow write: if admin() && (request.resource == null || safeUpload(20));
+    }
+
+    match /osbb_docs/{file=**} {
+      allow read: if signedIn();
+      allow write: if admin() && (request.resource == null || safeUpload(30));
+    }
+
+    match /board_members/{file=**} {
+      allow read: if signedIn();
+      allow write: if admin() && (request.resource == null || safeUpload(8));
+    }
+
+    match /services/{file=**} {
+      allow read: if signedIn();
+      allow write: if admin() && (request.resource == null || safeUpload(8));
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

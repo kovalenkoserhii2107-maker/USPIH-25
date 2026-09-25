@@ -18,13 +18,11 @@
 // тощо) кирилиці не мають зовсім — там був би ряд знаків питання.
 // ============================================================
 import { db, storage } from './firebase.js';
-import {
-    collection, addDoc, doc, getDoc, updateDoc, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { buildRecipients } from './messages.js';
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
+import { callBackend } from './backend.js';
 import {
     MEETING_ANSWERS, DECISION_PCT, QUORUM_PCT, OSBB_DEFAULTS,
     agendaOf, answerFor, isPaperVote, isChairQuestion, parseArea, ownerShare,
@@ -610,54 +608,9 @@ export async function generateAndPublishProtocol(poll, apartments, votes, onStep
     const dateLabel = formatMeetingDate(poll.meetingDate) || 'без дати';
     const title = `Протокол № ${safe(poll.protocolNumber) || '___'} загальних зборів від ${dateLabel}`;
 
-    const docRef = await addDoc(collection(db, 'osbb_documents'), {
-        title,
-        category: 'Протоколи зборів',
-        fileName,
-        url,
-        size: blob.size,
-        type: 'application/pdf',
-        pollId: poll.id,
-        createdAt: serverTimestamp()
-    });
-
     onStep('Публікація…');
-    // Статус і посилання пишемо ДО розсилки: якщо впаде розсилка,
-    // протокол усе одно лишається опублікованим і знайденим у Базі.
-    await updateDoc(doc(db, 'polls', poll.id), {
-        status: 'closed',
-        quorum: quorum.total,
-        protocolUrl: url,
-        protocolDocId: docRef.id,
-        protocolAt: serverTimestamp()
+    const published = await callBackend('publishMeetingProtocol', {
+        pollId: poll.id, url, fileName, size: blob.size
     });
-
-    const questions = agendaOf(poll);
-    const summary = questions.map((question, i) => {
-        const t = questionTally(votes, apartments, i, isChairQuestion(i));
-        return `${i + 1}. ${question}\n   ${t.accepted ? 'ПРИЙНЯТО' : 'НЕ ПРИЙНЯТО'} — `
-            + `за ${t.rows[MEETING_ANSWERS[0]].ownersCount}, `
-            + `проти ${t.rows[MEETING_ANSWERS[1]].ownersCount}, `
-            + `утрималися ${t.rows[MEETING_ANSWERS[2]].ownersCount}`;
-    }).join('\n');
-
-    await addDoc(collection(db, 'messages'), {
-        title: `Протокол зборів від ${dateLabel}`,
-        body: `Протокол загальних зборів співвласників сформовано та додано до Бази документів ОСББ.\n\n`
-            + `Участь узяли ${quorum.total.votedOwners} із ${quorum.total.totalOwners} співвласників `
-            + `(${fmtPct(quorum.total.ownersPct)}%), ${fmtNum(quorum.total.votedArea)} із `
-            + `${fmtNum(quorum.total.totalArea)} м².\n`
-            + `${quorum.total.hasQuorum ? 'Кворум зібрано, збори правомочні.' : 'Кворуму немає, збори неправомочні.'}\n\n`
-            + `РІШЕННЯ (голосів співвласників)\n${summary}\n\n`
-            + `Повний текст протоколу — у прикріпленому документі.`,
-        targetType: 'all',
-        targetValue: '',
-        recipients: buildRecipients('all', ''),
-        attachments: [],
-        linkedDoc: { name: title, url, type: 'application/pdf', size: blob.size },
-        createdAt: serverTimestamp(),
-        readBy: {}
-    });
-
-    return { url, title, quorum: quorum.total };
+    return { url, title: published.title || title, quorum: published.quorum || quorum.total };
 }

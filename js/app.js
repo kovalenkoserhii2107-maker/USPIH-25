@@ -3,11 +3,11 @@
 // ============================================================
 import { db, auth, session, currentApt, resetSession, aptToEmail } from './firebase.js';
 import {
-    doc, getDoc, setDoc, updateDoc
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    doc, getDoc, setDoc, updateDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import {
     toast, setBusy, showScreen, currentScreen, initSheets, toggleSheet, closeAllSheets
@@ -25,14 +25,9 @@ import {
 } from './requests.js';
 import {
     initContacts, loadBoardContacts, loadServices,
-    loadAdminBoard, loadAdminServices, moveAccountantToServices
+    loadAdminBoard, loadAdminServices
 } from './contacts.js';
 import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
-import { initMeetings, loadMeetings, loadProtocols } from './meetings.js';
-import { loadDashboard } from './dashboard.js';
-import { initDirectory, loadDirectory } from './directory.js';
-import { initImportOwners } from './import-owners.js';
-import { initExportBase } from './export-base.js';
 import { initDtek, loadDtekSettings, loadPowerSchedule } from './dtek.js';
 import {
     initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
@@ -44,9 +39,68 @@ import {
 import { initPullToRefresh } from './pull-refresh.js';
 import { maybeShowTutorial, markFreshLogin } from './tutorial.js';
 import { initLedger, loadLedger } from './ledger.js';
-import { initVerify, loadVerifyQueue } from './verify.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
+const loadedAdminTabs = new Set();
+const loadingAdminTabs = new Map();
+let activeAdminTab = 'overview';
+let adminFeaturesPromise = null;
+let adminFeaturesInitialized = false;
+
+async function ensureAdminFeatures() {
+    adminFeaturesPromise ||= Promise.all([
+        import('./meetings.js'), import('./dashboard.js'), import('./directory.js'),
+        import('./import-owners.js'), import('./export-base.js'), import('./verify.js')
+    ]).then(([meetings, dashboard, directory, importer, exporter, verify]) => ({
+        ...meetings, ...dashboard, ...directory, ...importer, ...exporter, ...verify
+    }));
+    const features = await adminFeaturesPromise;
+    if (!adminFeaturesInitialized) {
+        features.initDirectory();
+        features.initImportOwners();
+        features.initExportBase();
+        features.initMeetings();
+        features.initVerify();
+        initMeetingWorkspace();
+        adminFeaturesInitialized = true;
+    }
+    return features;
+}
+
+const ADMIN_TAB_LOADERS = {
+    overview: async () => {
+        const features = await ensureAdminFeatures();
+        return Promise.all([features.loadDashboard(), loadDtekSettings()]);
+    },
+    meetings: async () => {
+        const features = await ensureAdminFeatures();
+        return Promise.all([features.loadMeetings(), features.loadProtocols()]);
+    },
+    directory: async () => {
+        const features = await ensureAdminFeatures();
+        return Promise.all([features.loadDirectory(), features.loadVerifyQueue()]);
+    },
+    send: () => Promise.all([loadAdminHistory(), populateDocsDropdown()]),
+    requests: loadAdminRequests,
+    docs: populateDocsDropdown,
+    polls: loadAdminPolls,
+    finance: () => Promise.all([loadAdminExpenses(), loadAdminRequisites()]),
+    board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
+    chat: loadChat
+};
+
+async function loadAdminTab(name = activeAdminTab, force = false) {
+    const loader = ADMIN_TAB_LOADERS[name];
+    if (!loader || (!force && loadedAdminTabs.has(name))) return;
+    if (loadingAdminTabs.has(name)) return loadingAdminTabs.get(name);
+    const task = Promise.resolve().then(loader).then(() => loadedAdminTabs.add(name));
+    loadingAdminTabs.set(name, task);
+    try {
+        await task;
+    } finally {
+        loadingAdminTabs.delete(name);
+    }
+}
 
 // ------------------------------------------------------------
 // ВХІД
@@ -105,7 +159,7 @@ async function loadCabinet(apt) {
         session.ownersDecision = data.ownersDecision || null;
         session.tutorialSeen = Boolean(data.tutorialAt);
     } else {
-        await setDoc(aptRef, { passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: new Date() });
+        await setDoc(aptRef, { passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: serverTimestamp() });
         session.apt = apt;
         session.area = '--';
         session.entrance = '--';
@@ -124,16 +178,10 @@ async function loadCabinet(apt) {
     if (session.isAdmin) {
         showScreen('adminDashboardSection');
         document.getElementById('topNav').style.display = 'none';
-        // Разове перенесення бухгалтера у групу служб — до того, як
-        // списки прочитаються, інакше він з'явився б у старому місці.
-        await moveAccountantToServices();
-        await Promise.all([loadAdminHistory(), loadAdminRequests(),
-                           populateDocsDropdown(), loadAdminBoard(), loadAdminServices(), loadAdminPolls(),
-                           loadAdminExpenses(), loadAdminRequisites(),
-                           loadDirectory(), loadVerifyQueue(), loadDtekSettings(),
-                           loadMeetings(), loadProtocols()]);
-        // Дашборд рахує вже закриті прострочені опитування, тому — після них
-        await loadDashboard();
+        loadedAdminTabs.clear();
+        loadingAdminTabs.clear();
+        activeAdminTab = 'overview';
+        await loadAdminTab('overview');
         refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
     } else {
         showScreen('dataSection');
@@ -144,16 +192,18 @@ async function loadCabinet(apt) {
         // («6 247,33»), і «64.0» серед них виглядає чужим.
         document.getElementById('displayAreaVal').textContent =
             String(session.area).replace('.', ',');
-        await loadOwners(apt);
-        await loadUserMessages(apt, session.entrance);
-        await Promise.all([loadBalance(apt), loadExpenses(), loadPowerSchedule()]);
+        await Promise.all([
+            loadOwners(apt), loadUserMessages(apt, session.entrance),
+            loadBalance(apt), loadExpenses(), loadPowerSchedule()
+        ]);
 
         // Кнопку малює loadBalance, тож слухача вішаємо після нього
-        document.getElementById('openReceiptsBtn')?.addEventListener('click', () => {
+        const receiptsBtn = document.getElementById('openReceiptsBtn');
+        if (receiptsBtn) receiptsBtn.onclick = () => {
             showScreen('receiptsSection');
             document.getElementById('topNav').style.display = 'none';
             loadReceipts();
-        });
+        };
         refreshPollsBadge();          // без await: значок не має затримувати кабінет
         refreshRequestsBadge();       // так само — непрочитані відповіді правління
         refreshChatBadge();
@@ -173,7 +223,7 @@ async function loadCabinet(apt) {
 // ------------------------------------------------------------
 const SCREEN_RELOADERS = {
     dataSection: () => loadCabinet(session.apt),
-    adminDashboardSection: () => loadCabinet(session.apt),
+    adminDashboardSection: () => loadAdminTab(activeAdminTab, true),
     docsSection: loadOsbbDocs,
     requestsSection: loadUserRequests,
     pollsSection: loadUserPolls,
@@ -261,7 +311,7 @@ async function savePassword() {
         await updatePassword(auth.currentUser, pass);
         await updateDoc(doc(db, 'apartments', currentApt()), { 
             passwordChanged: true,
-            termsAcceptedAt: new Date().toISOString()
+            termsAcceptedAt: serverTimestamp()
         });
         document.getElementById('newPass').value = '';
         document.getElementById('confirmPass').value = '';
@@ -347,15 +397,17 @@ function initAdminTabs() {
         day: 'numeric', month: 'long', year: 'numeric', weekday: 'short'
     });
     document.querySelectorAll('.admin-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
+        tab.addEventListener('click', async () => {
             // Чат — окремий екран, а не картка в панелі: у картці
             // повідомлення тіснилися, а прокрутка всередині прокрутки
             // збивала сторінку вище й нижче потрібного.
             if (tab.dataset.tab === 'chat') {
                 showScreen('chatSection');
-                loadChat();
+                activeAdminTab = 'chat';
+                await loadAdminTab('chat', true);
                 return;
             }
+            activeAdminTab = tab.dataset.tab;
             document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t === tab));
             document.querySelectorAll('.admin-panel').forEach(p => {
                 p.classList.toggle('active', p.dataset.panel === tab.dataset.tab);
@@ -363,10 +415,15 @@ function initAdminTabs() {
             const tabs = document.getElementById('adminTabs');
             const desktop = window.matchMedia('(min-width: 960px)').matches;
             window.scrollTo({ top: desktop ? 0 : Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
-
+            try {
+                await loadAdminTab(activeAdminTab);
+            } catch (error) {
+                console.error(`Завантаження вкладки ${activeAdminTab}:`, error);
+                toast('Не вдалося завантажити вкладку', 'error');
+            }
         });
     });
-    document.getElementById('refreshHistoryBtn')?.addEventListener('click', loadAdminHistory);
+    document.getElementById('refreshHistoryBtn')?.addEventListener('click', () => loadAdminTab('send', true));
 }
 
 // Усередині найскладнішого розділу показуємо один робочий контекст
@@ -442,9 +499,6 @@ function init() {
     initRequests();
     initContacts();
     initPolls();
-    initDirectory();
-    initImportOwners();
-    initExportBase();
     initDtek();
     initFinance();
     initPayments();
@@ -468,11 +522,8 @@ function init() {
         }
     }
     initAdminTabs();
-    initMeetingWorkspace();
-    initMeetings();
     initAdminFolds();
     initLedger();
-    initVerify();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
     const aptInput = document.getElementById('aptInput');

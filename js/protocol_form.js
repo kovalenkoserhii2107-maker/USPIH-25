@@ -11,7 +11,7 @@
 // за що насправді голосували, а не те, що планували.
 // ============================================================
 import { db } from './firebase.js';
-import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { agendaOf, meetingWhen } from './meeting.js';
 

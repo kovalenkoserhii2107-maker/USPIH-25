@@ -4266,6 +4266,7 @@ select.field-input {
 .pw-sched-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .pw-sched-text b { font-size: 14px; font-weight: 600; color: var(--ink); }
 .pw-sched-text span { font-size: 11.5px; color: var(--ink-2); margin-top: 1px; }
+.pw-sched-error { font-size: 11.5px; color: var(--danger); font-style: normal; margin-top: 2px; }
 .pw-sched .row-chevron { color: var(--ink-4, #C7C7CC); flex-shrink: 0; }
 
 /* «Зараз має бути без світла» — єдиний стан, що вимагає уваги. */

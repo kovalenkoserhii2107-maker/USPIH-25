@@ -4,10 +4,10 @@
 import { db, storage, session, currentApt } from './firebase.js';
 import {
     collection, getDocs, doc, addDoc, updateDoc, serverTimestamp, writeBatch
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, getInitials, avatarGradient, avatarColors, toast, confirmDialog,
          promptDialog, setBusy, normName } from './ui.js';
 import { renderAttachments, renderFileManager, fileNameFromUrl } from './attachments.js';

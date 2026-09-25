@@ -5,7 +5,7 @@
 import { db } from './firebase.js';
 import {
     doc, setDoc, addDoc, collection, onSnapshot, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { formatElapsed, toast } from './ui.js';
 
 let unsubscribe = null;

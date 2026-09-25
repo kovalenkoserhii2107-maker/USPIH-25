@@ -22,10 +22,10 @@ import { db, storage, session } from './firebase.js';
 import {
     collection, addDoc, setDoc, updateDoc, doc, onSnapshot, getDocs,
     query, orderBy, limit, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, toast, setBusy, confirmDialog, safeFileUrl } from './ui.js';
 import {
     renderFileManager, openGallery, isImageFile, openDocViewer, getDocKind, docIconSvg

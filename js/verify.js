@@ -11,7 +11,7 @@ import { db } from './firebase.js';
 import {
     collection, collectionGroup, doc, getDocs,
     updateDoc, writeBatch, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, promptDialog, normName, safeFileUrl } from './ui.js';
 import { fileNameFromUrl } from './attachments.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
@@ -273,7 +273,7 @@ async function approve(apt, id, btn) {
             // Рішення кладемо в документ квартири, а не лише в заявку:
             // мешканець дивиться саме сюди, і без цього він не дізнався б,
             // що сталося з його правками.
-            ownersDecision: { status: 'approved', at: Date.now() }
+            ownersDecision: { status: 'approved', at: serverTimestamp() }
         }, { merge: true });
         batch.set(doc(db, 'apartments', apt, 'owner_changes', id), {
             status: 'approved', decidedAt: serverTimestamp()
@@ -313,7 +313,7 @@ async function reject(apt, id) {
         // його заявка кудись зникла.
         await updateDoc(doc(db, 'apartments', apt), {
             ownersStatus: 'pending',
-            ownersDecision: { status: 'rejected', note, at: Date.now() }
+            ownersDecision: { status: 'rejected', note, at: serverTimestamp() }
         });
         await notifyApartment({
             apt,

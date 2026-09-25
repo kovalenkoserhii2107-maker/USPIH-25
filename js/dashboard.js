@@ -7,11 +7,10 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, doc, query, where, getCountFromServer, getDoc, getDocs
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    collection, collectionGroup, doc, query, where, getCountFromServer, getDoc, getDocs
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
-import { pendingChangesCount } from './verify.js';
 import { isMeeting, agendaOf, computeQuorum } from './meeting.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
@@ -62,12 +61,13 @@ export async function loadDashboard() {
     if (!host) return;
 
     try {
-        const [apts, newReqsSnap, workReqsSnap, activePollsSnap, financeSnap] = await Promise.all([
+        const [apts, newReqsSnap, workReqsSnap, activePollsSnap, financeSnap, changesSnap] = await Promise.all([
             fetchDirectory(),
             getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'new'))),
             getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'in_progress'))),
             getDocs(query(collection(db, 'polls'), where('status', '==', 'active'))),
-            getDoc(doc(db, 'finance', 'current'))
+            getDoc(doc(db, 'finance', 'current')),
+            getCountFromServer(query(collectionGroup(db, 'owner_changes'), where('status', '==', 'pending')))
         ]);
 
         const aptCount = apts.length;
@@ -79,7 +79,7 @@ export async function loadDashboard() {
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
         const verifiedPct = aptCount ? Math.round(verified / aptCount * 100) : 0;
         const verificationLeft = Math.max(0, aptCount - verified);
-        const changes = pendingChangesCount();
+        const changes = changesSnap.data().count;
         const debtors = apts.filter(a => parseMoney(a.balance) < -0.005);
         const debtSum = debtors.reduce((sum, a) => sum - parseMoney(a.balance), 0);
 
