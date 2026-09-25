@@ -6,8 +6,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
 const read = path => readFile(join(root, path), 'utf8');
 
-const [html, sw, firebaseJson] = await Promise.all([
-    read('index.html'), read('sw.js'), read('firebase.json')
+const [html, sw, firebaseJson, firestoreIndexesJson] = await Promise.all([
+    read('index.html'), read('sw.js'), read('firebase.json'), read('firestore.indexes.json')
 ]);
 
 const htmlVersions = [...html.matchAll(/(?:style(?:-chat)?\.css|js\/(?:app|admin-preview)\.js)\?v=(\d+)/g)].map(m => m[1]);
@@ -17,12 +17,21 @@ if (!swVersion || htmlVersions.some(version => version !== swVersion)) {
 }
 
 const config = JSON.parse(firebaseJson);
+const firestoreIndexes = JSON.parse(firestoreIndexesJson);
 for (const required of ['firestore.rules', 'firestore.indexes.json', 'storage.rules']) {
     try { await access(join(root, required)); }
     catch { errors.push(`Немає ${required}`); }
 }
 if (!config.firestore?.indexes || !config.storage?.rules) {
     errors.push('firebase.json не підключає індекси або Storage Rules');
+}
+const ownerChangesStatusIndex = firestoreIndexes.fieldOverrides?.some(field =>
+    field.collectionGroup === 'owner_changes'
+    && field.fieldPath === 'status'
+    && field.indexes?.some(index => index.queryScope === 'COLLECTION_GROUP')
+);
+if (!ownerChangesStatusIndex) {
+    errors.push('Немає collection-group індексу owner_changes.status для зведення правління');
 }
 
 const jsFiles = (await readdir(join(root, 'js'))).filter(name => name.endsWith('.js'));

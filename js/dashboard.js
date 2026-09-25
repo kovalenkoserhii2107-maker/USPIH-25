@@ -61,29 +61,54 @@ export async function loadDashboard() {
     if (!host) return;
 
     try {
-        const [apts, newReqsSnap, workReqsSnap, activePollsSnap, financeSnap, changesSnap] = await Promise.all([
+        // Кожен блок завантажується незалежно. Раніше відмова одного
+        // необов'язкового запиту (наприклад, ще не готовий індекс заявок
+        // співвласників) ховала весь дашборд разом із уже отриманими даними.
+        const labels = ['квартири', 'нові звернення', 'звернення в роботі', 'збори', 'фінанси', 'зміни співвласників'];
+        const results = await Promise.allSettled([
             fetchDirectory(),
-            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'new'))),
-            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'in_progress'))),
-            getDocs(query(collection(db, 'polls'), where('status', '==', 'active'))),
-            getDoc(doc(db, 'finance', 'current')),
+            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'new')))
+                .then(s => s.data().count),
+            getCountFromServer(query(collection(db, 'requests'), where('status', '==', 'in_progress')))
+                .then(s => s.data().count),
+            getDocs(query(collection(db, 'polls'), where('status', '==', 'active')))
+                .then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            getDoc(doc(db, 'finance', 'current'))
+                .then(s => s.exists() ? s.data() : {}),
             getCountFromServer(query(collectionGroup(db, 'owner_changes'), where('status', '==', 'pending')))
+                .then(s => s.data().count)
         ]);
 
+        const unavailable = [];
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                unavailable.push(labels[index]);
+                console.warn(`Дашборд: не завантажено ${labels[index]}`, result.reason);
+            }
+        });
+        const value = (index, fallback) => results[index].status === 'fulfilled'
+            ? results[index].value : fallback;
+
+        const apts = value(0, []);
+        const newReqCount = value(1, null);
+        const workReqCount = value(2, null);
+        const activePolls = value(3, []);
+        const finance = value(4, {});
+        const changes = value(5, null);
+        const directoryReady = results[0].status === 'fulfilled';
+        const requestsReady = results[1].status === 'fulfilled' && results[2].status === 'fulfilled';
+        const pollsReady = results[3].status === 'fulfilled';
+        const financeReady = results[4].status === 'fulfilled';
+
         const aptCount = apts.length;
-        const newReqCount = newReqsSnap.data().count;
-        const workReqCount = workReqsSnap.data().count;
-        const reqCount = newReqCount + workReqCount;
-        const activePolls = activePollsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const reqCount = (newReqCount || 0) + (workReqCount || 0);
         const activeMeetings = activePolls.filter(isMeeting);
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
         const verifiedPct = aptCount ? Math.round(verified / aptCount * 100) : 0;
         const verificationLeft = Math.max(0, aptCount - verified);
-        const changes = changesSnap.data().count;
         const debtors = apts.filter(a => parseMoney(a.balance) < -0.005);
         const debtSum = debtors.reduce((sum, a) => sum - parseMoney(a.balance), 0);
 
-        const finance = financeSnap.exists() ? financeSnap.data() : {};
         const money = (value) => (value === undefined || value === null || value === '')
             ? null : parseMoney(value);
         const income = money(finance.income);
@@ -94,11 +119,18 @@ export async function loadDashboard() {
 
         const current = activeMeetings[0] || null;
         let votes = [];
+        let votesReady = true;
         if (current) {
-            const voteSnap = await getDocs(collection(db, 'polls', current.id, 'votes'));
-            votes = voteSnap.docs.map(d => ({ apt: d.id, ...d.data() }));
+            try {
+                const voteSnap = await getDocs(collection(db, 'polls', current.id, 'votes'));
+                votes = voteSnap.docs.map(d => ({ apt: d.id, ...d.data() }));
+            } catch (error) {
+                votesReady = false;
+                unavailable.push('голоси зборів');
+                console.warn('Дашборд: не завантажено голоси зборів', error);
+            }
         }
-        const quorum = current ? computeQuorum(votes, apts) : null;
+        const quorum = current && votesReady && directoryReady ? computeQuorum(votes, apts) : null;
         const agendaCount = current ? agendaOf(current).length : 0;
         const deadline = current?.deadline?.toDate ? current.deadline.toDate()
             : (current?.deadline ? new Date(current.deadline) : null);
@@ -115,7 +147,7 @@ export async function loadDashboard() {
             title: `Звірити ${changes} ${plural(changes, 'заявку', 'заявки', 'заявок')}`,
             note: 'Зміни у списку співвласників чекають рішення'
         });
-        if (reqCount) urgent.push({
+        if (requestsReady && reqCount) urgent.push({
             tone: 'neutral', tab: 'requests', target: '.req-item',
             title: `Відповісти на ${reqCount} ${plural(reqCount, 'звернення', 'звернення', 'звернень')}`,
             note: 'Мешканці очікують відповідь правління'
@@ -134,11 +166,14 @@ export async function loadDashboard() {
                 <span class="admin-status status-live">Тривають</span>
             </div>
             <div class="overview-meeting-stats">
-                <span><b>${String(quorum.ownersPct).replace('.', ',')}%</b><small>кворум</small></span>
+                <span><b>${quorum ? `${String(quorum.ownersPct).replace('.', ',')}%` : '—'}</b><small>кворум</small></span>
                 <span><b>${agendaCount}</b><small>${plural(agendaCount, 'питання', 'питання', 'питань')}</small></span>
                 <span><b>${daysLeft === null ? '—' : daysLeft}</b><small>${daysLeft === 1 ? 'день лишився' : 'днів лишилось'}</small></span>
             </div>
-            <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingsActive">Продовжити роботу ${CHEVRON}</button>` : `
+            <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingsActive">Продовжити роботу ${CHEVRON}</button>` : !pollsReady ? `
+            <div class="overview-card-head"><div><span class="overview-kicker">Загальні збори</span><h2>Дані оновлюються</h2></div></div>
+            <p class="overview-empty-copy">Не вдалося отримати стан зборів. Інші показники залишаються доступними.</p>
+            <button type="button" class="overview-link" data-tab="meetings">Відкрити збори ${CHEVRON}</button>` : `
             <div class="overview-card-head"><div><span class="overview-kicker">Загальні збори</span><h2>Активних зборів немає</h2></div></div>
             <p class="overview-empty-copy">Підготуйте порядок денний, голосування та протокол в одному процесі.</p>
             <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingTitle">Створити збори ${CHEVRON}</button>`;
@@ -148,27 +183,28 @@ export async function loadDashboard() {
                 <div><span class="overview-kicker">Огляд будинку</span><h2>Що потребує уваги сьогодні</h2></div>
                 <span class="overview-updated">Оновлено щойно</span>
             </div>
+            ${unavailable.length ? `<div class="overview-partial" role="status">Частина даних тимчасово недоступна. Показуємо все, що вдалося завантажити.</div>` : ''}
             <div class="overview-status-grid">
                 <section class="overview-card overview-data-card">
-                    <div class="overview-card-head"><div><span class="overview-kicker">Оновлення даних</span><h2>${verified} з ${aptCount} квартир</h2></div><span class="overview-percent">${verifiedPct}%</span></div>
+                    <div class="overview-card-head"><div><span class="overview-kicker">Оновлення даних</span><h2>${directoryReady ? `${verified} з ${aptCount} квартир` : 'Дані оновлюються'}</h2></div><span class="overview-percent">${directoryReady ? `${verifiedPct}%` : '—'}</span></div>
                     <div class="overview-progress" role="progressbar" aria-label="Звірено квартир" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${verifiedPct}"><i style="width:${verifiedPct}%"></i></div>
-                    <p>${verificationLeft ? `${verificationLeft} ${plural(verificationLeft, 'квартира потребує', 'квартири потребують', 'квартир потребують')} перевірки` : 'Усі квартири перевірено'}${changes ? ` · ${changes} змін очікують рішення` : ''}</p>
+                    <p>${directoryReady ? `${verificationLeft ? `${verificationLeft} ${plural(verificationLeft, 'квартира потребує', 'квартири потребують', 'квартир потребують')} перевірки` : 'Усі квартири перевірено'}${changes ? ` · ${changes} змін очікують рішення` : ''}` : 'Не вдалося отримати дані квартир. Спробуйте оновити екран.'}</p>
                     <button type="button" class="overview-link" data-tab="directory" data-target=".vf-cover">Продовжити звірку ${CHEVRON}</button>
                 </section>
                 <section class="overview-card overview-requests-card">
-                    <div class="overview-card-head"><div><span class="overview-kicker">Звернення мешканців</span><h2>${reqCount} відкритих</h2></div></div>
-                    <div class="overview-request-values"><span class="is-new"><b>${newReqCount}</b><small>нові</small></span><span><b>${workReqCount}</b><small>у роботі</small></span></div>
+                    <div class="overview-card-head"><div><span class="overview-kicker">Звернення мешканців</span><h2>${requestsReady ? reqCount : '—'} відкритих</h2></div></div>
+                    <div class="overview-request-values"><span class="is-new"><b>${newReqCount ?? '—'}</b><small>нові</small></span><span><b>${workReqCount ?? '—'}</b><small>у роботі</small></span></div>
                     <button type="button" class="overview-link" data-tab="requests" data-target=".req-item">Опрацювати звернення ${CHEVRON}</button>
                 </section>
             </div>
             <section class="overview-finance-card">
-                <div class="overview-finance-head"><div><span class="overview-kicker">Фінанси ОСББ</span><h2>${escapeHtml(finance.period || 'Поточний період')}</h2></div><button type="button" class="overview-link" data-tab="finance">Відкрити фінанси ${CHEVRON}</button></div>
+                <div class="overview-finance-head"><div><span class="overview-kicker">Фінанси ОСББ</span><h2>${escapeHtml(finance.period || (financeReady ? 'Поточний період' : 'Дані оновлюються'))}</h2></div><button type="button" class="overview-link" data-tab="finance">Відкрити фінанси ${CHEVRON}</button></div>
                 <div class="overview-finance-body">
                     <div class="overview-balance"><small>Залишок на рахунку</small><strong>${moneyText(funds)}</strong><span>${finance.fundsDate ? `Станом на ${escapeHtml(finance.fundsDate)}` : 'За останньою внесеною випискою'}</span></div>
                     <div class="overview-finance-metrics">
                         <div class="finance-stat is-income"><small>Надходження</small><b>${moneyText(income)}</b></div>
                         <div class="finance-stat is-expense"><small>Витрати</small><b>${moneyText(spent)}</b></div>
-                        <div class="finance-stat is-debt"><small>Заборгованість</small><b>${moneyText(debtSum)}</b><span>${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')}</span></div>
+                        <div class="finance-stat is-debt"><small>Заборгованість</small><b>${moneyText(directoryReady ? debtSum : null)}</b><span>${directoryReady ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')}` : 'дані оновлюються'}</span></div>
                     </div>
                 </div>
                 ${income !== null ? `<div class="overview-finance-ratio"><span>Витрачено ${spentShare}% надходжень</span><div class="overview-progress"><i style="width:${spentShare}%"></i></div></div>` : ''}
