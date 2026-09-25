@@ -4904,6 +4904,13 @@ select.field-input {
     .meeting-workspace-panel .admin-card-sub { font-size: 11.5px; }
 }
 
+/* На 320–359 px дві статусні картки по ~140 px стають затісними:
+   заголовки й пояснення розпадаються на надто багато рядків. */
+@media (max-width: 359px) {
+    .overview-status-grid { grid-template-columns: 1fr; }
+    .overview-data-card p { min-height: 0; }
+}
+
 @media (min-width: 960px) {
     body.admin-mode { overflow-x: hidden; background: #f7f9fc; }
     body.admin-mode .container { max-width: none; margin: 0; padding: 0; }

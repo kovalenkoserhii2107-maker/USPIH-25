@@ -157,6 +157,6 @@ firebase emulators:exec --project uspih-25-rules-test --only firestore,storage "
 ## Оновлення кешу
 
 У `index.html` посилання на файли мають параметр версії
-(`style.css?v=107`, `style-chat.css?v=107`, `js/app.js?v=107`). Після зміни
+(`style.css?v=108`, `style-chat.css?v=108`, `js/app.js?v=108`). Після зміни
 коду збільште число разом із `VERSION` у `sw.js`. Команда `npm run check`
 перевіряє узгодженість версій, імпортів та Firebase-конфігурації.
