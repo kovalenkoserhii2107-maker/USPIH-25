@@ -322,7 +322,9 @@ async function createMeeting(btn) {
         await loadMeetings();
     } catch (e) {
         console.error('Створення зборів:', e);
-        toast('Не вдалося створити збори', 'error');
+        toast(e.code === 'storage/unauthorized'
+            ? 'Немає дозволу завантажити вкладення. Перевірте права доступу до сховища файлів.'
+            : 'Не вдалося створити збори', 'error');
     } finally {
         setBusy(btn, false);
     }

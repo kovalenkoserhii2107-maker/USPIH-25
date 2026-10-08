@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadString } from 'firebase/storage';
+import { ref, uploadString, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor } from '../../js/meeting.js';
 
 let env;
@@ -71,4 +71,28 @@ test('правління створює та редагує збори зі сп
     assert.equal(surveyorFor(saved, '1'), 'Петренко П. П.');
     const residentDb = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
     await assertFails(updateDoc(doc(residentDb, meeting.path), { title: 'Змінено мешканцем' }));
+});
+
+test('правління завантажує PDF і Excel до зборів, мешканець не може', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' });
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' });
+    const files = [
+        { name: '1791469673683_dodatok_2.pdf', type: 'application/pdf' },
+        { name: '1791469673684_Результат голосування 2504.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+    ];
+    const attachments = [];
+    for (const file of files) {
+        const path = `polls/${file.name}`;
+        const fileRef = ref(admin.storage(), path);
+        const data = new Uint8Array(75 * 1024);
+        await assertSucceeds(uploadBytes(fileRef, data, { contentType: file.type }));
+        const url = await assertSucceeds(getDownloadURL(fileRef));
+        attachments.push({ name: file.name, type: file.type, size: data.length, url });
+        await assertFails(uploadBytes(ref(resident.storage(), path), data, { contentType: file.type }));
+    }
+    const meetingRef = doc(admin.firestore(), 'polls/meeting-with-files');
+    await assertSucceeds(setDoc(meetingRef, { isMeeting: true, title: 'Збори з вкладеннями', attachments }));
+    const saved = (await assertSucceeds(getDoc(meetingRef))).data();
+    assert.deepEqual(saved.attachments, attachments);
 });

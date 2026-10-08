@@ -117,6 +117,33 @@ firebase deploy --only firestore:rules,firestore:indexes,storage,functions
 ідемпотентні функції: повторний запит не створює дублікати документів або
 оголошень.
 
+### Якщо збори з вкладенням не створюються
+
+Помилка `storage/unauthorized` на шляху `polls/...` означає, що Firebase
+Storage відхилив завантаження: документ зборів ще не створено. Публікація
+коду на GitHub Pages не оновлює правила Firebase.
+
+Для проєкту `uspih-25` відкрийте **Firebase Console → Storage → Rules**,
+переконайтеся, що вибрано бакет `uspih-25.firebasestorage.app`, вставте
+повний вміст [storage.rules](storage.rules) і натисніть **Publish**.
+Якщо консоль просить дозволити правилам Storage доступ до Firestore,
+надайте цей дозвіл: функція `admin()` читає `apartments/{номер квартири}`.
+У документі квартири облікового запису правління поле `isAdmin` має бути
+логічним `true`, а не рядком.
+
+Альтернатива для адміністратора з налаштованим Firebase CLI:
+
+```bash
+npx firebase login
+npx firebase deploy --project uspih-25 --only storage
+```
+
+Якщо CLI запитає про IAM Role для cross-service rules, підтвердьте надання.
+Не запускайте перше налаштування цього дозволу з `--non-interactive`:
+CLI пропускає перевірку IAM у цьому режимі. Правила залишають завантаження
+в `polls` доступним лише правлінню; відкривати сховище для всіх не потрібно.
+Після публікації повторіть створення зборів із вкладенням.
+
 ### Одноразове налаштування Authentication
 
 **Authentication → Settings**:
