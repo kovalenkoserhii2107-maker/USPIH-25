@@ -53,7 +53,7 @@ async function meetingContext(pollId) {
     const ownersByApt = {};
     ownerSnap.forEach(owner => {
         const apt = owner.ref.parent.parent?.id;
-        if (apt) (ownersByApt[apt] ||= []).push(owner.data());
+        if (apt) (ownersByApt[apt] ||= []).push({ ...owner.data(), id: owner.id });
     });
     const apartments = aptSnap.docs
         .filter(apartment => apartment.data().isAdmin !== true)

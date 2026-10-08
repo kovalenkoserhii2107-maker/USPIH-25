@@ -26,9 +26,9 @@ import { callBackend } from './backend.js';
 import {
     MEETING_ANSWERS, DECISION_PCT, QUORUM_PCT, OSBB_DEFAULTS,
     agendaOf, answerFor, isPaperVote, isChairQuestion, parseArea, ownerShare,
-    quorumBreakdown, questionTally, entrancesOf, aptsOfEntrance, surveyorFor,
+    quorumBreakdown, questionTally, entrancesOf, surveyorFor,
     formatMeetingDate, formatProtocolDate, formatShortDate,
-    fmtNum, fmtPct, plural
+    fmtNum, fmtPct, plural, ownerVotingRows
 } from './meeting.js';
 
 // Два джерела, а не одне: колись cdnjs уже лежав, і в такий день
@@ -127,18 +127,9 @@ function fileSlug(text) {
         .slice(0, 60) || 'document';
 }
 
-/**
- * Пункти рішення з багаторядкового тексту.
- *
- * Правління пише проєкт рішення рядками; нумерацію «2.1», «2.2»
- * дописуємо самі, але не чіпаємо рядок, який уже починається з
- * номера — інакше вийшло б «2.1. 2.1. Здійснити…».
- */
-export function decisionLines(text, questionNo) {
-    const lines = safe(text).split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length <= 1) return lines;
-    return lines.map((line, i) =>
-        /^\d+[.)]/.test(line) ? line : `${questionNo}.${i + 1}. ${line}`);
+/** Рішення друкується дослівно: номери й переноси задає правління. */
+export function decisionLines(text) {
+    return safe(text).split('\n').map(line => line.trim()).filter(Boolean);
 }
 
 /** Рядки таблиці «власники квартири», по одному на співвласника. */
@@ -227,7 +218,9 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
     const entrances = byEntrance ? entrancesOf(apartments) : [''];
     const groups = entrances.map(e => ({
         entrance: e,
-        rows: ownerRows(byEntrance ? aptsOfEntrance(apartments, e) : apartments)
+        rows: ownerRows(byEntrance
+            ? apartments.filter(a => String(a.entrance || '').trim() === e)
+            : apartments)
     })).filter(g => g.rows.length);
 
     const when = [
@@ -243,18 +236,11 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
         'Частка', 'Дата', 'Відповідь співвласника: «ЗА», «ПРОТИ», «УТРИМАВСЯ»',
         'Підпис співвласника (представника)'];
 
-    // Підпис особи, яка проводить опитування, має стояти на КОЖНІЙ
-    // сторінці: аркуші роздають окремо, і сторінка без підпису — це
-    // аркуш невідомого походження. Тому рядок лежить у шапці таблиці
-    // (headerRows), яку pdfmake повторює сам.
-    const surveyorLine = (entrance) => {
-        const name = surveyorFor(poll, entrance);
-        return {
-            text: `Опитування проводить: ${name || '_______________________________'}`
-                + `          Підпис: _____________________`,
-            style: 'surveyor'
-        };
-    };
+    // У шапці лише ПІБ; підпис ставиться внизу кожної сторінки.
+    const surveyorLine = entrance => ({
+        text: `Опитування проводить: ${surveyorFor(poll, entrance) || '_______________________________'}`,
+        style: 'surveyor'
+    });
 
     const titleCell = (question, index, entrance) => ({
         colSpan: HEAD.length,
@@ -276,15 +262,17 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
     });
 
     const content = [];
+    const sheetTables = [];
     let first = true;
     questions.forEach((q, i) => {
         groups.forEach(group => {
-            if (!first) content.push({ text: '', pageBreak: 'before' });
-            first = false;
-            content.push({
+            const tableNode = {
+                ...(first ? {} : { pageBreak: 'before' }),
                 table: {
                     headerRows: 2,
-                    widths: [24, 50, 58, '*', 150, 36, 52, 82, 84],
+                    dontBreakRows: true,
+                    keepWithHeaderRows: 1,
+                    widths: [22, 58, 60, '*', 120, 32, 43, 72, 74],
                     body: [
                         [titleCell(q, i, group.entrance), ...Array(HEAD.length - 1).fill({})],
                         HEAD.map(text => ({ text, style: 'th' })),
@@ -302,13 +290,10 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
                     ]
                 },
                 layout: sheetLayout()
-            });
-            const name = surveyorFor(poll, group.entrance);
-            content.push({
-                text: 'Підпис особи, яка проводила опитування: _____________________ '
-                    + `(${name || '                              '})`,
-                style: 'note'
-            });
+            };
+            first = false;
+            content.push(tableNode);
+            sheetTables.push({ node: tableNode, entrance: group.entrance });
         });
     });
 
@@ -324,12 +309,24 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
     return {
         pageSize: 'A4',
         pageOrientation: 'landscape',
-        pageMargins: [22, 20, 22, 26],
+        pageMargins: [22, 20, 22, 54],
         content,
-        footer: (page, total) => ({
-            text: `Сторінка ${page} з ${total}`, style: 'footer', alignment: 'right',
-            margin: [0, 0, 22, 0]
-        }),
+        footer: (page, total) => {
+            // pdfmake заповнює positions під час верстки таблиць, до побудови footer.
+            const sheet = sheetTables.find(({ node }) => node.positions?.some(p => p.pageNumber === page));
+            const name = sheet ? surveyorFor(poll, sheet.entrance) : '';
+            return {
+                margin: [22, 6, 22, 0],
+                stack: [
+                    ...(sheet ? [{
+                        text: 'Підпис особи, яка проводила опитування: _____________________ '
+                            + `(${name || 'ПІБ: _______________________________'})`,
+                        fontSize: 8.5, color: INK
+                    }] : []),
+                    { text: `Сторінка ${page} з ${total}`, style: 'footer', alignment: 'right', margin: [0, 5, 0, 0] }
+                ]
+            };
+        },
         defaultStyle: { font: 'Roboto', fontSize: 9, color: INK },
         styles: pdfStyles()
     };
@@ -536,16 +533,14 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
         style: 'h2', pageBreak: 'before', pageOrientation: 'landscape'
     });
 
-    const voteByApt = new Map((votes || []).map(v => [String(v.apt), v]));
-    const nameHeader = ['№ кв.', 'Площа, м²', 'ПІБ співвласників', 'Форма участі',
+    const nameHeader = ['№ кв.', 'Площа частки, м²', 'ПІБ співвласника', 'Форма участі',
         ...questions.map((_, i) => `Пит. ${i + 1}`)];
-    const nameBody = (apartments || []).map(apt => {
-        const vote = voteByApt.get(String(apt.apt));
+    const nameBody = ownerVotingRows(votes, apartments).map(({ apartment: apt, owner, vote, area }) => {
         const form = !vote ? 'Не голосував' : (isPaperVote(vote) ? 'Письмово' : 'На зборах');
         return [
             { text: String(apt.apt), style: 'td', alignment: 'center' },
-            { text: fmtNum(parseArea(apt.area), 1), style: 'td', alignment: 'center' },
-            { text: (apt.owners || []).map(o => o.name).filter(Boolean).join(', '), style: 'td' },
+            { text: fmtNum(area, 1), style: 'td', alignment: 'center' },
+            { text: safe(owner.name), style: 'td' },
             { text: form, style: 'td', alignment: 'center' },
             ...questions.map((_, i) => ({
                 text: vote ? (answerFor(vote, i) || '—') : '—', style: 'td', alignment: 'center'

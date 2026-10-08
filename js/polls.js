@@ -271,6 +271,13 @@ function renderMeetingResults(poll, votes, myVote = null, apartments = null) {
         const legal = apartments?.length
             ? questionTally(votes, apartments, i, isChairQuestion(i))
             : null;
+        if (legal) {
+            total = 0;
+            MEETING_ANSWERS.forEach(answer => {
+                counts[answer] = legal.rows[answer].ownersCount;
+                total += counts[answer];
+            });
+        }
 
         const bars = MEETING_ANSWERS.map((ans) => {
             const pct = total ? (counts[ans] / total) * 100 : 0;
@@ -403,7 +410,7 @@ export async function loadUserPolls(append = false) {
         }
 
         host.innerHTML = polls.map(poll => {
-            const myVote = poll.votes.find(v => v.apt === String(session.apt));
+            const myVote = poll.votes.find(v => v.apt === String(session.apt) && !v.ownerId);
             const options = poll.options || [];
             const canVote = !isClosed(poll) && !myVote;
 

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeQuorum, questionTally, surveyorAssignments, surveyorFor } from '../../js/meeting.js';
+import { computeQuorum, questionTally, surveyorAssignments, surveyorFor, ownerVotingRows, ownerVoteId } from '../../js/meeting.js';
+import serverCore from '../../functions/meeting-core.js';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getFirestore, doc, writeBatch, terminate } from 'firebase/firestore';
 
@@ -73,4 +74,50 @@ test('відповідальні по парадних мають пріорит
 test('читання старого формату спільної відповідальної особи лишається доступним', () => {
     assert.equal(surveyorFor({ surveyors: { '': 'Спільна особа' } }, '1'), 'Спільна особа');
     assert.equal(surveyorFor({}, '1'), '');
+});
+
+const sharedApartment = [{ apt: '298', area: 64, owners: [
+    { id: 'first', name: 'Перший Співвласник', shareFrac: '1/2' },
+    { id: 'second', name: 'Другий Співвласник', shareFrac: '1/2' }
+] }];
+
+test('підпис одного власника не зараховується іншому власнику квартири', () => {
+    const votes = [{ apt: '298', ownerId: 'first', source: 'paper', answers: { 1: 'За' } }];
+    const quorum = computeQuorum(votes, sharedApartment);
+    assert.equal(quorum.votedOwners, 1);
+    assert.equal(quorum.votedArea, 32);
+    const rows = ownerVotingRows(votes, sharedApartment);
+    assert.equal(rows[0].vote.answers[1], 'За');
+    assert.equal(rows[1].vote, null);
+    assert.equal(questionTally(votes, sharedApartment, 1).rows['За'].ownersCount, 1);
+});
+
+test('різні відповіді співвласників зберігаються та рахуються незалежно', () => {
+    const votes = [
+        { apt: '298', ownerId: 'first', source: 'paper', answers: { 1: 'За' } },
+        { apt: '298', ownerId: 'second', source: 'paper', answers: { 1: 'Проти' } }
+    ];
+    const tally = questionTally(votes, sharedApartment, 1);
+    assert.equal(tally.rows['За'].ownersCount, 1);
+    assert.equal(tally.rows['Проти'].ownersCount, 1);
+    assert.equal(tally.rows['За'].area, 32);
+    assert.equal(tally.rows['Проти'].area, 32);
+    assert.equal(computeQuorum(votes, sharedApartment).votedApts, 1);
+    assert.equal(tally.accepted, false);
+    assert.deepEqual(serverCore.questionTally(votes, sharedApartment, 1), tally);
+    assert.deepEqual(serverCore.computeQuorum(votes, sharedApartment), computeQuorum(votes, sharedApartment));
+});
+
+test('старі відповіді квартири читаються разом із новими без подвійного підрахунку', () => {
+    const votes = [
+        { apt: '298', answers: { 0: 'За', 1: 'За' } },
+        { apt: '298', ownerId: 'first', source: 'paper', answers: { 1: 'Проти' } }
+    ];
+    assert.equal(questionTally(votes, sharedApartment, 0).rows['За'].ownersCount, 2);
+    const tally = questionTally(votes, sharedApartment, 1);
+    assert.equal(tally.rows['За'].ownersCount, 1);
+    assert.equal(tally.rows['Проти'].ownersCount, 1);
+    assert.equal(computeQuorum(votes, sharedApartment).votedArea, 64);
+    assert.deepEqual(serverCore.questionTally(votes, sharedApartment, 1), tally);
+    assert.notEqual(ownerVoteId('1:2', '3'), ownerVoteId('1', '2:3'));
 });

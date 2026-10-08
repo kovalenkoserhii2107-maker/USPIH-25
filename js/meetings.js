@@ -145,7 +145,7 @@ function renderSurveyors(hostId, values = {}, byEntrance = true) {
         <label class="surveyor-row">
             <span class="surveyor-label">${escapeHtml(r.label)}</span>
             <input type="text" class="field-input surveyor-input" list="meetingOwnersList"
-                   data-entrance="${escapeHtml(r.key)}" placeholder="Прізвище та ініціали"
+                   data-entrance="${escapeHtml(r.key)}" placeholder="ПІБ (можна залишити порожнім)"
                    value="${escapeHtml(surveyorFor({ surveyors: values }, r.key))}">
         </label>`).join('');
 }

@@ -13,10 +13,10 @@
 // опитування це варіанти відповіді, для зборів — питання. Відповіді
 // ж у зборах завжди одні й ті самі три, тому окремого поля не треба.
 //
-// Голос квартири на зборах — документ polls/{id}/votes/{apt} з мапою
-// answers: { "0": "За", "1": "Проти" }, де ключ — номер питання в
-// порядку денному. Ключ саме номер, а не текст питання: інакше
-// виправлена в питанні кома знецінила б уже подані голоси.
+// Старий та електронний голос квартири — polls/{id}/votes/{apt}.
+// Новий паперовий голос — окремий документ із полями apt та ownerId.
+// В обох answers: { "0": "За", "1": "Проти" }, де ключ — номер питання,
+// а не текст: виправлена кома не знецінює вже подані голоси.
 // ============================================================
 
 /** Відповіді на питання порядку денного. Порядок важливий: у такому вони і в PDF. */
@@ -85,129 +85,122 @@ function normName(n) {
     return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-/**
- * Явка: за власниками і за площею.
- *
- * Голос лежить на КВАРТИРІ, а не на власнику, тож «один власник —
- * один голос» рахуємо так: проголосувала квартира — голос зараховано
- * всім її співвласникам. Власника, що має кілька квартир, ототожнюємо
- * за прізвищем: іншого спільного ідентифікатора в базі немає.
- */
-export function computeQuorum(votes, apartments) {
-    const votedApts = new Set((votes || []).map(v => String(v.apt)));
-    const allOwners = new Set();
-    const votedOwners = new Set();
-    let totalArea = 0, votedArea = 0;
+/** Стабільний ключ співвласника з довідника; старі дані без ID теж читаються. */
+export function ownerIdentity(owner, index = 0) {
+    return String(owner?.id || `legacy-${normName(owner?.name)}-${index}`);
+}
 
-    (apartments || []).forEach(a => {
-        const area = parseArea(a.area);
-        totalArea += area;
-        const voted = votedApts.has(String(a.apt));
-        if (voted) votedArea += area;
+/** Окремий документ паперового голосу, без зміни старого голосу квартири. */
+export function ownerVoteId(apt, ownerId) {
+    return `owner:${encodeURIComponent(String(apt))}:${encodeURIComponent(String(ownerId))}`;
+}
 
-        (a.owners || []).forEach(o => {
-            const key = normName(o.name);
-            if (!key) return;                 // безіменний запис не рахуємо
-            allOwners.add(key);
-            if (voted) votedOwners.add(key);
+function ownedArea(apartment, owner, count) {
+    const area = parseArea(apartment.area);
+    const fraction = String(owner?.shareFrac || '').match(/^\s*(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)\s*$/);
+    if (fraction && parseArea(fraction[2]) > 0) {
+        return area * Math.min(1, parseArea(fraction[1]) / parseArea(fraction[2]));
+    }
+    if (String(owner?.sharePerc ?? '').trim()) {
+        return area * Math.max(0, Math.min(100, parseArea(owner.sharePerc))) / 100;
+    }
+    return area / count;
+}
+
+/** По одному рядку на власника. Індивідуальна відповідь має пріоритет на своє питання. */
+export function ownerVotingRows(votes = [], apartments = []) {
+    const legacy = new Map(), individual = new Map();
+    for (const vote of votes) {
+        if (vote.ownerId) individual.set(ownerVoteId(vote.apt, vote.ownerId), vote);
+        else legacy.set(String(vote.apt), vote);
+    }
+    return apartments.flatMap(apartment => {
+        const owners = apartment.owners?.length ? apartment.owners : [{ name: '' }];
+        return owners.map((owner, index) => {
+            const ownerId = ownerIdentity(owner, index);
+            const inherited = legacy.get(String(apartment.apt));
+            const direct = individual.get(ownerVoteId(apartment.apt, ownerId));
+            const vote = direct ? {
+                ...inherited, ...direct,
+                answers: { ...(inherited?.answers || {}), ...(direct.answers || {}) }
+            } : (inherited || null);
+            return {
+                apt: String(apartment.apt), apartment, owner, ownerId,
+                voteId: ownerVoteId(apartment.apt, ownerId), vote,
+                area: ownedArea(apartment, owner, owners.length)
+            };
         });
     });
+}
 
-    const ownersPct = allOwners.size ? (votedOwners.size / allOwners.size) * 100 : 0;
-    const areaPct = totalArea ? (votedArea / totalArea) * 100 : 0;
-    const round = (n) => Math.round(n * 10) / 10;
-
+/** Явка за власниками та належною їм площею, зі збереженням старих голосів. */
+export function computeQuorum(votes = [], apartments = []) {
+    const allOwners = new Set(), votedOwners = new Set(), votedApts = new Set();
+    let votedArea = 0;
+    for (const row of ownerVotingRows(votes, apartments)) {
+        const key = normName(row.owner.name);
+        if (key) allOwners.add(key);
+        if (!row.vote) continue;
+        votedApts.add(row.apt);
+        votedArea += row.area;
+        if (key) votedOwners.add(key);
+    }
+    const totalArea = apartments.reduce((sum, a) => sum + parseArea(a.area), 0);
+    const ownersPct = allOwners.size ? votedOwners.size / allOwners.size * 100 : 0;
+    const round = n => Math.round(n * 10) / 10;
     return {
-        totalOwners: allOwners.size,
-        votedOwners: votedOwners.size,
-        ownersPct: round(ownersPct),
-        totalArea: round(totalArea),
-        votedArea: round(votedArea),
-        areaPct: round(areaPct),
-        votedApts: votedApts.size,
-        totalApts: (apartments || []).length,
+        totalOwners: allOwners.size, votedOwners: votedOwners.size,
+        ownersPct: round(ownersPct), totalArea: round(totalArea), votedArea: round(votedArea),
+        areaPct: round(totalArea ? votedArea / totalArea * 100 : 0),
+        votedApts: votedApts.size, totalApts: apartments.length,
         hasQuorum: ownersPct >= QUORUM_PCT
     };
 }
 
-/**
- * Явка з розбивкою на форму участі.
- *
- * Протокол має розрізняти тих, хто голосував особисто (в застосунку
- * під час зборів), і тих, кого опитали письмово після них: закон
- * дозволяє добирати голоси письмовим опитуванням протягом 15 днів,
- * і в протоколі ці дві групи стоять окремими рядками.
- */
+/** Розбивка явки за особистим і письмовим голосуванням. */
 export function quorumBreakdown(votes, apartments) {
-    const online = (votes || []).filter(v => !isPaperVote(v));
-    const paper = (votes || []).filter(isPaperVote);
+    const effective = ownerVotingRows(votes, apartments).filter(r => r.vote).map(r => ({
+        ...r.vote, apt: r.apt, ownerId: r.ownerId
+    }));
+    const online = effective.filter(v => !isPaperVote(v));
+    const paper = effective.filter(isPaperVote);
     return {
         total: computeQuorum(votes, apartments),
-        online: computeQuorum(online, apartments),
-        paper: computeQuorum(paper, apartments),
-        onlineCount: online.length,
-        paperCount: paper.length
+        online: computeQuorum(online, apartments), paper: computeQuorum(paper, apartments),
+        onlineCount: online.length, paperCount: paper.length
     };
 }
 
-/**
- * Підсумок одного питання: скільки співвласників, квартир і площі за
- * кожною відповіддю та два відсотки — від кількості голосів і від площі.
- *
- * Співвласників рахуємо так само, як у кворумі: проголосувала квартира
- * — голос зараховано всім, хто в ній записаний, а однофамільця з двох
- * квартир не рахуємо двічі.
- *
- * @param {boolean} amongPresent база відсотка: присутні (питання про
- *        голову зборів) чи весь будинок (решта питань).
- */
-export function questionTally(votes, apartments, index, amongPresent = false) {
-    const byApt = new Map();
-    (apartments || []).forEach(a => byApt.set(String(a.apt), a));
-
+/** Підсумок питання: кожен співвласник має свою відповідь і свою частку площі. */
+export function questionTally(votes = [], apartments = [], index, amongPresent = false) {
     const totals = computeQuorum(votes, apartments);
     const baseOwners = amongPresent ? totals.votedOwners : totals.totalOwners;
     const baseArea = amongPresent ? totals.votedArea : totals.totalArea;
-
-    const rows = {};
-    MEETING_ANSWERS.forEach(ans => {
-        rows[ans] = { apts: 0, area: 0, owners: new Set(), ownersPct: 0, areaPct: 0, count: 0 };
-    });
-
-    (votes || []).forEach(v => {
-        const ans = answerFor(v, index);
-        const row = rows[ans];
-        if (!row) return;                     // відповідь не з нашого списку
-        const apt = byApt.get(String(v.apt));
-        row.apts++;
-        row.count++;                          // сумісність: раніше поле звалося count
-        row.area += parseArea(apt?.area);
-        (apt?.owners || []).forEach(o => {
-            const key = normName(o.name);
-            if (key) row.owners.add(key);
-        });
-    });
-
-    const round = (n) => Math.round(n * 100) / 100;
-    MEETING_ANSWERS.forEach(ans => {
-        const r = rows[ans];
-        r.area = round(r.area);
-        r.ownersCount = r.owners.size;
-        r.ownersPct = baseOwners ? round((r.owners.size / baseOwners) * 100) : 0;
-        r.areaPct = baseArea ? round((r.area / baseArea) * 100) : 0;
-        r.pct = r.areaPct;                    // сумісність зі старою розміткою
-        delete r.owners;
-    });
-
-    const yes = rows[MEETING_ANSWERS[0]];
+    const rows = Object.fromEntries(MEETING_ANSWERS.map(answer => [answer, {
+        apts: new Set(), area: 0, owners: new Set()
+    }]));
+    for (const ownerRow of ownerVotingRows(votes, apartments)) {
+        const row = rows[answerFor(ownerRow.vote, index)];
+        if (!row) continue;
+        row.apts.add(ownerRow.apt);
+        row.area += ownerRow.area;
+        const key = normName(ownerRow.owner.name);
+        if (key) row.owners.add(key);
+    }
+    const round = n => Math.round(n * 100) / 100;
+    for (const row of Object.values(rows)) {
+        row.apts = row.apts.size;
+        row.count = row.apts;
+        row.area = round(row.area);
+        row.ownersCount = row.owners.size;
+        row.ownersPct = baseOwners ? round(row.ownersCount / baseOwners * 100) : 0;
+        row.areaPct = baseArea ? round(row.area / baseArea * 100) : 0;
+        row.pct = row.areaPct;
+        delete row.owners;
+    }
     return {
-        rows,
-        baseOwners,
-        baseArea: round(baseArea),
-        totalArea: round(totals.totalArea),
-        amongPresent,
-        // Рішення приймається голосами співвласників, не метрами.
-        accepted: yes.ownersPct > DECISION_PCT
+        rows, baseOwners, baseArea: round(baseArea), totalArea: round(totals.totalArea),
+        amongPresent, accepted: rows[MEETING_ANSWERS[0]].ownersPct > DECISION_PCT
     };
 }
 

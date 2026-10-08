@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadString, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor } from '../../js/meeting.js';
+import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor, ownerVoteId, questionTally } from '../../js/meeting.js';
 
 let env;
 before(async () => {
@@ -95,4 +95,23 @@ test('правління завантажує PDF і Excel до зборів, м
     await assertSucceeds(setDoc(meetingRef, { isMeeting: true, title: 'Збори з вкладеннями', attachments }));
     const saved = (await assertSucceeds(getDoc(meetingRef))).data();
     assert.deepEqual(saved.attachments, attachments);
+});
+
+test('правління записує окремі паперові голоси співвласників без перезапису інших питань', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const apartments = [{ apt: '45', area: 64, owners: [
+        { id: 'first', name: 'Перший', shareFrac: '1/2' }, { id: 'second', name: 'Другий', shareFrac: '1/2' }
+    ] }];
+    const refs = ['first', 'second'].map(id => doc(admin, 'polls/paper-owner-test/votes', ownerVoteId('45', id)));
+    await assertSucceeds(setDoc(refs[0], { apt: '45', ownerId: 'first', source: 'paper', answers: { 0: 'За' } }));
+    await assertSucceeds(setDoc(refs[0], { answers: { 1: 'Проти' } }, { merge: true }));
+    await assertSucceeds(setDoc(refs[1], { apt: '45', ownerId: 'second', source: 'paper', answers: { 1: 'За' } }));
+    const votes = await Promise.all(refs.map(async ref => (await getDoc(ref)).data()));
+    assert.deepEqual(votes[0].answers, { 0: 'За', 1: 'Проти' });
+    const tally = questionTally(votes, apartments, 1);
+    assert.equal(tally.rows['За'].ownersCount, 1);
+    assert.equal(tally.rows['Проти'].ownersCount, 1);
+    await assertFails(setDoc(doc(resident, refs[1].path), { answers: { 1: 'Проти' } }, { merge: true }));
 });

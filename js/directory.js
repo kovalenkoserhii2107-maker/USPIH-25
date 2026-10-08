@@ -36,7 +36,7 @@ export async function fetchDirectory() {
         const byApt = {};
         ownerSnap.forEach(d => {
             const apt = ownerApt(d.ref);
-            (byApt[apt] ||= []).push(d.data());
+            (byApt[apt] ||= []).push({ ...d.data(), id: d.id });
         });
 
         cache = aptSnap.docs

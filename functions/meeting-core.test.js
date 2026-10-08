@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { computeQuorum, meetingSummary } = require('./meeting-core');
+const { computeQuorum, questionTally, meetingSummary } = require('./meeting-core');
 
 const apartments = [
     { apt: '1', area: 40, owners: [{ name: 'А' }] },
@@ -23,4 +23,20 @@ test('підсумок зборів стабільний для повторно
     ], apartments);
     assert.match(text, /1\. Голова/);
     assert.match(text, /2\. Кошторис/);
+});
+
+test('серверні підсумки розділяють голоси двох власників однієї квартири', () => {
+    const shared = [{ apt: '298', area: 64, owners: [
+        { id: 'a', name: 'А', shareFrac: '1/2' }, { id: 'b', name: 'Б', shareFrac: '1/2' }
+    ] }];
+    const votes = [
+        { apt: '298', ownerId: 'a', source: 'paper', answers: { 0: 'За' } },
+        { apt: '298', ownerId: 'b', source: 'paper', answers: { 0: 'Проти' } }
+    ];
+    assert.equal(computeQuorum(votes.slice(0, 1), shared).votedOwners, 1);
+    const result = questionTally(votes, shared, 0);
+    assert.equal(result.rows['За'].ownersCount, 1);
+    assert.equal(result.rows['Проти'].ownersCount, 1);
+    assert.equal(result.rows['За'].area, 32);
+    assert.match(meetingSummary({ options: ['Кошторис'] }, votes, shared), /за 1, проти 1, утримався 0/);
 });
