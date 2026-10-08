@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadString, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, uploadBytes, getDownloadURL, getMetadata, deleteObject } from 'firebase/storage';
 import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor, ownerVoteId, questionTally } from '../../js/meeting.js';
 
 let env;
@@ -73,13 +73,16 @@ test('правління створює та редагує збори зі сп
     await assertFails(updateDoc(doc(residentDb, meeting.path), { title: 'Змінено мешканцем' }));
 });
 
-test('правління завантажує PDF і Excel до зборів, мешканець не може', async () => {
+test('правління додає PDF, Word, Excel і фото до зборів, мешканець не може', async () => {
     await seed();
     const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' });
     const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' });
     const files = [
         { name: '1791469673683_dodatok_2.pdf', type: 'application/pdf' },
-        { name: '1791469673684_Результат голосування 2504.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        { name: '1791469673684_Результат голосування 2504.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+        { name: '1791469673685_Проєкт рішення.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+        { name: '1791469673686_Схема.jpg', type: 'image/jpeg' },
+        { name: '1791469673687_Кошторис.xls', type: 'application/octet-stream' }
     ];
     const attachments = [];
     for (const file of files) {
@@ -89,12 +92,56 @@ test('правління завантажує PDF і Excel до зборів, м
         await assertSucceeds(uploadBytes(fileRef, data, { contentType: file.type }));
         const url = await assertSucceeds(getDownloadURL(fileRef));
         attachments.push({ name: file.name, type: file.type, size: data.length, url });
+        await assertSucceeds(getMetadata(ref(resident.storage(), path)));
         await assertFails(uploadBytes(ref(resident.storage(), path), data, { contentType: file.type }));
     }
     const meetingRef = doc(admin.firestore(), 'polls/meeting-with-files');
     await assertSucceeds(setDoc(meetingRef, { isMeeting: true, title: 'Збори з вкладеннями', attachments }));
     const saved = (await assertSucceeds(getDoc(meetingRef))).data();
     assert.deepEqual(saved.attachments, attachments);
+});
+
+test('правління завантажує й оновлює протоколи, мешканці лише читають', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' });
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' });
+    const anonymous = env.unauthenticatedContext();
+    const files = [
+        { name: 'Протокол правління.pdf', type: 'application/pdf' },
+        { name: 'Додаток до протоколу.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+        { name: 'Кошторис.xlsx', type: 'application/octet-stream' }
+    ];
+    for (const [index, file] of files.entries()) {
+        const path = `osbb_docs/board-test-${index}_${file.name}`;
+        const fileRef = ref(admin.storage(), path);
+        await assertSucceeds(uploadBytes(fileRef, new Uint8Array(1024), { contentType: file.type }));
+        const url = await assertSucceeds(getDownloadURL(fileRef));
+        const documentRef = doc(admin.firestore(), `osbb_documents/board-test-${index}`);
+        await assertSucceeds(setDoc(documentRef, {
+            title: file.name, category: 'Протоколи правління', fileName: file.name,
+            url, type: file.type, size: 1024, createdAt: serverTimestamp()
+        }));
+        assert.equal((await assertSucceeds(getDoc(doc(resident.firestore(), documentRef.path)))).data().url, url);
+        await assertSucceeds(getMetadata(ref(resident.storage(), path)));
+        await assertFails(uploadBytes(ref(resident.storage(), path), new Uint8Array(2048), { contentType: file.type }));
+        await assertFails(deleteObject(ref(resident.storage(), path)));
+        await assertFails(getMetadata(ref(anonymous.storage(), path)));
+        await assertFails(uploadBytes(ref(anonymous.storage(), path), new Uint8Array(1024), { contentType: file.type }));
+        await assertSucceeds(uploadBytes(fileRef, new Uint8Array(2048), { contentType: file.type }));
+        assert.equal((await getMetadata(fileRef)).size, 2048);
+        await assertSucceeds(deleteObject(fileRef));
+    }
+});
+
+test('ліміти вкладень зборів і протоколів перевіряються у Storage', async () => {
+    await seed();
+    const storage = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).storage();
+    const metadata = { contentType: 'application/pdf' };
+    await assertFails(uploadBytes(ref(storage, 'polls/oversized.pdf'), new Uint8Array(20 * 1024 * 1024), metadata));
+    await assertFails(uploadBytes(ref(storage, 'osbb_docs/oversized.pdf'), new Uint8Array(30 * 1024 * 1024), metadata));
+    const protocol = ref(storage, 'osbb_docs/large-protocol.pdf');
+    await assertSucceeds(uploadBytes(protocol, new Uint8Array(21 * 1024 * 1024), metadata));
+    await assertSucceeds(deleteObject(protocol));
 });
 
 test('правління записує окремі паперові голоси співвласників без перезапису інших питань', async () => {

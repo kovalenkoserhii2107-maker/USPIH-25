@@ -1,5 +1,11 @@
 rules_version = '2';
 
+// Скопіюйте весь файл у Firebase Console → Storage → Rules → Publish.
+// Бакет застосунку: uspih-25.firebasestorage.app.
+// Це правила файлів; firestore.rules регулює лише документи бази даних.
+// Для перевірки прав правління Storage має отримати доступ до Firestore:
+// якщо Firebase Console пропонує надати цей дозвіл, надайте його.
+
 service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() {
@@ -54,14 +60,21 @@ service firebase.storage {
       allow write: if admin() && (request.resource == null || safeUpload(20));
     }
 
+    // Матеріали загальних зборів та опитувань: PDF, Word, Excel, фото.
+    // Правління завантажує файли до створення документа зборів,
+    // тому тут не вимагаємо існування polls/{id}.
     match /polls/{file=**} {
       allow read: if signedIn();
-      allow write: if admin() && (request.resource == null || safeUpload(20));
+      allow create, update: if admin() && safeUpload(20);
+      allow delete: if admin();
     }
 
+    // Протоколи правління, протоколи загальних зборів і документи Бази.
+    // Тип документа не обмежуємо: браузер може не визначити MIME Word/Excel.
     match /osbb_docs/{file=**} {
       allow read: if signedIn();
-      allow write: if admin() && (request.resource == null || safeUpload(30));
+      allow create, update: if admin() && safeUpload(30);
+      allow delete: if admin();
     }
 
     match /board_members/{file=**} {

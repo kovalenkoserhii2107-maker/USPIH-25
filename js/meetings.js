@@ -253,6 +253,8 @@ async function createMeeting(btn) {
     if (!entered.length) return toast('Додайте хоча б одне питання порядку денного', 'error');
     const texts = entered.map(x => x.question);
     if (new Set(texts).size !== texts.length) return toast('Питання не мають повторюватися', 'error');
+    const oversized = pendingFiles.find(file => file.size >= 20 * 1024 * 1024);
+    if (oversized) return toast(`Файл «${oversized.name}» має бути меншим за 20 МБ`, 'error');
 
     let deadline = null;
     if (deadlineRaw) {
@@ -273,11 +275,12 @@ async function createMeeting(btn) {
     try {
         const attachments = [];
         for (const file of pendingFiles) {
+            const contentType = file.type || 'application/octet-stream';
             const fileRef = sRef(storage, `polls/${Date.now()}_${file.name}`);
-            await uploadBytes(fileRef, file);
+            await uploadBytes(fileRef, file, { contentType });
             attachments.push({
                 name: file.name, url: await getDownloadURL(fileRef),
-                type: file.type || '', size: file.size || 0
+                type: contentType, size: file.size || 0
             });
         }
 

@@ -489,15 +489,17 @@ export async function uploadOsbbDoc(btn) {
     const title = document.getElementById('osbbDocTitle').value.trim();
     const category = document.getElementById('osbbDocCategory').value;
     if (!title || !osbbDocFile) return toast('Вкажіть назву та оберіть файл', 'error');
+    if (osbbDocFile.size >= 30 * 1024 * 1024) return toast('Документ має бути меншим за 30 МБ', 'error');
 
     setBusy(btn, true, 'Завантаження…');
     try {
+        const contentType = osbbDocFile.type || 'application/octet-stream';
         const fileRef = sRef(storage, `osbb_docs/${Date.now()}_${osbbDocFile.name}`);
-        await uploadBytes(fileRef, osbbDocFile);
+        await uploadBytes(fileRef, osbbDocFile, { contentType });
         const url = await getDownloadURL(fileRef);
         await addDoc(collection(db, 'osbb_documents'), {
             title, category, fileName: osbbDocFile.name, url,
-            size: osbbDocFile.size, type: osbbDocFile.type || '', createdAt: serverTimestamp()
+            size: osbbDocFile.size, type: contentType, createdAt: serverTimestamp()
         });
         document.getElementById('osbbDocTitle').value = '';
         osbbDocFile = null;
@@ -506,7 +508,9 @@ export async function uploadOsbbDoc(btn) {
         await populateDocsDropdown();
     } catch (e) {
         console.error(e);
-        toast('Помилка завантаження', 'error');
+        toast(e.code === 'storage/unauthorized'
+            ? 'Немає дозволу завантажити документ. Перевірте права доступу до сховища файлів.'
+            : 'Помилка завантаження', 'error');
     } finally {
         setBusy(btn, false);
     }
