@@ -132,6 +132,27 @@ export function decisionLines(text) {
     return safe(text).split('\n').map(line => line.trim()).filter(Boolean);
 }
 
+/** На листку короткі переноси всередині пункту замінюємо пробілами.
+ * Новий номер, маркер списку або порожній рядок починає новий абзац.
+ * Номерів не додаємо: pdfmake переносить кожний пункт по ширині листка.
+ */
+function sheetDecisionParagraphs(text) {
+    const paragraphs = [];
+    let current = '';
+    const flush = () => {
+        if (current) paragraphs.push(current);
+        current = '';
+    };
+    for (const raw of safe(text).split('\n')) {
+        const line = raw.trim();
+        if (!line) { flush(); continue; }
+        if (/^(?:\d+(?:\.\d+)*[.)]|[а-яіїєґa-z][.)]|[•●▪‣–—-])\s/iu.test(line)) flush();
+        current += `${current ? ' ' : ''}${line}`;
+    }
+    flush();
+    return paragraphs;
+}
+
 /** Рядки таблиці «власники квартири», по одному на співвласника. */
 function ownerRows(apartments) {
     const rows = [];
@@ -161,9 +182,8 @@ function pdfStyles() {
         sheetTitle: { fontSize: 12, bold: true, alignment: 'center' },
         sheetSub: { fontSize: 9, alignment: 'center', margin: [0, 2, 0, 2] },
         sheetEntrance: { fontSize: 10, bold: true, alignment: 'center', margin: [0, 2, 0, 2] },
-        surveyor: { fontSize: 8.5, margin: [0, 4, 0, 0] },
         question: { fontSize: 9.5, bold: true, margin: [0, 2, 0, 2] },
-        qsub: { fontSize: 9, margin: [0, 1, 0, 0] },
+        qsub: { fontSize: 9, alignment: 'justify', margin: [0, 1, 0, 0] },
         h2: { fontSize: 11, bold: true, margin: [0, 14, 0, 6] },
         th: { fontSize: 7.5, bold: true, alignment: 'center' },
         td: { fontSize: 9 },
@@ -236,12 +256,6 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
         'Частка', 'Дата', 'Відповідь співвласника: «ЗА», «ПРОТИ», «УТРИМАВСЯ»',
         'Підпис співвласника (представника)'];
 
-    // У шапці лише ПІБ; підпис ставиться внизу кожної сторінки.
-    const surveyorLine = entrance => ({
-        text: `Опитування проводить: ${surveyorFor(poll, entrance) || '_______________________________'}`,
-        style: 'surveyor'
-    });
-
     const titleCell = (question, index, entrance) => ({
         colSpan: HEAD.length,
         margin: [0, 2, 0, 4],
@@ -255,9 +269,8 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
             ...(entrance
                 ? [{ text: `Парадна ${entrance}`, style: 'sheetEntrance' }]
                 : (byEntrance ? [{ text: 'Парадну не вказано', style: 'sheetEntrance' }] : [])),
-            { text: `Питання ${index + 1}. ${question}`, style: 'question' },
-            ...decisionLines(decisions[index], index + 1).map(t => ({ text: t, style: 'qsub' })),
-            surveyorLine(entrance)
+            { text: `Питання ${index + 1}. ${safe(question).replace(/\s+/g, ' ')}`, style: 'question' },
+            ...sheetDecisionParagraphs(decisions[index]).map(t => ({ text: t, style: 'qsub' }))
         ]
     });
 
