@@ -26,7 +26,7 @@ import { callBackend } from './backend.js';
 import {
     MEETING_ANSWERS, DECISION_PCT, QUORUM_PCT, OSBB_DEFAULTS,
     agendaOf, answerFor, isPaperVote, isChairQuestion, parseArea, ownerShare,
-    quorumBreakdown, questionTally, entrancesOf, surveyorFor,
+    quorumBreakdown, meetingQuestionTally, writtenQuestions, chairVoteTally, entrancesOf, surveyorFor,
     formatMeetingDate, formatProtocolDate, formatShortDate,
     fmtNum, fmtPct, plural, ownerVotingRows
 } from './meeting.js';
@@ -230,7 +230,7 @@ const sheetLayout = () => ({
  * зібрати й перевірити, не відкриваючи браузера.
  */
 export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false } = {}) {
-    const questions = agendaOf(poll);
+    const questions = writtenQuestions(poll);
     const decisions = poll.agendaDecisions || [];
     // Листки роздають відповідальним особам по парадних, тому кожна
     // парадна отримує власний комплект: на одному аркуші не має бути
@@ -277,7 +277,7 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
     const content = [];
     const sheetTables = [];
     let first = true;
-    questions.forEach((q, i) => {
+    questions.forEach(({ question: q, index: i }) => {
         groups.forEach(group => {
             const tableNode = {
                 ...(first ? {} : { pageBreak: 'before' }),
@@ -313,7 +313,9 @@ export function buildBlankSheetsDoc(poll, apartments, osbb, { byEntrance = false
     if (!questions.length || !groups.length) {
         content.push({
             text: !questions.length
-                ? 'У зборів немає жодного питання порядку денного.'
+                ? (agendaOf(poll).length
+                    ? 'Обрання голови та секретаря проводиться з голосу на зборах. Листки письмового опитування не потрібні.'
+                    : 'У зборів немає жодного питання порядку денного.')
                 : 'У довіднику немає жодної квартири.',
             style: 'note'
         });
@@ -377,6 +379,7 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
     const persons = (n) => `${n} ${plural(n, 'особа', 'особи', 'осіб')}`;
     // Більшість — це перше ціле число, що перевищує половину.
     const majority = Math.floor(total.totalOwners / 2) + 1;
+    const chairTally = chairVoteTally(poll.chairVote);
 
     const content = [
         { text: 'ОБ’ЄДНАННЯ СПІВВЛАСНИКІВ БАГАТОКВАРТИРНОГО БУДИНКУ', style: 'org' },
@@ -420,7 +423,13 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
             style: 'para'
         },
         {
-            text: `У голосуванні на загальних зборах взяли участь особисто та/або через `
+            text: chairTally
+                ? `На очній частині загальних зборів присутні ${persons(chairTally.baseOwners)} — співвласники або їхні представники.`
+                : '',
+            style: 'para'
+        },
+        {
+            text: `В електронному голосуванні взяли участь особисто та/або через `
                 + `представників: співвласники в кількості ${persons(q.online.votedOwners)}, яким `
                 + `належать квартири та/або нежитлові приміщення у багатоквартирному будинку `
                 + `загальною площею ${fmtNum(q.online.votedArea)} м².`,
@@ -444,7 +453,8 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
         {
             text: `Кожний співвласник (його представник) має один голос незалежно від кількості `
                 + `та площі квартир і нежитлових приміщень, що перебувають у його власності. `
-                + `Для прийняття рішень з питань порядку денного необхідна більшість голосів від `
+                + `Голову та секретаря обирають більшістю голосів присутніх на зборах. `
+                + `Для прийняття рішень з інших питань порядку денного необхідна більшість голосів від `
                 + `загальної кількості голосів співвласників об’єднання (тобто не менше `
                 + `${majority} ${plural(majority, 'голосу', 'голосів', 'голосів')} — понад `
                 + `${DECISION_PCT}% від загальної кількості у ${persons(total.totalOwners)}).`,
@@ -467,7 +477,7 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
 
     questions.forEach((question, index) => {
         const amongPresent = isChairQuestion(index);
-        const t = questionTally(votes, apartments, index, amongPresent);
+        const t = meetingQuestionTally(poll, votes, apartments, index);
 
         content.push({
             text: `Питання ${index + 1}. ${question}`,
@@ -492,32 +502,46 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
             content.push({ text: '____________________________________________', style: 'para' });
         }
 
-        content.push({
+        const resultContent = [{
             text: `Результати голосування з питання №${index + 1}:`,
             style: 'label', margin: [0, 8, 0, 4]
-        });
-        content.push({
+        }];
+        if (!t) {
+            resultContent.push({ text: 'Результати голосування на зборах ще не внесено.', style: 'para' });
+            content.push({ stack: resultContent, unbreakable: true });
+            return;
+        }
+        if (amongPresent) {
+            resultContent.push({
+                text: `Присутніх: ${owners(t.baseOwners)}. Проголосували: ${owners(t.votedOwners)}.`,
+                style: 'para'
+            });
+        }
+        resultContent.push({
             table: {
-                widths: ['*', 110, 90, 110],
+                widths: amongPresent ? ['*', 150, 150] : ['*', 110, 90, 110],
                 body: [
-                    ['Результат', 'Кількість співвласників', 'Площа приміщень, м²',
-                     amongPresent ? '% від присутніх (голоси / площа)' : '% від загальної кількості / площі']
+                    (amongPresent
+                        ? ['Результат', 'Кількість співвласників', '% від кількості присутніх на зборах']
+                        : ['Результат', 'Кількість співвласників', 'Площа приміщень, м²', '% від загальної кількості / площі'])
                         .map(text => ({ text, style: 'th' })),
                     ...MEETING_ANSWERS.map((ans, k) => ([
                         { text: `«${['ЗА', 'ПРОТИ', 'УТРИМАЛИСЬ'][k] || ans.toUpperCase()}»`, style: 'td' },
                         { text: owners(t.rows[ans].ownersCount), style: 'td', alignment: 'center' },
-                        { text: `${fmtNum(t.rows[ans].area)} м²`, style: 'td', alignment: 'center' },
-                        { text: `${fmtPct(t.rows[ans].ownersPct)}% / ${fmtPct(t.rows[ans].areaPct)}%`,
+                        ...(!amongPresent ? [{ text: `${fmtNum(t.rows[ans].area)} м²`, style: 'td', alignment: 'center' }] : []),
+                        { text: amongPresent ? `${fmtPct(t.rows[ans].ownersPct)}%`
+                            : `${fmtPct(t.rows[ans].ownersPct)}% / ${fmtPct(t.rows[ans].areaPct)}%`,
                           style: 'td', alignment: 'center' }
                     ]))
                 ]
             },
             layout: gridLayout()
         });
-        content.push({
+        resultContent.push({
             text: t.accepted ? 'Рішення ПРИЙНЯТО.' : 'Рішення НЕ ПРИЙНЯТО.',
             style: 'verdict'
         });
+        content.push({ stack: resultContent, unbreakable: true });
     });
 
     content.push({
@@ -546,24 +570,29 @@ export function buildProtocolDoc(poll, apartments, votes, osbb) {
         style: 'h2', pageBreak: 'before', pageOrientation: 'landscape'
     });
 
+    content.push({
+        text: 'Питання 1 вирішувалося з голосу на зборах. Його підсумки наведено в основній частині протоколу.',
+        style: 'para'
+    });
+    const ballotQuestions = writtenQuestions(poll);
     const nameHeader = ['№ кв.', 'Площа частки, м²', 'ПІБ співвласника', 'Форма участі',
-        ...questions.map((_, i) => `Пит. ${i + 1}`)];
+        ...ballotQuestions.map(({ index }) => `Пит. ${index + 1}`)];
     const nameBody = ownerVotingRows(votes, apartments).map(({ apartment: apt, owner, vote, area }) => {
-        const form = !vote ? 'Не голосував' : (isPaperVote(vote) ? 'Письмово' : 'На зборах');
+        const form = !vote ? 'Не голосував' : (isPaperVote(vote) ? 'Письмово' : 'Електронно');
         return [
             { text: String(apt.apt), style: 'td', alignment: 'center' },
             { text: fmtNum(area, 1), style: 'td', alignment: 'center' },
             { text: safe(owner.name), style: 'td' },
             { text: form, style: 'td', alignment: 'center' },
-            ...questions.map((_, i) => ({
-                text: vote ? (answerFor(vote, i) || '—') : '—', style: 'td', alignment: 'center'
+            ...ballotQuestions.map(({ index }) => ({
+                text: vote ? (answerFor(vote, index) || '—') : '—', style: 'td', alignment: 'center'
             }))
         ];
     });
     content.push({
         table: {
             headerRows: 1,
-            widths: [34, 50, '*', 62, ...questions.map(() => 58)],
+            widths: [34, 50, '*', 62, ...ballotQuestions.map(() => 58)],
             body: [nameHeader.map(text => ({ text, style: 'th' })), ...nameBody]
         },
         layout: gridLayout()

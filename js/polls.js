@@ -26,7 +26,7 @@ import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
 import {
     MEETING_ANSWERS, QUORUM_PCT, DECISION_PCT,
-    computeQuorum, isMeeting, agendaOf, answerFor, questionTally, isChairQuestion,
+    computeQuorum, isMeeting, agendaOf, answerFor, meetingQuestionTally, isChairQuestion, writtenQuestions,
     formatMeetingDate, fmtPct, beforeStart, startLabel
 } from './meeting.js';
 
@@ -225,7 +225,7 @@ function agendaPreview(poll) {
     </div>`;
 }
 
-/** Бюлетень: по три відповіді на кожне питання порядку денного. */
+/** Бюлетень: питання 1 голосують з голосу, решту — по квартирі. */
 function agendaBallot(poll) {
     const questions = agendaOf(poll);
     return `<div class="meeting-ballot">
@@ -233,7 +233,9 @@ function agendaBallot(poll) {
             <div class="meeting-q">
                 <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
                 ${draftDecision(poll, i)}
-                <div class="poll-options meeting-answers" role="radiogroup"
+                ${isChairQuestion(i)
+                    ? '<span class="field-hint">Голову й секретаря обирають з голосу на зборах. Правління внесе підсумки в протокол.</span>'
+                    : `<div class="poll-options meeting-answers" role="radiogroup"
                      aria-label="${escapeHtml(q)}">
                     ${MEETING_ANSWERS.map(ans => `
                         <label class="poll-option">
@@ -241,7 +243,7 @@ function agendaBallot(poll) {
                             <span class="poll-option-mark"></span>
                             <span class="poll-option-text">${escapeHtml(ans)}</span>
                         </label>`).join('')}
-                </div>
+                </div>`}
             </div>`).join('')}
     </div>`;
 }
@@ -265,18 +267,25 @@ function renderMeetingResults(poll, votes, myVote = null, apartments = null) {
             const ans = answerFor(v, i);
             if (ans in counts) { counts[ans]++; total++; }
         });
-        const mine = myVote ? answerFor(myVote, i) : null;
+        const mine = myVote && !isChairQuestion(i) ? answerFor(myVote, i) : null;
         // Питання про голову зборів вирішують присутні, решту — весь
         // будинок: та сама різниця, що й у протоколі.
-        const legal = apartments?.length
-            ? questionTally(votes, apartments, i, isChairQuestion(i))
+        const legal = apartments?.length || isChairQuestion(i)
+            ? meetingQuestionTally(poll, votes, apartments || [], i)
             : null;
+        if (isChairQuestion(i) && !legal) {
+            return `<div class="meeting-q-result">
+                <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
+                <span class="field-hint">Голосування з голосу на зборах. Підсумки ще не внесено в протокол.</span>
+            </div>`;
+        }
         if (legal) {
             total = 0;
             MEETING_ANSWERS.forEach(answer => {
                 counts[answer] = legal.rows[answer].ownersCount;
                 total += counts[answer];
             });
+            if (isChairQuestion(i)) total = legal.baseOwners;
         }
 
         const bars = MEETING_ANSWERS.map((ans) => {
@@ -306,6 +315,7 @@ function renderMeetingResults(poll, votes, myVote = null, apartments = null) {
         return `<div class="meeting-q-result">
             <span class="meeting-q-text"><b>${i + 1}.</b> ${escapeHtml(q)}</span>
             <div class="poll-results">${bars}</div>
+            ${isChairQuestion(i) ? `<span class="field-hint">Присутніх: ${legal.baseOwners} · проголосували: ${legal.votedOwners}</span>` : ''}
             ${verdict}
         </div>`;
     }).join('')}</div>`;
@@ -421,8 +431,8 @@ export async function loadUserPolls(append = false) {
                     ? agendaPreview(poll)
                     : canVote
                     ? agendaBallot(poll)
-                      + `<button type="button" class="btn-primary btn-compact meeting-vote-btn"
-                                 data-poll="${poll.id}">Проголосувати з усіх питань</button>`
+                      + (writtenQuestions(poll).length ? `<button type="button" class="btn-primary btn-compact meeting-vote-btn"
+                                 data-poll="${poll.id}">${options.length === 2 ? 'Проголосувати з питання 2' : `Проголосувати з питань 2–${options.length}`}</button>` : '')
                     : renderMeetingResults(poll, poll.votes, myVote)
                       + (poll.quorum ? renderQuorum(poll.quorum) : ''))
                 : canVote
@@ -473,9 +483,9 @@ export async function loadUserPolls(append = false) {
         host.querySelectorAll('.meeting-vote-btn').forEach(btn => {
             btn.addEventListener('click', function () {
                 const poll = polls.find(p => p.id === this.dataset.poll);
-                const questions = agendaOf(poll);
+                const questions = writtenQuestions(poll);
                 const answers = {};
-                for (let i = 0; i < questions.length; i++) {
+                for (const { index: i } of questions) {
                     const picked = host.querySelector(`input[name="meet-${poll.id}-${i}"]:checked`);
                     // Половина бюлетеня — не голос: у протоколі така
                     // квартира однаково пішла б у «не голосував».
@@ -775,7 +785,8 @@ async function broadcastResults(poll, quorum, apartments = []) {
 export async function broadcastMeetingResults(poll, quorum, apartments) {
     const questions = agendaOf(poll);
     const lines = questions.map((q, i) => {
-        const t = questionTally(poll.votes, apartments, i, isChairQuestion(i));
+        const t = meetingQuestionTally(poll, poll.votes, apartments, i);
+        if (!t) return `${i + 1}. ${q}\n   Результати голосування на зборах ще не внесено`;
         const counts = MEETING_ANSWERS
             .map(a => `${a.toLowerCase()} ${t.rows[a].ownersCount}`).join(', ');
         const verdict = apartments.length

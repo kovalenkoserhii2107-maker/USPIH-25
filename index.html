@@ -14,8 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=115">
-    <link rel="stylesheet" href="style-chat.css?v=115">
+    <link rel="stylesheet" href="style.css?v=116">
+    <link rel="stylesheet" href="style-chat.css?v=116">
 </head>
 <body>
 
@@ -1611,6 +1611,7 @@
         <div class="field">
             <label class="field-label" for="paperQuestion">Питання порядку денного</label>
             <select id="paperQuestion" class="field-input field-select"></select>
+            <span class="field-hint">Питання 1 голосують на зборах. Його підсумки вносяться під час формування протоколу.</span>
         </div>
         <div class="field-row">
             <div class="field">
@@ -1880,7 +1881,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=115' : './js/app.js?v=115');
+    import(preview === 'admin' ? './js/admin-preview.js?v=116' : './js/app.js?v=116');
 </script>
 </body>
 </html>

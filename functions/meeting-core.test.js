@@ -38,5 +38,15 @@ test('серверні підсумки розділяють голоси дво
     assert.equal(result.rows['За'].ownersCount, 1);
     assert.equal(result.rows['Проти'].ownersCount, 1);
     assert.equal(result.rows['За'].area, 32);
-    assert.match(meetingSummary({ options: ['Кошторис'] }, votes, shared), /за 1, проти 1, утримався 0/);
+    const laterVotes = votes.map(vote => ({ ...vote, answers: { 1: vote.answers[0] } }));
+    assert.match(meetingSummary({ options: ['Голова', 'Кошторис'] }, laterVotes, shared), /за 1, проти 1, утримався 0/);
+});
+
+test('сервер бере голосування питання 1 з очних підсумків і не домішує відповіді квартир', () => {
+    const summary = meetingSummary({
+        options: ['Голова', 'Кошторис'], chairVote: { present: 15, yes: 15, no: 0, abstain: 0 }
+    }, [{ apt: '1', answers: { 0: 'Проти', 1: 'За' } }], apartments);
+    assert.match(summary, /1\. Голова\n   ПРИЙНЯТО \(голосів співвласників: за 15, проти 0, утримався 0\); присутніх 15, проголосували 15/);
+    assert.match(summary, /2\. Кошторис\n   НЕ ПРИЙНЯТО \(голосів співвласників: за 1/);
+    assert.match(meetingSummary({ options: ['Голова'] }, [], apartments), /ще не внесено/);
 });

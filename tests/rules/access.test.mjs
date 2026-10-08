@@ -65,12 +65,15 @@ test('правління створює та редагує збори зі сп
         deadline: null, status: 'active', resultsSent: false, createdAt: serverTimestamp()
     }));
     await assertSucceeds(updateDoc(meeting, {
-        surveyors: surveyorAssignments([{ entrance: '', name: 'Петренко П. П.' }])
+        surveyors: surveyorAssignments([{ entrance: '', name: 'Петренко П. П.' }]),
+        chairVote: { present: 15, yes: 15, no: 0, abstain: 0 }
     }));
     const saved = (await assertSucceeds(getDoc(meeting))).data();
     assert.equal(surveyorFor(saved, '1'), 'Петренко П. П.');
+    assert.deepEqual(saved.chairVote, { present: 15, yes: 15, no: 0, abstain: 0 });
     const residentDb = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
     await assertFails(updateDoc(doc(residentDb, meeting.path), { title: 'Змінено мешканцем' }));
+    await assertFails(updateDoc(doc(residentDb, meeting.path), { chairVote: { present: 15, yes: 0, no: 15, abstain: 0 } }));
 });
 
 test('правління додає PDF, Word, Excel і фото до зборів, мешканець не може', async () => {

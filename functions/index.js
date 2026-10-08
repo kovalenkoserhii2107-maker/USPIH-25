@@ -18,7 +18,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 initializeApp();
 const db = getFirestore();
-const { computeQuorum, meetingSummary, QUORUM_PCT } = require('./meeting-core');
+const { computeQuorum, meetingSummary, chairVoteError, QUORUM_PCT } = require('./meeting-core');
 
 // Ключ лежить у Secret Manager, а не в коді: інакше він потрапив би
 // в репозиторій разом із функцією.
@@ -146,6 +146,8 @@ exports.publishMeetingProtocol = onCall(
         if (poll.status !== 'closed') {
             throw new HttpsError('failed-precondition', 'Спочатку завершіть збори');
         }
+        const chairError = chairVoteError(poll.chairVote);
+        if (chairError) throw new HttpsError('failed-precondition', chairError);
         const quorum = computeQuorum(votes, apartments);
         const dateLabel = ukDate(poll.meetingDate);
         const title = `Протокол № ${poll.protocolNumber || '___'} загальних зборів від ${dateLabel}`;

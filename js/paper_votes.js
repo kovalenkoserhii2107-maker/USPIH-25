@@ -8,7 +8,7 @@ import {
 import { escapeHtml, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import {
-    MEETING_ANSWERS, agendaOf, answerFor, isPaperVote, ownerVotingRows,
+    MEETING_ANSWERS, writtenQuestions, answerFor, isPaperVote, ownerVotingRows,
     meetingWhen, parseArea, ownerShare, entrancesOf
 } from './meeting.js';
 
@@ -138,6 +138,8 @@ export function closePaperVotes() {
 }
 
 export async function openPaperVotes(poll, onDone = () => {}) {
+    const questions = writtenQuestions(poll);
+    if (!questions.length) return toast('Питання 1 вирішується з голосу. Внесіть підсумки під час формування протоколу.', 'error');
     const box = modal();
     if (!box) return;
     const requestId = ++loadId;
@@ -154,12 +156,12 @@ export async function openPaperVotes(poll, onDone = () => {}) {
         ]);
         if (requestId !== loadId || !box.classList.contains('is-open')) return;
         state = {
-            poll, apartments, onDone, saved: 0, saving: false, question: 0, entrance: '',
+            poll, apartments, onDone, saved: 0, saving: false, question: questions[0].index, entrance: '',
             drafts: new Map(), rows: new Map(),
             votes: new Map(voteSnap.docs.map(d => [d.id, { apt: d.id, ...d.data() }]))
         };
-        el('paperQuestion').innerHTML = agendaOf(poll)
-            .map((q, i) => `<option value="${i}">Питання ${i + 1}. ${escapeHtml(q)}</option>`).join('');
+        el('paperQuestion').innerHTML = questions
+            .map(({ question, index }) => `<option value="${index}">Питання ${index + 1}. ${escapeHtml(question)}</option>`).join('');
         const entrances = entrancesOf(apartments).filter(Boolean);
         el('paperEntrance').innerHTML = ['<option value="">Усі парадні</option>',
             ...entrances.map(e => `<option value="${escapeHtml(e)}">Парадна ${escapeHtml(e)}</option>`)].join('');

@@ -89,7 +89,7 @@ function computeQuorum(votes = [], apartments = []) {
     };
 }
 
-/** Розбивка явки за особистим і письмовим голосуванням. */
+/** Розбивка участі за електронним і письмовим голосуванням. */
 function quorumBreakdown(votes, apartments) {
     const effective = ownerVotingRows(votes, apartments).filter(r => r.vote).map(r => ({
         ...r.vote, apt: r.apt, ownerId: r.ownerId
@@ -136,14 +136,47 @@ function questionTally(votes = [], apartments = [], index, amongPresent = false)
     };
 }
 
+/** Перевірка підсумків очного обрання голови та секретаря. */
+function chairVoteError(vote) {
+    if (!vote || !['present', 'yes', 'no', 'abstain'].every(key => Number.isSafeInteger(vote[key]) && vote[key] >= 0)) {
+        return 'Питання 1: вкажіть цілу невід’ємну кількість присутніх і голосів';
+    }
+    if (!vote.present) return 'Питання 1: кількість присутніх має бути більшою за нуль';
+    if (vote.yes + vote.no + vote.abstain > vote.present) {
+        return 'Питання 1: голосів не може бути більше, ніж присутніх';
+    }
+    return null;
+}
+
+/** Очне голосування рахується лише за людьми, без площ і квартир. */
+function chairVoteTally(vote) {
+    if (chairVoteError(vote)) return null;
+    const counts = [vote.yes, vote.no, vote.abstain];
+    const rows = Object.fromEntries(MEETING_ANSWERS.map((answer, index) => [answer, {
+        count: counts[index], ownersCount: counts[index],
+        ownersPct: Math.round(counts[index] / vote.present * 10000) / 100
+    }]));
+    return {
+        rows, baseOwners: vote.present, amongPresent: true,
+        votedOwners: counts.reduce((sum, count) => sum + count, 0),
+        accepted: vote.yes > vote.present / 2
+    };
+}
+
+function meetingQuestionTally(poll, votes, apartments, index) {
+    return index === 0 ? chairVoteTally(poll.chairVote) : questionTally(votes, apartments, index);
+}
+
 function meetingSummary(poll, votes, apartments) {
     return (poll.options || []).map((question, index) => {
-        const tally = questionTally(votes, apartments, index, index === 0);
+        const tally = meetingQuestionTally(poll, votes, apartments, index);
+        if (!tally) return `${index + 1}. ${question}\n   Результати голосування на зборах ще не внесено`;
         const counts = MEETING_ANSWERS
             .map(answer => `${answer.toLowerCase()} ${tally.rows[answer].ownersCount}`)
             .join(', ');
         return `${index + 1}. ${question}\n   ${tally.accepted ? 'ПРИЙНЯТО' : 'НЕ ПРИЙНЯТО'} `
-            + `(голосів співвласників: ${counts})`;
+            + `(голосів співвласників: ${counts})`
+            + (index === 0 ? `; присутніх ${tally.baseOwners}, проголосували ${tally.votedOwners}` : '');
     }).join('\n');
 }
 
@@ -155,5 +188,8 @@ module.exports = {
     ownerVotingRows,
     computeQuorum,
     questionTally,
+    chairVoteError,
+    chairVoteTally,
+    meetingQuestionTally,
     meetingSummary
 };

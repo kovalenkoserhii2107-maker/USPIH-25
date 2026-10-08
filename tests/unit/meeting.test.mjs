@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeQuorum, questionTally, surveyorAssignments, surveyorFor, ownerVotingRows, ownerVoteId } from '../../js/meeting.js';
+import { computeQuorum, questionTally, surveyorAssignments, surveyorFor, ownerVotingRows, ownerVoteId,
+    chairVoteError, chairVoteTally, meetingQuestionTally, writtenQuestions } from '../../js/meeting.js';
 import serverCore from '../../functions/meeting-core.js';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getFirestore, doc, writeBatch, terminate } from 'firebase/firestore';
@@ -31,12 +32,47 @@ test('звичайне рішення рахується від усіх спі�
     assert.equal(tally.accepted, false);
 });
 
-test('голову обирає більшість присутніх', () => {
+test('голову обирає більшість присутніх, незалежно від пізніших паперових голосів', () => {
     const votes = [
         { apt: '1', answers: { 0: 'За' } },
         { apt: '2', answers: { 0: 'За' } }
     ];
-    assert.equal(questionTally(votes, apartments, 0, true).accepted, true);
+    const poll = { chairVote: { present: 15, yes: 8, no: 4, abstain: 2 } };
+    const tally = meetingQuestionTally(poll, votes, apartments, 0);
+    assert.equal(tally.accepted, true);
+    assert.equal(tally.baseOwners, 15);
+    assert.equal(tally.votedOwners, 14);
+    assert.equal(tally.rows['За'].ownersCount, 8);
+    assert.equal(tally.rows['За'].ownersPct, 53.33);
+    assert.deepEqual(serverCore.meetingQuestionTally(poll, votes, apartments, 0), tally);
+    assert.deepEqual(meetingQuestionTally(poll, votes, apartments, 1), questionTally(votes, apartments, 1));
+});
+
+test('половини присутніх недостатньо, відсоток не рахується від лише поданих голосів', () => {
+    assert.equal(chairVoteTally({ present: 10, yes: 5, no: 0, abstain: 0 }).accepted, false);
+    assert.equal(chairVoteTally({ present: 15, yes: 7, no: 0, abstain: 0 }).accepted, false);
+    assert.equal(chairVoteTally({ present: 15, yes: 8, no: 0, abstain: 0 }).accepted, true);
+});
+
+test('очні підсумки потребують цілих чисел і не допускають більше голосів, ніж людей', () => {
+    for (const vote of [undefined, {},
+        { present: 0, yes: 0, no: 0, abstain: 0 },
+        { present: 15, yes: 14, no: 2, abstain: 0 },
+        { present: 15, yes: -1, no: 0, abstain: 0 },
+        { present: 15, yes: 1.5, no: 0, abstain: 0 },
+        { present: '15', yes: 15, no: 0, abstain: 0 }]) {
+        assert(chairVoteError(vote));
+        assert.equal(chairVoteTally(vote), null);
+        assert.equal(serverCore.chairVoteError(vote), chairVoteError(vote));
+    }
+    assert.equal(chairVoteError({ present: 15, yes: 15, no: 0, abstain: 0 }), null);
+    assert.equal(meetingQuestionTally({}, [{ apt: '1', answers: { 0: 'За' } }], apartments, 0), null);
+});
+
+test('письмове голосування починається з питання 2 без зміни ключів відповідей', () => {
+    assert.deepEqual(writtenQuestions({ options: ['Голова', 'Кошторис', 'Ремонт'] }), [
+        { question: 'Кошторис', index: 1 }, { question: 'Ремонт', index: 2 }
+    ]);
 });
 
 test('одна відповідальна особа зберігається з допустимим для Firestore ключем', async () => {

@@ -15,8 +15,9 @@
 //
 // Старий та електронний голос квартири — polls/{id}/votes/{apt}.
 // Новий паперовий голос — окремий документ із полями apt та ownerId.
-// В обох answers: { "0": "За", "1": "Проти" }, де ключ — номер питання,
+// В обох answers: { "1": "За", "2": "Проти" }, де ключ — індекс питання,
 // а не текст: виправлена кома не знецінює вже подані голоси.
+// Питання 1 голосують з голосу, його підсумки лежать у poll.chairVote.
 // ============================================================
 
 /** Відповіді на питання порядку денного. Порядок важливий: у такому вони і в PDF. */
@@ -59,6 +60,10 @@ export const isMeeting = (poll) => poll?.isMeeting === true;
 
 /** Порядок денний. Для звичайного опитування — просто його варіанти. */
 export const agendaOf = (poll) => poll?.options || [];
+
+/** Перше питання вирішують з голосу; номери решти питань не змінюємо. */
+export const writtenQuestions = poll => agendaOf(poll)
+    .map((question, index) => ({ question, index })).filter(({ index }) => !isChairQuestion(index));
 
 /** Голос подано на папері (обхід квартир), а не в застосунку. */
 export const isPaperVote = (vote) => vote?.source === 'paper';
@@ -157,7 +162,7 @@ export function computeQuorum(votes = [], apartments = []) {
     };
 }
 
-/** Розбивка явки за особистим і письмовим голосуванням. */
+/** Розбивка участі за електронним і письмовим голосуванням. */
 export function quorumBreakdown(votes, apartments) {
     const effective = ownerVotingRows(votes, apartments).filter(r => r.vote).map(r => ({
         ...r.vote, apt: r.apt, ownerId: r.ownerId
@@ -206,6 +211,38 @@ export function questionTally(votes = [], apartments = [], index, amongPresent =
 
 /** Питання про обрання голови та секретаря вирішують присутні. */
 export const isChairQuestion = (index) => index === 0;
+
+/** Перевірка підсумків очного обрання голови та секретаря. */
+export function chairVoteError(vote) {
+    if (!vote || !['present', 'yes', 'no', 'abstain'].every(key => Number.isSafeInteger(vote[key]) && vote[key] >= 0)) {
+        return 'Питання 1: вкажіть цілу невід’ємну кількість присутніх і голосів';
+    }
+    if (!vote.present) return 'Питання 1: кількість присутніх має бути більшою за нуль';
+    if (vote.yes + vote.no + vote.abstain > vote.present) {
+        return 'Питання 1: голосів не може бути більше, ніж присутніх';
+    }
+    return null;
+}
+
+/** Очне голосування рахується лише за людьми, без площ і квартир. */
+export function chairVoteTally(vote) {
+    if (chairVoteError(vote)) return null;
+    const counts = [vote.yes, vote.no, vote.abstain];
+    const rows = Object.fromEntries(MEETING_ANSWERS.map((answer, index) => [answer, {
+        count: counts[index], ownersCount: counts[index],
+        ownersPct: Math.round(counts[index] / vote.present * 10000) / 100
+    }]));
+    return {
+        rows, baseOwners: vote.present, amongPresent: true,
+        votedOwners: counts.reduce((sum, count) => sum + count, 0),
+        accepted: vote.yes > vote.present / 2
+    };
+}
+
+/** Однаковий підсумок для картки зборів, PDF і розсилки. */
+export function meetingQuestionTally(poll, votes, apartments, index) {
+    return isChairQuestion(index) ? chairVoteTally(poll.chairVote) : questionTally(votes, apartments, index);
+}
 
 /** «9 472,20» — числа в документі пишуться з комою й нерозривним пробілом. */
 export function fmtNum(n, decimals = 2) {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import pdfMake from 'pdfmake/build/pdfmake.js';
 import fonts from 'pdfmake/build/vfs_fonts.js';
 import { documents } from '../helpers/pdf-documents.mjs';
+import { CHAIR_QUESTION } from '../../js/meeting.js';
 
 pdfMake.vfs = fonts.pdfMake.vfs;
 const { buildBlankSheetsDoc, buildProtocolDoc, decisionLines } = documents;
@@ -38,7 +39,7 @@ test('короткі переноси в пунктах не звужують о
         }]
     }));
     const pages = await pagesOf(buildBlankSheetsDoc({
-        options: ['Затвердження кошторису\nОб’єднання'], agendaDecisions: [decision],
+        options: [CHAIR_QUESTION, 'Затвердження кошторису\nОб’єднання'], agendaDecisions: ['', decision],
         meetingDate: '2026-10-24', timeStart: '13:00', timeEnd: '14:00'
     }, apartments, osbb));
     const lines = pages[0].items.filter(item => item.type === 'line').map(item => item.item);
@@ -49,7 +50,7 @@ test('короткі переноси в пунктах не звужують о
     assert(Math.max(...last.inlines.map(i => last.x + i.x + i.width)) > 750,
         'довгий пункт справді друкується біля правого краю листка');
     const text = pageText(pages[0]);
-    assert.match(text, /Питання 1\. Затвердження кошторису Об’єднання/);
+    assert.match(text, /Питання 2\. Затвердження кошторису Об’єднання/);
     assert.match(text, /висновків ревізійної комісії/);
     assert((text.match(/Власник\d{3}/g) || []).length >= 10, 'на першій сторінці поміщається щонайменше 10 власників');
     const combined = pages.map(pageText).join('\n');
@@ -58,8 +59,8 @@ test('короткі переноси в пунктах не звужують о
 
 test('абзаци та різні маркери пунктів зберігаються без додаткових номерів', () => {
     const doc = buildBlankSheetsDoc({
-        options: ['Ремонт'],
-        agendaDecisions: ['Вступний текст\nпродовження\n\nОкремий абзац\n- Ремонт\nдаху\nа) Доручити\nправлінню\n2) Затвердити роботи']
+        options: [CHAIR_QUESTION, 'Ремонт'],
+        agendaDecisions: ['', 'Вступний текст\nпродовження\n\nОкремий абзац\n- Ремонт\nдаху\nа) Доручити\nправлінню\n2) Затвердити роботи']
     }, [{ apt: '1', owners: [{ name: 'Власник' }] }], osbb);
     const header = doc.content[0].table.body[0][0].stack;
     assert.deepEqual(header.filter(node => node.style === 'qsub').map(node => node.text), [
@@ -76,8 +77,8 @@ test('400 власників переходять на нові сторінки
         }))
     }));
     const poll = {
-        options: ['Кошторис', 'Ремонт'],
-        agendaDecisions: ['3.1. Затвердити кошторис\nпродовження пункту без номера', 'Затвердити ремонт'],
+        options: [CHAIR_QUESTION, 'Кошторис', 'Ремонт'],
+        agendaDecisions: ['Обрати голову й секретаря', '3.1. Затвердити кошторис\nпродовження пункту без номера', 'Затвердити ремонт'],
         meetingDate: '2026-10-24', timeStart: '13:00',
         surveyors: { 1: 'ПершаВідповідальна', 2: 'ДругаВідповідальна' }
     };
@@ -86,7 +87,9 @@ test('400 власників переходять на нові сторінки
     const texts = pages.map(pageText);
     for (const text of texts) {
         assert.match(text, /Листок опитування/);
-        assert.match(text, /Питання [12]\. (Кошторис|Ремонт)/);
+        assert.match(text, /Питання [23]\. (Кошторис|Ремонт)/);
+        assert(!text.includes('Питання 1.'));
+        assert(!text.includes(CHAIR_QUESTION));
         assert(!text.includes('Опитування проводить:'));
         assert.equal((text.match(/Підпис особи, яка проводила опитування:/g) || []).length, 1);
         assert(!text.includes('Підпис:'));
@@ -106,7 +109,7 @@ test('400 власників переходять на нові сторінки
 });
 
 test('ПІБ опитувача можна залишити порожнім на кожній сторінці', async () => {
-    const pages = await pagesOf(buildBlankSheetsDoc({ options: ['Ремонт'], surveyors: {} }, [
+    const pages = await pagesOf(buildBlankSheetsDoc({ options: [CHAIR_QUESTION, 'Ремонт'], surveyors: {} }, [
         { apt: '1', area: 40, owners: [{ name: 'Петренко П. П.' }] }
     ], osbb));
     assert.equal(pages.length, 1);
@@ -117,7 +120,7 @@ test('ПІБ опитувача можна залишити порожнім н�
 });
 
 test('група без парадної не дублює власників інших парадних', async () => {
-    const pages = await pagesOf(buildBlankSheetsDoc({ options: ['Ремонт'] }, [
+    const pages = await pagesOf(buildBlankSheetsDoc({ options: [CHAIR_QUESTION, 'Ремонт'] }, [
         { apt: '1', entrance: '1', owners: [{ name: 'ПершийВласник' }] },
         { apt: '2', entrance: '', owners: [{ name: 'ДругийВласник' }] }
     ], osbb, { byEntrance: true }));
@@ -131,9 +134,9 @@ test('додаток протоколу показує різні відпові
     const apartments = [{ apt: '298', area: 64, owners: [
         { id: 'a', name: 'Перший', shareFrac: '1/2' }, { id: 'b', name: 'Другий', shareFrac: '1/2' }
     ] }];
-    const { docDefinition: doc } = buildProtocolDoc({ options: ['Ремонт'] }, apartments, [
-        { apt: '298', ownerId: 'a', answers: { 0: 'За' }, source: 'paper' },
-        { apt: '298', ownerId: 'b', answers: { 0: 'Проти' }, source: 'paper' }
+    const { docDefinition: doc } = buildProtocolDoc({ options: [CHAIR_QUESTION, 'Ремонт'] }, apartments, [
+        { apt: '298', ownerId: 'a', answers: { 1: 'За' }, source: 'paper' },
+        { apt: '298', ownerId: 'b', answers: { 1: 'Проти' }, source: 'paper' }
     ], osbb);
     const table = doc.content.filter(node => node.table).at(-1).table.body;
     assert.equal(table.length, 3);
@@ -141,4 +144,27 @@ test('додаток протоколу показує різні відпові
     assert.equal(table[1][4].text, 'За');
     assert.equal(table[2][2].text, 'Другий');
     assert.equal(table[2][4].text, 'Проти');
+    assert.equal(table[0][4].text, 'Пит. 2');
+    assert(!table[0].some(cell => cell.text === 'Пит. 1'));
+});
+
+test('протокол друкує очний підсумок питання 1 без площі, решту — з площею', async () => {
+    const { docDefinition: doc } = buildProtocolDoc({
+        options: [CHAIR_QUESTION, 'Кошторис'],
+        chairVote: { present: 15, yes: 15, no: 0, abstain: 0 },
+        chairName: 'Савельєв Юрій', secretaryName: 'Кройтор Вікторія'
+    }, [{ apt: '1', area: 40, owners: [{ name: 'Власник' }] }], [
+        { apt: '1', source: 'paper', answers: { 0: 'Проти', 1: 'За' } }
+    ], osbb);
+    const tables = doc.content.flatMap(node => node.stack || [node]).filter(node => node.table);
+    assert.equal(tables[0].table.widths.length, 3);
+    assert(tables[0].table.body[0][2].text.includes('присутніх'));
+    assert(tables[0].table.body[1][1].text.startsWith('15 '));
+    assert.equal(tables[0].table.body[1][2].text, '100%');
+    assert(!JSON.stringify(tables[0]).includes('м²'));
+    assert.equal(tables[1].table.widths.length, 4);
+    assert(tables[1].table.body[0].some(cell => cell.text.includes('Площа')));
+    const rendered = (await pagesOf(doc)).map(pageText).join('\n');
+    assert.match(rendered, /Присутніх: 15 співвласників\. Проголосували: 15 співвласників\./);
+    assert.match(rendered, /Рішення ПРИЙНЯТО\./);
 });

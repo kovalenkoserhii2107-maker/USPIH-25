@@ -4546,6 +4546,9 @@ select.field-input {
 }
 .proto-q .field-label { margin-top: 4px; margin-bottom: 3px; }
 .proto-heard, .proto-decision { font-size: 14px; min-height: 52px; }
+.proto-chair-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.proto-chair-counts .field { display: flex; flex-direction: column; margin-bottom: 0; }
+.proto-chair-counts .field-input { margin-top: auto; }
 
 /* Номер питання проставляє форма — правління не має його вписувати */
 .agenda-no {

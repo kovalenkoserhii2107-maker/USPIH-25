@@ -26,7 +26,7 @@ import { fetchDirectory } from './directory.js';
 import { callBackend } from './backend.js';
 import {
     CHAIR_QUESTION, MEETING_ANSWERS, DECISION_PCT, isMeeting, agendaOf,
-    computeQuorum, questionTally, isChairQuestion, meetingWhen,
+    computeQuorum, meetingQuestionTally, isChairQuestion, meetingWhen,
     formatMeetingDate, fmtPct, entrancesOf, meetingStart, beforeStart, startLabel,
     surveyorAssignments, surveyorFor
 } from './meeting.js';
@@ -355,14 +355,17 @@ function meetingCard(poll, apartments) {
     const online = (poll.votes || []).length - paper;
 
     const results = agendaOf(poll).map((question, i) => {
-        const t = apartments.length
-            ? questionTally(poll.votes, apartments, i, isChairQuestion(i))
+        const t = apartments.length || isChairQuestion(i)
+            ? meetingQuestionTally(poll, poll.votes, apartments, i)
             : null;
         const counts = MEETING_ANSWERS
             .map(a => `${a.toLowerCase()} — ${t ? t.rows[a].ownersCount : 0}`).join(' · ');
         return `<div class="meeting-line">
             <span class="meeting-line-q"><b>${i + 1}.</b> ${escapeHtml(question)}</span>
-            <span class="meeting-line-counts">${counts}</span>
+            <span class="meeting-line-counts">${isChairQuestion(i) && !t
+                ? 'Голосування з голосу на зборах — підсумки вносяться під час формування протоколу'
+                : counts}</span>
+            ${isChairQuestion(i) && t ? `<span class="meeting-line-counts">Присутніх: ${t.baseOwners} · проголосували: ${t.votedOwners}</span>` : ''}
             ${t ? `<span class="meeting-verdict ${t.accepted ? 'is-ok' : 'is-no'}">
                 ${t.accepted ? 'Рішення прийнято' : 'Рішення не прийнято'}
                 <small>«за» — ${t.rows[MEETING_ANSWERS[0]].ownersCount} з ${t.baseOwners}
@@ -411,7 +414,7 @@ function meetingCard(poll, apartments) {
             : ''}
         <div class="attach-block poll-attach" data-meet-att="${poll.id}"></div>
         <div class="meeting-lines">${results}</div>
-        <span class="meeting-split">Особисто на зборах: <b>${online}</b>
+        <span class="meeting-split">Електронні голоси: <b>${online}</b>
             · письмове опитування: <b>${paper}</b>${
             q ? ` · кворум: <b>${fmtPct(q.ownersPct)}%</b>` : ''}</span>
         ${poll.protocolUrl
