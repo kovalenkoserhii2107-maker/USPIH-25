@@ -101,11 +101,18 @@ test('правління записує окремі паперові голос
     await seed();
     const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
     const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    await setDoc(doc(admin, 'polls/paper-owner-test'), {
+        isMeeting: true, options: ['Голова', 'Кошторис'], status: 'active',
+        votingOpensAt: new Date(Date.now() + 3600000)
+    });
     const apartments = [{ apt: '45', area: 64, owners: [
         { id: 'first', name: 'Перший', shareFrac: '1/2' }, { id: 'second', name: 'Другий', shareFrac: '1/2' }
     ] }];
     const refs = ['first', 'second'].map(id => doc(admin, 'polls/paper-owner-test/votes', ownerVoteId('45', id)));
-    await assertSucceeds(setDoc(refs[0], { apt: '45', ownerId: 'first', source: 'paper', answers: { 0: 'За' } }));
+    await assertSucceeds(setDoc(refs[0], {
+        apt: '45', ownerId: 'first', source: 'paper', answers: { 0: 'За' },
+        enteredBy: 'board', votedAt: serverTimestamp()
+    }));
     await assertSucceeds(setDoc(refs[0], { answers: { 1: 'Проти' } }, { merge: true }));
     await assertSucceeds(setDoc(refs[1], { apt: '45', ownerId: 'second', source: 'paper', answers: { 1: 'За' } }));
     const votes = await Promise.all(refs.map(async ref => (await getDoc(ref)).data()));
@@ -114,4 +121,57 @@ test('правління записує окремі паперові голос
     assert.equal(tally.rows['За'].ownersCount, 1);
     assert.equal(tally.rows['Проти'].ownersCount, 1);
     await assertFails(setDoc(doc(resident, refs[1].path), { answers: { 1: 'Проти' } }, { merge: true }));
+    await assertFails(setDoc(doc(admin, 'polls/paper-owner-test/votes', ownerVoteId('45', 'invalid')), {
+        apt: '45', ownerId: 'invalid', source: 'paper', answers: { 0: 'Невідома відповідь' }
+    }));
+    await assertSucceeds(setDoc(doc(admin, 'polls/paper-owner-test/votes/46'), {
+        source: 'paper', answers: { 0: 'За' }, enteredBy: 'board', votedAt: serverTimestamp()
+    }));
+});
+
+test('мешканець голосує за свою квартиру, але не підмінює паперовий голос чи власника', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    await setDoc(doc(admin, 'polls/resident-meeting'), {
+        isMeeting: true, options: ['Голова', 'Кошторис'], status: 'active', deadline: null,
+        votingOpensAt: new Date(Date.now() - 3600000)
+    });
+    const vote = doc(resident, 'polls/resident-meeting/votes/45');
+    const payload = () => ({ answers: { 0: 'За', 1: 'Утримався' }, votedAt: serverTimestamp() });
+    await assertSucceeds(setDoc(vote, payload()));
+    await assertSucceeds(setDoc(vote, { answers: { 0: 'Проти' }, votedAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(resident, 'polls/resident-meeting/votes/46'), payload()));
+    for (const extra of [{ apt: '46' }, { ownerId: 'another-owner' }, { source: 'paper' }, { enteredBy: 'board' }]) {
+        await assertFails(setDoc(vote, { ...payload(), ...extra }));
+    }
+    await assertFails(setDoc(doc(resident, 'polls/resident-meeting/votes', ownerVoteId('45', 'first')), {
+        ...payload(), apt: '45', ownerId: 'first', source: 'paper'
+    }));
+    await assertFails(setDoc(vote, { answers: { 0: 'Інша відповідь' }, votedAt: serverTimestamp() }));
+    await assertFails(setDoc(vote, { option: 'Голова', votedAt: serverTimestamp() }));
+});
+
+test('межі часу голосування залишаються чинними, звичайні опитування працюють', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const meeting = doc(admin, 'polls/meeting-time-test');
+    const payload = () => ({ answers: { 0: 'За' }, votedAt: serverTimestamp() });
+    const vote = doc(resident, 'polls/meeting-time-test/votes/45');
+    await setDoc(meeting, {
+        isMeeting: true, options: ['Голова'], status: 'active', deadline: null,
+        votingOpensAt: new Date(Date.now() + 3600000)
+    });
+    await assertFails(setDoc(vote, payload()));
+    await updateDoc(meeting, { votingOpensAt: new Date(Date.now() - 3600000), deadline: new Date(Date.now() - 1000) });
+    await assertFails(setDoc(vote, payload()));
+    await updateDoc(meeting, { deadline: null, status: 'closed' });
+    await assertFails(setDoc(vote, payload()));
+    await setDoc(doc(admin, 'polls/regular-poll'), { options: ['А', 'Б'], status: 'active', deadline: null });
+    const regular = doc(resident, 'polls/regular-poll/votes/45');
+    await assertSucceeds(setDoc(regular, { option: 'А', votedAt: serverTimestamp() }));
+    await assertFails(setDoc(regular, { option: 'В', votedAt: serverTimestamp() }));
+    await assertFails(setDoc(regular, { option: 'А', source: 'paper', votedAt: serverTimestamp() }));
+    await assertFails(setDoc(regular, { answers: { 0: 'За' }, votedAt: serverTimestamp() }));
 });
