@@ -4,7 +4,7 @@
 import { db, storage, session } from './firebase.js';
 import {
     collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp,
-    limit, startAfter
+    limit, startAfter, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     ref as sRef, uploadBytes, getDownloadURL
@@ -485,6 +485,24 @@ async function sendReply(btn) {
 // ------------------------------------------------------------
 // БАЗА ДОКУМЕНТІВ ОСББ
 // ------------------------------------------------------------
+/** Єдина публікація готового або сформованого документа. ID можна зберегти для повторної спроби. */
+export async function publishOsbbDocument({ title, category, file, metadata = {}, documentId }) {
+    if (!String(title || '').trim() || !file) throw new Error('Вкажіть назву та оберіть файл');
+    if (file.size <= 0 || file.size >= 30 * 1024 * 1024) throw new Error('Документ має бути непорожнім і меншим за 30 МБ');
+    const documentRef = documentId ? doc(db, 'osbb_documents', documentId) : doc(collection(db, 'osbb_documents'));
+    const contentType = file.type || 'application/octet-stream';
+    const fileName = file.name || `Document_${documentRef.id}.pdf`;
+    const fileRef = sRef(storage, `osbb_docs/${documentRef.id}_${fileName.replace(/[\\/?#]/g, '_')}`);
+    await uploadBytes(fileRef, file, { contentType });
+    const url = await getDownloadURL(fileRef);
+    await runTransaction(db, async tx => {
+        const previous = await tx.get(documentRef);
+        tx.set(documentRef, { ...metadata, title: title.trim(), category, fileName, url,
+            size: file.size, type: contentType, createdAt: previous.data()?.createdAt || serverTimestamp() });
+    });
+    return { id: documentRef.id, url, title };
+}
+
 export async function uploadOsbbDoc(btn) {
     const title = document.getElementById('osbbDocTitle').value.trim();
     const category = document.getElementById('osbbDocCategory').value;
@@ -493,14 +511,7 @@ export async function uploadOsbbDoc(btn) {
 
     setBusy(btn, true, 'Завантаження…');
     try {
-        const contentType = osbbDocFile.type || 'application/octet-stream';
-        const fileRef = sRef(storage, `osbb_docs/${Date.now()}_${osbbDocFile.name}`);
-        await uploadBytes(fileRef, osbbDocFile, { contentType });
-        const url = await getDownloadURL(fileRef);
-        await addDoc(collection(db, 'osbb_documents'), {
-            title, category, fileName: osbbDocFile.name, url,
-            size: osbbDocFile.size, type: contentType, createdAt: serverTimestamp()
-        });
+        await publishOsbbDocument({ title, category, file: osbbDocFile });
         document.getElementById('osbbDocTitle').value = '';
         osbbDocFile = null;
         refreshOsbbChips();

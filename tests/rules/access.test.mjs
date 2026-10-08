@@ -7,6 +7,7 @@ import { doc, getDoc, getDocs, collection, setDoc, updateDoc, writeBatch, server
 import { ref, uploadString, uploadBytes, getDownloadURL, getMetadata, deleteObject } from 'firebase/storage';
 import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor, ownerVoteId, questionTally } from '../../js/meeting.js';
 import { createMeetingActions } from '../helpers/meeting-actions.mjs';
+import { createMeterStore } from '../helpers/meter-store.mjs';
 
 let env;
 before(async () => {
@@ -405,4 +406,48 @@ test('мешканець і неавторизована сесія не мож�
     await assertFails(batch.commit());
     assert.equal((await getDocs(collection(db, 'osbb_documents'))).size, 0);
     assert.equal((await getDocs(collection(db, 'messages'))).size, 0);
+});
+
+test('правління зберігає показники й тариф, мешканець бачить історію, але не змінює її', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    const first = await store.save(await store.load(), [{ resource: 'electricity', period: '2026-09', unit: 'кВт·год',
+        reading: '1 200,5', baseline: 1000, tariff: '4,32', reset: false, note: 'Загальнобудинковий прилад' }]);
+    assert.equal(first.revision, 1); assert.equal(first.records[0].reading, 1200.5);
+    assert.equal(first.records[0].tariff, 4.32);
+    const residentStore = createMeterStore(resident, () => '45');
+    assert.equal((await residentStore.load()).records[0].reading, 1200.5);
+    await assert.rejects(residentStore.save(first, [{ ...first.records[0], reading: 0 }]), /лише правління/);
+    await assertFails(updateDoc(doc(resident, 'status/meter_electricity_2026-09'), { tariff: 0 }));
+    const anonymous = env.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anonymous, 'status/meter_electricity_2026-09')));
+});
+
+test('застаріла форма лічильників не перезаписує паралельне внесення, тариф попереднього місяця збережено', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    const original = await store.load();
+    const row = { resource: 'water', period: '2026-09', unit: 'м³', reading: 20, baseline: 10, tariff: 30 };
+    const saved = await store.save(original, [row]);
+    await assert.rejects(store.save(original, [{ ...row, reading: 50 }]), /іншій вкладці/);
+    assert.equal((await getDoc(doc(admin, 'status/meter_water_2026-09'))).data().reading, 20);
+    const createdAt = saved.records[0].createdAt.toMillis();
+    const next = await store.save(saved, [{ ...row, period: '2026-10', reading: 30, baseline: 20, tariff: 35 }]);
+    assert.equal(next.records.find(record => record.period === '2026-09').tariff, 30);
+    const amended = await store.save(next, [{ ...row, reading: 21 }]);
+    assert.equal(amended.records.find(record => record.period === '2026-09').createdAt.toMillis(), createdAt);
+    assert.equal(amended.records.length, 2);
+});
+
+test('невдала транзакція показників не лишає частину ресурсів або нову версію', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board', failingWrites('set', 'status/house_meter_state'));
+    const row = { resource: 'electricity', period: '2026-09', unit: 'кВт·год', reading: 20, baseline: 10, tariff: 4.32 };
+    await assert.rejects(store.save(await store.load(), [row]), /Змодельований збій/);
+    assert.equal((await getDoc(doc(admin, 'status/meter_electricity_2026-09'))).exists(), false);
+    assert.equal((await getDoc(doc(admin, 'status/house_meter_state'))).exists(), false);
 });

@@ -4971,3 +4971,61 @@ select.field-input {
     #adminDashboardSection > .admin-header { padding-left: 32px; padding-right: 32px; }
     #adminDashboardSection > .admin-panel { padding: 20px 32px 44px; }
 }
+
+/* Документи правління, приватні довідки й загальнобудинковий облік. */
+.plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.plain-fieldset:disabled { opacity: .7; }
+.admin-document-form { padding: 0 0 22px; margin-bottom: 14px; border-bottom: 1px solid #e3e9f1; }
+.admin-document-form h3, .meter-card-head h3 { margin: 0 0 8px; font-size: 18px; }
+.admin-document-form > .field-hint { margin-bottom: 16px; }
+.admin-document-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-document-grid .field { display: flex; flex-direction: column; min-width: 0; }
+.admin-document-grid .field-input { margin-top: auto; }
+.admin-document-launcher { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.admin-document-launcher .btn-primary { width: auto; flex-shrink: 0; padding: 12px 18px; }
+.certificate-account { padding: 14px; margin: 0 0 16px; background: #f1f6fc; border-radius: 12px; font-size: 14px; line-height: 1.6; }
+.certificate-result { display: flex; gap: 10px; margin-top: 16px; }
+.certificate-result[hidden] { display: none; }
+.certificate-result a { flex: 1; width: auto; display: flex; justify-content: center; align-items: center; text-decoration: none; }
+.dir-actions { flex-wrap: wrap; gap: 8px; }
+.meter-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px; }
+.meter-entry-list { display: grid; gap: 14px; margin: 16px 0; }
+.meter-entry-card { min-width: 0; padding: 18px 14px 12px; border: 1px solid #dae4ef; border-radius: 16px; background: #f8fafd; }
+.meter-entry-card legend { padding: 0 6px; font-size: 17px; font-weight: 700; }
+.meter-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+.meter-entry-grid, .meter-stats-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.meter-entry-grid .field, .meter-stats-controls .field { min-width: 0; display: flex; flex-direction: column; }
+.meter-entry-grid .field-label { min-height: 28px; font-size: 11px; }
+.meter-entry-grid .field-input { margin-top: auto; }
+.meter-entry-card .field-input { min-height: 44px; padding: 10px 12px; font-size: 16px; }
+.meter-entry-card input[readonly] { color: #516783; background: #edf2f7; }
+.meter-reset { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 2px 0 14px; }
+.meter-reset input { width: 20px; height: 20px; }
+.meter-preview { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: #216643; }
+.meter-preview.is-error, .meter-error { color: #b03232; }
+.meter-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0 18px; }
+.meter-totals > div { padding: 14px; border-radius: 14px; background: #f1f6fc; min-width: 0; }
+.meter-totals small { display: block; margin-bottom: 6px; color: #516783; font-size: 11px; }
+.meter-totals b { font-size: 19px; overflow-wrap: anywhere; }
+.meter-metric { margin-bottom: 12px; }
+.meter-chart { display: flex; gap: 12px; padding: 12px 4px; min-height: 190px; overflow-x: auto; }
+.meter-bar-column { flex: 1; min-width: 48px; text-align: center; max-width: 90px; }
+.meter-bar-column > span { display: block; height: 18px; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meter-bar-column > small { display: block; margin-top: 7px; font-size: 10px; color: #516783; }
+.meter-bar-track { height: 130px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #d8e2ed; }
+.meter-bar-track i { display: block; width: 28px; border-radius: 5px 5px 0 0; }
+.meter-history-row { padding: 16px 0; border-top: 1px solid #e3e9f1; }
+.meter-history-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.meter-history-head strong { white-space: nowrap; }
+.meter-history-row p { margin: 6px 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.meter-history-row small { display: block; color: #516783; font-size: 11px; line-height: 1.4; }
+.meter-history-row button { margin-top: 10px; }
+@media (min-width: 1100px) { .meter-entry-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+    .admin-document-launcher { align-items: stretch; flex-direction: column; }
+    .admin-document-launcher .btn-primary { width: 100%; }
+    #certificateModal .admin-document-grid { grid-template-columns: 1fr; gap: 0; }
+    .meter-totals b { font-size: 16px; }
+    .meter-entry-card { padding: 14px 12px 12px; }
+    .meter-stats-controls { grid-template-columns: 1fr; }
+}

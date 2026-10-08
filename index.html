@@ -14,8 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=117">
-    <link rel="stylesheet" href="style-chat.css?v=117">
+    <link rel="stylesheet" href="style.css?v=118">
+    <link rel="stylesheet" href="style-chat.css?v=118">
 </head>
 <body>
 
@@ -115,6 +115,10 @@
                     <span class="menu-tile-icon mi-teal"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12" y2="17"></line></svg></span>
                 </span>
                 <span class="menu-tile-label">Запитання</span>
+            </button>
+            <button id="menuMetersBtn" class="menu-tile" type="button">
+                <span class="menu-tile-art"><span class="menu-tile-icon mi-blue"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg></span></span>
+                <span class="menu-tile-label">Лічильники</span>
             </button>
             <button id="menuServicesBtn" class="menu-tile" type="button">
                 <span class="menu-tile-art">
@@ -532,6 +536,10 @@
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                 <span>Фінанси</span>
             </button>
+            <button class="admin-tab" data-tab="meters" type="button">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg>
+                <span>Лічильники</span>
+            </button>
             <button class="admin-tab" data-tab="board" type="button">
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 <span>Контакти</span>
@@ -700,7 +708,8 @@
                     <label class="field-label" for="osbbDocCategory">Категорія</label>
                     <select id="osbbDocCategory" class="field-input field-select">
                         <option value="Установчі документи">Установчі документи</option>
-                        <option value="Протоколи правління">Протоколи зборів та правління</option>
+                        <option value="Протоколи правління">Протоколи правління</option>
+                        <option value="Протоколи зборів">Протоколи загальних зборів</option>
                         <option value="Звіти та кошториси">Фінансові звіти та кошториси</option>
                         <option value="Інше">Інші документи</option>
                     </select>
@@ -952,6 +961,35 @@
                     </button>
                 </div>
                 <div class="admin-card-body"><div class="admin-card-body-inner">
+                <form id="boardProtocolForm" class="admin-document-form">
+                    <h3>Додати протокол правління</h3>
+                    <p class="field-hint">Готовий документ або PDF із введеного тексту. Буде доступний мешканцям у Базі документів.</p>
+                    <fieldset id="boardProtocolFields" class="plain-fieldset">
+                        <div class="admin-document-grid">
+                            <label class="field"><span class="field-label">Номер протоколу</span><input id="boardProtocolNumber" class="field-input" required maxlength="50" placeholder="Наприклад: 12"></label>
+                            <label class="field"><span class="field-label">Дата засідання</span><input id="boardProtocolDate" type="date" class="field-input" required></label>
+                        </div>
+                        <label class="field"><span class="field-label">Спосіб внесення</span><select id="boardProtocolMode" class="field-input field-select">
+                            <option value="file">Прикріпити готовий файл</option><option value="generate">Сформувати PDF із тексту</option>
+                        </select></label>
+                        <div id="boardProtocolUpload" class="field">
+                            <label class="dropzone" for="boardProtocolFile"><span class="dropzone-title">Обрати протокол</span><span class="dropzone-hint">PDF, Word або скан · до 30 МБ</span></label>
+                            <input id="boardProtocolFile" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" class="hidden-file-input">
+                            <span id="boardProtocolFileName" class="field-hint">Файл не обрано</span>
+                        </div>
+                        <div id="boardProtocolText" hidden>
+                            <div class="admin-document-grid">
+                                <label class="field"><span class="field-label">Голова засідання</span><input id="boardProtocolChair" class="field-input" placeholder="ПІБ" maxlength="200"></label>
+                                <label class="field"><span class="field-label">Секретар</span><input id="boardProtocolSecretary" class="field-input" placeholder="ПІБ" maxlength="200"></label>
+                            </div>
+                            <label class="field"><span class="field-label">Місце засідання</span><input id="boardProtocolPlace" class="field-input" maxlength="300" placeholder="Адреса / приміщення"></label>
+                            <label class="field"><span class="field-label">Присутні</span><textarea id="boardProtocolPresent" class="field-input" rows="3" maxlength="5000" placeholder="Члени правління, кожен із нового рядка"></textarea></label>
+                            <label class="field"><span class="field-label">Слухали</span><textarea id="boardProtocolHeard" class="field-input" rows="4" maxlength="30000" placeholder="Питання порядку денного та зміст обговорення"></textarea></label>
+                            <label class="field"><span class="field-label">Вирішили</span><textarea id="boardProtocolDecisions" class="field-input" rows="5" maxlength="30000" placeholder="Рішення та результати голосування, кожен пункт із нового рядка"></textarea></label>
+                        </div>
+                        <button id="boardProtocolSaveBtn" class="btn-primary" type="submit">Додати протокол правління</button>
+                    </fieldset>
+                </form>
                 <div id="meetingsProtocols" class="admin-scroll-list">
                     <p class="list-empty">Завантаження…</p>
                 </div>
@@ -1074,6 +1112,10 @@
         </div>
 
         <div class="admin-panel" data-panel="finance">
+            <div class="card admin-document-launcher">
+                <div><h2 class="admin-card-title">Довідка по квартирі</h2><p class="admin-card-sub">Особовий рахунок, баланс і наявність / відсутність боргу в PDF</p></div>
+                <button id="openCertificateBtn" type="button" class="btn-primary">Сформувати довідку</button>
+            </div>
             <div class="card admin-fold">
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="false">
@@ -1262,6 +1304,20 @@
         </div>
 
         <!-- Вкладка: контакти (правління + технічні служби) -->
+        <div class="admin-panel" data-panel="meters">
+            <div class="admin-page-head"><div><h2>Загальнобудинкові лічильники</h2><p>Показники, витрата і вартість ресурсів будинку</p></div></div>
+            <div class="card">
+                <div class="meter-card-head"><h3>Внести показники</h3><button id="meterRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
+                <p class="field-hint">Для першого запису вкажіть початковий показник. Надалі попередній береться з історії. Тариф діє для вибраного місяця.</p>
+                <fieldset id="meterInputFields" class="plain-fieldset">
+                    <label class="field"><span class="field-label">Місяць обліку</span><input id="meterPeriod" type="month" class="field-input" required></label>
+                    <div id="meterEntry" class="meter-entry-list"></div>
+                    <button id="meterSaveBtn" type="button" class="btn-primary">Зберегти показники</button>
+                </fieldset>
+            </div>
+            <div class="card"><h3>Статистика будинку</h3><div id="meterStatistics"><p class="list-empty">Завантаження…</p></div></div>
+        </div>
+
         <div class="admin-panel" data-panel="board">
             <div class="pos-group-head">
                 <div>
@@ -1305,6 +1361,12 @@
     </div>
 
     <!-- ============ ЗВЕРНЕННЯ (МЕШКАНЕЦЬ) ============ -->
+    <div id="metersSection" style="display: none;">
+        <div class="screen-head compact-head"><button id="backFromMetersBtn" class="back-btn" type="button">‹ Назад</button><span class="head-title">Лічильники будинку</span></div>
+        <div class="card"><h3>Загальнобудинковий облік</h3><p class="field-hint">Показники вносить правління. Тут можна переглянути витрату, тарифи та розрахункову вартість.</p>
+            <div id="residentMeterStatistics"><p class="list-empty">Завантаження…</p></div></div>
+    </div>
+
     <div id="requestsSection" style="display: none;">
         <div class="screen-head compact-head">
             <button id="backFromRequestsBtn" class="back-btn" type="button">
@@ -1568,6 +1630,34 @@
 </div>
 
 <!-- ============ ДАНІ ДЛЯ ПРОТОКОЛУ ============ -->
+<div id="certificateModal" class="modal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="certificateTitle">
+        <div class="modal-head"><h3 id="certificateTitle" class="modal-title">Довідка по квартирі</h3><button id="closeCertificateBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button></div>
+        <form id="certificateForm">
+            <fieldset id="certificateFields" class="plain-fieldset">
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Квартира / приміщення</span><input id="certificateApt" class="field-input" list="certificateApts" required placeholder="Номер квартири"><datalist id="certificateApts"></datalist></label>
+                    <label class="field"><span class="field-label">Дата видачі</span><input id="certificateDate" class="field-input" type="date" readonly></label>
+                </div>
+                <div id="certificateAccountPreview" class="certificate-account" aria-live="polite"></div>
+                <label class="field"><span class="field-label">Тип довідки</span><select id="certificateType" class="field-input field-select">
+                    <option value="auto">За фактичним балансом</option><option value="clear">Про відсутність заборгованості</option><option value="debt">Про заборгованість</option>
+                </select></label>
+                <label class="field"><span class="field-label">Номер довідки (за потреби)</span><input id="certificateNumber" class="field-input" maxlength="50" placeholder="Реєстраційний номер"></label>
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Підписант</span><input id="certificateSigner" class="field-input" maxlength="200" placeholder="ПІБ або залиште для ручного заповнення"></label>
+                    <label class="field"><span class="field-label">Посада</span><input id="certificatePosition" class="field-input" maxlength="200" value="Голова правління"></label>
+                </div>
+                <label class="field"><span class="field-label">Куди подається (за потреби)</span><input id="certificatePurpose" class="field-input" maxlength="500" placeholder="Для подання за місцем вимоги"></label>
+                <button id="certificateGenerateBtn" type="submit" class="btn-primary">Сформувати PDF</button>
+            </fieldset>
+        </form>
+        <div id="certificateResult" class="certificate-result" hidden>
+            <a id="certificateOpenPdf" class="btn-soft" target="_blank" rel="noopener">Відкрити PDF</a><a id="certificateDownload" class="btn-primary" download>Завантажити</a>
+        </div>
+    </div>
+</div>
+
 <div id="protocolModal" class="modal">
     <div class="modal-box">
         <div class="modal-head">
@@ -1881,7 +1971,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=117' : './js/app.js?v=117');
+    import(preview === 'admin' ? './js/admin-preview.js?v=118' : './js/app.js?v=118');
 </script>
 </body>
 </html>

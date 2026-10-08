@@ -203,6 +203,7 @@ function render(list) {
                     <button type="button" class="dir-edit" data-edit="${escapeHtml(e.apt)}">
                         Редагувати
                     </button>
+                    <button type="button" class="btn-soft btn-compact" data-certificate="${escapeHtml(e.apt)}">Довідка</button>
                     ${e.ownersStatus === 'confirmed'
                         ? `<p class="dir-confirmed">Звірено${e.ownersConfirmedBy === 'board' ? ' правлінням' : ' мешканцем'}</p>`
                         : `<button type="button" class="dir-confirm" data-confirm="${escapeHtml(e.apt)}">
@@ -254,6 +255,12 @@ export function initDirectory() {
     // пошуку, тож чіпляти його там означало б підтверджувати квартиру
     // стільки разів, скільки літер набрали в пошуку.
     document.getElementById('directoryList')?.addEventListener('click', async (e) => {
+        const certificate = e.target.closest('[data-certificate]');
+        if (certificate) {
+            const { openCertificateForm } = await import('./admin-documents.js');
+            await openCertificateForm(certificate.dataset.certificate);
+            return;
+        }
         const edit = e.target.closest('[data-edit]');
         if (edit) {
             const { openOwnersEditor } = await import('./verify.js');

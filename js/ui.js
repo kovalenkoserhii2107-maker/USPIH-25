@@ -282,7 +282,7 @@ export function initSheets() {
 const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'adminDashboardSection', 'docsSection', 'boardSection',
                  'requestsSection', 'pollsSection', 'servicesSection', 'receiptsSection', 'faqSection', 'chatSection',
-                 'ledgerSection', 'ownersEditSection', 'financeSection'];
+                 'ledgerSection', 'ownersEditSection', 'financeSection', 'metersSection'];
 
 /**
  * Значок у шапці — сума всіх значків у меню. Так мешканець бачить,

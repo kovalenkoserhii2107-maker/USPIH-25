@@ -506,7 +506,7 @@ export async function loadProtocols(append = false) {
         if (!protocolDocs.length) {
             host.innerHTML = '<p class="list-empty">Протоколів ще немає. '
                 + 'Протокол зборів зʼявиться тут після формування, '
-                + 'а протокол правління можна завантажити у вкладці «База».</p>';
+                + 'а протокол правління можна додати формою вище.</p>';
             return;
         }
         host.innerHTML = protocolDocs.map(d => `

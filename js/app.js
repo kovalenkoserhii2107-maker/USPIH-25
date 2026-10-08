@@ -50,9 +50,10 @@ let adminFeaturesInitialized = false;
 async function ensureAdminFeatures() {
     adminFeaturesPromise ||= Promise.all([
         import('./meetings.js'), import('./dashboard.js'), import('./directory.js'),
-        import('./import-owners.js'), import('./export-base.js'), import('./verify.js')
-    ]).then(([meetings, dashboard, directory, importer, exporter, verify]) => ({
-        ...meetings, ...dashboard, ...directory, ...importer, ...exporter, ...verify
+        import('./import-owners.js'), import('./export-base.js'), import('./verify.js'),
+        import('./admin-documents.js'), import('./meters.js')
+    ]).then(([meetings, dashboard, directory, importer, exporter, verify, documents, meters]) => ({
+        ...meetings, ...dashboard, ...directory, ...importer, ...exporter, ...verify, ...documents, ...meters
     }));
     const features = await adminFeaturesPromise;
     if (!adminFeaturesInitialized) {
@@ -61,6 +62,8 @@ async function ensureAdminFeatures() {
         features.initExportBase();
         features.initMeetings();
         features.initVerify();
+        features.initAdminDocuments();
+        features.initMeters();
         initMeetingWorkspace();
         adminFeaturesInitialized = true;
     }
@@ -85,6 +88,7 @@ const ADMIN_TAB_LOADERS = {
     docs: populateDocsDropdown,
     polls: loadAdminPolls,
     finance: () => Promise.all([loadAdminExpenses(), loadAdminRequisites()]),
+    meters: async () => (await ensureAdminFeatures()).loadAdminMeters(),
     board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
     chat: loadChat
 };
@@ -232,6 +236,7 @@ const SCREEN_RELOADERS = {
     receiptsSection: loadReceipts,
     ledgerSection: loadLedger,
     financeSection: loadFinanceDetail,
+    metersSection: async () => { const meters = await import('./meters.js'); meters.initMeters(); return meters.loadResidentMeters(); },
     faqSection: loadFaq,
     chatSection: loadChat
 };
@@ -347,6 +352,9 @@ function initNavigation() {
     document.getElementById('menuBoardBtn').addEventListener('click', () => go('boardSection', loadBoardContacts));
     document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
     document.getElementById('menuPollsBtn').addEventListener('click', () => go('pollsSection', loadUserPolls));
+    document.getElementById('menuMetersBtn')?.addEventListener('click', () => go('metersSection', async () => {
+        const meters = await import('./meters.js'); meters.initMeters(); await meters.loadResidentMeters();
+    }));
 
     document.getElementById('menuLinkTerms')?.addEventListener('click', (e) => { e.preventDefault(); toggleSheet('termsSheet'); });
     document.getElementById('menuLinkPrivacy')?.addEventListener('click', (e) => { e.preventDefault(); toggleSheet('privacySheet'); });
@@ -382,7 +390,7 @@ function initNavigation() {
         if (session.isAdmin) { showScreen('adminDashboardSection'); return; }
         return loadCabinet(session.apt);
     };
-    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn', 'backFromLedgerBtn', 'backFromFinanceBtn'].forEach(id => {
+    ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn', 'backFromLedgerBtn', 'backFromFinanceBtn', 'backFromMetersBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);
     });
     document.getElementById('cancelPassBtn').addEventListener('click', back);
