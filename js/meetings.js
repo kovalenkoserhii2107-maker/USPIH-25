@@ -23,7 +23,7 @@ import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, lockScroll, 
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
-import { callBackend } from './backend.js';
+import { finalizeMeeting, loadMeetingContext } from './meeting_actions.js';
 import {
     CHAIR_QUESTION, MEETING_ANSWERS, DECISION_PCT, isMeeting, agendaOf,
     computeQuorum, meetingQuestionTally, isChairQuestion, meetingWhen,
@@ -662,7 +662,7 @@ async function closeMeeting(poll, btn) {
 
     setBusy(btn, true, 'Завершення…');
     try {
-        await callBackend('finalizeMeeting', { pollId: poll.id });
+        await finalizeMeeting(poll.id);
         toast('Збори завершено, підсумки надіслано', 'success');
         await loadMeetings();
     } catch (e) {
@@ -675,16 +675,15 @@ async function closeMeeting(poll, btn) {
 async function openProtocol(poll, btn) {
     setBusy(btn, true, 'Читання даних…');
     try {
-        const [snap, votes] = await Promise.all([getDoc(doc(db, 'polls', poll.id)), fetchVotes(poll.id)]);
-        if (!snap.exists()) throw new Error('Збори не знайдено');
-        if (!cache.apartments.length) {
+        const { poll: freshPoll, apartments, votes } = await loadMeetingContext(poll.id);
+        if (!apartments.length) {
             return toast('Довідник квартир недоступний — протокол не буде з чого скласти', 'error');
         }
         const { initProtocolForm, openProtocolForm } = await import('./protocol_form.js');
         initProtocolForm();
         openProtocolForm({
-            poll: { id: poll.id, ...snap.data() },
-            apartments: cache.apartments,
+            poll: freshPoll,
+            apartments,
             votes,
             onDone: async () => {
                 try {

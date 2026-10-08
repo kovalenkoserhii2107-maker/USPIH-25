@@ -22,11 +22,11 @@ import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { callBackend } from './backend.js';
+import { loadMeetingContext, publishMeetingProtocol } from './meeting_actions.js';
 import {
     MEETING_ANSWERS, DECISION_PCT, QUORUM_PCT, OSBB_DEFAULTS,
     agendaOf, answerFor, isPaperVote, isChairQuestion, parseArea, ownerShare,
-    quorumBreakdown, meetingQuestionTally, writtenQuestions, chairVoteTally, entrancesOf, surveyorFor,
+    quorumBreakdown, meetingQuestionTally, writtenQuestions, chairVoteTally, chairVoteError, entrancesOf, surveyorFor,
     formatMeetingDate, formatProtocolDate, formatShortDate,
     fmtNum, fmtPct, plural, ownerVotingRows
 } from './meeting.js';
@@ -630,11 +630,18 @@ function toBlob(pdf) {
  * мешканець через півроку, тому шлях один — Storage і osbb_documents.
  */
 export async function generateAndPublishProtocol(poll, apartments, votes, onStep = () => {}) {
+    onStep('Читання актуальних даних…');
+    const context = await loadMeetingContext(poll.id);
+    ({ poll, apartments, votes } = context);
+    if (poll.status !== 'closed') throw new Error('Спочатку завершіть збори');
+    const chairError = chairVoteError(poll.chairVote);
+    if (chairError) throw new Error(chairError);
     const [pdfMake, osbb] = await Promise.all([loadPdfMake(), osbbInfo()]);
 
     onStep('Складання документа…');
     const { docDefinition, quorum } = buildProtocolDoc(poll, apartments, votes, osbb);
     const blob = await toBlob(pdfMake.createPdf(docDefinition));
+    if (blob.size >= 30 * 1024 * 1024) throw new Error('Файл протоколу має бути меншим за 30 МБ');
 
     onStep('Завантаження у Базу…');
     const fileName = `Protocol_${poll.id}.pdf`;
@@ -646,8 +653,8 @@ export async function generateAndPublishProtocol(poll, apartments, votes, onStep
     const title = `Протокол № ${safe(poll.protocolNumber) || '___'} загальних зборів від ${dateLabel}`;
 
     onStep('Публікація…');
-    const published = await callBackend('publishMeetingProtocol', {
+    const published = await publishMeetingProtocol({
         pollId: poll.id, url, fileName, size: blob.size
-    });
+    }, context);
     return { url, title: published.title || title, quorum: published.quorum || quorum.total };
 }

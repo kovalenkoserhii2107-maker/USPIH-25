@@ -24,6 +24,7 @@ import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog } from './ui.
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages.js';
 import { fetchDirectory } from './directory.js';
+import { finalizeMeeting } from './meeting_actions.js';
 import {
     MEETING_ANSWERS, QUORUM_PCT, DECISION_PCT,
     computeQuorum, isMeeting, agendaOf, answerFor, meetingQuestionTally, isChairQuestion, writtenQuestions,
@@ -707,6 +708,10 @@ async function closeExpiredPolls(polls) {
     const apartments = await fetchDirectory().catch(() => []);
     for (const poll of due) {
         try {
+            if (isMeeting(poll)) {
+                await finalizeMeeting(poll.id);
+                continue;
+            }
             // Кворум фіксуємо в самому опитуванні: мешканець не має права
             // читати всі квартири й не може порахувати його сам.
             const quorum = computeQuorum(poll.votes, apartments);
@@ -782,39 +787,8 @@ async function broadcastResults(poll, quorum, apartments = []) {
  * внесе паперові голоси. Але мешканець має дізнатися результат у
  * день закінчення, а не через тиждень.
  */
-export async function broadcastMeetingResults(poll, quorum, apartments) {
-    const questions = agendaOf(poll);
-    const lines = questions.map((q, i) => {
-        const t = meetingQuestionTally(poll, poll.votes, apartments, i);
-        if (!t) return `${i + 1}. ${q}\n   Результати голосування на зборах ще не внесено`;
-        const counts = MEETING_ANSWERS
-            .map(a => `${a.toLowerCase()} ${t.rows[a].ownersCount}`).join(', ');
-        const verdict = apartments.length
-            ? (t.accepted ? 'ПРИЙНЯТО' : 'НЕ ПРИЙНЯТО')
-            : 'підсумок буде в протоколі';
-        return `${i + 1}. ${q}\n   ${verdict} (голосів співвласників: ${counts})`;
-    }).join('\n');
-
-    const quorumText = quorum
-        ? `\n\nЯВКА\n`
-          + `${quorum.hasQuorum ? 'Кворум зібрано' : 'Кворуму немає'} `
-          + `(потрібно ${QUORUM_PCT}% власників)\n`
-          + `Власники: ${quorum.votedOwners} з ${quorum.totalOwners} — ${quorum.ownersPct}%\n`
-          + `Площа: ${quorum.votedArea} з ${quorum.totalArea} м² — ${quorum.areaPct}%`
-        : '';
-
-    await addDoc(collection(db, 'messages'), {
-        title: `Підсумки зборів: ${poll.title}`,
-        body: `Голосування завершено.\n\nРІШЕННЯ\n${lines}${quorumText}\n\n`
-            + `Протокол зборів буде опубліковано в Базі документів ОСББ.`,
-        targetType: 'all',
-        targetValue: '',
-        recipients: buildRecipients('all', ''),
-        attachments: [],
-        linkedDoc: null,
-        createdAt: serverTimestamp(),
-        readBy: {}
-    });
+export async function broadcastMeetingResults(poll) {
+    return finalizeMeeting(poll.id);
 }
 
 /** Кнопка під карткою опитування. Збори ведуться у власній вкладці. */
@@ -906,6 +880,12 @@ async function closePoll(pollId, btn) {
 
     setBusy(btn, true, 'Завершення…');
     try {
+        if (meeting) {
+            await finalizeMeeting(pollId);
+            toast('Збори завершено, підсумки надіслано', 'success');
+            await loadAdminPolls();
+            return;
+        }
         const poll = { id: pollId, ...snapBefore.data(), votes: await fetchVotes(pollId) };
         const apartments = await fetchDirectory().catch(() => []);
         const quorum = computeQuorum(poll.votes, apartments);

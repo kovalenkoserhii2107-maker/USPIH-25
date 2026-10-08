@@ -244,6 +244,20 @@ export function meetingQuestionTally(poll, votes, apartments, index) {
     return isChairQuestion(index) ? chairVoteTally(poll.chairVote) : questionTally(votes, apartments, index);
 }
 
+/** Той самий підсумок для картки, оголошення та протоколу. */
+export function meetingSummary(poll, votes, apartments) {
+    return agendaOf(poll).map((question, index) => {
+        const tally = meetingQuestionTally(poll, votes, apartments, index);
+        if (!tally) return `${index + 1}. ${question}\n   Результати голосування на зборах ще не внесено`;
+        const counts = MEETING_ANSWERS
+            .map(answer => `${answer.toLowerCase()} ${tally.rows[answer].ownersCount}`)
+            .join(', ');
+        return `${index + 1}. ${question}\n   ${tally.accepted ? 'ПРИЙНЯТО' : 'НЕ ПРИЙНЯТО'} `
+            + `(голосів співвласників: ${counts})`
+            + (isChairQuestion(index) ? `; присутніх ${tally.baseOwners}, проголосували ${tally.votedOwners}` : '');
+    }).join('\n');
+}
+
 /** «9 472,20» — числа в документі пишуться з комою й нерозривним пробілом. */
 export function fmtNum(n, decimals = 2) {
     const value = Number(n) || 0;

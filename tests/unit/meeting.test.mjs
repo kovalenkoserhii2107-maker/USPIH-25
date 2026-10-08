@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { computeQuorum, questionTally, surveyorAssignments, surveyorFor, ownerVotingRows, ownerVoteId,
-    chairVoteError, chairVoteTally, meetingQuestionTally, writtenQuestions } from '../../js/meeting.js';
+    chairVoteError, chairVoteTally, meetingQuestionTally, meetingSummary, writtenQuestions } from '../../js/meeting.js';
 import serverCore from '../../functions/meeting-core.js';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getFirestore, doc, writeBatch, terminate } from 'firebase/firestore';
@@ -73,6 +73,15 @@ test('письмове голосування починається з пита
     assert.deepEqual(writtenQuestions({ options: ['Голова', 'Кошторис', 'Ремонт'] }), [
         { question: 'Кошторис', index: 1 }, { question: 'Ремонт', index: 2 }
     ]);
+});
+
+test('оголошення з очними й письмовими підсумками має той самий текст, що серверні функції', () => {
+    const votes = [{ apt: '1', answers: { 0: 'Проти', 1: 'За' } }];
+    const poll = { options: ['Голова', 'Кошторис'], chairVote: { present: 15, yes: 8, no: 4, abstain: 3 } };
+    assert.equal(meetingSummary(poll, votes, apartments), serverCore.meetingSummary(poll, votes, apartments));
+    delete poll.chairVote;
+    assert.equal(meetingSummary(poll, votes, apartments), serverCore.meetingSummary(poll, votes, apartments));
+    assert.match(meetingSummary(poll, votes, apartments), /Результати голосування на зборах ще не внесено/);
 });
 
 test('одна відповідальна особа зберігається з допустимим для Firestore ключем', async () => {

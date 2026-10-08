@@ -131,7 +131,7 @@ async function submit(btn) {
         done?.();
     } catch (e) {
         console.error('Формування протоколу:', e);
-        toast('Не вдалося сформувати протокол', 'error');
+        toast(e.message || 'Не вдалося сформувати протокол', 'error');
     } finally {
         if (state) state.saving = false;
         setBusy(btn, false);
