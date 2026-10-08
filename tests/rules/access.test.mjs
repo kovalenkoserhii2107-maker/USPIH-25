@@ -2,8 +2,9 @@ import test, { after, afterEach, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadString } from 'firebase/storage';
+import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor } from '../../js/meeting.js';
 
 let env;
 before(async () => {
@@ -45,4 +46,29 @@ test('правління публікує документ ОСББ', async () =
         contentType: 'application/pdf'
     }));
     assert.ok(result.ref);
+});
+
+test('правління створює та редагує збори зі спільною відповідальною особою', async () => {
+    await seed();
+    const db = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const meeting = doc(db, 'polls/meeting-surveyor');
+    const schedule = { meetingDate: '2026-12-20', timeStart: '18:00' };
+    await assertSucceeds(setDoc(meeting, {
+        title: 'Загальні збори співвласників',
+        description: '', attachments: [],
+        options: [CHAIR_QUESTION, 'Затвердження кошторису'],
+        agendaDecisions: ['', 'Затвердити кошторис'], agendaHeard: ['', ''],
+        isMeeting: true, ...schedule, timeEnd: '', location: 'Двір',
+        votingOpensAt: meetingStart(schedule),
+        surveyors: surveyorAssignments([{ entrance: '', name: 'Іваненко І. І.' }]),
+        chairName: '', secretaryName: '', protocolNumber: '', sheetsByEntrance: false,
+        deadline: null, status: 'active', resultsSent: false, createdAt: serverTimestamp()
+    }));
+    await assertSucceeds(updateDoc(meeting, {
+        surveyors: surveyorAssignments([{ entrance: '', name: 'Петренко П. П.' }])
+    }));
+    const saved = (await assertSucceeds(getDoc(meeting))).data();
+    assert.equal(surveyorFor(saved, '1'), 'Петренко П. П.');
+    const residentDb = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    await assertFails(updateDoc(doc(residentDb, meeting.path), { title: 'Змінено мешканцем' }));
 });

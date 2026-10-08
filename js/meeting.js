@@ -288,10 +288,20 @@ export function startLabel(poll) {
     return `${formatMeetingDate(at)} о ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
-/** Хто проводить опитування в цій парадній. Ключ '' — «для всіх». */
+/** Дані відповідальних для Firestore: порожній ключ поля заборонений. */
+export function surveyorAssignments(entries) {
+    const map = {};
+    for (const { entrance, name } of entries) {
+        const value = String(name || '').trim();
+        if (value) map[entrance || 'all'] = value;
+    }
+    return map;
+}
+
+/** Хто проводить опитування в цій парадній. Ключ 'all' — «для всіх». */
 export function surveyorFor(poll, entrance = '') {
     const map = poll?.surveyors || {};
-    return String(map[entrance] || map[''] || '').trim();
+    return String(map[entrance] || map.all || map[''] || '').trim();
 }
 
 /** «22» серпня 2026 р. — саме так дата стоїть у шапці протоколу. */

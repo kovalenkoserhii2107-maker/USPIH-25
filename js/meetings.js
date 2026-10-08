@@ -27,7 +27,8 @@ import { callBackend } from './backend.js';
 import {
     CHAIR_QUESTION, MEETING_ANSWERS, DECISION_PCT, isMeeting, agendaOf,
     computeQuorum, questionTally, isChairQuestion, meetingWhen,
-    formatMeetingDate, fmtPct, entrancesOf, meetingStart, beforeStart, startLabel
+    formatMeetingDate, fmtPct, entrancesOf, meetingStart, beforeStart, startLabel,
+    surveyorAssignments, surveyorFor
 } from './meeting.js';
 
 let pendingFiles = [];
@@ -130,7 +131,7 @@ function chairTexts(chair, secretary) {
  *
  * Листки роздають по парадних, тому й відповідальних зазвичай кілька.
  * Коли парадна одна або друк іде суцільним списком, лишається одне
- * поле — ключ '' означає «для всіх».
+ * поле — у Firestore ключ 'all' означає «для всіх».
  */
 function renderSurveyors(hostId, values = {}, byEntrance = true) {
     const host = document.getElementById(hostId);
@@ -145,17 +146,15 @@ function renderSurveyors(hostId, values = {}, byEntrance = true) {
             <span class="surveyor-label">${escapeHtml(r.label)}</span>
             <input type="text" class="field-input surveyor-input" list="meetingOwnersList"
                    data-entrance="${escapeHtml(r.key)}" placeholder="Прізвище та ініціали"
-                   value="${escapeHtml(values[r.key] || values[''] || '')}">
+                   value="${escapeHtml(surveyorFor({ surveyors: values }, r.key))}">
         </label>`).join('');
 }
 
 function readSurveyors(hostId) {
-    const out = {};
-    document.querySelectorAll(`#${hostId} .surveyor-input`).forEach(input => {
-        const v = input.value.trim();
-        if (v) out[input.dataset.entrance] = v;
-    });
-    return out;
+    return surveyorAssignments(Array.from(
+        document.querySelectorAll(`#${hostId} .surveyor-input`),
+        input => ({ entrance: input.dataset.entrance, name: input.value })
+    ));
 }
 
 // ------------------------------------------------------------
