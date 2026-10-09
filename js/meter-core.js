@@ -32,8 +32,18 @@ export function normalizeMeterReading(input) {
     if ([reading, baseline, tariff].some(value => value > 1e10)) throw new Error('Число перевищує допустимий розмір');
     const note = String(input.note || '').trim();
     if (note.length > 500) throw new Error('Примітка має містити до 500 символів');
+    const heatedArea = decimalValue(input.heatedArea);
+    if (input.resource === 'heat' && input.heatedArea != null && String(input.heatedArea).trim() !== ''
+        && (heatedArea === null || heatedArea <= 0 || heatedArea > 1e7)) throw new Error('Вкажіть додатну загальну опалювану площу');
     return { kind: METER_KIND, resource: input.resource, period: input.period, unit,
-        reading, baseline, tariff, reset: input.reset === true, note };
+        reading, baseline, tariff, reset: input.reset === true, note,
+        ...(input.resource === 'heat' && heatedArea !== null ? { heatedArea } : {}) };
+}
+
+export function apartmentHeatShare(row, area) {
+    const apartmentArea = decimalValue(area), totalArea = decimalValue(row?.heatedArea);
+    if (!row || row.error || apartmentArea === null || apartmentArea <= 0 || !totalArea || apartmentArea > totalArea) return null;
+    return Math.round((row.cost * apartmentArea / totalArea + Number.EPSILON) * 100) / 100;
 }
 
 /** Зміна історичного показника перераховує наступний інтервал, з його власним тарифом. */

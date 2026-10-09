@@ -51,9 +51,9 @@ async function ensureAdminFeatures() {
     adminFeaturesPromise ||= Promise.all([
         import('./meetings.js'), import('./dashboard.js'), import('./directory.js'),
         import('./import-owners.js'), import('./export-base.js'), import('./verify.js'),
-        import('./admin-documents.js'), import('./meters.js')
-    ]).then(([meetings, dashboard, directory, importer, exporter, verify, documents, meters]) => ({
-        ...meetings, ...dashboard, ...directory, ...importer, ...exporter, ...verify, ...documents, ...meters
+        import('./admin-documents.js'), import('./meters.js'), import('./apartment-meters.js')
+    ]).then(([meetings, dashboard, directory, importer, exporter, verify, documents, meters, apartmentMeters]) => ({
+        ...meetings, ...dashboard, ...directory, ...importer, ...exporter, ...verify, ...documents, ...meters, ...apartmentMeters
     }));
     const features = await adminFeaturesPromise;
     if (!adminFeaturesInitialized) {
@@ -64,6 +64,7 @@ async function ensureAdminFeatures() {
         features.initVerify();
         features.initAdminDocuments();
         features.initMeters();
+        features.initApartmentMeters();
         initMeetingWorkspace();
         adminFeaturesInitialized = true;
     }
@@ -88,7 +89,7 @@ const ADMIN_TAB_LOADERS = {
     docs: populateDocsDropdown,
     polls: loadAdminPolls,
     finance: () => Promise.all([loadAdminExpenses(), loadAdminRequisites()]),
-    meters: async () => (await ensureAdminFeatures()).loadAdminMeters(),
+    meters: async () => { const features = await ensureAdminFeatures(); return Promise.all([features.loadAdminMeters(), features.loadApartmentSubmissions()]); },
     board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
     chat: loadChat
 };
@@ -236,7 +237,7 @@ const SCREEN_RELOADERS = {
     receiptsSection: loadReceipts,
     ledgerSection: loadLedger,
     financeSection: loadFinanceDetail,
-    metersSection: async () => { const meters = await import('./meters.js'); meters.initMeters(); return meters.loadResidentMeters(); },
+    metersSection: async () => { const meters = await import('./apartment-meters.js'); meters.initApartmentMeters(); return meters.loadApartmentMeters(); },
     faqSection: loadFaq,
     chatSection: loadChat
 };
@@ -353,8 +354,9 @@ function initNavigation() {
     document.getElementById('menuServicesBtn').addEventListener('click', () => go('servicesSection', loadServices));
     document.getElementById('menuPollsBtn').addEventListener('click', () => go('pollsSection', loadUserPolls));
     document.getElementById('menuMetersBtn')?.addEventListener('click', () => go('metersSection', async () => {
-        const meters = await import('./meters.js'); meters.initMeters(); await meters.loadResidentMeters();
+        const meters = await import('./apartment-meters.js'); meters.initApartmentMeters(); await meters.loadApartmentMeters();
     }));
+    document.getElementById('menuActivityBtn')?.addEventListener('click', () => go('financeSection', loadFinanceDetail));
 
     document.getElementById('menuLinkTerms')?.addEventListener('click', (e) => { e.preventDefault(); toggleSheet('termsSheet'); });
     document.getElementById('menuLinkPrivacy')?.addEventListener('click', (e) => { e.preventDefault(); toggleSheet('privacySheet'); });

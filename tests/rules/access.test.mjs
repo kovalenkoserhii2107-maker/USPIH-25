@@ -8,6 +8,7 @@ import { ref, uploadString, uploadBytes, getDownloadURL, getMetadata, deleteObje
 import { CHAIR_QUESTION, meetingStart, surveyorAssignments, surveyorFor, ownerVoteId, questionTally } from '../../js/meeting.js';
 import { createMeetingActions } from '../helpers/meeting-actions.mjs';
 import { createMeterStore } from '../helpers/meter-store.mjs';
+import { createApartmentMeterStore } from '../helpers/apartment-meter-store.mjs';
 
 let env;
 before(async () => {
@@ -450,4 +451,53 @@ test('невдала транзакція показників не лишає �
     await assert.rejects(store.save(await store.load(), [row]), /Змодельований збій/);
     assert.equal((await getDoc(doc(admin, 'status/meter_electricity_2026-09'))).exists(), false);
     assert.equal((await getDoc(doc(admin, 'status/house_meter_state'))).exists(), false);
+});
+
+test('мешканець подає свої показники, сусід їх не читає, правління бачить подані за місяць', async () => {
+    await seed();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const neighbor = env.authenticatedContext('neighbor', { email: '46@uspih-25.com' }).firestore();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const store = createApartmentMeterStore(resident, () => '45');
+    const input = { resource: 'water', period: '2026-09', unit: 'м³', baseline: 100, reading: '120,5' };
+    const first = await store.save(await store.load(), [input, { ...input, resource: 'electricity', unit: 'кВт·год', reading: 150 }]);
+    assert.equal(first.revision, 1); assert.equal(first.records.find(row => row.resource === 'water').reading, 120.5);
+    await assertFails(getDoc(doc(neighbor, 'apartment_meter_readings/45_water_2026-09')));
+    await assertFails(getDocs(collection(neighbor, 'apartment_meter_readings')));
+    await assertFails(getDoc(doc(neighbor, 'apartments/45/meter_state/current')));
+    assert.equal((await createApartmentMeterStore(admin, () => 'board').submissions('2026-09')).length, 2);
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'apartment_meter_readings/45_water_2026-09')));
+    await assertFails(updateDoc(doc(neighbor, 'apartment_meter_readings/45_water_2026-09'), { reading: 0 }));
+    await assertFails(updateDoc(doc(resident, 'apartments/45'), { balance: 0, area: 999 }));
+});
+
+test('історична правка синхронізує вхідний показник наступного місяця; паралельна форма не перезаписує', async () => {
+    await seed();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createApartmentMeterStore(resident, () => '45');
+    const initial = await store.load();
+    const input = { resource: 'electricity', period: '2026-09', unit: 'кВт·год', baseline: 100, reading: 120 };
+    let context = await store.save(initial, [input]);
+    await assert.rejects(store.save(initial, [{ ...input, reading: 121 }]), /вже оновилися/);
+    context = await store.save(context, [{ ...input, period: '2026-10', baseline: 120, reading: 150 }]);
+    const created = context.records.find(row => row.period === '2026-10').createdAt.toMillis();
+    context = await store.save(context, [{ ...input, reading: 125 }]);
+    const next = context.records.find(row => row.period === '2026-10');
+    assert.equal(next.baseline, 125); assert.equal(next.createdAt.toMillis(), created); assert.equal(context.revision, 3);
+    await assert.rejects(store.save(context, [{ ...input, reading: 151 }]), /менший за попередній/);
+});
+
+test('правила відхиляють підміну квартири, тарифів, від’ємні числа й запис без версії', async () => {
+    await seed();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const valid = { kind: 'apartmentMeterReading', apt: '45', resource: 'water', period: '2026-09', unit: 'м³',
+        reading: 120, baseline: 100, reset: false, note: '', revision: 1, updatedBy: '45', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    for (const patch of [{ apt: '46' }, { reading: -1 }, { tariff: 0 }, { baseline: 121 }, { period: '2026-13' }, { unit: 'Гкал' }]) {
+        const batch = writeBatch(resident);
+        batch.set(doc(resident, 'apartments/45/meter_state/current'), { revision: 1, updatedAt: serverTimestamp() });
+        batch.set(doc(resident, 'apartment_meter_readings/45_water_2026-09'), { ...valid, ...patch });
+        await assertFails(batch.commit());
+    }
+    await assertFails(setDoc(doc(resident, 'apartment_meter_readings/45_water_2026-09'), valid));
+    assert.equal((await getDoc(doc(resident, 'apartments/45/meter_state/current'))).exists(), false);
 });

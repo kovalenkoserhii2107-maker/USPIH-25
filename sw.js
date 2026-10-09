@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '118';
+const VERSION = '119';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -40,6 +40,10 @@ const SHELL = [
     './js/admin-documents.js',
     './js/admin-document-core.js',
     './js/meters.js',
+    './js/meter-dial.js',
+    './js/apartment-meter-core.js',
+    './js/apartment-meter-store.js',
+    './js/apartment-meters.js',
     './js/meter-core.js',
     './js/meter-store.js',
     './js/meetings.js',

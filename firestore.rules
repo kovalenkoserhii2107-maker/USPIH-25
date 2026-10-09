@@ -136,6 +136,47 @@ service cloud.firestore {
         allow read: if isSignedIn() && (apt == myApt() || isAdmin());
         allow write: if isAdmin();
       }
+
+      // Версія особистих показників: захищає від паралельного перезапису.
+      match /meter_state/{stateId} {
+        allow read: if isSignedIn() && (apt == myApt() || isAdmin());
+        allow create, update: if isSignedIn() && apt == myApt() && stateId == 'current'
+          && request.resource.data.keys().hasOnly(['revision', 'updatedAt'])
+          && request.resource.data.revision is int
+          && request.resource.data.revision == (resource == null ? 1 : resource.data.revision + 1)
+          && request.resource.data.updatedAt == request.time;
+        allow write: if isAdmin();
+      }
+    }
+
+    // Квартирні показники приватні. Загальнобудинковий облік лишається у status.
+    match /apartment_meter_readings/{readingId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.apt == myApt());
+      allow get: if isSignedIn() && resource == null && readingId.split('_').size() == 3
+                 && readingId.split('_')[0] == myApt()
+                 && readingId.split('_')[1] in ['electricity', 'water']
+                 && readingId.split('_')[2].matches('[0-9]{4}-(0[1-9]|1[0-2])');
+      function validApartmentReading() {
+        let d = request.resource.data;
+        let state = /databases/$(database)/documents/apartments/$(myApt())/meter_state/current;
+        return d.keys().hasOnly(['kind', 'apt', 'resource', 'period', 'unit', 'reading', 'baseline', 'reset', 'note',
+                                'revision', 'createdAt', 'updatedAt', 'updatedBy'])
+          && d.kind == 'apartmentMeterReading' && d.apt == myApt()
+          && readingId == myApt() + '_' + d.resource + '_' + d.period
+          && d.resource in ['electricity', 'water']
+          && d.period is string && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])')
+          && ((d.resource == 'electricity' && d.unit == 'кВт·год') || (d.resource == 'water' && d.unit == 'м³'))
+          && d.reading is number && d.reading >= 0 && d.reading <= 10000000000
+          && d.baseline is number && d.baseline >= 0 && d.baseline <= d.reading
+          && d.reset is bool && d.note is string && d.note.size() <= 500
+          && d.updatedBy == myApt() && d.updatedAt == request.time
+          && d.revision is int && d.revision == getAfter(state).data.revision
+          && d.revision == (exists(state) ? get(state).data.revision + 1 : 1);
+      }
+      allow create: if isSignedIn() && validApartmentReading() && request.resource.data.createdAt == request.time;
+      allow update: if isSignedIn() && resource.data.apt == myApt() && validApartmentReading()
+                    && request.resource.data.createdAt == resource.data.createdAt;
+      allow write: if isAdmin();
     }
 
     // Черга заявок на зміну списків власників — теж одним запитом.

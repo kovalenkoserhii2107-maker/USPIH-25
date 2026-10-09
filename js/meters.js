@@ -1,5 +1,8 @@
 import { meterStore } from './meter-store.js';
-import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges } from './meter-core.js';
+import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatShare, decimalValue } from './meter-core.js';
+import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
+import { db, currentApt } from './firebase.js';
+import { doc, getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { escapeHtml, toast, setBusy, formatMoney } from './ui.js';
 
 let context = { revision: 0, records: [] };
@@ -36,10 +39,10 @@ function renderEntry({ remember = true } = {}) {
         return `<fieldset class="meter-entry-card" data-resource="${key}">
             <legend><span class="meter-dot" style="background:${resource.color}"></span>${resource.label}</legend>
             <div class="meter-entry-grid">
-                <label class="field"><span class="field-label">Попередній / початковий показник</span>
+                <label class="field meter-reading-field"><span class="field-label">Вхідний / початковий показник</span>
                     <input class="field-input" data-field="baseline" inputmode="decimal" value="${escapeHtml(reset ? current.baseline : prior?.reading ?? current?.baseline ?? '')}"
                         ${prior && !reset ? 'readonly' : ''} placeholder="Початок обліку"></label>
-                <label class="field"><span class="field-label">Поточний показник</span>
+                <label class="field meter-reading-field"><span class="field-label">Вихідний показник</span>
                     <input class="field-input" data-field="reading" inputmode="decimal" value="${escapeHtml(current?.reading ?? '')}" placeholder="Нові показання"></label>
                 <label class="field"><span class="field-label">Тариф, грн за одиницю</span>
                     <input class="field-input" data-field="tariff" inputmode="decimal" value="${escapeHtml(current?.tariff ?? prior?.tariff ?? '')}" placeholder="Тариф цього місяця"></label>
@@ -47,12 +50,16 @@ function renderEntry({ remember = true } = {}) {
                     <select class="field-input field-select" data-field="unit" ${prior && !reset ? 'disabled' : ''}>
                         ${resource.units.map(value => `<option ${value === unit ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
             </div>
+            ${key === 'heat' ? `<label class="field"><span class="field-label">Загальна опалювана площа, м²</span>
+                <input class="field-input" data-field="heatedArea" inputmode="decimal" value="${escapeHtml(current?.heatedArea ?? prior?.heatedArea ?? '')}" placeholder="Для розподілу за площею"></label>
+                <button type="button" class="btn-soft btn-compact" data-heated-area>Підставити площу з довідника</button><p class="field-hint">Після підстановки за потреби виключіть неопалювані приміщення.</p>` : ''}
             <label class="meter-reset"><input type="checkbox" data-field="reset" ${reset ? 'checked' : ''}> Заміна / обнулення лічильника</label>
             <label class="field"><span class="field-label">Примітка (за потреби)</span>
                 <input class="field-input" data-field="note" maxlength="500" value="${escapeHtml(current?.note || '')}" placeholder="Номер приладу, заміна, уточнення"></label>
             <p class="meter-preview" aria-live="polite"></p>
         </fieldset>`;
     }).join('');
+    enhanceMeterInputs(host);
     host.querySelectorAll('.meter-entry-card').forEach(updatePreview);
 }
 
@@ -60,7 +67,8 @@ function readCard(card) {
     const field = name => card.querySelector(`[data-field="${name}"]`);
     return { resource: card.dataset.resource, period: document.getElementById('meterPeriod').value,
         reading: field('reading').value, baseline: field('baseline').value, tariff: field('tariff').value,
-        unit: field('unit').value, reset: field('reset').checked, note: field('note').value };
+        unit: field('unit').value, reset: field('reset').checked, note: field('note').value,
+        ...(field('heatedArea') ? { heatedArea: field('heatedArea').value } : {}) };
 }
 
 function updatePreview(card) {
@@ -132,13 +140,30 @@ async function load(view) {
         loaded = true;
         if (view === 'admin') renderEntry();
         renderStats(view);
+        return true;
     } catch (error) {
         if (host) host.innerHTML = '<p class="list-empty">Не вдалося завантажити показники. Спробуйте оновити.</p>';
         toast(error.message || 'Помилка завантаження показників', 'error');
+        loaded = false;
+        return false;
     }
 }
 export const loadAdminMeters = () => load('admin');
 export const loadResidentMeters = () => load('resident');
+
+export async function loadHouseActivity() {
+    const fresh = await loadResidentMeters();
+    const host = document.getElementById('apartmentHeatEstimate');
+    if (!host) return;
+    if (!fresh) { host.innerHTML = '<p class="field-hint">Не вдалося завантажити дані для розрахунку тепла.</p>'; return; }
+    try {
+        const snap = await getDocFromServer(doc(db, 'apartments', currentApt()));
+        const area = snap.data()?.area;
+        const rows = meterSeries(context.records, 'heat').slice(-12).reverse();
+        host.innerHTML = rows.length ? `<h3>Тепло: частка вашої квартири за площею</h3><p class="field-hint">Вартість тепла будинку × площа квартири / загальна опалювана площа. Площа квартири: ${escapeHtml(area ?? 'не вказана')} м².</p>`
+            + rows.map(row => { const share = apartmentHeatShare(row, area); return `<div class="meter-history-row"><b>${escapeHtml(periodLabel(row.period))}</b><p>${share === null ? 'Для розрахунку потрібні площа квартири та загальна опалювана площа.' : `Розрахункова частка: <strong>${formatMoney(share)} грн</strong> · ${row.heatedArea} м² загалом`}</p></div>`; }).join('') : '<p class="field-hint">Розрахунок тепла за площею зʼявиться після внесення загальнобудинкових показників.</p>';
+    } catch { host.innerHTML = '<p class="field-hint">Не вдалося прочитати площу квартири.</p>'; }
+}
 
 async function save(btn) {
     if (!loaded || saving) return;
@@ -175,11 +200,26 @@ export function initMeters() {
                 baseline.readOnly = !!prior && !reset;
                 const current = context.records.find(row => row.resource === card.dataset.resource && row.period === period.value);
                 baseline.value = reset ? '0' : prior?.reading ?? current?.baseline ?? '';
+                syncMeterDial(baseline);
                 card.querySelector('[data-field="unit"]').disabled = !!prior && !reset;
             }
             updatePreview(card);
         });
         document.getElementById('meterSaveBtn').addEventListener('click', function () { save(this); });
+        document.getElementById('meterEntry').addEventListener('click', async event => {
+            const button = event.target.closest('[data-heated-area]');
+            if (!button || saving) return;
+            setBusy(button, true, 'Читання площ…');
+            try {
+                const { fetchDirectory, invalidateDirectory } = await import('./directory.js');
+                invalidateDirectory(); const apartments = await fetchDirectory();
+                if (!apartments.length || apartments.some(row => decimalValue(row.area) === null || decimalValue(row.area) <= 0)) throw new Error('Не в усіх квартирах внесено площу. Вкажіть опалювану площу вручну');
+                const input = button.closest('.meter-entry-card').querySelector('[data-field="heatedArea"]');
+                input.value = String(Math.round(apartments.reduce((sum, row) => sum + decimalValue(row.area), 0) * 100) / 100);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            } catch (error) { toast(error.message, 'error'); }
+            finally { setBusy(button, false); }
+        });
         document.getElementById('meterRefreshBtn').addEventListener('click', () => { if (!saving) loadAdminMeters(); });
     }
     for (const [view, id] of [['admin', 'meterStatistics'], ['resident', 'residentMeterStatistics']]) {
