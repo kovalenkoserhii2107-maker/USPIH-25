@@ -71,6 +71,11 @@ service cloud.firestore {
     // Дані квартири: правління веде площу, парадну, список і статуси,
     // бухгалтер — баланс і особовий рахунок, позначку службового запису
     // (isAdmin) змінює лише голова.
+    function balanceFromLedger() {
+      return exists(/databases/$(database)/documents/charges/settings)
+        && get(/databases/$(database)/documents/charges/settings).data.get('opening', {}).get('set', false) == true;
+    }
+
     function staffMayWriteApartment() {
       let changed = resource == null
         ? request.resource.data.keys().toSet()
@@ -81,6 +86,8 @@ service cloud.firestore {
       return isStaff()
         && (!flagChanged || isChair())
         && (!changed.hasAny(money) || canAccount())
+        // Після вхідних залишків баланс рахує сервер з історії квартири.
+        && (!changed.hasAny(['balance', 'balanceSource']) || !balanceFromLedger())
         && (changed.difference(money).difference(['isAdmin'].toSet()).size() == 0 || canManage());
     }
 
@@ -538,6 +545,19 @@ service cloud.firestore {
     // ---------- ВИХІДНІ ПЛАТЕЖІ ----------
     // Створює й змінює лише сервер (paymentAction і виписка банку).
     match /payments/{paymentId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
+    // ---------- НАРАХУВАННЯ ВНЕСКІВ ----------
+    // Тарифи, групи приміщень, вхідні залишки й нарахування за місяць
+    // пише лише сервер (chargesAction): він перевіряє суми, пише
+    // історію квартир і журнал дій.
+    match /charges/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /charges_runs/{period} {
       allow read: if canAccount();
       allow write: if false;
     }

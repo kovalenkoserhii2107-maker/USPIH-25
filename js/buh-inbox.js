@@ -8,9 +8,11 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
+import { openCharges, runCharges } from './buh-charges.js';
+import { periodName, fmtKop } from './charges-core.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -105,8 +107,35 @@ function payCardHtml(item, index) {
     </article>`;
 }
 
+/** Нарахування внесків за місяць або крок налаштування, без якого його не зробити. */
+function chargeCardHtml(item, index) {
+    const p = item.proposal;
+    const head = `<article class="inbox-card is-charge${index === focus ? ' is-focus' : ''}${busy.has(item.tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(item.tx.id)}" data-index="${index}" tabindex="-1">`;
+    if (p.type === 'setup') {
+        return `${head}<div class="inbox-main"><span class="inbox-meta">налаштування нарахувань</span><p class="inbox-payer">${escapeHtml(p.title)}</p>
+                <p class="inbox-purpose">${escapeHtml(p.text)}</p></div>
+            <div class="inbox-decision"><div class="inbox-actions">
+                <button type="button" class="btn-primary inbox-yes" data-act="yes">Відкрити<kbd>Enter</kbd></button></div></div></article>`;
+    }
+    const v = p.preview;
+    return `${head}<div class="inbox-main">
+            <span class="inbox-sum-big">${escapeHtml(fmtKop(v.totalKop))} ₴</span>
+            <span class="inbox-meta">нарахування · ${v.rows.length} прим.</span>
+            <p class="inbox-payer">Внески за ${escapeHtml(periodName(v.period))}</p>
+            <p class="inbox-purpose">Площа × тариф кожного приміщення${v.problems.length ? ` · без нарахування: ${v.problems.length} (${v.problems.slice(0, 4).map(x => `${escapeHtml(x.apt)} — ${escapeHtml(x.reason)}`).join(', ')}${v.problems.length > 4 ? '…' : ''})` : ''}</p>
+        </div>
+        <div class="inbox-decision">
+            <p class="inbox-proposal"><span class="inbox-arrow">→</span> Нарахувати й записати в історію квартир${p.opening ? '; баланси перерахуються' : ''}</p>
+            <div class="inbox-actions">
+                <button type="button" class="btn-primary inbox-yes" data-act="yes">Так<kbd>Enter</kbd></button>
+                <button type="button" class="btn-ghost-small" data-act="edit">Переглянути<kbd>E</kbd></button>
+            </div>
+        </div></article>`;
+}
+
 function cardHtml(item, index, dir) {
     if (item.proposal.type === 'pay') return payCardHtml(item, index);
+    if (item.proposal.type === 'charge' || item.proposal.type === 'setup') return chargeCardHtml(item, index);
     const tx = item.tx;
     const p = item.proposal;
     const open = editing === tx.id || !['assign'].includes(p.type);
@@ -150,19 +179,39 @@ function render() {
     focus = Math.min(focus, items.length - 1);
     const sure = items.filter(i => i.proposal.type === 'assign' && i.proposal.level === 'high');
     host.innerHTML = `<div class="inbox-head">
-            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => ['assign', 'pay'].includes(i.proposal.type)).length}</b></p>
+            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => ['assign', 'pay', 'charge'].includes(i.proposal.type)).length}</b></p>
             ${sure.length > 1 ? `<button type="button" class="btn-soft btn-compact" data-act="bulk">Підтвердити всі з високою впевненістю (${sure.length})</button>` : ''}
             <span class="inbox-keys"><kbd>↑</kbd><kbd>↓</kbd> пункти · <kbd>Enter</kbd> так · <kbd>E</kbd> змінити</span>
         </div>
         <div class="inbox-list">${items.map((item, i) => cardHtml(item, i, dirCache)).join('')}</div>`;
 }
 
+/**
+ * Нарахування стоїть першим: з початку місяця це головна справа.
+ * Поки немає тарифів чи вхідних залишків — пропонуємо їх внести.
+ */
+export function chargeItems(c) {
+    if (!c) return [];
+    const out = [];
+    if (!c.tariffs?.length) out.push({ tx: { id: 'setup:tariffs' }, proposal: { type: 'setup', seg: 'tariffs', title: 'Внесіть тарифи внесків',
+        text: 'Ставка за м² для квартир і окремо для нежитлових приміщень — з посиланням на рішення загальних зборів.' } });
+    if (!c.opening?.set) out.push({ tx: { id: 'setup:opening' }, proposal: { type: 'setup', seg: 'opening', title: 'Внесіть вхідні залишки на 30.09.2026',
+        text: 'Борги й переплати квартир на початок обліку. З ними баланс мешканців рахуватиме система.' } });
+    const v = c.preview;
+    if (v && c.due?.includes(v.period) && !v.done && v.rows.length) {
+        out.push({ tx: { id: `charge:${v.period}` }, proposal: { type: 'charge', preview: v, opening: Boolean(c.opening?.set) } });
+    }
+    return out;
+}
+
 let payAccount = '';
 export async function loadInbox() {
-    const [queue, dir, pays] = await Promise.all([loadQueue(), loadDirectory(), activeProposals().catch(() => ({ list: [], context: { accounts: [] } }))]);
+    const [queue, dir, pays, charges] = await Promise.all([loadQueue(), loadDirectory(),
+        activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null)]);
     dirCache = dir;
     payAccount = defaultAccount(pays.context.accounts || []);
-    items = queue.map(tx => ({ tx, proposal: proposalFor(tx) }))
+    items = chargeItems(charges)
+        .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
         .concat(payAccount ? pays.list.map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
     render();
     return items.length;
@@ -195,14 +244,25 @@ async function runPay(item) {
     finally { busy.delete(item.tx.id); await loadInbox().catch(() => render()); }
 }
 
+async function runCharge(item) {
+    busy.add(item.tx.id);
+    render();
+    try { await runCharges(item.proposal.preview.period, item.proposal.preview.totalKop); }
+    catch (e) { toast(e.message, 'error'); }
+    finally { busy.delete(item.tx.id); await loadInbox().catch(() => render()); }
+}
+
 const confirmProposal = item => {
     if (item.proposal.type === 'pay') { runPay(item); return; }
+    if (item.proposal.type === 'charge') { runCharge(item); return; }
+    if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
     if (p.type !== 'assign') { openForm(item); return; }
     run(item, { action: 'assign', allocations: [{ apt: p.apt, amountKop: item.tx.amountKop }], remember: true }, `Рознесено: кв. ${p.apt}`);
 };
 
 function openForm(item) {
+    if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'pay') {
         // Змінити суму чи призначення — у формі «Платежів».
         location.hash = 'payments';

@@ -399,7 +399,10 @@ exports.refreshDtekSchedule = onCall(
 // БАНК: виписка ПриватБанку й рознесення оплат (див. bank.js)
 // ------------------------------------------------------------
 const notify = require('./notify')({ db });
-const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole });
+// Нарахування внесків і баланс мешканця з історії (див. charges.js).
+const charges = require('./charges')({ db, FieldValue, Timestamp, requireAdmin, staffRole });
+exports.chargesAction = charges.chargesAction;
+const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances: charges });
 exports.bankAction = bank.bankAction;
 exports.syncBank = bank.syncBank;
 

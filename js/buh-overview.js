@@ -2,7 +2,9 @@
 // «Огляд»: гроші ОСББ і що потребує уваги — на одному екрані.
 // ============================================================
 import { escapeHtml } from './ui.js';
-import { loadSettings, loadQueue, loadSince, loadPayments, money, signed, when, tagOf, maskIban, ACCOUNT_PURPOSES } from './buh-data.js';
+import { loadSettings, loadQueue, loadSince, loadPayments, loadCharges, money, signed, when, tagOf, maskIban, ACCOUNT_PURPOSES } from './buh-data.js';
+import { chargeItems } from './buh-inbox.js';
+import { periodName } from './charges-core.js';
 import { deadlines, humanDate, daysLeft } from './tax-calendar.js';
 
 const MONTHS = ['січні', 'лютому', 'березні', 'квітні', 'травні', 'червні', 'липні', 'серпні', 'вересні', 'жовтні', 'листопаді', 'грудні'];
@@ -10,7 +12,12 @@ const MONTHS = ['січні', 'лютому', 'березні', 'квітні', 
 export async function loadOverview() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const [settings, queue, month, outgoing] = await Promise.all([loadSettings(), loadQueue(), loadSince(monthStart), loadPayments().catch(() => [])]);
+    const [settings, queue, month, outgoing, charges] = await Promise.all([loadSettings(), loadQueue(), loadSince(monthStart),
+        loadPayments().catch(() => []), loadCharges().catch(() => null)]);
+    const waiting = queue.length + chargeItems(charges).length;
+    const debtors = (charges?.apartments || []).filter(a => Number(a.balance) < 0);
+    const debt = debtors.reduce((s, a) => s + Math.round(Number(a.balance) * 100), 0);
+    const chargedRun = charges?.runs?.find(r => r.period === charges.current);
     const signing = outgoing.filter(p => p.status === 'sent');
     const accounts = Object.entries(settings.accounts || {});
     const total = accounts.reduce((s, [, a]) => s + (a.currency === 'UAH' || !a.currency ? (a.balanceKop || 0) : 0), 0);
@@ -20,12 +27,14 @@ export async function loadOverview() {
     const soon = deadlines(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())), new Date(Date.UTC(now.getFullYear(), now.getMonth() + 3, 0)));
 
     document.getElementById('viewOverview').innerHTML = `
-        <div class="kpi-grid">
+        <div class="kpi-grid is-five">
             <div class="kpi"><span>На рахунках</span><b>${accounts.length ? money(total) : '—'}</b>
                 <small>${accounts.length ? accounts.map(([iban, a]) => `${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')} ${escapeHtml(maskIban(iban).slice(-4))}`).join(' · ') : 'Банк не підключено'}</small></div>
             <div class="kpi"><span>Надійшло в ${MONTHS[now.getMonth()]}</span><b class="is-in">${money(income)}</b><small>з них внески мешканців ${money(payments)}</small></div>
             <div class="kpi"><span>Списано в ${MONTHS[now.getMonth()]}</span><b>${money(spent)}</b><small>${month.filter(t => t.direction === 'out').length} операцій</small></div>
-            <button type="button" class="kpi kpi-action${queue.length ? ' is-alert' : ''}" data-go="inbox"><span>Чекають рішення</span><b>${queue.length}</b><small>${queue.length ? 'Відкрити «Вхідні» →' : 'Усе розібрано'}</small></button>
+            <button type="button" class="kpi kpi-action" data-go="charges"><span>Борг мешканців</span><b${debt ? ' class="is-out"' : ''}>${charges ? money(debt) : '—'}</b>
+                <small>${charges ? `${debtors.length} кв. · ${chargedRun ? 'місяць нараховано' : `${periodName(charges.current).split(' ')[0]} не нараховано`}` : 'Нарахування недоступні'}</small></button>
+            <button type="button" class="kpi kpi-action${waiting ? ' is-alert' : ''}" data-go="inbox"><span>Чекають рішення</span><b>${waiting}</b><small>${waiting ? 'Відкрити «Вхідні» →' : 'Усе розібрано'}</small></button>
         </div>
         ${signing.length ? `<button type="button" class="buh-card sign-strip" data-go="payments">
             <b>${signing.length} ${signing.length === 1 ? 'платіж чекає' : 'платежі чекають'} підпису голови в Приват24</b>
@@ -56,5 +65,5 @@ export async function loadOverview() {
                 }).join('')}</tbody></table>` : '<p class="list-empty">Цього місяця операцій ще немає</p>'}
             </section>
         </div>`;
-    return queue.length;
+    return waiting;
 }
