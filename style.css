@@ -5014,8 +5014,18 @@ select.field-input {
 .heat-breakdown > div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #e3e9f1; }
 .heat-breakdown dt { color: #516783; }
 .heat-breakdown dd { margin: 0; text-align: right; font-weight: 600; }
+.heat-breakdown .heat-building-total { font-weight: 700; }
+.heat-building-total dd { color: var(--blue-ink); white-space: nowrap; }
+.meter-tariff-card { min-width: 0; padding: 14px; background: #f8fafd; border: 1px solid #dae4ef; border-radius: 16px; }
+.meter-tariff-card h4 { margin: 0 0 12px; }
 .meter-extra .meter-reset { margin-top: 14px; }
 .apartment-meter-entry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.apartment-meter-group { min-width: 0; }
+.apartment-meter-group h3 { margin: 8px 0 16px; }
+.apartment-channel-list { display: grid; gap: 16px; margin-bottom: 14px; }
+.apartment-water-head { display: flex; gap: 8px; align-items: flex-end; }
+.apartment-water-head .field { min-width: 0; flex: 1; }
+.apartment-water-head button { width: auto; flex-shrink: 0; margin-bottom: 16px; }
 @media (max-width: 600px) { .apartment-meter-entry { grid-template-columns: 1fr; } }
 .plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .plain-fieldset:disabled { opacity: .7; }
@@ -5039,7 +5049,7 @@ select.field-input {
 .meter-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
 .meter-entry-grid, .meter-stats-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .meter-entry-grid .field, .meter-stats-controls .field { min-width: 0; display: flex; flex-direction: column; }
-.meter-entry-card[data-resource="heat"] .meter-unit-field { grid-column: 1 / -1; }
+.meter-unit-field { grid-column: 1 / -1; }
 .meter-entry-grid .field-label { min-height: 28px; font-size: 11px; }
 .meter-entry-grid .field-input { margin-top: auto; }
 .meter-entry-card .field-input { min-height: 44px; padding: 10px 12px; font-size: 16px; }

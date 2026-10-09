@@ -1,5 +1,5 @@
 import { meterStore } from './meter-store.js';
-import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatCalculation, integerReading, decimalValue, heatReadingTariff } from './meter-core.js';
+import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatCalculation, integerReading, decimalValue, readingTariff } from './meter-core.js';
 import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
 import { db, currentApt } from './firebase.js';
 import { doc, getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
@@ -36,7 +36,7 @@ function renderEntry({ remember = true } = {}) {
         const prior = series.filter(row => row.period < period).at(-1);
         const reset = current?.reset === true;
         const unit = current?.unit || prior?.unit || resource.units[0];
-        const midMonth = key === 'heat' && (context.heatTariffs || []).some(row => row.effectiveFrom.startsWith(period) && row.effectiveFrom > `${period}-01`);
+        const midMonth = (context.tariffs || []).some(row => (row.resource || 'heat') === key && row.effectiveFrom.startsWith(period) && row.effectiveFrom > `${period}-01`);
         return `<fieldset class="meter-entry-card" data-resource="${key}">
             <legend><span class="meter-dot" style="background:${resource.color}"></span>${resource.label}</legend>
             <div class="meter-entry-grid">
@@ -45,13 +45,11 @@ function renderEntry({ remember = true } = {}) {
                         ${prior && !reset ? 'readonly' : ''} placeholder="Початок обліку"></label>
                 <label class="field meter-reading-field meter-new-field"><span class="field-label">Новий показник</span>
                     <input class="field-input" data-field="reading" inputmode="numeric" value="${escapeHtml(current?.reading ?? '')}" placeholder="Нові показання"></label>
-                ${key !== 'heat' ? `<label class="field"><span class="field-label" data-meter-tariff-label>Тариф, грн/${escapeHtml(unit)}</span>
-                    <input class="field-input" data-field="tariff" inputmode="decimal" value="${escapeHtml(current?.tariff ?? prior?.tariff ?? '')}" placeholder="Тариф цього місяця"></label>` : ''}
                 <label class="field meter-unit-field"><span class="field-label">Одиниця вимірювання</span>
                     <select class="field-input field-select" data-field="unit" ${prior && !reset ? 'disabled' : ''}>
                         ${resource.units.map(value => `<option ${value === unit ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
             </div>
-            ${key === 'heat' ? `<p class="field-hint">Загальна площа з бази: ${context.totalArea ? `${num(context.totalArea)} м²` : 'площу внесено не для всіх квартир'}. Тариф підставляється автоматично з блоку «Тариф на тепло». Вартість за м² розраховується автоматично. <a href="https://www.teplo.od.ua" target="_blank" rel="noopener noreferrer">ТГО Одеси</a></p>` : ''}
+            ${key === 'heat' ? `<p class="field-hint">Загальна площа будинку: ${context.totalArea ? `${num(context.totalArea)} м²` : 'вкажіть у полі вище'}. Вартість за м² розраховується автоматично. <a href="https://www.teplo.od.ua" target="_blank" rel="noopener noreferrer">ТГО Одеси</a></p>` : ''}
             ${midMonth ? '<p class="field-hint">Тариф змінюється всередині цього місяця. Перевірте тариф за місяць у рахунку постачальника.</p>' : ''}
             <label class="meter-reset"><input type="checkbox" data-field="reset" ${reset ? 'checked' : ''}> Заміна / обнулення лічильника</label>
             <label class="field"><span class="field-label">Примітка (за потреби)</span>
@@ -66,9 +64,9 @@ function renderEntry({ remember = true } = {}) {
 function readCard(card) {
     const field = name => card.querySelector(`[data-field="${name}"]`);
     const resource = card.dataset.resource, period = document.getElementById('meterPeriod').value;
-    const series = resource === 'heat' ? meterSeries(context.records, 'heat') : [];
-    const tariff = resource === 'heat' ? heatReadingTariff(context.heatTariffs || [], period, field('unit').value,
-        series.find(row => row.period === period), series.filter(row => row.period < period).at(-1)) : field('tariff').value;
+    const series = meterSeries(context.records, resource);
+    const tariff = readingTariff(context.tariffs || [], resource, period, field('unit').value,
+        series.find(row => row.period === period), series.filter(row => row.period < period).at(-1));
     return { resource, period,
         reading: field('reading').value, baseline: field('baseline').value, tariff: tariff ?? '',
         unit: field('unit').value, reset: field('reset').checked, note: field('note').value,
@@ -84,7 +82,7 @@ function updatePreview(card) {
     }
     try {
         const values = readCard(card);
-        if (values.resource === 'heat' && decimalValue(values.tariff) === null) throw new Error('Внесіть тариф і дату його дії у блоці «Тариф на тепло»');
+        if (decimalValue(values.tariff) === null) throw new Error(`Внесіть тариф і дату його дії для «${METER_RESOURCES[values.resource].label}» у блоці «Тарифи ресурсів будинку»`);
         const input = normalizeMeterReading(values);
         if (integerReading(input.reading) === null) throw new Error('Новий показник вводиться лише цілим числом');
         const next = context.records.filter(row => !(row.resource === input.resource && row.period === input.period));
@@ -101,20 +99,22 @@ function renderHeatSummary(period, data, area) {
     if (!host) return;
     const row = meterSeries(data.records, 'heat').find(row => row.period === period);
     const calculation = apartmentHeatCalculation(row, area, data.totalArea);
-    const title = `<h3>Тепло за площею</h3><p class="field-hint">${escapeHtml(periodLabel(period))}</p>`;
+    const title = `<h3>Теплопостачання</h3><p class="field-hint">${escapeHtml(periodLabel(period))}</p>`;
     if (!row) { host.innerHTML = title + '<p class="field-hint">За цей місяць правління ще не внесло показники тепла.</p>'; return; }
     if (row.error) { host.innerHTML = title + `<p class="meter-error">${escapeHtml(row.error)}</p>`; return; }
     if (!calculation) {
-        host.innerHTML = title + `<p class="field-hint">${decimalValue(area) > 0 ? 'Потрібно оновити загальну площу будинку: правління має заповнити відсутні площі у Довіднику. Сума оновиться автоматично.' : 'Площа вашої квартири ще не внесена до бази. Зверніться до правління.'}</p>`;
+        host.innerHTML = title + `<dl class="heat-breakdown"><div class="heat-building-total"><dt>Всього за будинок</dt><dd>${formatMoney(row.cost)} грн</dd></div></dl>
+            <p class="field-hint">${decimalValue(area) > 0 ? 'Правління має вказати коректну загальну площу будинку в розділі лічильників.' : 'Площа вашої квартири ще не внесена до бази. Зверніться до правління.'}</p>`;
         return;
     }
     const { cost, volume, perSquareMeter, totalArea, apartmentArea } = calculation;
     host.innerHTML = title + `<div class="heat-share"><strong>${formatMoney(cost)} грн</strong><span>за вашу квартиру</span></div>
-        <dl class="heat-breakdown"><div><dt>Площа квартири</dt><dd>${num(apartmentArea)} м²</dd></div>
+        <dl class="heat-breakdown"><div class="heat-building-total"><dt>Всього за будинок</dt><dd>${formatMoney(row.cost)} грн</dd></div>
+        <div><dt>Загальна площа будинку</dt><dd>${num(totalArea)} м²</dd></div>
+        <div><dt>Площа квартири</dt><dd>${num(apartmentArea)} м²</dd></div>
         <div><dt>Вартість 1 м² за місяць</dt><dd>${Number(perSquareMeter).toLocaleString('uk-UA', { maximumFractionDigits: 4 })} грн/м²</dd></div>
-        <div><dt>Частка споживання</dt><dd>${num(volume)} ${escapeHtml(row.unit)}</dd></div>
-        <div><dt>Тариф у записі правління</dt><dd>${num(row.tariff)} грн/${escapeHtml(row.unit)}</dd></div></dl>
-        <details class="meter-extra"><summary>Як розраховано</summary><p class="field-hint">${num(row.consumption)} ${escapeHtml(row.unit)} × ${num(row.tariff)} грн/${escapeHtml(row.unit)} × ${num(apartmentArea)} м² / ${num(totalArea)} м² загальної площі будинку.</p><a href="https://www.teplo.od.ua" target="_blank" rel="noopener noreferrer">Тарифи ТГО Одеси</a></details>`;
+        <div><dt>Частка споживання</dt><dd>${num(volume)} ${escapeHtml(row.unit)}</dd></div></dl>
+        <details class="meter-extra"><summary>Як розраховано</summary><p class="field-hint">${formatMoney(row.cost)} грн за будинок × ${num(apartmentArea)} м² / ${num(totalArea)} м² загальної площі будинку.</p></details>`;
 }
 
 function renderStats(view) {
@@ -141,50 +141,68 @@ async function load(view) {
         if (view === 'admin') await meterStore.syncTotalArea();
         context = await meterStore.load();
         loaded = true;
-        if (view === 'admin') { renderEntry(); renderHeatTariffs(); }
+        if (view === 'admin') { renderEntry(); renderSettings(); }
         renderStats(view);
         return true;
     } catch (error) {
         if (host) host.innerHTML = '<p class="list-empty">Не вдалося завантажити показники. Спробуйте оновити.</p>';
         toast(error.message || 'Помилка завантаження показників', 'error');
         loaded = false;
-        if (view === 'admin') renderHeatTariffs();
+        if (view === 'admin') renderSettings();
         return false;
     }
 }
 export const loadAdminMeters = () => load('admin');
 export const loadResidentMeters = () => load('resident');
 
-function renderHeatTariffs() {
-    const rows = (context.heatTariffs || []).slice().sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
-    const host = document.getElementById('heatTariffHistory');
-    if (!host) return;
-    host.innerHTML = rows.length ? `<details class="meter-extra"><summary>Збережені тарифи · ${rows.length}</summary>${rows.map(row => `<p>${num(row.tariff)} грн/Гкал · діє з ${escapeHtml(row.effectiveFrom.split('-').reverse().join('.'))}</p>`).join('')}</details>` : '<p class="field-hint">Датований тариф ще не внесено. Показники використовують тариф свого запису.</p>';
-    const fieldset = document.getElementById('heatTariffFields');
-    if (fieldset) {
-        fieldset.disabled = !loaded || saving;
-        if (!fieldset.dataset.dirty && rows.length) {
-            const today = new Date().toLocaleDateString('sv-SE');
-            const current = rows.find(row => row.effectiveFrom <= today) || rows.at(-1);
-            document.getElementById('heatTariffValue').value = current.tariff;
-            document.getElementById('heatTariffFrom').value = current.effectiveFrom;
-        }
-    }
+function disableSettings(disabled) {
+    for (const id of ['meterTariffFields', 'houseAreaFields']) document.getElementById(id).disabled = disabled;
 }
 
-async function saveHeatTariff(button) {
+function renderSettings() {
+    const host = document.getElementById('meterTariffEntry');
+    if (!host.children.length) host.innerHTML = Object.entries(METER_RESOURCES).map(([key, resource]) => `
+        <div class="meter-tariff-card" data-tariff-resource="${key}">
+            <h4><span class="meter-dot" style="background:${resource.color}"></span>${resource.label}</h4>
+            <div class="admin-document-grid"><label class="field"><span class="field-label">Тариф, грн/${resource.units[0]}</span>
+                <input class="field-input" data-tariff-value inputmode="decimal" placeholder="З рахунку постачальника"></label>
+                <label class="field"><span class="field-label">Діє з</span><input class="field-input" data-tariff-from type="date" value="${todayPeriod()}-01"></label></div>
+            <button type="button" class="btn-soft btn-compact" data-tariff-save>Зберегти тариф</button>
+        </div>`).join('');
+    const history = [], today = new Date().toLocaleDateString('sv-SE');
+    for (const [key, resource] of Object.entries(METER_RESOURCES)) {
+        const rows = (context.tariffs || []).filter(row => (row.resource || 'heat') === key)
+            .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+        const card = host.querySelector(`[data-tariff-resource="${key}"]`);
+        if (!card.dataset.dirty && rows.length) {
+            const current = rows.find(row => row.effectiveFrom <= today) || rows.at(-1);
+            card.querySelector('[data-tariff-value]').value = current.tariff;
+            card.querySelector('[data-tariff-from]').value = current.effectiveFrom;
+        }
+        for (const row of rows) history.push(`<p>${resource.label}: ${num(row.tariff)} грн/${resource.units[0]} · діє з ${escapeHtml(row.effectiveFrom.split('-').reverse().join('.'))}</p>`);
+    }
+    document.getElementById('meterTariffHistory').innerHTML = history.length
+        ? `<details class="meter-extra"><summary>Збережені тарифи · ${history.length}</summary>${history.join('')}</details>`
+        : '<p class="field-hint">До внесення датованих тарифів використовуються ціни з попередніх записів.</p>';
+    const area = document.getElementById('houseTotalArea');
+    if (!area.dataset.dirty) area.value = context.totalArea ?? '';
+    document.getElementById('houseAreaHint').textContent = context.areaSource === 'manual'
+        ? 'Площу вказало правління. Оновлення Довідника її не змінює.'
+        : 'Початкове значення — сума площ квартир із Довідника. Ви можете вказати загальну площу вручну.';
+    disableSettings(!loaded || saving);
+}
+
+async function saveSetting(button, operation, success) {
     if (!loaded || saving) return;
     try {
-        saving = true; setBusy(button, true, 'Збереження…');
-        document.getElementById('heatTariffFields').disabled = true;
+        saving = true; setBusy(button, true, 'Збереження…'); disableSettings(true);
         document.getElementById('meterInputFields').disabled = true;
-        context = await meterStore.saveHeatTariff(context, { tariff: document.getElementById('heatTariffValue').value,
-            effectiveFrom: document.getElementById('heatTariffFrom').value });
-        renderEntry(); renderHeatTariffs(); renderStats('admin');
-        toast('Тариф і дату початку дії збережено', 'success');
-    } catch (error) { toast(error.message || 'Не вдалося зберегти тариф', 'error'); }
+        context = await operation();
+        renderEntry(); renderSettings(); renderStats('admin');
+        toast(success, 'success');
+    } catch (error) { toast(error.message || 'Не вдалося зберегти', 'error'); }
     finally {
-        saving = false; document.getElementById('heatTariffFields').disabled = !loaded;
+        saving = false; disableSettings(!loaded);
         document.getElementById('meterInputFields').disabled = false; setBusy(button, false);
     }
 }
@@ -193,13 +211,13 @@ export async function loadApartmentHeat(period) {
     const host = document.getElementById('apartmentHeatEstimate');
     if (!host) return;
     const request = ++heatRequest, apt = currentApt();
-    host.innerHTML = '<h3>Тепло за площею</h3><p class="list-empty">Завантаження…</p>';
+    host.innerHTML = '<h3>Теплопостачання</h3><p class="list-empty">Завантаження…</p>';
     try {
         const [data, snap] = await Promise.all([meterStore.load(), getDocFromServer(doc(db, 'apartments', apt))]);
         if (request !== heatRequest || apt !== currentApt()) return;
         renderHeatSummary(period, data, snap.data()?.area);
     } catch {
-        if (request === heatRequest && apt === currentApt()) host.innerHTML = '<h3>Тепло за площею</h3><p class="field-hint">Не вдалося прочитати дані для розрахунку тепла. Натисніть «Оновити».</p>';
+        if (request === heatRequest && apt === currentApt()) host.innerHTML = '<h3>Теплопостачання</h3><p class="field-hint">Не вдалося прочитати дані для розрахунку тепла. Натисніть «Оновити».</p>';
     }
 }
 
@@ -209,22 +227,23 @@ async function save(btn) {
         const changes = [...document.querySelectorAll('.meter-entry-card')].map(readCard).filter(input => {
             if (dirty.has(input.resource)) return true;
             const saved = context.records.find(row => row.resource === input.resource && row.period === input.period);
-            return input.resource === 'heat' && saved && decimalValue(input.tariff) !== saved.tariff;
+            return saved && (decimalValue(input.tariff) !== decimalValue(saved.tariff)
+                || input.resource === 'heat' && decimalValue(input.totalArea) !== decimalValue(saved.totalArea));
         });
-        if (changes.some(input => input.resource === 'heat' && decimalValue(input.tariff) === null)) throw new Error('Внесіть тариф і дату його дії у блоці «Тариф на тепло»');
+        if (changes.some(input => decimalValue(input.tariff) === null)) throw new Error('Внесіть тариф і дату його дії у блоці «Тарифи ресурсів будинку»');
         validateMeterChanges(context.records, changes);
         if (!changes.length) return toast('Внесіть нові показники або змініть запис', 'error');
         saving = true;
         setBusy(btn, true, 'Збереження…');
         document.getElementById('meterInputFields').disabled = true;
-        document.getElementById('heatTariffFields').disabled = true;
+        disableSettings(true);
         context = await meterStore.save(context, changes);
         drafts.delete(document.getElementById('meterPeriod').value);
         dirty.clear();
         renderEntry({ remember: false }); renderStats('admin');
-        toast('Показники й тарифи збережено', 'success');
+        toast('Показники збережено', 'success');
     } catch (error) { toast(error.message || 'Не вдалося зберегти показники', 'error'); }
-    finally { saving = false; document.getElementById('meterInputFields').disabled = false; document.getElementById('heatTariffFields').disabled = !loaded; setBusy(btn, false); }
+    finally { saving = false; document.getElementById('meterInputFields').disabled = false; disableSettings(!loaded); setBusy(btn, false); }
 }
 
 export function initMeters() {
@@ -247,14 +266,26 @@ export function initMeters() {
                 card.querySelector('[data-field="unit"]').disabled = !!prior && !reset;
             }
             updatePreview(card);
-            const tariffLabel = card.querySelector('[data-meter-tariff-label]');
-            if (tariffLabel) tariffLabel.textContent = `Тариф, грн/${card.querySelector('[data-field="unit"]').value}`;
         });
         document.getElementById('meterSaveBtn').addEventListener('click', function () { save(this); });
         document.getElementById('meterRefreshBtn').addEventListener('click', () => { if (!saving) loadAdminMeters(); });
-        document.getElementById('heatTariffFrom').value = `${todayPeriod()}-01`;
-        document.getElementById('heatTariffFields').addEventListener('input', function () { this.dataset.dirty = '1'; });
-        document.getElementById('heatTariffSaveBtn').addEventListener('click', function () { saveHeatTariff(this); });
+        document.getElementById('meterTariffEntry').addEventListener('input', event => {
+            const card = event.target.closest('[data-tariff-resource]');
+            if (card) card.dataset.dirty = '1';
+        });
+        document.getElementById('meterTariffEntry').addEventListener('click', event => {
+            const button = event.target.closest('[data-tariff-save]');
+            if (!button) return;
+            const card = button.closest('[data-tariff-resource]');
+            saveSetting(button, () => meterStore.saveTariff(context, { resource: card.dataset.tariffResource,
+                tariff: card.querySelector('[data-tariff-value]').value,
+                effectiveFrom: card.querySelector('[data-tariff-from]').value }), 'Тариф і дату початку дії збережено');
+        });
+        document.getElementById('houseTotalArea').addEventListener('input', function () { this.dataset.dirty = '1'; });
+        document.getElementById('houseAreaSaveBtn').addEventListener('click', function () {
+            saveSetting(this, () => meterStore.saveTotalArea(context, document.getElementById('houseTotalArea').value), 'Загальну площу будинку збережено');
+        });
+        renderSettings();
     }
     for (const [view, id] of [['admin', 'meterStatistics'], ['resident', 'residentMeterStatistics']]) {
         const host = document.getElementById(id);

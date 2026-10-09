@@ -14,8 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=122">
-    <link rel="stylesheet" href="style-chat.css?v=122">
+    <link rel="stylesheet" href="style.css?v=123">
+    <link rel="stylesheet" href="style-chat.css?v=123">
 </head>
 <body>
 
@@ -1310,13 +1310,18 @@
         <!-- Вкладка: контакти (правління + технічні служби) -->
         <div class="admin-panel" data-panel="meters">
             <div class="admin-page-head"><div><h2>Загальнобудинкові лічильники</h2><p>Показники, витрата і вартість ресурсів будинку</p></div></div>
-            <div class="card"><h3>Тариф на тепло</h3>
+            <div class="card"><h3>Загальна площа будинку</h3>
+                <fieldset id="houseAreaFields" class="plain-fieldset" disabled>
+                    <label class="field"><span class="field-label">Площа, м²</span><input id="houseTotalArea" class="field-input" inputmode="decimal" placeholder="Загальна площа будинку"></label>
+                    <button id="houseAreaSaveBtn" type="button" class="btn-primary">Зберегти площу</button>
+                </fieldset>
+                <p class="field-hint" id="houseAreaHint"></p>
+                <p class="field-hint">Площа використовується для розподілу тепла між квартирами. Для виправлення вже внесеного місяця повторно збережіть його показники.</p>
+            </div>
+            <div class="card"><h3>Тарифи ресурсів будинку</h3>
                 <p class="field-hint">Внесіть тариф постачальника й дату початку його дії. Ціна автоматично підставляється в показники за вибраний місяць. Для виправлення вже внесеного місяця повторно збережіть його показники.</p>
-                <fieldset id="heatTariffFields" class="plain-fieldset" disabled><div class="admin-document-grid">
-                    <label class="field"><span class="field-label">Тариф, грн/Гкал</span><input id="heatTariffValue" class="field-input" inputmode="decimal" placeholder="З рахунку ТГО"></label>
-                    <label class="field"><span class="field-label">Діє з</span><input id="heatTariffFrom" class="field-input" type="date"></label>
-                </div><button id="heatTariffSaveBtn" type="button" class="btn-primary">Зберегти тариф</button></fieldset>
-                <div id="heatTariffHistory"></div>
+                <fieldset id="meterTariffFields" class="plain-fieldset" disabled><div id="meterTariffEntry" class="meter-entry-list"></div></fieldset>
+                <div id="meterTariffHistory"></div>
             </div>
             <div class="card">
                 <div class="meter-card-head"><h3>Внести показники</h3><button id="meterRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
@@ -1386,7 +1391,7 @@
                 <div id="apartmentMeterEntry" class="meter-entry-list apartment-meter-entry"></div><button id="apartmentMeterSaveBtn" type="button" class="btn-primary">Подати показники</button>
             </fieldset>
         </div>
-        <div class="card" id="apartmentHeatEstimate"><h3>Тепло за площею</h3><p class="list-empty">Завантаження…</p></div>
+        <div class="card" id="apartmentHeatEstimate"><h3>Теплопостачання</h3><p class="list-empty">Завантаження…</p></div>
         <div class="card"><h3>Історія моїх показників</h3><div id="apartmentMeterHistory"><p class="list-empty">Завантаження…</p></div></div>
     </div>
 
@@ -1993,7 +1998,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=122' : './js/app.js?v=122').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=123' : './js/app.js?v=123').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

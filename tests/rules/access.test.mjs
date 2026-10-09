@@ -560,3 +560,102 @@ test('правління зберігає датовані тарифи без �
     await assert.rejects(residentStore.saveHeatTariff(saved, { tariff: 0, effectiveFrom: '2026-10-01' }), /лише правління/);
     await assertFails(updateDoc(doc(resident, 'status/heat_tariff_2026-10-01'), { tariff: 0 }));
 });
+
+test('ручна площа не перезаписується Довідником, новий тепловий запис бере її, мешканець не змінює площу', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => updateDoc(doc(context.firestore(), 'apartments/45'), { area: 64 }));
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    await store.syncTotalArea();
+    const input = { resource: 'heat', period: '2026-10', reading: 120, baseline: 100, tariff: 2000 };
+    const original = await store.save(await store.load(), [input]);
+    const manual = await store.saveTotalArea(original, '10 000,5');
+    assert.equal(manual.totalArea, 10000.5); assert.equal(manual.areaSource, 'manual');
+    assert.equal(manual.records[0].totalArea, 64);
+    assert.equal(await store.syncTotalArea([{ area: 999999 }]), 10000.5);
+    await assert.rejects(store.saveTotalArea(original, 500), /іншій вкладці/);
+    const saved = await store.save(manual, [input]);
+    assert.equal(saved.records[0].totalArea, 10000.5);
+    assert.equal((await createMeterStore(resident, () => '45').load()).totalArea, 10000.5);
+    await assert.rejects(createMeterStore(resident, () => '45').saveTotalArea(saved, 1), /лише правління/);
+    for (const value of ['', 0, -1]) await assert.rejects(store.saveTotalArea(saved, value), /додатну/);
+});
+
+test('датовані тарифи електроенергії та води зберігаються разом із теплом і не змінюють минулі ціни', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    const original = await store.save(await store.load(), [{ resource: 'water', period: '2026-09', baseline: 100, reading: 110, tariff: 30 }]);
+    let context = await store.saveTariff(original, { resource: 'electricity', tariff: '4,32', effectiveFrom: '2026-10-01' });
+    context = await store.saveTariff(context, { resource: 'water', tariff: 64, effectiveFrom: '2026-11-01' });
+    context = await store.saveHeatTariff(context, { tariff: 2000, effectiveFrom: '2026-10-01' });
+    assert.equal(context.tariffs.length, 3); assert.equal(context.heatTariffs.length, 1);
+    assert.equal(context.records[0].tariff, 30);
+    assert.equal((await createMeterStore(resident, () => '45').load()).tariffs.length, 3);
+    await assert.rejects(store.saveTariff(original, { resource: 'water', tariff: 1, effectiveFrom: '2026-10-01' }), /іншій вкладці/);
+    await assert.rejects(createMeterStore(resident, () => '45').saveTariff(context, { resource: 'water', tariff: 0, effectiveFrom: '2026-11-01' }), /лише правління/);
+    await assertFails(updateDoc(doc(resident, 'status/tariff_water_2026-11-01'), { tariff: 0 }));
+});
+
+test('день/ніч та кілька водомірів зберігаються приватно, правка синхронізує лише відповідний канал', async () => {
+    await seed();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const neighbor = env.authenticatedContext('neighbor', { email: '46@uspih-25.com' }).firestore();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const store = createApartmentMeterStore(resident, () => '45');
+    const electric = { resource: 'electricity', period: '2026-09', channels: {
+        day: { reading: 1100, baseline: 1000 }, night: { reading: 700, baseline: 650 } } };
+    const water = { resource: 'water', period: '2026-09', channels: {
+        main: { name: 'Ванна', reading: 420, baseline: 400 }, water2: { name: 'Кухня', reading: 105, baseline: 100 } } };
+    let context;
+    await assert.doesNotReject(async () => { context = await store.save(await store.load(), [electric, water]); }, 'Подача дня/ночі та двох водомірів');
+    assert.equal(context.records.length, 2);
+    assert.equal(context.records.find(row => row.resource === 'water').channels.water2.name, 'Кухня');
+    context = await store.save(context, [{ ...electric, period: '2026-10', channels: {
+        day: { reading: 1200, baseline: 0 }, night: { reading: 720, baseline: 0 } } }]);
+    const nextCreated = context.records.find(row => row.period === '2026-10').createdAt.toMillis();
+    context = await store.save(context, [{ ...electric, channels: { day: { reading: 1150, baseline: 1000 }, night: electric.channels.night } }]);
+    const next = context.records.find(row => row.period === '2026-10');
+    assert.equal(next.channels.day.baseline, 1150); assert.equal(next.channels.night.baseline, 700);
+    assert.equal(next.createdAt.toMillis(), nextCreated);
+    await assertFails(getDoc(doc(neighbor, 'apartment_meter_readings/45_electricity_2026-10')));
+    const rows = await createApartmentMeterStore(admin, () => 'board').submissions('2026-09');
+    assert.equal(rows.find(row => row.resource === 'electricity').channels.night.reading, 700);
+    const keys = ['main', 'water2', 'water3', 'water4', 'water5', 'water6', 'water7', 'water8'];
+    const allWater = { resource: 'water', period: '2026-10', channels: Object.fromEntries(keys.map(key => [key,
+        { name: key, baseline: 0, reading: key === 'main' ? 430 : key === 'water2' ? 115 : 10 }])) };
+    await assert.doesNotReject(async () => { context = await store.save(context, [allWater]); }, 'Подача восьми водомірів');
+    assert.equal(Object.keys(context.records.find(row => row.resource === 'water' && row.period === '2026-10').channels).length, 8);
+    context = await store.save(context, [{ ...allWater, period: '2026-11', channels: Object.fromEntries(keys.map(key => [key,
+        { ...allWater.channels[key], reading: allWater.channels[key].reading + 5 }])) }]);
+    await assert.doesNotReject(async () => { context = await store.save(context, [{ ...allWater, channels: {
+        ...allWater.channels, main: { ...allWater.channels.main, reading: 435 } } }]); }, 'Історична правка восьми водомірів');
+    const nextWater = context.records.find(row => row.resource === 'water' && row.period === '2026-11');
+    assert.equal(nextWater.channels.main.baseline, 435); assert.equal(nextWater.channels.water2.baseline, 115);
+});
+
+test('правила перевіряють набір зон, суми каналів, цілі показники й відсутність фінансових полів', async () => {
+    await seed();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const channel = { name: 'Ванна', reading: 120, baseline: 100, reset: false, note: '' };
+    const valid = { kind: 'apartmentMeterReading', apt: '45', resource: 'water', period: '2026-09', unit: 'м³',
+        reading: 120, baseline: 100, reset: false, note: '', channels: { main: channel }, revision: 1,
+        updatedBy: '45', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    for (const patch of [{ reading: 121 }, { baseline: 99 }, { channels: {} },
+        { channels: { main: { ...channel, tariff: 999 } } }, { channels: { main: { ...channel, name: 'x'.repeat(61) } } },
+        { channels: { water9: channel } }, { channels: { main: channel, water2: null } },
+        { channels: { main: { ...channel, name: false } } }, { channels: { main: { ...channel, note: 123 } } },
+        { channels: { main: { ...channel, baseline: '100' } } },
+        { baseline: '100', channels: { main: { ...channel, baseline: '100' } } },
+        { reading: -1, baseline: 0, channels: { main: { ...channel, baseline: 0, reading: -1 } } },
+        { reading: 120.5, channels: { main: { ...channel, reading: 120.5 } } },
+        { resource: 'electricity', unit: 'кВт·год', channels: { day: channel } }]) {
+        const data = { ...valid, ...patch }, batch = writeBatch(resident);
+        batch.set(doc(resident, 'apartments/45/meter_state/current'), { revision: 1, updatedAt: serverTimestamp() });
+        batch.set(doc(resident, `apartment_meter_readings/45_${data.resource}_2026-09`), data);
+        await assertFails(batch.commit());
+    }
+    assert.equal((await getDoc(doc(resident, 'apartments/45/meter_state/current'))).exists(), false);
+});

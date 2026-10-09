@@ -6,6 +6,7 @@ export const METER_RESOURCES = {
 };
 export const METER_KIND = 'houseMeterReading';
 export const HEAT_TARIFF_KIND = 'houseHeatTariff';
+export const RESOURCE_TARIFF_KIND = 'houseResourceTariff';
 
 /** Порожнє або зіпсоване число не перетворюється на нуль. */
 export function decimalValue(value) {
@@ -22,36 +23,44 @@ export function integerReading(value) {
 }
 
 export function validPeriod(period) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || '')); }
-export function normalizeHeatTariff(input) {
+export function normalizeResourceTariff(input) {
+    const resource = METER_RESOURCES[input.resource];
+    if (!resource) throw new Error('Оберіть ресурс для тарифу');
     const effectiveFrom = String(input.effectiveFrom || '');
     const date = new Date(`${effectiveFrom}T12:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) || !Number.isFinite(date.getTime())
         || date.toISOString().slice(0, 10) !== effectiveFrom) throw new Error('Вкажіть дату початку дії тарифу');
     const tariff = decimalValue(input.tariff);
-    if (tariff === null || tariff < 0 || tariff > 1e10) throw new Error('Вкажіть невід’ємний тариф на тепло, грн/Гкал');
-    return { kind: HEAT_TARIFF_KIND, unit: 'Гкал', effectiveFrom, tariff };
+    if (tariff === null || tariff < 0 || tariff > 1e10) throw new Error(`Вкажіть невід’ємний тариф: ${resource.label}, грн/${resource.units[0]}`);
+    return { kind: input.resource === 'heat' ? HEAT_TARIFF_KIND : RESOURCE_TARIFF_KIND,
+        resource: input.resource, unit: resource.units[0], effectiveFrom, tariff };
 }
+export const normalizeHeatTariff = input => normalizeResourceTariff({ ...input, resource: 'heat' });
 
 /** У місячний облік підставляємо тариф, чинний на початок місяця. */
-export function heatTariffForPeriod(tariffs, period) {
+export function resourceTariffForPeriod(tariffs, resource, period) {
     if (!validPeriod(period)) return null;
-    return tariffs.filter(row => row.effectiveFrom <= `${period}-01` && row.unit === 'Гкал')
+    return tariffs.filter(row => (row.resource || 'heat') === resource && row.effectiveFrom <= `${period}-01`
+        && row.unit === METER_RESOURCES[resource]?.units[0])
         .slice().sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null;
 }
+export const heatTariffForPeriod = (tariffs, period) => resourceTariffForPeriod(tariffs, 'heat', period);
 
 /** Єдине джерело ціни — датований тариф; старі записи працюють до його внесення. */
-export function heatReadingTariff(tariffs, period, unit, current, prior) {
+export function readingTariff(tariffs, resource, period, unit, current, prior) {
     // 1 МВт·год = 3,6 ГДж; 1 Гкал = 4,1868 ГДж.
     const gcalPerUnit = { 'Гкал': 1, 'МВт·год': 3.6 / 4.1868 };
-    if (!gcalPerUnit[unit]) return null;
-    for (const source of [heatTariffForPeriod(tariffs, period), current, prior]) {
+    if (!METER_RESOURCES[resource]?.units.includes(unit)) return null;
+    for (const source of [resourceTariffForPeriod(tariffs, resource, period), current, prior]) {
         const tariff = decimalValue(source?.tariff);
-        if (tariff !== null && tariff >= 0 && gcalPerUnit[source?.unit]) {
-            return tariff * gcalPerUnit[unit] / gcalPerUnit[source.unit];
+        if (tariff !== null && tariff >= 0) {
+            if (source.unit === unit) return tariff;
+            if (resource === 'heat' && gcalPerUnit[source.unit]) return tariff * gcalPerUnit[unit] / gcalPerUnit[source.unit];
         }
     }
     return null;
 }
+export const heatReadingTariff = (tariffs, period, unit, current, prior) => readingTariff(tariffs, 'heat', period, unit, current, prior);
 export const meterRecordId = (resource, period) => `meter_${resource}_${period}`;
 export const periodLabel = period => validPeriod(period)
     ? new Date(`${period}-01T12:00:00`).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' }) : String(period || '');

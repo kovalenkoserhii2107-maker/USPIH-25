@@ -156,26 +156,62 @@ service cloud.firestore {
                  && readingId.split('_')[0] == myApt()
                  && readingId.split('_')[1] in ['electricity', 'water']
                  && readingId.split('_')[2].matches('[0-9]{4}-(0[1-9]|1[0-2])');
+      function okMeterChannel(c) {
+        // Межа показника перевіряється за сумою в документі.
+        return c.keys().hasOnly(['name', 'reading', 'baseline', 'reset', 'note'])
+          && c.name.matches('(?s).{1,60}')
+          && c.reading is int
+          && c.baseline >= 0 && c.baseline <= c.reading
+          && c.reset is bool && c.note.matches('(?s).{0,500}');
+      }
+      function okWaterChannels(data, channels) {
+        let values = channels.values();
+        let count = values.size();
+        return channels.keys().hasOnly(['main', 'water2', 'water3', 'water4', 'water5', 'water6', 'water7', 'water8'])
+          && (count < 1 || okMeterChannel(values[0]))
+          && (count < 2 || okMeterChannel(values[1]))
+          && (count < 3 || okMeterChannel(values[2]))
+          && (count < 4 || okMeterChannel(values[3]))
+          && (count < 5 || okMeterChannel(values[4]))
+          && (count < 6 || okMeterChannel(values[5]))
+          && (count < 7 || okMeterChannel(values[6]))
+          && (count < 8 || okMeterChannel(values[7]))
+          && data.reading == (count < 1 ? 0 : values[0].reading) + (count < 2 ? 0 : values[1].reading) + (count < 3 ? 0 : values[2].reading) + (count < 4 ? 0 : values[3].reading) + (count < 5 ? 0 : values[4].reading) + (count < 6 ? 0 : values[5].reading) + (count < 7 ? 0 : values[6].reading) + (count < 8 ? 0 : values[7].reading)
+          && data.baseline == (count < 1 ? 0 : values[0].baseline) + (count < 2 ? 0 : values[1].baseline) + (count < 3 ? 0 : values[2].baseline) + (count < 4 ? 0 : values[3].baseline) + (count < 5 ? 0 : values[4].baseline) + (count < 6 ? 0 : values[5].baseline) + (count < 7 ? 0 : values[6].baseline) + (count < 8 ? 0 : values[7].baseline);
+      }
+      function okElectricityChannels(d, c) {
+        return (c.size() == 1 && c.keys().hasAll(['main']) && okMeterChannel(c.main)
+                && d.reading == c.main.reading && d.baseline == c.main.baseline)
+          || (c.size() == 2 && c.keys().hasAll(['day', 'night'])
+              && okMeterChannel(c.day) && okMeterChannel(c.night)
+              && d.reading == c.day.reading + c.night.reading && d.baseline == c.day.baseline + c.night.baseline);
+      }
       function validApartmentReading() {
         let d = request.resource.data;
-        let state = /databases/$(database)/documents/apartments/$(myApt())/meter_state/current;
+        let channels = d.get('channels', {});
+        let apt = myApt();
+        let state = /databases/$(database)/documents/apartments/$(apt)/meter_state/current;
         return d.keys().hasOnly(['kind', 'apt', 'resource', 'period', 'unit', 'reading', 'baseline', 'reset', 'note',
-                                'revision', 'createdAt', 'updatedAt', 'updatedBy'])
-          && d.kind == 'apartmentMeterReading' && d.apt == myApt()
-          && readingId == myApt() + '_' + d.resource + '_' + d.period
+                                'revision', 'createdAt', 'updatedAt', 'updatedBy', 'channels'])
+          && d.kind == 'apartmentMeterReading' && d.apt == apt
+          && readingId == apt + '_' + d.resource + '_' + d.period
           && d.resource in ['electricity', 'water']
-          && d.period is string && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])')
-          && ((d.resource == 'electricity' && d.unit == 'кВт·год') || (d.resource == 'water' && d.unit == 'м³'))
-          && d.reading is number && d.reading >= 0 && d.reading <= 10000000000
-          && d.baseline is number && d.baseline >= 0 && d.baseline <= d.reading
-          && d.reset is bool && d.note is string && d.note.size() <= 500
-          && d.updatedBy == myApt() && d.updatedAt == request.time
+          && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])')
+          && d.unit == (d.resource == 'electricity' ? 'кВт·год' : 'м³')
+          && d.reading <= 10000000000
+          && d.reset is bool && d.note.matches('(?s).{0,500}')
+          // Для набору приладів типи й межі визначають перевірені суми каналів.
+          && ('channels' in d ? (channels is map && channels.size() > 0
+                && (d.resource == 'electricity' ? okElectricityChannels(d, channels) : okWaterChannels(d, channels)))
+              : (d.reading is number && d.reading >= 0
+                  && d.baseline is number && d.baseline >= 0 && d.baseline <= d.reading))
+          && d.updatedBy == apt && d.updatedAt == request.time
           && d.revision is int && d.revision == getAfter(state).data.revision
-          && d.revision == (exists(state) ? get(state).data.revision + 1 : 1);
+          && d.revision == (exists(state) ? get(state).data.revision + 1 : 1)
+          && (resource == null ? d.createdAt == request.time
+              : resource.data.apt == apt && d.createdAt == resource.data.createdAt);
       }
-      allow create: if isSignedIn() && validApartmentReading() && request.resource.data.createdAt == request.time;
-      allow update: if isSignedIn() && resource.data.apt == myApt() && validApartmentReading()
-                    && request.resource.data.createdAt == resource.data.createdAt;
+      allow create, update: if isSignedIn() && validApartmentReading();
       allow write: if isAdmin();
     }
 
