@@ -8,6 +8,7 @@
 // схована десь нижче.
 // ============================================================
 import { db } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, collectionGroup, doc, getDocs,
     updateDoc, writeBatch, serverTimestamp
@@ -289,6 +290,7 @@ async function approve(apt, id, btn) {
         });
 
         invalidateDirectory();
+        await audit('owners.approve', { target: `apartments/${apt}`, summary: `Кв. ${apt}: заявку на зміну співвласників прийнято` });
         toast(`Кв. ${apt}: зміни застосовано`, 'success');
         await loadVerifyQueue();
     } catch (e) {
@@ -325,6 +327,7 @@ async function reject(apt, id) {
                 + 'й надішліть ще раз — або підтвердіть список, якщо він усе-таки вірний.'
         });
 
+        await audit('owners.reject', { target: `apartments/${apt}`, summary: `Кв. ${apt}: заявку відхилено`, details: { note } });
         toast(`Кв. ${apt}: заявку відхилено`, 'success');
         await loadVerifyQueue();
     } catch (e) {
@@ -365,6 +368,7 @@ export async function confirmByBoard(apt) {
         });
 
         invalidateDirectory();
+        await audit('owners.confirm', { target: `apartments/${apt}`, summary: `Кв. ${apt}: список співвласників підтверджено`, details: { note } });
         toast(`Кв. ${apt}: список підтверджено`, 'success');
         return true;
     } catch (e) {
@@ -412,6 +416,7 @@ async function saveOwnersAsBoard(btn) {
                 + 'й надішліть на перевірку.'
         });
         invalidateDirectory();
+        await audit('owners.edit', { target: `apartments/${apt}`, summary: `Кв. ${apt}: список співвласників змінено правлінням` });
         toast('Список збережено й позначено як звірений', 'success');
         await closeOwnersEditor();
         const { showScreen } = await import('./ui.js');

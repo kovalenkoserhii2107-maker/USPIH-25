@@ -3,6 +3,7 @@
 // історія розсилок адміна.
 // ============================================================
 import { db, storage, session } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, addDoc, getDocs, doc, query, orderBy, where,
     serverTimestamp, writeBatch, limit, startAfter
@@ -94,6 +95,7 @@ export async function sendMessage(btn) {
             readBy: {}
         });
 
+        await audit('message.send', { target: 'messages', summary: `Оголошення «${title}»`, details: { targetType, targetValue } });
         toast('Повідомлення надіслано', 'success');
         resetMessageForm();
         await loadAdminHistory();

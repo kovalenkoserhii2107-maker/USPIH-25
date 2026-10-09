@@ -7,7 +7,8 @@
 // підколекція квартири, тож мешканець бачить лише свої.
 // Звіт про витрати спільний для всіх і лежить у finance/current.
 // ============================================================
-import { db, storage, session } from './firebase.js';
+import { db, storage, session, currentApt } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
     query, orderBy, serverTimestamp, writeBatch
@@ -351,10 +352,12 @@ export async function applyBalances(btn) {
             const batch = writeBatch(db);
             valid.slice(i, i + 400).forEach(r => {
                 batch.set(doc(db, 'apartments', r.apt),
-                    { balance: r.balance, balanceUpdatedAt: serverTimestamp() }, { merge: true });
+                    { balance: r.balance, balanceUpdatedAt: serverTimestamp(), balanceUpdatedBy: currentApt() }, { merge: true });
             });
             await batch.commit();
         }
+        await audit('balances.update', { target: 'apartments', summary: `Баланси оновлено: ${valid.length} кв.`,
+            details: { count: valid.length, balances: Object.fromEntries(valid.map(r => [r.apt, r.balance])) } });
         toast(`Оновлено балансів: ${valid.length}${unknown ? `, невідомих квартир: ${unknown}` : ''}`,
               unknown ? 'info' : 'success');
         document.getElementById('balanceBulk').value = '';
@@ -467,6 +470,8 @@ export async function uploadReceipts(btn) {
     }
 
     setBusy(btn, false);
+    if (done) await audit('receipts.upload', { target: 'receipts', summary: `Квитанції за «${period}»: ${done} файл.`,
+        details: { period, count: done, apartments: [...new Set(ready.map(r => r.apt))].slice(0, 400) } });
     if (failed.length) {
         toast(`Не завантажено: ${failed.length}. Решта — успішно.`, 'error');
     } else {
@@ -532,6 +537,8 @@ export async function saveExpenses(btn) {
             total: items.reduce((s, i) => s + i.amount, 0),
             updatedAt: serverTimestamp()
         });
+        await audit('finance.report', { target: 'finance/current', summary: `Фінансовий звіт «${period}» опубліковано`,
+            details: { period, income: incomeRaw, funds: fundsRaw, items: items.length } });
         toast('Звіт опубліковано', 'success');
     } catch (e) {
         console.error('Звіт про витрати:', e);
@@ -827,6 +834,7 @@ export async function saveRequisites(btn) {
             { payeeName, edrpou, iban, purposeTemplate, houseAddress, updatedAt: serverTimestamp() },
             { merge: true });
         requisites = null;              // щоб мешканець побачив свіже
+        await audit('finance.requisites', { target: 'osbb_settings/finance', summary: 'Платіжні реквізити змінено' });
         toast('Реквізити збережено', 'success');
     } catch (e) {
         console.error('Збереження реквізитів:', e);
@@ -894,11 +902,13 @@ export async function uploadDebtsCSV(file, btn) {
             const batch = writeBatch(db);
             valid.slice(i, i + 400).forEach(r => {
                 batch.set(doc(db, 'apartments', r.apt),
-                    { balance: r.balance, balanceUpdatedAt: serverTimestamp() }, { merge: true });
+                    { balance: r.balance, balanceUpdatedAt: serverTimestamp(), balanceUpdatedBy: currentApt() }, { merge: true });
             });
             await batch.commit();
         }
 
+        await audit('balances.import', { target: 'apartments', summary: `Баланси з файлу: ${valid.length} кв.`,
+            details: { count: valid.length, balances: Object.fromEntries(valid.map(r => [r.apt, r.balance])) } });
         const extra = [
             unknown ? `невідомих квартир: ${unknown}` : '',
             errors.length ? `нерозпізнаних рядків: ${errors.length}` : ''
@@ -971,6 +981,8 @@ export async function applyAccounts(btn) {
             });
             await batch.commit();
         }
+        await audit('accounts.import', { target: 'apartments', summary: `Особові рахунки: ${valid.length} кв.`,
+            details: { count: valid.length, accounts: Object.fromEntries(valid.map(r => [r.apt, r.account])) } });
         const extra = [
             unknown ? `невідомих квартир: ${unknown}` : '',
             errors.length ? `нерозпізнаних рядків: ${errors.length}` : ''

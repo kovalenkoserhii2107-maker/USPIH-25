@@ -9,6 +9,7 @@
 // тому модуль один, а групи описані таблицею GROUPS.
 // ============================================================
 import { db, storage } from './firebase.js';
+import { audit } from './audit.js';
 import {
     doc, getDoc, getDocs, setDoc, deleteDoc, collection, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -303,6 +304,7 @@ async function saveMember(key, roleId, btn) {
             card.querySelector('.admin-card-title').textContent = label;
             card.querySelector('.admin-card-sub').textContent = data.name || 'Контакти ще не заповнені';
         }
+        await audit('contacts.save', { target: `${group.collection}/${roleId}`, summary: `Контакти «${label}» збережено` });
         toast('Контакти збережено', 'success');
     } catch (e) {
         console.error('Збереження контакту:', e);
@@ -323,6 +325,7 @@ async function deletePosition(key, roleId) {
 
     try {
         await deleteDoc(doc(db, group.collection, roleId));
+        await audit('contacts.delete', { target: `${group.collection}/${roleId}`, summary: `Посаду «${label}» видалено` });
         toast('Посаду видалено', 'success');
         await loadAdminGroup(key);
     } catch (e) {

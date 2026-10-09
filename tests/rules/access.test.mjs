@@ -422,7 +422,7 @@ test('правління зберігає показники й тариф, ме
     assert.equal(first.records[0].tariff, 4.32);
     const residentStore = createMeterStore(resident, () => '45');
     assert.equal((await residentStore.load()).records[0].reading, 1200);
-    await assert.rejects(residentStore.save(first, [{ ...first.records[0], reading: 0 }]), /лише правління/);
+    await assert.rejects(residentStore.save(first, [{ ...first.records[0], reading: 0 }]), /лише бухгалтер або голова правління/);
     await assertFails(updateDoc(doc(resident, 'status/meter_electricity_2026-09'), { tariff: 0 }));
     const anonymous = env.unauthenticatedContext().firestore();
     await assertFails(getDoc(doc(anonymous, 'status/meter_electricity_2026-09')));
@@ -519,7 +519,7 @@ test('загальна площа публікується з бази, збер
         baseline: 100, tariff: 5, totalArea: context.totalArea }]);
     assert.equal(saved.totalArea, 164.5); assert.equal(saved.revision, 1);
     assert.equal((await createMeterStore(resident, () => '45').load()).totalArea, 164.5);
-    await assert.rejects(createMeterStore(resident, () => '45').syncTotalArea(), /лише правління/);
+    await assert.rejects(createMeterStore(resident, () => '45').syncTotalArea(), /лише бухгалтер або голова правління/);
     await assertFails(updateDoc(doc(resident, 'status/house_meter_state'), { totalArea: 1 }));
 });
 
@@ -557,7 +557,7 @@ test('правління зберігає датовані тарифи без �
     await assert.rejects(store.saveHeatTariff(original, { tariff: 2000, effectiveFrom: '2026-11-01' }), /іншій вкладці/);
     const residentStore = createMeterStore(resident, () => '45');
     assert.equal((await residentStore.load()).heatTariffs[0].effectiveFrom, '2026-10-01');
-    await assert.rejects(residentStore.saveHeatTariff(saved, { tariff: 0, effectiveFrom: '2026-10-01' }), /лише правління/);
+    await assert.rejects(residentStore.saveHeatTariff(saved, { tariff: 0, effectiveFrom: '2026-10-01' }), /лише бухгалтер або голова правління/);
     await assertFails(updateDoc(doc(resident, 'status/heat_tariff_2026-10-01'), { tariff: 0 }));
 });
 
@@ -578,7 +578,7 @@ test('ручна площа не перезаписується Довідник
     const saved = await store.save(manual, [input]);
     assert.equal(saved.records[0].totalArea, 10000.5);
     assert.equal((await createMeterStore(resident, () => '45').load()).totalArea, 10000.5);
-    await assert.rejects(createMeterStore(resident, () => '45').saveTotalArea(saved, 1), /лише правління/);
+    await assert.rejects(createMeterStore(resident, () => '45').saveTotalArea(saved, 1), /лише бухгалтер або голова правління/);
     for (const value of ['', 0, -1]) await assert.rejects(store.saveTotalArea(saved, value), /додатну/);
 });
 
@@ -595,7 +595,7 @@ test('датовані тарифи електроенергії та води �
     assert.equal(context.records[0].tariff, 30);
     assert.equal((await createMeterStore(resident, () => '45').load()).tariffs.length, 3);
     await assert.rejects(store.saveTariff(original, { resource: 'water', tariff: 1, effectiveFrom: '2026-10-01' }), /іншій вкладці/);
-    await assert.rejects(createMeterStore(resident, () => '45').saveTariff(context, { resource: 'water', tariff: 0, effectiveFrom: '2026-11-01' }), /лише правління/);
+    await assert.rejects(createMeterStore(resident, () => '45').saveTariff(context, { resource: 'water', tariff: 0, effectiveFrom: '2026-11-01' }), /лише бухгалтер або голова правління/);
     await assertFails(updateDoc(doc(resident, 'status/tariff_water_2026-11-01'), { tariff: 0 }));
 });
 

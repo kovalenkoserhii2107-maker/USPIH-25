@@ -2,6 +2,7 @@
 // Старі голоси квартири читаються без міграції. Нові документи мають ownerId
 // і не змінюють відповіді інших власників або вже внесені електронні голоси.
 import { db, session } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, getDocs, doc, runTransaction, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -115,6 +116,7 @@ async function saveMarked(btn) {
             skipped += result.already;
             active.saved += result.written;
         }
+        if (saved) await audit('votes.paper', { target: `polls/${active.poll.id}`, summary: `Паперові голоси: ${saved}`, details: { saved, skipped } });
         toast(`Внесено голосів: ${saved}${skipped ? `. Уже внесено: ${skipped}` : ''}`, saved ? 'success' : 'info');
     } catch (error) {
         console.error('Паперові голоси:', error);

@@ -13,6 +13,7 @@
 // повторювати їх у кожному не потрібно, але й не завадить.
 // ============================================================
 import { db } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, doc, getDocs, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -363,6 +364,8 @@ async function run(btn) {
     try {
         const res = await writeImport(parsed.apts, overwrite,
             (done, total) => setBusy(btn, true, `Запис ${done} із ${total}…`));
+        await audit('owners.import', { target: 'apartments', summary: `Імпорт довідника: ${res.written} кв.`,
+            details: { written: res.written, skipped: res.skipped.length, overwriteConfirmed: Boolean(overwrite) } });
         toast(`Записано ${res.written}`
             + (res.skipped.length ? `, пропущено звірених: ${res.skipped.length}` : ''), 'success');
         const { loadDirectory } = await import('./directory.js');

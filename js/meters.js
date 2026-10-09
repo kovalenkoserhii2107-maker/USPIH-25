@@ -2,6 +2,7 @@ import { meterStore } from './meter-store.js';
 import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, integerReading, decimalValue, readingTariff } from './meter-core.js';
 import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
 import { escapeHtml, toast, setBusy, formatMoney } from './ui.js';
+import { audit } from './audit.js';
 
 let context = { revision: 0, records: [] };
 let loaded = false, saving = false;
@@ -172,6 +173,7 @@ async function saveSetting(button, operation, success) {
         document.getElementById('meterInputFields').disabled = true;
         context = await operation();
         renderEntry(); renderSettings(); renderStats('admin');
+        await audit('meters.settings', { target: 'status', summary: success });
         toast(success, 'success');
     } catch (error) { toast(error.message || 'Не вдалося зберегти', 'error'); }
     finally {
@@ -200,6 +202,7 @@ async function save(btn) {
         drafts.delete(document.getElementById('meterPeriod').value);
         dirty.clear();
         renderEntry({ remember: false }); renderStats('admin');
+        await audit('meters.save', { target: 'status', summary: `Показники будинку: ${changes.map(row => `${METER_RESOURCES[row.resource]?.label || row.resource} ${row.period}`).join(', ')}` });
         toast('Показники збережено', 'success');
     } catch (error) { toast(error.message || 'Не вдалося зберегти показники', 'error'); }
     finally { saving = false; document.getElementById('meterInputFields').disabled = false; disableSettings(!loaded); setBusy(btn, false); }

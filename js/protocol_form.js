@@ -11,6 +11,7 @@
 // за що насправді голосували, а не те, що планували.
 // ============================================================
 import { db } from './firebase.js';
+import { audit } from './audit.js';
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, lockScroll, unlockScroll } from './ui.js';
 import { agendaOf, meetingWhen, isChairQuestion, chairVoteError, chairVoteTally } from './meeting.js';
@@ -127,6 +128,7 @@ async function submit(btn) {
         const done = state.onDone;
         state.saving = false;
         closeProtocolForm();
+        await audit('protocol.publish', { target: `polls/${filled.id}`, summary: `Протокол зборів «${filled.title}» опубліковано` });
         toast('Протокол опубліковано та надіслано мешканцям', 'success');
         done?.();
     } catch (e) {

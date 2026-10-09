@@ -9,6 +9,7 @@
 // помилка тут гірша за один вибір руками.
 // ============================================================
 import { db, app } from './firebase.js';
+import { audit } from './audit.js';
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     getFunctions, httpsCallable
@@ -57,6 +58,7 @@ async function save(btn) {
     try {
         await setDoc(doc(db, ...SETTINGS.split('/')),
             { dtekGroup: value ? `GPV${value}` : '' }, { merge: true });
+        await audit('dtek.group', { target: SETTINGS, summary: value ? `Черга ДТЕК: ${value}` : 'Чергу ДТЕК прибрано' });
 
         if (!value) {
             toast('Чергу прибрано', 'success');
