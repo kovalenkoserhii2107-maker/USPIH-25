@@ -8,8 +8,9 @@ import { ref, uploadString } from 'firebase/storage';
 let env;
 before(async () => {
     env = await initializeTestEnvironment({
-        // Окремий проєкт: файли тестів ідуть паралельно й не стирають дані одне одному.
-        projectId: 'uspih-25-roles-test',
+        // Той самий проєкт, що й у емулятора: правила Storage читають ролі
+        // з Firestore саме цього проєкту. Файли тестів ідуть по черзі.
+        projectId: 'uspih-25-rules-test',
         firestore: { rules: await readFile('firestore.rules', 'utf8') },
         storage: { rules: await readFile('storage.rules', 'utf8') }
     });
