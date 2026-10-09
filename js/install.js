@@ -22,14 +22,19 @@ export function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     // Шлях відносний: на GitHub Pages застосунок лежить у підтеці
     // /USPIH-25/, і абсолютний «/sw.js» вказував би не туди.
-    window.addEventListener('load', () => {
+    const register = () => {
         // updateViaCache: 'none' — щоб браузер брав сам sw.js із мережі,
         // а не з HTTP-кешу. Safari інакше тримає старий воркер до доби,
         // і оновлення застосунку до користувача просто не доходить.
         navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
             .then(reg => reg.update().catch(() => {}))
             .catch(e => console.warn('Service Worker не зареєстровано:', e));
-    });
+    };
+    // app.js підключається динамічним import(), який не затримує load:
+    // зазвичай подія вже минула, і слухач на неї не спрацював би ніколи —
+    // воркер не ставився на нових пристроях і після аварійного скидання.
+    if (document.readyState === 'complete') register();
+    else window.addEventListener('load', register, { once: true });
 }
 
 // ------------------------------------------------------------

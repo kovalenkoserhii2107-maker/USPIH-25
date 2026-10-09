@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '123';
+const VERSION = '124';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -142,10 +142,19 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // Частини збірки мають хеш вмісту в імені: новий код — нове імʼя,
+    // тож файл за тим самим шляхом ніколи не змінюється. Частини для
+    // кабінету лежать в оболонці, а модулі правління кешуються при
+    // першому відкритті вкладки.
+    if (url.pathname.includes('/js/chunks/')) {
+        event.respondWith(cacheFirst(req));
+        return;
+    }
+
     // HTML та файли без версії спочатку читаємо з мережі.
     // Це дає свіжу оболонку та не змішує вихідні JS-модулі
     // різних версій під час локальної розробки або preview.
-    event.respondWith(networkFirst(req));
+    event.respondWith(networkFirst(req, event));
 });
 
 async function cacheFirst(req) {
@@ -159,28 +168,48 @@ async function cacheFirst(req) {
     return response;
 }
 
-async function networkFirst(req) {
+// Скільки сторінка чекає на мережу, поки не відкриється з кешу.
+// На слабкому мобільному звʼязку запит може висіти десятки секунд,
+// перш ніж остаточно впасти, — і весь цей час мешканець бачив білий екран.
+const NAVIGATION_TIMEOUT = 4000;
+
+async function networkFirst(req, event) {
     const cache = await caches.open(CACHE);
-    try {
-        // cache: 'no-cache' — не примха, а обовʼязкова умова.
-        //
-        // GitHub Pages віддає файли з max-age=600, а браузерний HTTP-кеш
-        // стоїть ПЕРЕД воркером: звичайний fetch(req) до десяти хвилин
-        // повертав старий файл, хоч на сервері вже лежав новий. Виходила
-        // та сама суміш версій, від якої мала рятувати «мережа-перша».
-        // no-cache змушує спитати сервер; якщо файл не змінився, той
-        // відповість 304 — це дешево.
-        //
-        // Беремо req.url, а не сам req: у запиту навігації режим
-        // 'navigate', і конструювання нового Request з нього має власні
-        // тонкощі, які тут ні до чого.
-        const fresh = await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
+    const cached = async () => (await cache.match(req))
+        || (req.mode === 'navigate' ? await cache.match('./index.html') : null);
+    // cache: 'no-cache' — не примха, а обовʼязкова умова.
+    //
+    // GitHub Pages віддає файли з max-age=600, а браузерний HTTP-кеш
+    // стоїть ПЕРЕД воркером: звичайний fetch(req) до десяти хвилин
+    // повертав старий файл, хоч на сервері вже лежав новий. Виходила
+    // та сама суміш версій, від якої мала рятувати «мережа-перша».
+    // no-cache змушує спитати сервер; якщо файл не змінився, той
+    // відповість 304 — це дешево.
+    //
+    // Беремо req.url, а не сам req: у запиту навігації режим
+    // 'navigate', і конструювання нового Request з нього має власні
+    // тонкощі, які тут ні до чого.
+    const network = fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(fresh => {
         // Кешуємо лише вдалі відповіді свого походження
         if (fresh && fresh.ok && fresh.type === 'basic') cache.put(req, fresh.clone());
         return fresh;
+    });
+
+    if (req.mode === 'navigate') {
+        // Повільна мережа не скасовується: свіжа сторінка ляже в кеш
+        // і відкриється наступного разу.
+        event.waitUntil(network.catch(() => {}));
+        const first = await Promise.race([
+            network.then(response => ({ response }), () => ({})),
+            new Promise(resolve => setTimeout(() => resolve({}), NAVIGATION_TIMEOUT))
+        ]);
+        if (first.response) return first.response;
+        const fallback = await cached();
+        if (fallback) return fallback;
+    }
+    try {
+        return await network;
     } catch (e) {
-        return (await cache.match(req))
-            || (req.mode === 'navigate' ? await cache.match('./index.html') : null)
-            || Response.error();
+        return (await cached()) || Response.error();
     }
 }

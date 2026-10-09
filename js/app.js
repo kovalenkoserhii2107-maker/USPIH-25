@@ -196,7 +196,7 @@ async function loadCabinet(apt) {
             String(session.area).replace('.', ',');
         await Promise.all([
             loadOwners(apt), loadUserMessages(apt, session.entrance),
-            loadBalance(apt), loadExpenses(), loadPowerSchedule()
+            loadBalance(apt, snap.exists() ? snap.data() : {}), loadExpenses(), loadPowerSchedule()
         ]);
 
         // Кнопку малює loadBalance, тож слухача вішаємо після нього
