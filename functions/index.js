@@ -402,10 +402,16 @@ const notify = require('./notify')({ db });
 // Нарахування внесків і баланс мешканця з історії (див. charges.js).
 const charges = require('./charges')({ db, FieldValue, Timestamp, requireAdmin, staffRole });
 exports.chargesAction = charges.chargesAction;
-const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances: charges });
-exports.bankAction = bank.bankAction;
-exports.syncBank = bank.syncBank;
 
 // Вихідні платежі через API: бухгалтер підтверджує, голова підписує в Приват24.
 const payments = require('./payments')({ db, FieldValue, requireAdmin, staffRole, notify });
 exports.paymentAction = payments.paymentAction;
+
+// Витрати й договори: документи, затвердження, оплата (див. expenses.js).
+const expenses = require('./expenses')({ db, FieldValue, requireAdmin, staffRole, notify, payments });
+exports.expenseAction = expenses.expenseAction;
+
+// Банк — після витрат: виписка закриває документи, сплачені постачальникам.
+const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances: charges, expenses });
+exports.bankAction = bank.bankAction;
+exports.syncBank = bank.syncBank;

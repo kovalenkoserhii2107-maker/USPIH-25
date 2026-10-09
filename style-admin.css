@@ -1872,3 +1872,6 @@
 .sign-foot .btn-soft { width: auto; }
 .sign-push { color: #64748b; font-size: 12.5px; }
 .sign-push.is-on { color: #1e7a35; }
+.sign-approve { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #fff7ed; color: #92400e; text-decoration: none; }
+.sign-approve b { font-size: 14px; }
+.sign-approve span { font-size: 12.5px; }

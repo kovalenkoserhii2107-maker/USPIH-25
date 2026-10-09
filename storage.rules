@@ -71,6 +71,14 @@ service firebase.storage {
       allow delete: if manager();
     }
 
+    // Рахунки, акти, накладні й договори. Завантажують голова й
+    // бухгалтер; документ у базі створює сервер (expenseAction).
+    match /expenses/{file=**} {
+      allow read: if accountant();
+      allow create, update: if accountant() && safeUpload(20);
+      allow delete: if accountant();
+    }
+
     match /receipts/{apt}/{file=**} {
       allow read: if signedIn() && (apt == myApt() || admin());
       allow write: if accountant() && (request.resource == null || safeUpload(20));

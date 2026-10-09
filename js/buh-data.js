@@ -173,3 +173,40 @@ export async function chargeAct(payload, timeoutMs = 120000) {
         invalidate();
     }
 }
+
+// ------------------------------------------------------------
+// ВИТРАТИ Й ДОГОВОРИ
+// ------------------------------------------------------------
+export const EXPENSE_STATUS = {
+    pending: ['Чекає голову', 'is-review'], approved: ['До оплати', 'is-income'], paid: ['Оплачено', 'is-payment'],
+    rejected: ['Відхилено', 'is-error'], canceled: ['Скасовано', '']
+};
+export const CONTRACT_STATUS = { pending: ['Чекає голову', 'is-review'], approved: ['Затверджено', 'is-payment'], rejected: ['Відхилено', 'is-error'] };
+
+/** Постачальники, договори, документи, поріг і нагадування — із сервера. */
+export const loadExpenses = () => once('expenses', () => callBackend('expenseAction', { action: 'context' }));
+
+/** Дія з витратами — на сервері, з журналом; голові — push, коли потрібне його рішення. */
+export async function expAct(payload, timeoutMs = 60000) {
+    try {
+        return await callBackend('expenseAction', payload, timeoutMs);
+    } finally {
+        invalidate();
+    }
+}
+
+/** Файли документа — у сховище (теку expenses/); у базу їх записує сервер. */
+export async function uploadExpenseFiles(files) {
+    const { storage } = await import('./firebase.js');
+    const { ref, uploadBytes, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js');
+    const month = new Date().toISOString().slice(0, 7);
+    const out = [];
+    for (const file of files) {
+        if (file.size > 20 * 1024 * 1024) throw new Error(`${file.name}: файл понад 20 МБ`);
+        const path = `expenses/${month}/${Date.now()}_${file.name.replace(/[^\wа-яіїєґ.\-]+/gi, '_').slice(-80)}`;
+        const fileRef = ref(storage, path);
+        await uploadBytes(fileRef, file, { contentType: file.type || 'application/octet-stream' });
+        out.push({ name: file.name, url: await getDownloadURL(fileRef), path, size: file.size, type: file.type || '' });
+    }
+    return out;
+}

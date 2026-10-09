@@ -3,10 +3,12 @@
 // ПриватБанку, призначення рахунків, правила погодження).
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
+import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, act, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadExpenses, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
+import { toKop } from './charges-core.js';
 
 const FILTERS = { all: 'Усі', in: 'Надходження', out: 'Списання', review: 'Чекають рішення' };
 let rows = [];
@@ -136,12 +138,17 @@ const RULES = [
     ['Рознесення оплат мешканців', 'Система сама; сумнівні — бухгалтер', 'ст. 9 Закону № 996-XIV'],
     ['Інші надходження (оренда, відсотки, гранти)', 'Бухгалтер', 'п. 133.4.2 ПКУ: облік за джерелами'],
     ['Платежі постачальникам', 'Бухгалтер; підпис КЕП у Приват24 — голова', 'п. 3.4.15 статуту: перший підпис — голова'],
+    ['Договори', 'Голова (погодження правління)', 'п. 3.4.15 статуту'],
+    ['Рахунки й акти за договором у межах суми', 'Бухгалтер', 'договір уже затвердив голова'],
+    ['Витрати без договору чи понад договір', 'Голова (дрібні до порогу — бухгалтер)', 'рішення правління, жовтень 2026'],
     ['Договори понад 50 000 грн', 'Рішення загальних зборів', 'п. 3.4.15 статуту'],
     ['Податкова й фінансова звітність', 'Бухгалтер готує, КЕП — голова (і бухгалтер, якщо він відповідальний за облік у ДПС)', 'пп. 48.5.1 ПКУ']
 ];
 
 export async function loadSettingsView() {
-    const settings = await loadSettings();
+    const [settings, ex] = await Promise.all([loadSettings(), loadExpenses().catch(() => null)]);
+    const small = ex?.settings?.smallKop || 0;
+    const chair = session.role === 'chair';
     const connected = settings.tokenSet === true;
     const last = settings.lastSync;
     const accounts = Object.entries(settings.accounts || {});
@@ -175,6 +182,12 @@ export async function loadSettingsView() {
             <div class="buh-card-head"><h2>Хто що підтверджує</h2></div>
             <table class="buh-table"><thead><tr><th>Операція</th><th>Підтверджує</th><th>Підстава</th></tr></thead>
             <tbody>${RULES.map(([op, who, why]) => `<tr><td>${escapeHtml(op)}</td><td>${escapeHtml(who)}</td><td class="t-muted">${escapeHtml(why)}</td></tr>`).join('')}</tbody></table>
+            <div class="buh-inline-form ex-small">
+                <span>Витрати без договору до</span>
+                <input id="smallInput" class="field-input" inputmode="decimal" value="${(small / 100).toFixed(2).replace('.', ',')}"${chair ? '' : ' disabled'} aria-label="Поріг, грн">
+                <span>грн затверджує бухгалтер</span>
+                ${chair ? '<button type="button" class="btn-soft btn-compact" data-act="small-save">Зберегти</button>' : '<span class="t-muted">змінює голова</span>'}
+            </div>
             <p class="buh-note">Облік у застосунку ведеться з ${escapeHtml(settings.startDate || '2026-10-01')}: раніші операції лише показуються.</p>
         </section>`;
 }
@@ -191,6 +204,12 @@ export function initSettingsView() {
             try { const r = await act({ action: 'saveToken', token }, 60000); toast(`Підключено. Рахунків: ${r?.accounts ?? 0}`, 'success'); }
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
+        }
+        if (btn.dataset.act === 'small-save') {
+            const kop = toKop(document.getElementById('smallInput').value);
+            if (kop === null || kop < 0) { toast('Вкажіть суму в гривнях', 'error'); return; }
+            try { await expAct({ action: 'settings', smallKop: kop }); toast('Поріг збережено', 'success'); }
+            catch (err) { toast(err.message, 'error'); }
         }
         if (btn.dataset.act === 'token-remove') {
             if (!await confirmDialog('Відключити банк?', 'Токен буде видалено з сервера. Завантажені операції лишаться.', 'Відключити')) return;

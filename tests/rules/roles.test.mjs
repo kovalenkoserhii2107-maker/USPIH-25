@@ -223,3 +223,25 @@ test('нарахування пише лише сервер; після вхід
         await assertSucceeds(updateDoc(doc(as(login).firestore(), 'apartments/45'), { personalAccount: '1045' }));
     }
 });
+
+test('витрати й договори: читають голова й бухгалтер, пише лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        const db = context.firestore();
+        await setDoc(doc(db, 'suppliers/s1'), { name: 'ТОВ Ліфт', code: '14360570' });
+        await setDoc(doc(db, 'contracts/c1'), { supplierId: 's1', status: 'approved' });
+        await setDoc(doc(db, 'expenses/e1'), { supplierId: 's1', status: 'pending', amountKop: 100 });
+        await setDoc(doc(db, 'expense_settings/main'), { smallKop: 0 });
+    });
+    for (const login of ['10', '900']) {
+        const db = as(login).firestore();
+        for (const path of ['suppliers/s1', 'contracts/c1', 'expenses/e1', 'expense_settings/main']) await assertSucceeds(getDoc(doc(db, path)));
+        await assertFails(updateDoc(doc(db, 'expenses/e1'), { status: 'approved' }));
+        await assertFails(setDoc(doc(db, 'contracts/c2'), { status: 'approved' }));
+        await assertFails(setDoc(doc(db, 'expense_settings/main'), { smallKop: 999999 }));
+    }
+    for (const login of ['11', '45']) {
+        await assertFails(getDoc(doc(as(login).firestore(), 'expenses/e1')));
+        await assertFails(getDocs(collection(as(login).firestore(), 'suppliers')));
+    }
+});

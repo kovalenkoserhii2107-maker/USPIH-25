@@ -25,6 +25,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const logger = require('firebase-functions/logger');
 const core = require('./bank-core');
 const { matchesPayment } = require('./payments-core');
+const { matchExpense } = require('./expenses-core');
 const privat = require('./privat');
 
 const REGION = 'europe-central2';
@@ -37,7 +38,7 @@ const DEFAULT_START = '2026-10-01';
 // Банк може дооформити операцію заднім числом — перечитуємо кілька днів.
 const OVERLAP_DAYS = 3;
 
-module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances }) {
+module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses }) {
     // Баланс квартири з історії (charges.js): після кожної рознесеної оплати.
     const recompute = apts => (apts.length && balances ? balances.recompute(apts) : null);
 
@@ -68,7 +69,10 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         const linkMap = new Map();
         links.forEach(d => linkMap.set(d.id, d.data().apt));
         const data = settings.exists ? settings.data() : {};
+        // Документи витрат, що чекають оплати: списання постачальнику закриває їх саме.
+        const open = expenses ? await expenses.openForMatching() : { suppliers: [], expenses: [] };
         return {
+            suppliers: open.suppliers, openExpenses: open.expenses,
             known, owners: ownerList, links: linkMap,
             ownAccounts: new Set(Object.keys(data.accounts || {}).map(core.normIban)),
             startDate: data.startDate || DEFAULT_START,
@@ -131,6 +135,17 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const at = Timestamp.fromDate(t.at);
             const decision = core.classify(t, ctx);
             const paid = t.direction === 'out' ? (ctx.sentPayments || []).find(p => matchesPayment(t, p)) : null;
+            const byDoc = t.direction === 'out' && !paid ? matchExpense(t, ctx.openExpenses || [], ctx.suppliers || []) : null;
+            /** Привʼязати списання до документа витрат тим самим батчем. */
+            const settle = expenseId => {
+                const e = (ctx.openExpenses || []).find(x => x.id === expenseId);
+                if (!e || !expenses) return false;
+                batch.update(db.doc(`expenses/${e.id}`), expenses.linkUpdate(e, id, t.amountKop));
+                e.paidKop = (e.paidKop || 0) + t.amountKop;
+                if (e.paidKop >= e.amountKop) ctx.openExpenses = ctx.openExpenses.filter(x => x.id !== e.id);
+                ops += 1;
+                return true;
+            };
             const doc = {
                 bankId: String(t.bankId), account: t.account, at, period: core.periodOf(t.at),
                 direction: t.direction, amountKop: t.amountKop, currency: t.currency || 'UAH',
@@ -167,8 +182,12 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? 'taxes' : paid.kind === 'salary' ? 'salary' : 'supplier',
                     status: 'done', paymentId: paid.id });
                 batch.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
+                if (paid.expenseId && settle(paid.expenseId)) doc.expenseId = paid.expenseId;
                 ctx.sentPayments = ctx.sentPayments.filter(p => p.id !== paid.id);
                 ops += 1;
+            } else if (byDoc?.auto && settle(byDoc.auto)) {
+                // Постачальник і сума збіглися з затвердженим документом.
+                Object.assign(doc, { kind: 'expense', category: 'supplier', status: 'done', expenseId: byDoc.auto, method: 'document' });
             } else if (decision.status === 'expense') {
                 Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category ? 'done' : 'review' });
             } else if (decision.status === 'other') {
@@ -176,6 +195,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             } else {
                 Object.assign(doc, { kind: 'payment', status: beforeStart ? 'done' : 'review', reason: decision.reason || null });
             }
+            if (byDoc?.suggestions.length && !doc.expenseId) doc.expenseSuggestions = byDoc.suggestions;
             batch.set(db.doc(`bank_tx/${id}`), doc);
             ops += 1;
             added += 1;
@@ -326,13 +346,14 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             }
             t.update(ref, {
                 kind: data.direction === 'in' ? 'payment' : 'expense', status: 'review', allocations: [],
-                category: null, method: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
+                category: null, method: null, expenseId: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
             });
             return data;
         });
         await audit(actor, role, 'bank.unassign', `bank_tx/${ref.id}`,
             `${core.fromKop(tx.amountKop)} грн повернуто в «Розібрати»`, { was: tx.allocations || [], category: tx.category || null });
         await recompute((tx.allocations || []).filter(a => a.ledgerId).map(a => a.apt));
+        if (tx.expenseId) await expenses?.release(tx, ref.id);
         return { ok: true };
     }
 

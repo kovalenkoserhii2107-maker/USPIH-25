@@ -59,6 +59,8 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
 
         // Повторне «Так» на ту саму пропозицію не створює другий платіж.
         const proposalKey = data.proposalKey ? String(data.proposalKey).slice(0, 80) : null;
+        // Платіж за документом витрат (expenses.js → pay): виписка закриє й документ.
+        payment.expenseId = data.expenseId ? String(data.expenseId).replace(/[^\w-]/g, '').slice(0, 60) : null;
         if (proposalKey) {
             const dup = await db.collection('payments').where('proposalKey', '==', proposalKey).where('status', 'in', ['sent', 'paid']).limit(1).get();
             if (!dup.empty) fail('already-exists', 'Цей платіж уже відправлено в банк');

@@ -26,8 +26,18 @@ export async function loadSignWidget() {
     if (!host) return;
     // Підписує голова; бухгалтер бачить те саме у своєму кабінеті.
     if (session.role !== 'chair' || !hasRight(session.role, 'account')) { host.hidden = true; return; }
-    const snap = await getDocs(query(collection(db, 'payments'), where('status', '==', 'sent'), limit(50)));
+    const [snap, docs, contracts] = await Promise.all([
+        getDocs(query(collection(db, 'payments'), where('status', '==', 'sent'), limit(50))),
+        getDocs(query(collection(db, 'expenses'), where('status', '==', 'pending'), limit(50))).catch(() => ({ size: 0, docs: [] })),
+        getDocs(query(collection(db, 'contracts'), where('status', '==', 'pending'), limit(50))).catch(() => ({ size: 0, docs: [] }))
+    ]);
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Витрати без договору чи понад нього й нові договори затверджує голова — у кабінеті бухгалтерії.
+    const toApprove = docs.size + contracts.size;
+    const approveHtml = toApprove ? `<a class="sign-approve" href="buh.html#inbox">
+        <b>Чекають вашого затвердження: ${toApprove}</b>
+        <span>${[docs.size ? `${docs.size} ${docs.size === 1 ? 'документ' : 'документи'} витрат на ${money(docs.docs.reduce((s, d) => s + (d.data().amountKop || 0), 0))}` : '',
+            contracts.size ? `${contracts.size} ${contracts.size === 1 ? 'договір' : 'договори'}` : ''].filter(Boolean).join(' · ')} → відкрити</span></a>` : '';
     const total = list.reduce((s, p) => s + p.amountKop, 0);
     host.hidden = false;
     host.innerHTML = list.length ? `
@@ -36,12 +46,14 @@ export async function loadSignWidget() {
                 <div><span class="overview-kicker">На підпис у Приват24</span>
                     <h2>${list.length} ${list.length === 1 ? 'платіж' : list.length < 5 ? 'платежі' : 'платежів'} · ${money(total)}</h2></div>
             </div>
+            ${approveHtml}
             <ul class="sign-list">${list.slice(0, 6).map(p => `<li><span><b>${escapeHtml(p.recipient?.name || '')}</b><small>${escapeHtml(p.purpose || '')}</small></span><b>${money(p.amountKop)}</b></li>`).join('')}</ul>
             <p class="sign-how">Бухгалтер підготував і перевірив платежі. Відкрийте <b>Приват24 для бізнесу</b> → «Платежі» → підпишіть пачку КЕП. Гроші підуть лише після вашого підпису.</p>
             <div class="sign-foot">${pushHtml()}</div>
         </section>` : `
         <section class="sign-card">
             <div class="sign-head"><div><span class="overview-kicker">На підпис у Приват24</span><h2>Нічого не чекає вашого підпису</h2></div></div>
+            ${approveHtml}
             <div class="sign-foot">${pushHtml()}</div>
         </section>`;
     document.getElementById('signPushBtn')?.addEventListener('click', async e => {

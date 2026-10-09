@@ -384,3 +384,21 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
     .ch-kpi > :last-child:nth-child(odd) { grid-column: 1 / -1; }
     .ch-tools { margin-left: 0; }
 }
+
+/* ---------- Витрати ---------- */
+.ex-form { border-color: #cfe3d7; }
+.ex-table td small { display: block; color: #64748b; font-size: 12px; font-weight: 500; }
+.ex-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 0 0 4px; font-size: 12.5px; }
+.ex-detail .tx-actions { margin-left: auto; }
+.ex-table tr.tx-detail-row td { padding-top: 0; }
+.ex-table tr.tx-row td { border-bottom: 0; }
+.buh-file { display: inline-flex; align-items: center; max-width: 220px; padding: 2px 8px; border-radius: 6px; background: #eef4ff; color: #0b5cad; font-size: 12px; font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-card.is-task { border-left: 3px solid #b45309; }
+.inbox-chip { text-align: left; }
+#viewExpenses .btn-primary, #viewExpenses .btn-soft { width: auto; }
+@media (max-width: 900px) { .ex-detail .tx-actions { margin-left: 0; } }
+.ex-doc { min-width: 140px; white-space: nowrap; }
+.ex-doc small { white-space: nowrap; }
+.ex-small { margin-top: 12px; font-size: 13.5px; color: #334155; }
+.ex-small .field-input { flex: 0 0 120px !important; }
+.ex-small .btn-soft { width: auto; }
