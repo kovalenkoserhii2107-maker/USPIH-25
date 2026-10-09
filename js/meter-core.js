@@ -104,6 +104,12 @@ export function apartmentHeatCalculation(row, area, publishedArea) {
         volume: Math.round(row.consumption * apartmentArea / totalArea * 1e6) / 1e6 };
 }
 
+/** Частка квартири за кожен місяць, за який правління внесло тепло. */
+export function apartmentHeatHistory(records, area, publishedArea) {
+    return meterSeries(records, 'heat').map(row => ({ row,
+        calculation: row.error ? null : apartmentHeatCalculation(row, area, publishedArea) }));
+}
+
 export function buildingTotalArea(apartments) {
     const homes = apartments.filter(row => {
         if (row.isAdmin === true) return false;
