@@ -2,7 +2,7 @@
 // Ініціалізація Firebase. Єдине місце, де живе конфігурація.
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, disableNetwork, enableNetwork } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { getFunctions } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
@@ -22,6 +22,20 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-central2');
+
+// ------------------------------------------------------------
+// ПЕРЕЗАПУСК З'ЄДНАННЯ. Після повернення з фону (особливо на iPhone)
+// канал Firestore буває «мертвим»: запити не падають і не відповідають,
+// а екран вічно показує «Завантаження…». Вимкнення й увімкнення мережі
+// відкриває новий канал; слухачі (світло, чат) відновлюються самі.
+// ------------------------------------------------------------
+let reconnecting = null;
+export function reconnectFirestore() {
+    reconnecting ||= (async () => {
+        try { await disableNetwork(db); } finally { await enableNetwork(db); }
+    })().finally(() => { reconnecting = null; });
+    return reconnecting;
+}
 
 // ------------------------------------------------------------
 // СЕСІЯ. Раніше "хто я" читалося з тексту на екрані

@@ -124,7 +124,13 @@ export function avatarGradient(name) {
 // ------------------------------------------------------------
 // СПОВІЩЕННЯ (замість alert)
 // ------------------------------------------------------------
+// Поки перезапускаємо з'єднання, завислі запити падають — це не помилка
+// для мешканця, а частина відновлення, тож червоних сповіщень не показуємо.
+let errorsMutedUntil = 0;
+export function muteErrorToasts(ms) { errorsMutedUntil = Date.now() + ms; }
+
 export function toast(message, type = 'info') {
+    if (type === 'error' && Date.now() < errorsMutedUntil) return;
     let host = document.getElementById('toastHost');
     if (!host) {
         host = document.createElement('div');

@@ -272,7 +272,7 @@ export async function loadExpenses(hostId = 'expensesHost') {
             showScreen('financeSection');
             const nav = document.getElementById('topNav');
             if (nav) nav.style.display = 'none';
-            loadFinanceDetail();
+            loadFinanceDetail({ tab: 'money' });
         });
     } catch (e) {
         console.error('Звіт про витрати:', e);
@@ -283,83 +283,10 @@ export async function loadExpenses(hostId = 'expensesHost') {
 // ------------------------------------------------------------
 // ФІНАНСИ ОСББ — окремий екран
 // ------------------------------------------------------------
-export function renderFinanceDetail(d) {
-        const money = (v) => (v === undefined || v === null || v === '') ? null : parseMoney(v);
-        const funds = money(d.funds);
-        const income = money(d.income);
-
-        const items = (d.items || [])
-            .map(i => ({ label: String(i.label || '').trim(), amount: parseMoney(i.amount) }))
-            .filter(i => i.label && i.amount > 0)
-            .sort((a, b) => b.amount - a.amount);
-        const spent = items.reduce((sum, i) => sum + i.amount, 0);
-        const max = items[0]?.amount || 0;
-
-        // Різниця важливіша за обидві суми окремо: вона каже, чи вистачає
-        // внесків на утримання будинку, чи ОСББ проїдає накопичене.
-        const diff = (income === null) ? null : income - spent;
-
-        return `
-            <div class="card fin-summary">
-                <span class="fin-period">${escapeHtml(d.period || 'Поточний період')}</span>
-                <div class="fin-rows">
-                    ${income === null ? '' : `<div class="fin-row">
-                        <span class="fin-row-label">Надходження</span>
-                        <span class="fin-row-sum fin-in">${formatMoney(income)}</span>
-                    </div>`}
-                    <div class="fin-row">
-                        <span class="fin-row-label">Витрати</span>
-                        <span class="fin-row-sum fin-out">${formatMoney(spent)}</span>
-                    </div>
-                    ${diff === null ? '' : `<div class="fin-row fin-row-total">
-                        <span class="fin-row-label">${diff < 0 ? 'Витрачено більше, ніж зібрано' : 'Залишилося з місячних внесків'}</span>
-                        <span class="fin-row-sum ${diff < 0 ? 'fin-out' : 'fin-in'}">${formatMoney(Math.abs(diff))}</span>
-                    </div>`}
-                </div>
-                ${funds === null ? '' : `<div class="fin-funds">
-                    <span class="fin-funds-label">На рахунку ОСББ${
-                        d.fundsDate ? ` · станом на ${escapeHtml(d.fundsDate)}` : ''}</span>
-                    <span class="fin-funds-sum">${formatMoney(funds)}<small>грн</small></span>
-                </div>`}
-            </div>
-
-            <div class="card">
-                <div class="section-head-text" style="margin-bottom: 14px;">
-                    <h2 class="admin-card-title">Статті витрат</h2>
-                    <span class="admin-card-sub">Від найбільшої до найменшої</span>
-                </div>
-                ${items.length ? `<div class="fin-items">${items.map((it, idx) => `
-                    <div class="fin-item">
-                        <div class="fin-item-head">
-                            <span class="fin-item-name">${escapeHtml(it.label)}</span>
-                            <span class="fin-item-sum">${formatMoney(it.amount)}</span>
-                        </div>
-                        <div class="fin-item-bar">
-                            <i style="width:${max ? (it.amount / max * 100).toFixed(1) : 0}%;
-                                      background:${SLICE_COLORS[idx % SLICE_COLORS.length]}"></i>
-                        </div>
-                        <span class="fin-item-pct">${spent ? (it.amount / spent * 100).toFixed(1).replace('.', ',') : 0}% усіх витрат</span>
-                    </div>`).join('')}</div>`
-                : '<p class="list-empty">Статей витрат немає</p>'}
-            </div>`;
-}
-
-export async function loadFinanceDetail() {
-    const host = document.getElementById('financeContainer');
-    if (!host) return;
-    host.innerHTML = '<p class="list-empty">Завантаження…</p>';
-    try {
-        const snap = await getDoc(doc(db, 'finance', 'current'));
-        host.innerHTML = snap.exists()
-            ? renderFinanceDetail(snap.data())
-            : '<p class="list-empty">Звіт ще не опубліковано</p>';
-    } catch (e) {
-        console.error('Фінанси ОСББ:', e);
-        host.innerHTML = '<p class="list-empty">Не вдалося завантажити звіт</p>';
-    }
-    try {
-        const meters = await import('./meters.js'); meters.initMeters(); await meters.loadResidentMeters();
-    } catch (error) { console.warn('Загальнобудинковий облік:', error); }
+/** Окремий екран «Фінанси будинку» живе у власному модулі й вантажиться на вимогу. */
+export async function loadFinanceDetail(options) {
+    const { loadHouseFinance } = await import('./house-finance.js');
+    return loadHouseFinance(options);
 }
 
 // ============================================================
