@@ -1806,3 +1806,53 @@
 .admin-more-account .btn-soft { flex: none; width: auto; }
 #adminMoreGroups .menu-grid { padding: 22px 0 6px; }
 .meter-card-head .btn-soft { flex: none; width: auto; }
+
+/* ---------- Квартири: таблиця на ПК ---------- */
+.dir-col, .dir-table-head { display: none; }
+.dir-col-balance.is-debt { color: #A3382F; }
+.dir-col-balance.is-credit { color: #1e7a35; }
+.dir-col-balance.is-none { color: var(--ink-4); }
+
+@media (min-width: 960px) {
+    .dir-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    .dir-toolbar .dir-filters { padding: 0; }
+    .dir-toolbar .dir-search { flex: 0 1 340px; margin: 0; }
+    #directoryList.admin-scroll-list {
+        gap: 0; max-height: none; margin: 0; padding: 0; overflow: visible;
+        border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    }
+    #directoryList > .list-empty { padding: 24px; }
+    #directoryList .dir-table-head, #directoryList .dir-head {
+        display: grid; align-items: center; gap: 14px;
+        grid-template-columns: 40px minmax(0, 1fr) 88px 84px 120px 112px 18px;
+    }
+    #directoryList .dir-table-head {
+        position: sticky; top: 0; z-index: 1; padding: 10px 14px;
+        border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; background: #f8fafc;
+        color: var(--ink-2); font-size: 11.5px; font-weight: 700;
+    }
+    .dir-table-head span:nth-child(n+3):nth-child(-n+5), .dir-col-area, .dir-col-owners, .dir-col-balance { text-align: right; }
+    #directoryList .dir-card { border: 0; border-radius: 0; background: none; }
+    #directoryList .dir-card + .dir-card { border-top: 1px solid var(--line); }
+    #directoryList .dir-card:last-child { border-radius: 0 0 12px 12px; }
+    #directoryList .dir-head { padding: 8px 14px; }
+    #directoryList .dir-head:hover { background: #f6f9fd; }
+    #directoryList .dir-open .dir-head { background: #eef5ff; }
+    #directoryList .dir-apt { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
+    #directoryList .dir-line { display: none; }
+    #directoryList .dir-col { display: block; min-width: 0; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #directoryList .dir-title { font-size: 14px; font-weight: 600; }
+    #directoryList .dir-body { padding: 12px 14px 14px 68px; background: #fbfcfe; }
+    #directoryList .dir-actions { max-width: 520px; }
+}
+
+/* «Оновити» у відкритому блоці — у рядку заголовка, а не окремою смугою. */
+.admin-fold.is-section { position: relative; }
+.admin-fold.is-section .admin-card-body-inner > .list-actions:first-child { position: absolute; top: 14px; right: 14px; margin: 0; }
+.admin-fold.is-section .admin-card-head { padding-right: 96px; }
+@media (min-width: 960px) { .dir-toolbar .dir-search { flex-basis: 380px; } }
+@media (min-width: 960px) {
+    #directoryList .dir-actions { flex-wrap: nowrap; }
+    #directoryList .dir-actions .btn-soft { flex: 1; width: auto; margin: 0; }
+    #directoryList .dir-confirmed { flex: 1; margin: 0; white-space: nowrap; }
+}
