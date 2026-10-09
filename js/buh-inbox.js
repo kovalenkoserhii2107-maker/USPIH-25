@@ -8,11 +8,13 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, loadCharges, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
 import { periodName, fmtKop } from './charges-core.js';
+import { session } from './firebase.js';
+import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -28,6 +30,8 @@ let busy = new Set();
 /** Пропозиція системи для операції з черги. */
 export function proposalFor(tx) {
     const suggestions = tx.suggestions || [];
+    // Списання постачальнику, схоже на затверджений документ витрат.
+    if (tx.direction === 'out' && tx.expenseSuggestions?.length) return { type: 'link', ids: tx.expenseSuggestions };
     if (tx.direction === 'out') return { type: 'expense' };
     if (tx.kind === 'income') return { type: 'income' };
     if (tx.reason === 'several' && suggestions.length > 1) return { type: 'split', apts: suggestions.map(s => s.apt) };
@@ -40,8 +44,28 @@ export function proposalFor(tx) {
 
 const ownerName = (dir, apt) => dir.find(a => a.apt === apt)?.owners?.[0]?.name || '';
 
+let exCache = { expenses: [], contracts: [], suppliers: [] };
+const expenseLabel = id => {
+    const e = exCache.expenses.find(x => x.id === id);
+    return e ? `${exCache.docTypes?.[e.docType] || 'Документ'} № ${e.number} від ${e.date.split('-').reverse().join('.')}, ${e.supplierName} — до сплати ${fmtKop(e.amountKop - (e.paidKop || 0))} грн` : 'документ';
+};
+
+/** Наскільки списання схоже на документ: та сама сума — висока впевненість, менша — часткова оплата. */
+function linkLevel(item) {
+    const ids = item.proposal.ids;
+    if (ids.length > 1) return `<span class="inbox-level is-medium">ще ${ids.length - 1} схожих</span>`;
+    const e = exCache.expenses.find(x => x.id === ids[0]);
+    const left = e ? e.amountKop - (e.paidKop || 0) : 0;
+    return left === item.tx.amountKop ? '<span class="inbox-level is-high">постачальник і сума збіглися</span>'
+        : `<span class="inbox-level is-medium">часткова оплата: ${fmtKop(item.tx.amountKop)} з ${fmtKop(left)}</span>`;
+}
+
 function proposalHtml(item, dir) {
     const p = item.proposal;
+    if (p.type === 'link') {
+        return `<p class="inbox-proposal"><span class="inbox-arrow">→</span> Оплата за документом: <b>${escapeHtml(expenseLabel(p.ids[0]))}</b>
+            ${linkLevel(item)}</p>`;
+    }
     if (p.type === 'assign') {
         return `<p class="inbox-proposal"><span class="inbox-arrow">→</span> Рознести в <b>кв. ${escapeHtml(p.apt)}</b>
             ${ownerName(dir, p.apt) ? `<span class="inbox-who">${escapeHtml(ownerName(dir, p.apt))}</span>` : ''}
@@ -55,6 +79,10 @@ function proposalHtml(item, dir) {
 
 function formHtml(item, dir) {
     const p = item.proposal;
+    if (p.type === 'link') {
+        return `<div class="inbox-chips">${p.ids.map(id => `<button type="button" class="inbox-chip" data-link="${escapeHtml(id)}">${escapeHtml(expenseLabel(id))}</button>`).join('')}</div>
+            <div class="inbox-cats">${Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => `<button type="button" class="inbox-cat" data-cat="${k}">Не за документом: ${escapeHtml(v)}</button>`).join('')}</div>`;
+    }
     if (p.type === 'income' || p.type === 'expense') {
         const cats = p.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
         return `<div class="inbox-cats">${Object.entries(cats).map(([k, v]) =>
@@ -133,13 +161,51 @@ function chargeCardHtml(item, index) {
         </div></article>`;
 }
 
+/**
+ * Справи з витратами: голові — затвердити документ чи договір;
+ * бухгалтеру — сплатити затверджений документ або внести акт, якого
+ * бракує за щомісячним договором.
+ */
+function taskCardHtml(item, index) {
+    const p = item.proposal;
+    const e = p.expense, c = p.contract;
+    const head = `<article class="inbox-card is-task${index === focus ? ' is-focus' : ''}${busy.has(item.tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(item.tx.id)}" data-index="${index}" tabindex="-1">`;
+    const files = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
+    const date = d => String(d || '').split('-').reverse().join('.');
+    const body = {
+        'approve-exp': () => [`${fmtKop(e.amountKop)} ₴`, `затвердження · ${escapeHtml(e.approval?.reason || '')}`, e.supplierName,
+            `${escapeHtml(exCache.docTypes?.[e.docType] || '')} № ${escapeHtml(e.number)} від ${date(e.date)} · ${escapeHtml(e.description)} ${files(e.files) || '<span class="buh-tag is-review">без файлу</span>'}`,
+            'Затвердити витрату', 'Так', 'Відхилити'],
+        'approve-con': () => [`${fmtKop(c.totalKop || c.amountKop || 0)} ₴`, `договір${c.type === 'monthly' ? ` · ${fmtKop(c.monthlyKop)} на місяць` : ''}`, c.supplierName,
+            `№ ${escapeHtml(c.number)} від ${date(c.date)} · ${escapeHtml(c.subject)} · ${date(c.validFrom)} — ${c.validTo ? date(c.validTo) : 'безстроково'}${c.meetingDecision ? ` · збори: ${escapeHtml(c.meetingDecision)}` : ''} ${files(c.files)}`,
+            'Затвердити договір', 'Так', 'Відхилити'],
+        'pay-exp': () => [`−${fmtKop(e.amountKop - (e.paidKop || 0))} ₴`, `до оплати · ${escapeHtml(e.approval?.reason || '')}`, e.supplierName,
+            `${escapeHtml(exCache.docTypes?.[e.docType] || '')} № ${escapeHtml(e.number)} від ${date(e.date)} · ${escapeHtml(e.description)}`,
+            'Відправити в Приват24 на підпис голови', 'Так', null],
+        'missing-doc': () => [`${fmtKop(c.monthlyKop)} ₴`, 'бракує документа', c.supplierName,
+            `Договір № ${escapeHtml(c.number)} · ${escapeHtml(c.subject)}: немає акта за ${escapeHtml(periodName(p.period))}`,
+            'Внести акт — форму заповнено з договору', 'Внести', null]
+    }[p.type]();
+    const [sum, meta, who, details, action, yes, no] = body;
+    return `${head}<div class="inbox-main">
+            <span class="inbox-sum-big${p.type === 'pay-exp' ? ' is-out' : ''}">${sum}</span><span class="inbox-meta">${meta}</span>
+            <p class="inbox-payer">${escapeHtml(who || '')}</p><p class="inbox-purpose">${details}</p></div>
+        <div class="inbox-decision"><p class="inbox-proposal"><span class="inbox-arrow">→</span> ${escapeHtml(action)}</p>
+            <div class="inbox-actions">
+                <button type="button" class="btn-primary inbox-yes" data-act="yes">${yes}<kbd>Enter</kbd></button>
+                ${no ? `<button type="button" class="btn-ghost-small" data-act="no">${no}</button>` : ''}
+                <button type="button" class="btn-ghost-small" data-act="edit">Відкрити<kbd>E</kbd></button>
+            </div></div></article>`;
+}
+
 function cardHtml(item, index, dir) {
     if (item.proposal.type === 'pay') return payCardHtml(item, index);
+    if (['approve-exp', 'approve-con', 'pay-exp', 'missing-doc'].includes(item.proposal.type)) return taskCardHtml(item, index);
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') return chargeCardHtml(item, index);
     const tx = item.tx;
     const p = item.proposal;
-    const open = editing === tx.id || !['assign'].includes(p.type);
-    const quick = p.type === 'assign';
+    const open = editing === tx.id || !['assign', 'link'].includes(p.type);
+    const quick = p.type === 'assign' || (p.type === 'link' && p.ids.length === 1);
     return `<article class="inbox-card${index === focus ? ' is-focus' : ''}${busy.has(tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(tx.id)}" data-index="${index}" tabindex="-1">
         <div class="inbox-main">
             <span class="inbox-sum-big ${tx.direction === 'out' ? 'is-out' : 'is-in'}">${signed(tx)} ₴</span>
@@ -179,7 +245,7 @@ function render() {
     focus = Math.min(focus, items.length - 1);
     const sure = items.filter(i => i.proposal.type === 'assign' && i.proposal.level === 'high');
     host.innerHTML = `<div class="inbox-head">
-            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => ['assign', 'pay', 'charge'].includes(i.proposal.type)).length}</b></p>
+            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => !['choose', 'split', 'income', 'expense', 'setup'].includes(i.proposal.type)).length}</b></p>
             ${sure.length > 1 ? `<button type="button" class="btn-soft btn-compact" data-act="bulk">Підтвердити всі з високою впевненістю (${sure.length})</button>` : ''}
             <span class="inbox-keys"><kbd>↑</kbd><kbd>↓</kbd> пункти · <kbd>Enter</kbd> так · <kbd>E</kbd> змінити</span>
         </div>
@@ -204,15 +270,39 @@ export function chargeItems(c) {
     return out;
 }
 
+/** Справи з витратами для «Вхідних» (голова бачить і затвердження). */
+export function expenseItems(ex, payments, chair) {
+    if (!ex) return [];
+    const out = [];
+    const onTheWay = new Set(payments.filter(p => ['sending', 'sent'].includes(p.status) && p.expenseId).map(p => p.expenseId));
+    if (chair) {
+        ex.contracts.filter(c => c.status === 'pending').forEach(c => out.push({ tx: { id: `con:${c.id}` }, proposal: { type: 'approve-con', contract: c } }));
+        ex.expenses.filter(e => e.status === 'pending').forEach(e => out.push({ tx: { id: `exp:${e.id}` }, proposal: { type: 'approve-exp', expense: e } }));
+    }
+    ex.expenses.filter(e => e.status === 'approved' && e.amountKop > (e.paidKop || 0) && !onTheWay.has(e.id))
+        .forEach(e => out.push({ tx: { id: `payexp:${e.id}` }, proposal: { type: 'pay-exp', expense: e } }));
+    (ex.missing || []).forEach(m => {
+        const c = ex.contracts.find(x => x.id === m.contractId);
+        if (c) out.push({ tx: { id: `miss:${c.id}:${m.period}` }, proposal: { type: 'missing-doc', contract: c, period: m.period } });
+    });
+    return out;
+}
+
 let payAccount = '';
 export async function loadInbox() {
-    const [queue, dir, pays, charges] = await Promise.all([loadQueue(), loadDirectory(),
-        activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null)]);
+    const [queue, dir, pays, charges, ex, payments] = await Promise.all([loadQueue(), loadDirectory(),
+        activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null),
+        loadExpenses().catch(() => null), loadPayments().catch(() => [])]);
     dirCache = dir;
+    exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
+    // Кому платимо за документами (щомісячний договір) — тому регулярний платіж «за історією» не пропонуємо.
+    const byDocs = new Set((ex?.contracts || []).filter(c => c.status === 'approved' && c.type === 'monthly')
+        .map(c => ex.suppliers.find(s => s.id === c.supplierId)?.iban).filter(Boolean));
     items = chargeItems(charges)
+        .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
-        .concat(payAccount ? pays.list.map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
+        .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
     render();
     return items.length;
 }
@@ -252,8 +342,32 @@ async function runCharge(item) {
     finally { busy.delete(item.tx.id); await loadInbox().catch(() => render()); }
 }
 
+/** Дія з витратами з картки «Вхідних»: показуємо зайнятість і перечитуємо список. */
+async function runTask(item, fn) {
+    busy.add(item.tx.id);
+    render();
+    try { await fn(); }
+    catch (e) { toast(e.message, 'error'); }
+    finally { busy.delete(item.tx.id); await loadInbox().catch(() => render()); }
+}
+
+function confirmTask(item, yes) {
+    const p = item.proposal;
+    if (p.type === 'approve-exp') return runTask(item, () => decideExpense(p.expense, yes));
+    if (p.type === 'approve-con') return runTask(item, () => decideContract(p.contract, yes));
+    if (p.type === 'pay-exp') return runTask(item, () => payExpense(p.expense));
+    if (p.type === 'missing-doc') return openExpenses('docs', draftFromContract(p.contract, p.period));
+}
+
+const linkTx = (item, expenseId) => runTask(item, async () => {
+    await expAct({ action: 'linkTx', txId: item.tx.id, expenseId });
+    toast('Списання привʼязано до документа', 'success');
+});
+
 const confirmProposal = item => {
     if (item.proposal.type === 'pay') { runPay(item); return; }
+    if (['approve-exp', 'approve-con', 'pay-exp', 'missing-doc'].includes(item.proposal.type)) { confirmTask(item, true); return; }
+    if (item.proposal.type === 'link' && item.proposal.ids.length === 1) { linkTx(item, item.proposal.ids[0]); return; }
     if (item.proposal.type === 'charge') { runCharge(item); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
@@ -263,6 +377,9 @@ const confirmProposal = item => {
 
 function openForm(item) {
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
+    if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
+    if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }
+    if (['approve-exp', 'pay-exp'].includes(item.proposal.type)) { openExpenses('docs'); return; }
     if (item.proposal.type === 'pay') {
         // Змінити суму чи призначення — у формі «Платежів».
         location.hash = 'payments';
@@ -322,6 +439,9 @@ export function initInbox(isActive) {
         const cat = e.target.closest('[data-cat]')?.dataset.cat;
         const pick = e.target.closest('[data-pick]')?.dataset.pick;
         if (act === 'skip' && item.proposal.type === 'pay') { skipProposal(item.proposal.payment.proposalKey); return; }
+        if (act === 'no') { confirmTask(item, false); return; }
+        const link = e.target.closest('[data-link]')?.dataset.link;
+        if (link) { linkTx(item, link); return; }
         if (act === 'yes') confirmProposal(item);
         else if (act === 'edit') openForm(item);
         else if (act === 'save') saveForm(card, item);

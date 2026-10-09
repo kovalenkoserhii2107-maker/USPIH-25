@@ -17,10 +17,12 @@ import { loadOverview } from './buh-overview.js';
 import { initBankView, loadBankView, initSettingsView, loadSettingsView } from './buh-bank.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 import { initChargesView, loadChargesView } from './buh-charges.js';
+import { initExpensesView, loadExpensesView } from './buh-expenses.js';
 
 const VIEWS = {
     overview: { title: 'Огляд', sub: 'Гроші ОСББ і що потребує уваги', load: loadOverview },
     inbox: { title: 'Вхідні', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
+    expenses: { title: 'Витрати', sub: 'Рахунки й акти, договори, постачальники', load: loadExpensesView },
     charges: { title: 'Нарахування', sub: 'Внески співвласників: площа × тариф, баланс з історії', load: loadChargesView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
@@ -92,6 +94,7 @@ function renderAccount(apartment) {
             <span><b>${escapeHtml(name)}</b><small>${escapeHtml(ROLE_LABELS[session.role] || '')}</small></span></div>
         <nav class="buh-more-nav">
             <button class="buh-nav-item" data-view="charges" type="button">Нарахування</button>
+            <button class="buh-nav-item" data-view="expenses" type="button">Витрати</button>
             <button class="buh-nav-item" data-view="settings" type="button">Налаштування</button>
             <a class="buh-nav-item buh-link" href="admin.html?tab=finance">Фінанси: попередні розділи</a>
             ${links.join('')}
@@ -136,6 +139,7 @@ function init() {
     initBankView();
     initPaymentsView();
     initChargesView(() => view === 'charges');
+    initExpensesView();
     initSettingsView();
     registerServiceWorker();
 
