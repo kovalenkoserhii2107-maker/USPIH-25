@@ -1,43 +1,54 @@
 import { build } from 'esbuild';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
-// The entry keeps its versioned name; shared and admin-only code goes to
-// content-hashed chunks, so residents do not download the board's features.
+// Two entries keep their versioned names: the resident cabinet (index.html)
+// and the board panel (admin.html). Shared and lazily loaded code goes to
+// content-hashed chunks, so residents never download the board's features.
 await rm('_site', { recursive: true, force: true });
 await mkdir('_site', { recursive: true });
-for (const path of ['index.html', 'style.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
+for (const path of ['index.html', 'admin.html', 'style.css', 'style-admin.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
     await cp(path, `_site/${path}`, { recursive: true });
 }
-const result = await build({ entryPoints: ['js/app.js'], outdir: '_site/js', entryNames: '[name]',
+const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js'], outdir: '_site/js', entryNames: '[name]',
     chunkNames: 'chunks/[name]-[hash]', bundle: true, splitting: true, format: 'esm', target: ['es2020'],
     minify: true, external: ['https://*'], metafile: true });
 const outputs = result.metafile.outputs;
 
-// Chunks the entry imports statically are needed before the cabinet can open:
-// preload them in parallel and keep them in the offline shell.
-const startup = new Set();
-const visit = path => {
-    for (const { path: next, kind, external } of outputs[path].imports) {
-        if (external || kind !== 'import-statement' || startup.has(next)) continue;
-        startup.add(next);
-        visit(next);
-    }
-};
-visit('_site/js/app.js');
-const chunkUrls = [...startup].map(path => `./${path.slice('_site/'.length)}`).sort();
+// Chunks an entry imports statically are needed before its first screen:
+// preload them in parallel.
+function startupChunks(entry) {
+    const found = new Set();
+    const visit = path => {
+        for (const { path: next, kind, external } of outputs[path].imports) {
+            if (external || kind !== 'import-statement' || found.has(next)) continue;
+            found.add(next);
+            visit(next);
+        }
+    };
+    visit(entry);
+    return [...found].map(path => `./${path.slice('_site/'.length)}`).sort();
+}
+const residentChunks = startupChunks('_site/js/app.js');
+const adminChunks = startupChunks('_site/js/admin-main.js');
 
-// Source modules remain available for admin preview; production does not fetch them.
+// The offline shell is the resident cabinet only; the panel's files are
+// cached the first time a board member opens it.
 const shell = ['\'./\'', '\'./index.html\'', '\'./manifest.json\'',
     '`./style.css?v=${VERSION}`', '`./style-chat.css?v=${VERSION}`', '`./js/app.js?v=${VERSION}`',
-    ...chunkUrls.map(url => `'${url}'`)];
+    ...residentChunks.map(url => `'${url}'`)];
 const sw = (await readFile('sw.js', 'utf8')).replace(/const SHELL = \[[\s\S]*?\];/, `const SHELL = [\n    ${shell.join(',\n    ')}\n];`);
 await writeFile('_site/sw.js', sw);
 
-const preloads = chunkUrls.map(url => `    <link rel="modulepreload" href="${url.slice(2)}">`).join('\n');
-const html = (await readFile('index.html', 'utf8')).replace('</head>', `${preloads}\n</head>`);
-await writeFile('_site/index.html', html);
+async function injectPreloads(page, chunks) {
+    const preloads = chunks.map(url => `    <link rel="modulepreload" href="${url.slice(2)}">`).join('\n');
+    const html = (await readFile(page, 'utf8')).replace('</head>', `${preloads}\n</head>`);
+    await writeFile(`_site/${page}`, html);
+}
+await injectPreloads('index.html', residentChunks);
+await injectPreloads('admin.html', adminChunks);
 
-const kib = paths => Math.round(paths.reduce((sum, path) => sum + outputs[path].bytes, 0) / 1024);
+const kib = paths => Math.round(paths.reduce((sum, path) => sum + outputs[path.replace('./', '_site/')].bytes, 0) / 1024);
 const all = Object.keys(outputs).filter(path => path.endsWith('.js'));
-console.log(`Built app entry with ${startup.size} startup chunks (${kib(['_site/js/app.js', ...startup])} KiB at startup, `
-    + `${kib(all)} KiB total), with ${shell.length} shell URLs.`);
+console.log(`Built cabinet (${kib(['./js/app.js', ...residentChunks])} KiB at startup) and panel `
+    + `(${kib(['./js/admin-main.js', ...adminChunks])} KiB at startup), ${Math.round(all.reduce((s, p) => s + outputs[p].bytes, 0) / 1024)} KiB total, `
+    + `with ${shell.length} shell URLs.`);

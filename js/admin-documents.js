@@ -6,7 +6,7 @@ import { certificateAccount, buildDebtCertificateDoc, buildBoardProtocolDoc } fr
 import { formatMeetingDate } from './meeting.js';
 import { fetchStaffRole, requireRight } from './staff-core.js';
 import { audit } from './audit.js';
-import { publishOsbbDocument, populateDocsDropdown } from './requests.js';
+import { publishOsbbDocument, populateDocsDropdown } from './requests-admin.js';
 
 let certificateUrl = '', certificateBusy = false, certificateRequest = 0;
 let boardFile = null, boardDraftId = null, boardBusy = false;

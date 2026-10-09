@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '128';
+const VERSION = '129';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -137,7 +137,7 @@ self.addEventListener('fetch', (event) => {
 
     // A versioned production bundle has all local modules inside it, so it is
     // safe to reuse the exact version without mixing old and new imports.
-    if (url.searchParams.get('v') === VERSION && /\/(?:js\/app\.js|style(?:-chat)?\.css)$/.test(url.pathname)) {
+    if (url.searchParams.get('v') === VERSION && /\/(?:js\/(?:app|admin-main)\.js|style(?:-chat|-admin)?\.css)$/.test(url.pathname)) {
         event.respondWith(cacheFirst(req));
         return;
     }
