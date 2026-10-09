@@ -4005,3 +4005,17 @@ select.field-input {
 .hf-res-value small.is-more { color: #9A4700; }
 #financeSection .am-month { margin-top: 0; }
 .team-actions .btn-compact { margin-top: 0; }
+
+/* Оплата через платіжне посилання НБУ */
+.pay-quick { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 0.5px solid var(--line); }
+.pay-apps { display: flex; flex-direction: column; gap: 8px; }
+.pay-app { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.pay-qr-wrap { margin-top: 12px; }
+.pay-qr-wrap summary { padding: 8px 0; color: var(--blue-ink); font-weight: 600; cursor: pointer; }
+.pay-qr { position: relative; width: min(240px, 70vw); margin: 8px auto 4px; }
+.pay-qr svg { display: block; width: 100%; height: auto; }
+.pay-qr-mark {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: grid; place-items: center; width: 18%; aspect-ratio: 1; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 0 3px #fff; color: #111; font: 700 clamp(14px, 4.5vw, 22px) var(--font);
+}

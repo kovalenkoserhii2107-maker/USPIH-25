@@ -144,7 +144,7 @@ const AREAS = {
     finance: 'Звіт і реквізити', meters: 'Лічильники будинку', meeting: 'Збори', poll: 'Опитування',
     votes: 'Паперові голоси', protocol: 'Протоколи', message: 'Оголошення', request: 'Звернення',
     document: 'Документи', owners: 'Співвласники', certificate: 'Довідки', contacts: 'Контакти',
-    dtek: 'ДТЕК', power: 'Світло', chat: 'Модерація чату', staff: 'Команда'
+    dtek: 'ДТЕК', power: 'Світло', chat: 'Модерація чату', staff: 'Команда', bank: 'Банк'
 };
 const areaOf = action => String(action || '').split('.')[0];
 const PAGE = 100;

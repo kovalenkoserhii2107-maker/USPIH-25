@@ -148,3 +148,26 @@ test('файли: квитанції — бухгалтеру, матеріал�
     await assertFails(uploadString(ref(as('11').storage(), 'receipts/45/oct.pdf'), 'pdf', 'raw', { contentType: 'application/pdf' }));
     await assertFails(uploadString(ref(as('13').storage(), 'polls/agenda.pdf'), 'pdf', 'raw', { contentType: 'application/pdf' }));
 });
+
+test('банк: читають голова й бухгалтер, пише лише сервер, токен не читає ніхто', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        const db = context.firestore();
+        await setDoc(doc(db, 'bank/settings'), { tokenSet: true });
+        await setDoc(doc(db, 'bank_tx/t1'), { amountKop: 100, status: 'review' });
+        await setDoc(doc(db, 'bank_secrets/privat'), { token: 'secret' });
+    });
+    for (const login of ['10', '900']) {
+        const db = as(login).firestore();
+        await assertSucceeds(getDoc(doc(db, 'bank/settings')));
+        await assertSucceeds(getDocs(collection(db, 'bank_tx')));
+        await assertFails(setDoc(doc(db, 'bank_tx/t2'), { amountKop: 1 }));
+        await assertFails(updateDoc(doc(db, 'bank_tx/t1'), { status: 'matched' }));
+        await assertFails(getDoc(doc(db, 'bank_secrets/privat')));
+        await assertFails(setDoc(doc(db, 'bank_secrets/privat'), { token: 'x' }));
+    }
+    for (const login of ['11', '45']) {
+        await assertFails(getDoc(doc(as(login).firestore(), 'bank/settings')));
+        await assertFails(getDocs(collection(as(login).firestore(), 'bank_tx')));
+    }
+});
