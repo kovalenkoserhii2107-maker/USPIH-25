@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeApartmentReading, apartmentSeries, synchronizedApartmentChanges } from '../../js/apartment-meter-core.js';
-import { normalizeMeterReading, meterSeries, apartmentHeatShare, buildingTotalArea, integerReading } from '../../js/meter-core.js';
+import { normalizeMeterReading, meterSeries, apartmentHeatShare, apartmentHeatCalculation, buildingTotalArea, integerReading, normalizeHeatTariff, heatTariffForPeriod } from '../../js/meter-core.js';
 
 const row = (period, reading, baseline = 100, extra = {}) => normalizeApartmentReading({ resource: 'water', period,
     reading, baseline, unit: 'м³', ...extra });
@@ -20,13 +20,43 @@ test('цілі показники перевіряються без округл
     for (const value of ['', null, -1, 1.5, '123,4', 1e11]) assert.equal(integerReading(value), null);
 });
 
+test('тариф на тепло підставляється з дати дії, майбутня і середмісячна зміна не переписують попередній місяць', () => {
+    const october = normalizeHeatTariff({ tariff: '1 500,50', effectiveFrom: '2026-10-01' });
+    const november = normalizeHeatTariff({ tariff: 2000, effectiveFrom: '2026-11-01' });
+    const partial = normalizeHeatTariff({ tariff: 2500, effectiveFrom: '2026-12-15' });
+    const rows = [november, partial, october];
+    assert.equal(heatTariffForPeriod(rows, '2026-09'), null);
+    assert.equal(heatTariffForPeriod(rows, '2026-10').tariff, 1500.5);
+    assert.equal(heatTariffForPeriod(rows, '2026-11').tariff, 2000);
+    assert.equal(heatTariffForPeriod(rows, '2026-12').tariff, 2000);
+    assert.equal(heatTariffForPeriod(rows, '2027-01').tariff, 2500);
+    assert.equal(normalizeHeatTariff({ tariff: 0, effectiveFrom: '2026-10-01' }).tariff, 0);
+    for (const patch of [{ tariff: '' }, { tariff: -1 }, { effectiveFrom: '' }, { effectiveFrom: '2026-02-30' }]) {
+        assert.throws(() => normalizeHeatTariff({ ...october, ...patch }));
+    }
+});
+
 test('загальна площа береться з усіх квартир, службовий обліковий запис не додається', () => {
     const total = buildingTotalArea([{ area: '64,5' }, { area: '100' }, { isAdmin: true, area: 99999 }]);
     assert.equal(total, 164.5);
     assert.equal(buildingTotalArea([{ area: 64 }, { area: '' }]), null);
     assert.equal(buildingTotalArea([]), null);
+    assert.equal(buildingTotalArea([{ apt: '45', area: 64 }, { apt: 'test', area: '' }]), 64);
+    assert.equal(buildingTotalArea([{ apt: '45', area: 64 }, { apt: '46', area: '' }]), null);
     const heat = { cost: 1000, heatedArea: 1 };
     assert.equal(apartmentHeatShare(heat, 64.5, total), 392.1);
+});
+
+test('розрахунок квартири показує частку тепла, грн за м² і суму за вибраний місяць', () => {
+    const heat = { cost: 40000, consumption: 20, totalArea: 10000 };
+    const expected = { apartmentArea: 64, totalArea: 10000, cost: 256, perSquareMeter: 4, volume: 0.128 };
+    assert.deepEqual(apartmentHeatCalculation(heat, '64,0', null), expected);
+    assert.deepEqual(apartmentHeatCalculation({ ...heat, totalArea: undefined }, 64, 10000), expected);
+    assert.deepEqual(apartmentHeatCalculation({ ...heat, totalArea: undefined, heatedArea: 10000 }, 64), expected);
+    assert.equal(apartmentHeatCalculation({ ...heat, totalArea: undefined }, 64, null), null);
+    assert.equal(apartmentHeatCalculation(heat, '', 10000), null);
+    assert.equal(apartmentHeatCalculation({ ...heat, cost: 0 }, 64).cost, 0);
+    assert.equal(apartmentHeatCalculation({ ...heat, error: 'Помилка показника' }, 64), null);
 });
 
 test('історичні дробові показники не округлюються під час синхронізації наступного запису', () => {

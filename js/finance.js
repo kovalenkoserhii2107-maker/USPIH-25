@@ -354,7 +354,7 @@ export async function loadFinanceDetail() {
         host.innerHTML = '<p class="list-empty">Не вдалося завантажити звіт</p>';
     }
     try {
-        const meters = await import('./meters.js'); meters.initMeters(); await meters.loadHouseActivity();
+        const meters = await import('./meters.js'); meters.initMeters(); await meters.loadResidentMeters();
     } catch (error) { console.warn('Загальнобудинковий облік:', error); }
 }
 

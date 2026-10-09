@@ -522,3 +522,41 @@ test('загальна площа публікується з бази, збер
     await assert.rejects(createMeterStore(resident, () => '45').syncTotalArea(), /лише правління/);
     await assertFails(updateDoc(doc(resident, 'status/house_meter_state'), { totalArea: 1 }));
 });
+
+test('збереження тепла саме публікує площу з бази, не використовує підставлену площу або порожній технічний профіль', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        const db = context.firestore();
+        await updateDoc(doc(db, 'apartments/45'), { area: '64,0' });
+        await setDoc(doc(db, 'apartments/46'), { area: 9936 });
+        await setDoc(doc(db, 'apartments/test'), { area: '', isAdmin: false });
+    });
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    const saved = await store.save(await store.load(), [{ resource: 'heat', period: '2026-10', unit: 'Гкал',
+        baseline: 100, reading: 120, tariff: 2000, totalArea: 1 }]);
+    assert.equal(saved.totalArea, 10000);
+    assert.equal(saved.records[0].totalArea, 10000);
+    assert.equal(saved.revision, 1);
+    assert.equal((await createMeterStore(resident, () => '45').load()).totalArea, 10000);
+    await assertFails(getDocs(collection(resident, 'apartments')));
+});
+
+test('правління зберігає датовані тарифи без зміни старих показників; мешканець читає, але не підміняє ціну', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    const original = await store.save(await store.load(), [{ resource: 'heat', period: '2026-09', unit: 'Гкал',
+        reading: 120, baseline: 100, tariff: 1000 }]);
+    const saved = await store.saveHeatTariff(original, { tariff: '1500,50', effectiveFrom: '2026-10-01' });
+    assert.equal(saved.heatTariffs[0].tariff, 1500.5);
+    assert.equal(saved.records[0].tariff, 1000);
+    assert.equal(saved.revision, original.revision + 1);
+    await assert.rejects(store.saveHeatTariff(original, { tariff: 2000, effectiveFrom: '2026-11-01' }), /іншій вкладці/);
+    const residentStore = createMeterStore(resident, () => '45');
+    assert.equal((await residentStore.load()).heatTariffs[0].effectiveFrom, '2026-10-01');
+    await assert.rejects(residentStore.saveHeatTariff(saved, { tariff: 0, effectiveFrom: '2026-10-01' }), /лише правління/);
+    await assertFails(updateDoc(doc(resident, 'status/heat_tariff_2026-10-01'), { tariff: 0 }));
+});

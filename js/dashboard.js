@@ -12,6 +12,7 @@ import {
 import { escapeHtml, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import { isMeeting, agendaOf, computeQuorum } from './meeting.js';
+import { meterStore } from './meter-store.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
 function openTab(name, scrollToSelector) {
@@ -96,6 +97,10 @@ export async function loadDashboard() {
         const finance = value(4, {});
         const changes = value(5, null);
         const directoryReady = results[0].status === 'fulfilled';
+        // Довідник уже прочитаний: оновлюємо публічну суму площ у фоні,
+        // без повторного завантаження квартир і без затримки дашборду.
+        if (directoryReady) meterStore.syncTotalArea(apts)
+            .catch(error => console.warn('Загальна площа будинку:', error));
         const requestsReady = results[1].status === 'fulfilled' && results[2].status === 'fulfilled';
         const pollsReady = results[3].status === 'fulfilled';
         const financeReady = results[4].status === 'fulfilled';

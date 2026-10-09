@@ -5,6 +5,7 @@ export const METER_RESOURCES = {
     water: { label: 'Вода', units: ['м³'], color: '#2584da' }
 };
 export const METER_KIND = 'houseMeterReading';
+export const HEAT_TARIFF_KIND = 'houseHeatTariff';
 
 /** Порожнє або зіпсоване число не перетворюється на нуль. */
 export function decimalValue(value) {
@@ -21,6 +22,22 @@ export function integerReading(value) {
 }
 
 export function validPeriod(period) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || '')); }
+export function normalizeHeatTariff(input) {
+    const effectiveFrom = String(input.effectiveFrom || '');
+    const date = new Date(`${effectiveFrom}T12:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) || !Number.isFinite(date.getTime())
+        || date.toISOString().slice(0, 10) !== effectiveFrom) throw new Error('Вкажіть дату початку дії тарифу');
+    const tariff = decimalValue(input.tariff);
+    if (tariff === null || tariff < 0 || tariff > 1e10) throw new Error('Вкажіть невід’ємний тариф на тепло, грн/Гкал');
+    return { kind: HEAT_TARIFF_KIND, unit: 'Гкал', effectiveFrom, tariff };
+}
+
+/** У місячний облік підставляємо тариф, чинний на початок місяця. */
+export function heatTariffForPeriod(tariffs, period) {
+    if (!validPeriod(period)) return null;
+    return tariffs.filter(row => row.effectiveFrom <= `${period}-01` && row.unit === 'Гкал')
+        .slice().sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null;
+}
 export const meterRecordId = (resource, period) => `meter_${resource}_${period}`;
 export const periodLabel = period => validPeriod(period)
     ? new Date(`${period}-01T12:00:00`).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' }) : String(period || '');
@@ -53,8 +70,24 @@ export function apartmentHeatShare(row, area, buildingArea = row?.totalArea ?? r
     return Math.round((row.cost * apartmentArea / totalArea + Number.EPSILON) * 100) / 100;
 }
 
+/** Площа в записі зберігає основу розрахунку за конкретний місяць. */
+export function apartmentHeatCalculation(row, area, publishedArea) {
+    const totalArea = [row?.totalArea, publishedArea, row?.heatedArea]
+        .map(decimalValue).find(value => value > 0);
+    const cost = apartmentHeatShare(row, area, totalArea);
+    if (cost === null) return null;
+    const apartmentArea = decimalValue(area);
+    return { apartmentArea, totalArea, cost, perSquareMeter: row.cost / totalArea,
+        volume: Math.round(row.consumption * apartmentArea / totalArea * 1e6) / 1e6 };
+}
+
 export function buildingTotalArea(apartments) {
-    const homes = apartments.filter(row => row.isAdmin !== true);
+    const homes = apartments.filter(row => {
+        if (row.isAdmin === true) return false;
+        const id = String(row.apt ?? row.id ?? '');
+        // Порожній технічний профіль не є приміщенням будинку.
+        return !id || /\d/.test(id) || String(row.area ?? '').trim() !== '' || row.owners?.length > 0;
+    });
     if (!homes.length || homes.some(row => decimalValue(row.area) === null || decimalValue(row.area) <= 0)) return null;
     return Math.round(homes.reduce((sum, row) => sum + decimalValue(row.area), 0) * 1e6) / 1e6;
 }

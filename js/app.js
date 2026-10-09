@@ -383,11 +383,11 @@ function initNavigation() {
 
     const back = () => {
         stopChat();
-        // Правлінню нема куди «повертатися в кабінет» — його місце
-        // панель керування. Повний loadCabinet тут був би зайвим:
-        // це девʼять запитів заради екрана, який нікуди не подівся.
+        closeAllSheets();
         if (session.isAdmin) { showScreen('adminDashboardSection'); return; }
-        return loadCabinet(session.apt);
+        // Кабінет уже завантажений: повернення працює навіть без мережі.
+        showScreen('dataSection');
+        document.getElementById('topNav').style.display = 'block';
     };
     ['backFromDocsBtn', 'backFromRequestsBtn', 'backFromBoardBtn', 'backFromPollsBtn', 'backFromServicesBtn', 'backFromReceiptsBtn', 'backFromFaqBtn', 'backFromChatBtn', 'backFromLedgerBtn', 'backFromFinanceBtn', 'backFromMetersBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', back);

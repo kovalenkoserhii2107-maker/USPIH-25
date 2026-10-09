@@ -4,6 +4,7 @@ import { METER_RESOURCES, periodLabel } from './meter-core.js';
 import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
 import { escapeHtml, toast, setBusy, formatDateTime } from './ui.js';
 import { currentApt } from './firebase.js';
+import { loadApartmentHeat } from './meters.js';
 
 const el = id => document.getElementById(id);
 const month = () => new Date().toLocaleDateString('sv-SE').slice(0, 7);
@@ -70,6 +71,7 @@ function render({ remember = true } = {}) {
 
 export async function loadApartmentMeters() {
     const request = ++loadRequest, apt = String(currentApt() || '');
+    const heatTask = loadApartmentHeat(el('apartmentMeterPeriod').value);
     el('apartmentMeterFields').disabled = true;
     if (context && context.apt !== apt) {
         context = null; drafts.clear(); dirty.clear(); el('apartmentMeterEntry').innerHTML = '';
@@ -87,7 +89,7 @@ export async function loadApartmentMeters() {
         el('apartmentMeterFields').disabled = true;
         el('apartmentMeterHistory').innerHTML = '<p class="list-empty">Не вдалося прочитати особисті показники. Спробуйте оновити.</p>';
         toast(error.code === 'permission-denied' ? 'Особисті показники поки недоступні. Зверніться до правління' : error.message, 'error');
-    }
+    } finally { await heatTask; }
 }
 
 async function save() {
@@ -126,7 +128,7 @@ export function initApartmentMeters() {
     const period = el('apartmentMeterPeriod');
     if (!period || period.dataset.initialized) return;
     period.dataset.initialized = '1'; period.value = month(); el('apartmentSubmissionsPeriod').value = month();
-    period.addEventListener('change', () => { if (!saving) render(); });
+    period.addEventListener('change', () => { if (!saving) { render(); loadApartmentHeat(period.value); } });
     el('apartmentMeterRefreshBtn').addEventListener('click', () => { if (!saving) loadApartmentMeters(); });
     el('apartmentMeterSaveBtn').addEventListener('click', save);
     el('apartmentMeterEntry').addEventListener('input', event => {
@@ -142,13 +144,9 @@ export function initApartmentMeters() {
     });
     el('apartmentMeterHistory').addEventListener('click', event => {
         const button = event.target.closest('[data-apartment-edit]');
-        if (button && !saving) { period.value = button.dataset.apartmentEdit; render(); period.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        if (button && !saving) { period.value = button.dataset.apartmentEdit; render(); loadApartmentHeat(period.value); period.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     });
     el('apartmentSubmissionsPeriod').addEventListener('change', loadApartmentSubmissions);
     el('apartmentSubmissionsSearch').addEventListener('input', renderSubmissions);
     el('apartmentSubmissionsRefreshBtn').addEventListener('click', loadApartmentSubmissions);
-    el('apartmentHeatActivityBtn').addEventListener('click', async () => {
-        const { showScreen } = await import('./ui.js'); const { loadFinanceDetail } = await import('./finance.js');
-        showScreen('financeSection'); await loadFinanceDetail();
-    });
 }
