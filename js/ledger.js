@@ -9,6 +9,7 @@
 // Правління вивантажує їх файлом, мешканець лише читає.
 // ============================================================
 import { db, session } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, doc, getDocs, query, orderBy, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -409,6 +410,8 @@ export async function applyLedger(btn) {
         if (!written) {
             toast('Жодна квартира з файлу не знайдена в базі', 'error');
         } else {
+            await audit('ledger.import', { target: 'ledger', summary: `Історія нарахувань і оплат: ${written} записів`,
+                details: { count: written, apartments: [...new Set(pending.rows.map(row => row.apt))].length } });
             toast(`Внесено записів: ${written}`, 'success');
             if (skipped.length) {
                 toast(`Пропущено неіснуючі квартири: ${skipped.slice(0, 5).join(', ')}`, 'error');

@@ -13,6 +13,7 @@
 // квартиру, лише в активне опитування і лише один із варіантів.
 // ============================================================
 import { db, storage, session } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, addDoc, getDocs, getDoc, setDoc, updateDoc, doc, runTransaction,
     query, where, orderBy, serverTimestamp, limit, startAfter
@@ -679,6 +680,7 @@ export async function createPoll(btn) {
             resultsSent: false,
             createdAt: serverTimestamp()
         });
+        await audit('poll.create', { target: 'polls', summary: `Опитування «${title}» опубліковано` });
         toast('Опитування опубліковано', 'success');
         resetPollForm();
         await loadAdminPolls();
@@ -882,6 +884,7 @@ async function closePoll(pollId, btn) {
     try {
         if (meeting) {
             await finalizeMeeting(pollId);
+            await audit('meeting.close', { target: `polls/${pollId}`, summary: 'Збори завершено, підсумки надіслано' });
             toast('Збори завершено, підсумки надіслано', 'success');
             await loadAdminPolls();
             return;
@@ -897,6 +900,7 @@ async function closePoll(pollId, btn) {
             await broadcastResults(poll, quorum, apartments);
             await updateDoc(doc(db, 'polls', pollId), { resultsSent: true });
         }
+        await audit('poll.close', { target: `polls/${pollId}`, summary: `Опитування «${poll.title}» завершено` });
         toast(meeting ? 'Збори завершено, підсумки надіслано' : 'Опитування завершено, підсумки надіслано', 'success');
         await loadAdminPolls();
     } catch (e) {

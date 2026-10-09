@@ -1,5 +1,6 @@
 import { db, currentApt } from './firebase.js';
 import * as firestore from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { fetchStaffRole, requireRight } from './staff-core.js';
 import { METER_KIND, HEAT_TARIFF_KIND, RESOURCE_TARIFF_KIND, normalizeResourceTariff, meterRecordId, validateMeterChanges, buildingTotalArea, integerReading, decimalValue } from './meter-core.js';
 
 // status уже доступний мешканцям для читання і лише правлінню для запису.
@@ -25,8 +26,7 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
     async function save(context, changes) {
         const apt = apartmentOfCurrentUser();
         if (!apt) throw new Error('Увійдіть у застосунок');
-        const admin = await getDocFromServer(doc(database, 'apartments', apt));
-        if (!admin.exists() || admin.data().isAdmin !== true) throw new Error('Вносити показники може лише правління');
+        requireRight(await fetchStaffRole(api, database, apt), 'account', 'Вносити показники може лише бухгалтер або голова правління');
         const clean = validateMeterChanges(context.records, changes);
         if (!clean.length) throw new Error('Введіть показники хоча б одного ресурсу');
         if (clean.some(row => integerReading(row.reading) === null)) throw new Error('Новий показник вводиться лише цілим числом');
@@ -61,8 +61,7 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
     async function syncTotalArea(apartments) {
         const apt = apartmentOfCurrentUser();
         if (!apt) throw new Error('Увійдіть у застосунок');
-        const admin = await getDocFromServer(doc(database, 'apartments', apt));
-        if (!admin.exists() || admin.data().isAdmin !== true) throw new Error('Оновити загальну площу може лише правління');
+        requireRight(await fetchStaffRole(api, database, apt), 'account', 'Оновити загальну площу може лише бухгалтер або голова правління');
         const state = await getDocFromServer(stateRef);
         if (state.data()?.areaSource === 'manual') return state.data().totalArea;
         if (!apartments) {
@@ -82,8 +81,7 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
     async function saveTotalArea(context, input) {
         const apt = apartmentOfCurrentUser();
         if (!apt) throw new Error('Увійдіть у застосунок');
-        const admin = await getDocFromServer(doc(database, 'apartments', apt));
-        if (!admin.exists() || admin.data().isAdmin !== true) throw new Error('Змінювати площу може лише правління');
+        requireRight(await fetchStaffRole(api, database, apt), 'account', 'Змінювати площу може лише бухгалтер або голова правління');
         const totalArea = decimalValue(input);
         if (!(totalArea > 0) || totalArea > 1e7) throw new Error('Вкажіть додатну загальну площу будинку, м²');
         await runTransaction(database, async tx => {
@@ -97,8 +95,7 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
     async function saveTariff(context, input) {
         const apt = apartmentOfCurrentUser();
         if (!apt) throw new Error('Увійдіть у застосунок');
-        const admin = await getDocFromServer(doc(database, 'apartments', apt));
-        if (!admin.exists() || admin.data().isAdmin !== true) throw new Error('Змінювати тариф може лише правління');
+        requireRight(await fetchStaffRole(api, database, apt), 'account', 'Змінювати тариф може лише бухгалтер або голова правління');
         const row = normalizeResourceTariff(input);
         const ref = doc(database, 'status', row.resource === 'heat' ? `heat_tariff_${row.effectiveFrom}` : `tariff_${row.resource}_${row.effectiveFrom}`);
         await runTransaction(database, async tx => {

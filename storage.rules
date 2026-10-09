@@ -16,10 +16,31 @@ service firebase.storage {
       return request.auth.token.email.split('@')[0];
     }
 
+    // Роль із staff/{номер входу}, як у firestore.rules. Старий спільний
+    // обліковий запис правління (isAdmin) без документа в staff діє як
+    // голова, доки голова не вимкне його в «Команді».
+    function role() {
+      let staff = /databases/(default)/documents/staff/$(myApt());
+      let apt = /databases/(default)/documents/apartments/$(myApt());
+      return !signedIn() ? 'none'
+        : firestore.exists(staff)
+          ? (firestore.get(staff).data.active == true ? firestore.get(staff).data.role : 'none')
+        : (firestore.exists(apt) && firestore.get(apt).data.get('isAdmin', false) == true) ? 'chair' : 'none';
+    }
+
+    // Будь-хто з команди правління.
     function admin() {
-      return signedIn()
-        && firestore.exists(/databases/(default)/documents/apartments/$(myApt()))
-        && firestore.get(/databases/(default)/documents/apartments/$(myApt())).data.isAdmin == true;
+      return role() in ['chair', 'board', 'accountant'];
+    }
+
+    // Голова й члени правління: збори, документи квартир, контакти.
+    function manager() {
+      return role() in ['chair', 'board'];
+    }
+
+    // Голова й бухгалтер: квитанції.
+    function accountant() {
+      return role() in ['chair', 'accountant'];
     }
 
     function safeUpload(maxMb) {
@@ -41,18 +62,18 @@ service firebase.storage {
     match /chat/{apt}/{file=**} {
       allow read: if signedIn();
       allow create, update: if signedIn() && apt == myApt() && safeUpload(15);
-      allow delete: if admin() || (signedIn() && apt == myApt());
+      allow delete: if manager() || (signedIn() && apt == myApt());
     }
 
     match /apartments/{apt}/{file=**} {
       allow read: if signedIn() && (apt == myApt() || admin());
-      allow create, update: if signedIn() && (apt == myApt() || admin()) && safeUpload(15);
-      allow delete: if admin();
+      allow create, update: if signedIn() && (apt == myApt() || manager()) && safeUpload(15);
+      allow delete: if manager();
     }
 
     match /receipts/{apt}/{file=**} {
       allow read: if signedIn() && (apt == myApt() || admin());
-      allow write: if admin() && (request.resource == null || safeUpload(20));
+      allow write: if accountant() && (request.resource == null || safeUpload(20));
     }
 
     match /messages/{file=**} {
@@ -65,8 +86,8 @@ service firebase.storage {
     // тому тут не вимагаємо існування polls/{id}.
     match /polls/{file=**} {
       allow read: if signedIn();
-      allow create, update: if admin() && safeUpload(20);
-      allow delete: if admin();
+      allow create, update: if manager() && safeUpload(20);
+      allow delete: if manager();
     }
 
     // Протоколи правління, протоколи загальних зборів і документи Бази.
@@ -79,12 +100,12 @@ service firebase.storage {
 
     match /board_members/{file=**} {
       allow read: if signedIn();
-      allow write: if admin() && (request.resource == null || safeUpload(8));
+      allow write: if manager() && (request.resource == null || safeUpload(8));
     }
 
     match /services/{file=**} {
       allow read: if signedIn();
-      allow write: if admin() && (request.resource == null || safeUpload(8));
+      allow write: if manager() && (request.resource == null || safeUpload(8));
     }
 
     match /{allPaths=**} {

@@ -70,7 +70,10 @@ export const session = {
     ownersDecision: null,
     tutorialSeen: false,
     ownerName: '',    // ПІБ першого співвласника — для форм банку
-    isAdmin: false
+    role: null,       // роль у правлінні: chair / board / accountant, або null
+    staffName: '',    // ім'я в команді правління
+    serviceAccount: false, // службовий запис без квартири (бухгалтер, старий спільний вхід)
+    isAdmin: false    // зараз відкрита панель правління (а не кабінет мешканця)
 };
 
 /** Номер квартири поточного користувача — завжди з токена автентифікації. */
@@ -90,5 +93,8 @@ export function resetSession() {
     session.ownersDecision = null;
     session.tutorialSeen = false;
     session.ownerName = '';
+    session.role = null;
+    session.staffName = '';
+    session.serviceAccount = false;
     session.isAdmin = false;
 }

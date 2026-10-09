@@ -14,12 +14,12 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=127">
-    <link rel="stylesheet" href="style-chat.css?v=127">
+    <link rel="stylesheet" href="style.css?v=128">
+    <link rel="stylesheet" href="style-chat.css?v=128">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самого app.js: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/app.js?v=127">
+    <link rel="modulepreload" href="js/app.js?v=128">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -124,6 +124,10 @@
                     <span class="menu-tile-icon mi-teal"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12" y2="17"></line></svg></span>
                 </span>
                 <span class="menu-tile-label">Запитання</span>
+            </button>
+            <button id="menuStaffBtn" class="menu-tile" type="button" hidden>
+                <span class="menu-tile-art"><span class="menu-tile-icon mi-blue"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><polyline points="9 12 11 14 15 10"></polyline></svg></span></span>
+                <span class="menu-tile-label">Правління</span>
             </button>
             <button id="menuMetersBtn" class="menu-tile" type="button">
                 <span class="menu-tile-art"><span class="menu-tile-icon mi-blue"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg></span></span>
@@ -491,8 +495,9 @@
             </div>
             <div class="admin-account">
                 <span class="admin-today" id="adminToday"></span>
-                <span class="admin-avatar" aria-hidden="true">П</span>
-                <span class="admin-account-copy"><b>Правління ОСББ</b><small>Адміністратор</small></span>
+                <button id="adminHomeBtn" class="btn-ghost-small admin-home-btn" type="button" hidden>Мій кабінет</button>
+                <span class="admin-avatar" id="adminAvatar" aria-hidden="true">П</span>
+                <span class="admin-account-copy"><b id="adminAccountName">Правління ОСББ</b><small id="adminAccountRole">Голова правління</small></span>
                 <button id="adminLogoutBtn" class="icon-btn icon-btn-danger" type="button" aria-label="Вийти">
                     <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                 </button>
@@ -557,6 +562,15 @@
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 <span>Контакти</span>
             </button>
+            <span class="admin-nav-label">Правління</span>
+            <button class="admin-tab" data-tab="team" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><polyline points="9 12 11 14 15 10"></polyline></svg>
+                <span>Команда</span>
+            </button>
+            <button class="admin-tab" data-tab="journal" type="button">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                <span>Журнал дій</span>
+            </button>
             <span class="admin-nav-help">Потрібна допомога?<small>Перейдіть до розділу FAQ у кабінеті мешканця</small></span>
         </div>
 
@@ -582,6 +596,37 @@
                     </label>
                 </div>
                 <div id="adminScheduleHost"></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: команда правління -->
+        <div class="admin-panel" data-panel="team">
+            <div class="card"><h3 class="am-card-title">Команда правління</h3>
+                <p class="field-hint">Кожен входить під своїм номером: член правління — номером своєї квартири, бухгалтер без квартири — службовим номером. Права залежать від ролі, а в журналі видно, хто що змінив.</p>
+                <div id="teamList"><p class="list-empty">Завантаження…</p></div>
+            </div>
+            <div class="card" id="teamAddCard" hidden><h3 class="am-card-title">Додати до команди</h3>
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Номер для входу</span><input id="teamLogin" class="field-input" inputmode="numeric" maxlength="6" placeholder="Номер квартири"></label>
+                    <label class="field"><span class="field-label">Роль</span><select id="teamRole" class="field-input field-select">
+                        <option value="board">Член правління</option><option value="accountant">Бухгалтер</option><option value="chair">Голова правління</option></select></label>
+                </div>
+                <label class="field"><span class="field-label">Ім'я та прізвище</span><input id="teamName" class="field-input" maxlength="100" placeholder="Як підписувати дії в журналі"></label>
+                <label class="am-check"><input type="checkbox" id="teamService"><span>Без квартири в будинку — службовий номер (наприклад, для бухгалтера)</span></label>
+                <button id="teamAddBtn" type="button" class="btn-primary">Додати</button>
+                <p class="field-hint">Обліковий запис для входу ({номер}@uspih-25.com) створюється так само, як для квартир. Роль діє одразу після збереження.</p>
+            </div>
+        </div>
+
+        <!-- Вкладка: журнал дій -->
+        <div class="admin-panel" data-panel="journal">
+            <div class="card"><div class="meter-card-head"><h3 class="am-card-title">Журнал дій правління</h3><button id="journalRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
+                <p class="field-hint">Хто, коли й що змінив. Записи лише додаються — змінити чи видалити їх не може ніхто.</p>
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Хто</span><select id="journalActor" class="field-input field-select"><option value="">Усі</option></select></label>
+                    <label class="field"><span class="field-label">Що</span><select id="journalArea" class="field-input field-select"><option value="">Усі дії</option></select></label>
+                </div>
+                <div id="journalList"><p class="list-empty">Завантаження…</p></div>
             </div>
         </div>
 
@@ -2018,7 +2063,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=127' : './js/app.js?v=127').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=128' : './js/app.js?v=128').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

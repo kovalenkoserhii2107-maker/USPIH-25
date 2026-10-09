@@ -12,6 +12,7 @@
 // коли протокол уже друкують.
 // ============================================================
 import { db, storage } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, addDoc, getDocs, getDoc, doc, updateDoc,
     query, orderBy, serverTimestamp, where, limit, startAfter
@@ -305,6 +306,7 @@ async function createMeeting(btn) {
             createdAt: serverTimestamp()
         };
         const ref = await addDoc(collection(db, 'polls'), payload);
+        await audit('meeting.create', { target: `polls/${ref.id}`, summary: `Збори «${payload.title}» створено` });
 
         // Розсилка окремо від запису: якщо вона впаде, збори вже
         // створені й нікуди не зникнуть — запрошення правління
@@ -619,6 +621,7 @@ async function saveEdit(btn) {
             deadline
         });
         closeEdit();
+        await audit('meeting.edit', { target: `polls/${editing.id}`, summary: `Збори «${title}» змінено` });
         toast('Зміни збережено', 'success');
         await loadMeetings();
     } catch (e) {
@@ -663,6 +666,7 @@ async function closeMeeting(poll, btn) {
     setBusy(btn, true, 'Завершення…');
     try {
         await finalizeMeeting(poll.id);
+        await audit('meeting.close', { target: `polls/${poll.id}`, summary: `Збори «${poll.title}» завершено, підсумки надіслано` });
         toast('Збори завершено, підсумки надіслано', 'success');
         await loadMeetings();
     } catch (e) {

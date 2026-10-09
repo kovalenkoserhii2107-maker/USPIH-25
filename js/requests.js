@@ -2,6 +2,7 @@
 // Звернення мешканців до правління + база документів ОСББ.
 // ============================================================
 import { db, storage, session } from './firebase.js';
+import { audit } from './audit.js';
 import {
     collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp,
     limit, startAfter, runTransaction
@@ -413,6 +414,7 @@ async function setRequestStatus(id, status) {
     renderAdminRequests();
     try {
         await updateDoc(doc(db, 'requests', id), { status, statusAt: serverTimestamp() });
+        audit('request.status', { target: `requests/${id}`, summary: `Звернення кв. ${req.apt}: статус «${status}»` });
     } catch (e) {
         console.error(e);
         req.st = prev;                     // сервер відмовив — повертаємо як було
@@ -472,6 +474,7 @@ async function sendReply(btn) {
             req.repliedAt = { toMillis: () => Date.now() };   // formatDateTime читає саме toMillis
         }
         closeReplyModal();
+        await audit('request.reply', { target: `requests/${id}`, summary: `Відповідь на звернення${req ? ` кв. ${req.apt}` : ''}${markDone ? ', закрито' : ''}` });
         toast(markDone ? 'Відповідь надіслано, звернення закрито' : 'Відповідь надіслано', 'success');
         renderAdminRequests();
     } catch (e) {
@@ -515,6 +518,7 @@ export async function uploadOsbbDoc(btn) {
         document.getElementById('osbbDocTitle').value = '';
         osbbDocFile = null;
         refreshOsbbChips();
+        await audit('document.publish', { target: 'osbb_documents', summary: `Документ «${title}» додано до Бази`, details: { category } });
         toast('Документ додано до Бази', 'success');
         await populateDocsDropdown();
     } catch (e) {

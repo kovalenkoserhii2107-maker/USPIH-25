@@ -726,13 +726,17 @@ async function softDelete(item, ctx) {
         'Текст зникне, а в розмові лишиться позначка, що повідомлення видалено.');
     if (!ok) return;
     try {
+        const byBoard = session.isAdmin === true && !isMine(item.data);
         await updateDoc(doc(db, ...ctx.path, item.id), {
             deleted: true,
             deletedAt: serverTimestamp(),
-            deletedByBoard: session.isAdmin === true && !isMine(item.data),
+            deletedByBoard: byBoard,
             text: '',
             attachments: []
         });
+        // Модерацію видно в журналі разом із тим, що саме прибрали.
+        if (byBoard) import('./audit.js').then(({ audit }) => audit('chat.moderate', { target: `${ctx.path.join('/')}/${item.id}`,
+            summary: `Повідомлення кв. ${item.data.apt} видалено`, details: { text: String(item.data.text || '').slice(0, 300) } }));
     } catch (e) {
         console.error('Видалення:', e.code, e);
         toast(explain(e, 'Не вдалося видалити'), 'error');

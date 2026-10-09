@@ -4,6 +4,8 @@ import { escapeHtml, toast, setBusy, lockScroll, unlockScroll, formatMoney } fro
 import { fetchDirectory } from './directory.js';
 import { certificateAccount, buildDebtCertificateDoc, buildBoardProtocolDoc } from './admin-document-core.js';
 import { formatMeetingDate } from './meeting.js';
+import { fetchStaffRole, requireRight } from './staff-core.js';
+import { audit } from './audit.js';
 import { publishOsbbDocument, populateDocsDropdown } from './requests.js';
 
 let certificateUrl = '', certificateBusy = false, certificateRequest = 0;
@@ -22,8 +24,7 @@ function renderAccount(apartment) {
 async function requireAdmin() {
     const apt = currentApt();
     if (!apt) throw new Error('Увійдіть у застосунок');
-    const snap = await getDocFromServer(doc(db, 'apartments', apt));
-    if (!snap.exists() || snap.data().isAdmin !== true) throw new Error('Дія доступна лише правлінню');
+    requireRight(await fetchStaffRole({ doc, getDocFromServer }, db, apt), 'staff', 'Дія доступна лише правлінню');
 }
 
 async function apartmentData(apt) {
@@ -93,6 +94,7 @@ async function generateCertificate(btn) {
         el('certificateOpenPdf').href = certificateUrl;
         el('certificateDownload').href = certificateUrl; el('certificateDownload').download = fileName;
         el('certificateResult').hidden = false;
+        await audit('certificate.debt', { target: `apartments/${apt}`, summary: `Довідка про заборгованість кв. ${apt}` });
         toast('Довідку сформовано', 'success');
     } catch (error) { toast(error.message || 'Не вдалося сформувати довідку', 'error'); }
     finally { certificateBusy = false; el('certificateFields').disabled = false; setBusy(btn, false); }
@@ -136,6 +138,7 @@ async function publishBoard(btn) {
         boardDraftId = null; boardFile = null;
         el('boardProtocolFile').value = ''; el('boardProtocolFileName').textContent = 'Файл не обрано';
         el('boardProtocolForm').reset(); el('boardProtocolDate').value = today(); toggleBoardMode();
+        await audit('protocol.board', { target: 'osbb_documents', summary: `Протокол правління № ${data.number} додано до Бази` });
         toast('Протокол правління додано до Бази', 'success');
         const { loadProtocols } = await import('./meetings.js');
         await Promise.allSettled([loadProtocols(), populateDocsDropdown()]);

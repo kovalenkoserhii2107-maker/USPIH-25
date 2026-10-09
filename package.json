@@ -6,7 +6,7 @@
     "build": "node scripts/build-site.mjs",
     "check": "node scripts/check-project.mjs",
     "test": "node --test tests/unit/*.test.mjs functions/*.test.js",
-    "test:rules": "node --test tests/rules/*.test.mjs",
+    "test:rules": "node --test --test-concurrency=1 tests/rules/*.test.mjs",
     "ci": "npm run check && npm test && npm run build"
   },
   "devDependencies": {

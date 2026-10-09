@@ -3,6 +3,7 @@
 // в усіх користувачів через onSnapshot.
 // ============================================================
 import { db } from './firebase.js';
+import { audit } from './audit.js';
 import {
     doc, setDoc, addDoc, collection, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -108,6 +109,7 @@ export function initPowerToggle() {
         try {
             await setDoc(doc(db, 'status', 'power'),
                 { isOn: newState, changedAt: serverTimestamp() }, { merge: true });
+            audit('power.toggle', { target: 'status/power', summary: newState ? 'Світло позначено як є' : 'Світло позначено як немає' });
 
             // Журнал ведемо окремо: у status/power лежить лише поточний
             // стан, і без цього запису історія відключень зникала б

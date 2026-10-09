@@ -24,12 +24,21 @@ const { computeQuorum, meetingSummary, chairVoteError, QUORUM_PCT } = require('.
 // в репозиторій разом із функцією.
 const POWER_SECRET = defineSecret('POWER_SECRET');
 
-async function requireAdmin(request) {
+// Роль людини з staff/{номер входу}, як у firestore.rules. Старий спільний
+// запис правління (isAdmin) без документа в staff діє як голова.
+async function staffRole(apt) {
+    const staff = await db.doc(`staff/${apt}`).get();
+    if (staff.exists) return staff.data().active === true ? staff.data().role : null;
+    const apartment = await db.doc(`apartments/${apt}`).get();
+    return apartment.exists && apartment.data().isAdmin === true ? 'chair' : null;
+}
+
+/** Збори, графік ДТЕК та інші рішення правління — голова й члени правління. */
+async function requireAdmin(request, roles = ['chair', 'board']) {
     const email = request.auth?.token?.email || '';
     const apt = email.split('@')[0];
     if (!apt) throw new HttpsError('unauthenticated', 'Потрібен вхід');
-    const snap = await db.doc(`apartments/${apt}`).get();
-    if (!snap.exists || snap.data().isAdmin !== true) {
+    if (!roles.includes(await staffRole(apt))) {
         throw new HttpsError('permission-denied', 'Лише для правління');
     }
     return apt;

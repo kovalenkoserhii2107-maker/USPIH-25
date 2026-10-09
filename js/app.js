@@ -39,6 +39,7 @@ import {
 import { initPullToRefresh } from './pull-refresh.js';
 import { maybeShowTutorial, markFreshLogin } from './tutorial.js';
 import { createResilientLoader } from './resilient-load.js';
+import { ROLES, ROLE_LABELS, TAB_RIGHTS, hasRight } from './staff-core.js';
 import { initLedger, loadLedger } from './ledger.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
@@ -70,16 +71,16 @@ const featureImports = {
     directory: () => import('./directory.js'), importer: () => import('./import-owners.js'),
     exporter: () => import('./export-base.js'), verify: () => import('./verify.js'),
     documents: () => import('./admin-documents.js'), meters: () => import('./meters.js'),
-    apartmentMeters: () => import('./apartment-meters.js')
+    apartmentMeters: () => import('./apartment-meters.js'), team: () => import('./admin-team.js')
 };
 const featureGroups = { overview: ['dashboard'], meetings: ['meetings', 'documents'],
     directory: ['directory', 'importer', 'exporter', 'verify', 'documents'], finance: ['documents'],
-    meters: ['meters', 'apartmentMeters'] };
+    meters: ['meters', 'apartmentMeters'], team: ['team'], journal: ['team'] };
 async function ensureAdminFeatures(group) {
     const modules = await Promise.all(featureGroups[group].map(name => {
         if (!adminFeaturePromises.has(name)) adminFeaturePromises.set(name, featureImports[name]().then(features => {
             for (const init of ['initDirectory', 'initImportOwners', 'initExportBase', 'initMeetings', 'initVerify',
-                'initAdminDocuments', 'initMeters', 'initApartmentMeters']) features[init]?.();
+                'initAdminDocuments', 'initMeters', 'initApartmentMeters', 'initTeam']) features[init]?.();
             if (name === 'meetings') initMeetingWorkspace();
             return features;
         }).catch(error => { adminFeaturePromises.delete(name); throw error; }));
@@ -108,6 +109,8 @@ const ADMIN_TAB_LOADERS = {
     finance: async () => { await ensureAdminFeatures('finance'); return Promise.all([loadAdminExpenses(), loadAdminRequisites()]); },
     meters: async () => { const features = await ensureAdminFeatures('meters'); return Promise.all([features.loadAdminMeters(), features.loadApartmentSubmissions()]); },
     board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
+    team: async () => (await ensureAdminFeatures('team')).loadTeam(),
+    journal: async () => (await ensureAdminFeatures('journal')).loadJournal(),
     chat: loadChat
 };
 
@@ -165,27 +168,50 @@ async function handleLogin() {
 // ------------------------------------------------------------
 // ЗАВАНТАЖЕННЯ КАБІНЕТУ
 // ------------------------------------------------------------
+// Режим, у якому член правління востаннє працював на цьому пристрої:
+// голова частіше відкриває панель, решта — власний кабінет.
+const WORK_MODE_KEY = 'work_mode';
+const storedWorkMode = () => { try { return localStorage.getItem(WORK_MODE_KEY); } catch { return null; } };
+const rememberWorkMode = mode => { try { localStorage.setItem(WORK_MODE_KEY, mode); } catch { /* лише зручність */ } };
+
+let homeApartment = null;
+
 async function loadCabinet(apt) {
     const aptRef = doc(db, 'apartments', apt);
-    const snap = await getDoc(aptRef);
+    // Свій документ ролі читати може кожен: так застосунок дізнається,
+    // чи людина в команді правління. Відсутній документ — не помилка.
+    const [snap, staffSnap] = await Promise.all([
+        getDoc(aptRef), getDoc(doc(db, 'staff', apt)).catch(() => null)
+    ]);
+    const staff = staffSnap?.exists() ? staffSnap.data() : null;
+    const apartment = snap.exists() ? snap.data() : null;
+    homeApartment = apartment;
+
+    session.apt = apt;
+    session.serviceAccount = apartment ? apartment.isAdmin === true : Boolean(staff);
+    session.role = staff
+        ? (staff.active === true && ROLES.includes(staff.role) ? staff.role : null)
+        : (apartment?.isAdmin === true ? 'chair' : null);
+    session.staffName = staff?.name || '';
 
     let firstLogin = true;
-    if (snap.exists()) {
-        const data = snap.data();
-        firstLogin = !data.passwordChanged;
-        session.apt = apt;
-        session.area = data.area || '--';
-        session.entrance = data.entrance || '--';
-        session.isAdmin = data.isAdmin === true;
-        session.ownersStatus = data.ownersStatus || 'pending';
-        session.ownersDecision = data.ownersDecision || null;
-        session.tutorialSeen = Boolean(data.tutorialAt);
-    } else {
-        await setDoc(aptRef, { passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: serverTimestamp() });
-        session.apt = apt;
+    if (apartment) {
+        firstLogin = !apartment.passwordChanged;
+        session.area = apartment.area || '--';
+        session.entrance = apartment.entrance || '--';
+        session.ownersStatus = apartment.ownersStatus || 'pending';
+        session.ownersDecision = apartment.ownersDecision || null;
+        session.tutorialSeen = Boolean(apartment.tutorialAt);
+    } else if (staff) {
+        // Службовий номер без документа квартири: не створюємо його,
+        // інакше в довіднику з'явилася б неіснуюча квартира.
+        firstLogin = false;
         session.area = '--';
         session.entrance = '--';
-        session.isAdmin = false;
+    } else {
+        await setDoc(aptRef, { passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: serverTimestamp() });
+        session.area = '--';
+        session.entrance = '--';
     }
 
     if (firstLogin) {
@@ -196,44 +222,84 @@ async function loadCabinet(apt) {
     }
 
     startPowerListener();
+    renderStaffEntry();
 
-    if (session.isAdmin) {
-        showScreen('adminDashboardSection');
+    const staffMode = Boolean(session.role) && (session.serviceAccount || storedWorkMode() === 'staff');
+    if (staffMode) await openStaffMode();
+    else await openHomeMode(apt);
+}
+
+/** Плитка «Правління» в меню мешканця — лише для команди. */
+function renderStaffEntry() {
+    const tile = document.getElementById('menuStaffBtn');
+    if (tile) tile.hidden = !session.role || session.serviceAccount;
+}
+
+/** Панель правління з вкладками, дозволеними цій ролі. */
+async function openStaffMode() {
+    if (!session.role) return;
+    session.isAdmin = true;
+    if (!session.serviceAccount) rememberWorkMode('staff');
+    stopChat();
+    closeAllSheets();
+    showScreen('adminDashboardSection');
+    document.getElementById('topNav').style.display = 'none';
+    renderStaffHeader();
+    loadedAdminTabs.clear();
+    loadingAdminTabs.clear();
+    activeAdminTab = 'overview';
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'overview'));
+    document.querySelectorAll('.admin-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === 'overview'));
+    await loadAdminTab('overview');
+    refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
+}
+
+/** Хто увійшов і що йому доступно — у шапці й меню панелі. */
+function renderStaffHeader() {
+    const name = session.staffName || (session.serviceAccount ? 'Правління ОСББ' : `Квартира ${session.apt}`);
+    document.getElementById('adminAccountName').textContent = name;
+    document.getElementById('adminAccountRole').textContent = ROLE_LABELS[session.role] || '';
+    document.getElementById('adminAvatar').textContent = name.trim().charAt(0).toUpperCase() || 'П';
+    document.getElementById('adminHomeBtn').hidden = session.serviceAccount;
+    document.querySelectorAll('.admin-tab').forEach(tab => {
+        tab.hidden = !hasRight(session.role, TAB_RIGHTS[tab.dataset.tab] || 'staff');
+    });
+}
+
+/** Власний кабінет мешканця — і для члена правління, що живе в будинку. */
+async function openHomeMode(apt = session.apt) {
+    session.isAdmin = false;
+    if (session.role) rememberWorkMode('home');
+    closeAllSheets();
+    showScreen('dataSection');
+    document.getElementById('topNav').style.display = 'block';
+    document.getElementById('displayAptNum').textContent = apt;
+    document.getElementById('displayEntranceNum').textContent = session.entrance;
+    // Кома, а не крапка: усі інші числа в застосунку українські
+    // («6 247,33»), і «64.0» серед них виглядає чужим.
+    document.getElementById('displayAreaVal').textContent =
+        String(session.area).replace('.', ',');
+    const apartment = homeApartment;
+    homeApartment = null;           // при наступному переході — свіжі дані
+    await Promise.all([
+        loadOwners(apt), loadUserMessages(apt, session.entrance),
+        loadBalance(apt, apartment || undefined), loadExpenses(), loadPowerSchedule()
+    ]);
+
+    // Кнопку малює loadBalance, тож слухача вішаємо після нього
+    const receiptsBtn = document.getElementById('openReceiptsBtn');
+    if (receiptsBtn) receiptsBtn.onclick = () => {
+        showScreen('receiptsSection');
         document.getElementById('topNav').style.display = 'none';
-        loadedAdminTabs.clear();
-        loadingAdminTabs.clear();
-        activeAdminTab = 'overview';
-        await loadAdminTab('overview');
-        refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
-    } else {
-        showScreen('dataSection');
-        document.getElementById('topNav').style.display = 'block';
-        document.getElementById('displayAptNum').textContent = apt;
-        document.getElementById('displayEntranceNum').textContent = session.entrance;
-        // Кома, а не крапка: усі інші числа в застосунку українські
-        // («6 247,33»), і «64.0» серед них виглядає чужим.
-        document.getElementById('displayAreaVal').textContent =
-            String(session.area).replace('.', ',');
-        await Promise.all([
-            loadOwners(apt), loadUserMessages(apt, session.entrance),
-            loadBalance(apt, snap.exists() ? snap.data() : {}), loadExpenses(), loadPowerSchedule()
-        ]);
-
-        // Кнопку малює loadBalance, тож слухача вішаємо після нього
-        const receiptsBtn = document.getElementById('openReceiptsBtn');
-        if (receiptsBtn) receiptsBtn.onclick = () => {
-            showScreen('receiptsSection');
-            document.getElementById('topNav').style.display = 'none';
-            loadReceipts();
-        };
-        refreshPollsBadge();          // без await: значок не має затримувати кабінет
-        refreshRequestsBadge();       // так само — непрочитані відповіді правління
-        refreshChatBadge();
-        showInstallHint();
-        // Знайомство — останнім: кабінет під ним уже завантажений, тож
-        // з останнього кроку можна одразу везти до списку співвласників.
-        maybeShowTutorial();
-    }
+        loadReceipts();
+    };
+    refreshPollsBadge();          // без await: значок не має затримувати кабінет
+    refreshRequestsBadge();       // так само — непрочитані відповіді правління
+    refreshChatBadge();
+    showInstallHint();
+    // Знайомство — останнім: кабінет під ним уже завантажений, тож
+    // з останнього кроку можна одразу везти до списку співвласників.
+    maybeShowTutorial();
 }
 
 // ------------------------------------------------------------
@@ -394,6 +460,10 @@ function initNavigation() {
         await signOut(auth);
         location.reload();
     });
+
+    // Член правління перемикається між панеллю й власним кабінетом без перевходу.
+    document.getElementById('menuStaffBtn')?.addEventListener('click', () => openStaffMode());
+    document.getElementById('adminHomeBtn')?.addEventListener('click', () => openHomeMode());
 
     document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
         localStorage.removeItem('session_timestamp');

@@ -2,6 +2,7 @@
 // публікація оголошення і службових позначок відбувається разом.
 import { db, currentApt } from './firebase.js';
 import * as firestore from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { fetchStaffRole, requireRight } from './staff-core.js';
 import { computeQuorum, meetingSummary, chairVoteError, formatMeetingDate, QUORUM_PCT } from './meeting.js';
 
 function fail(code, message) {
@@ -51,10 +52,7 @@ export function createMeetingActions(database, apartmentOfCurrentUser, api = fir
     async function requireAdmin() {
         const apt = apartmentOfCurrentUser();
         if (!apt) fail('unauthenticated', 'Сеанс завершився. Увійдіть повторно.');
-        const admin = await getDocFromServer(doc(database, 'apartments', apt));
-        if (!admin.exists() || admin.data().isAdmin !== true) {
-            fail('permission-denied', 'Ця дія доступна лише правлінню.');
-        }
+        requireRight(await fetchStaffRole(api, database, apt), 'manage', 'Ця дія доступна голові й членам правління.');
     }
 
     async function readContext(id) {
