@@ -80,12 +80,16 @@ function renderPersonalAccount() {
     if (acc) val.textContent = acc;
 }
 
-export async function loadBalance(apt) {
+/** apartment — уже прочитаний документ квартири, щоб не читати його вдруге. */
+export async function loadBalance(apt, apartment) {
     const host = document.getElementById('balanceHost');
     if (!host) return;
     try {
-        const snap = await getDoc(doc(db, 'apartments', apt));
-        const d = snap.exists() ? snap.data() : {};
+        let d = apartment;
+        if (!d) {
+            const snap = await getDoc(doc(db, 'apartments', apt));
+            d = snap.exists() ? snap.data() : {};
+        }
         session.balance = parseMoney(d.balance);
         session.personalAccount = d.personalAccount || '';
         // Рахунок показуємо в картці квартири: його доводиться диктувати
