@@ -1,5 +1,5 @@
 import { decimalValue, integerReading } from './meter-core.js';
-import { lockScroll, unlockScroll } from './ui.js';
+import { lockScroll, unlockScroll, escapeHtml } from './ui.js';
 
 const MAX = 1e10;
 const parts = value => {
@@ -10,9 +10,9 @@ let picker = null;
 
 function closePicker() {
     if (!picker) return;
-    const { source, modal } = picker;
+    const { modal, returnFocus } = picker;
     modal.remove(); picker = null; unlockScroll();
-    source.closest('.meter-dial')?.querySelector('.dial-display')?.focus();
+    returnFocus?.focus?.();
 }
 
 function emit(input, value) {
@@ -20,25 +20,39 @@ function emit(input, value) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function openPicker(input) {
-    if (input.readOnly || input.disabled || input.closest('fieldset:disabled')) return;
+/**
+ * Аркуш із барабанами цифр у стилі iOS. Одна реалізація і для мешканця,
+ * і для правління: value — поточне значення, preview(n) — живий підпис
+ * під барабанами (наприклад, скільки спожито), onApply(n) — ціле число.
+ */
+export function openMeterPicker({ value, title = 'Показник лічильника', subtitle = '', preview = null, onApply, returnFocus = null }) {
     closePicker();
-    const p = parts(input.value), digits = [...p.integer];
+    const p = parts(value), digits = [...p.integer];
     const modal = document.createElement('div');
     modal.className = 'modal is-open dial-modal';
     modal.innerHTML = `<div class="modal-box dial-picker" role="dialog" aria-modal="true" aria-labelledby="dialPickerTitle">
-        <div class="modal-head"><h3 id="dialPickerTitle">Показник лічильника</h3><button type="button" class="sheet-close" data-dial-cancel aria-label="Закрити">✕</button></div>
-        <p class="field-hint">Прокрутіть цифри вгору або вниз. Можна також ввести число вручну.</p>
+        <div class="dial-grabber" aria-hidden="true"></div>
+        <div class="dial-head"><button type="button" class="dial-head-btn" data-dial-cancel>Скасувати</button>
+            <h3 id="dialPickerTitle">${escapeHtml(title)}</h3>
+            <button type="button" class="dial-head-btn is-done" data-dial-apply>Готово</button></div>
+        ${subtitle ? `<p class="dial-sub">${escapeHtml(subtitle)}</p>` : ''}
         <div class="dial-wheels">${digits.map((digit, index) => `
-            <div class="dial-wheel" role="spinbutton" tabindex="0" aria-label="Цифра ${index + 1}" aria-valuemin="0" aria-valuemax="9" aria-valuenow="${digit}" data-wheel="${index}">
+            <div class="dial-wheel" role="spinbutton" tabindex="0" aria-label="Цифра ${index + 1} з ${digits.length}" aria-valuemin="0" aria-valuemax="9" aria-valuenow="${digit}" data-wheel="${index}">
                 ${Array.from({ length: 30 }, (_, n) => `<div class="dial-wheel-digit" aria-hidden="true">${n % 10}</div>`).join('')}</div>`).join('')}</div>
-        <label class="field dial-manual"><span class="field-label">Ввести вручну · лише цілі числа</span><input class="field-input" inputmode="numeric" pattern="[0-9]*" data-dial-manual value="${Math.trunc(p.number ?? 0)}" placeholder="Наприклад: 1234"></label>
-        <p class="dial-picker-error" aria-live="polite"></p><button type="button" class="btn-primary" data-dial-apply>Застосувати</button>
+        <p class="dial-live" aria-live="polite"></p>
+        <label class="field dial-manual"><span class="field-label">Або введіть з клавіатури</span><input class="field-input" inputmode="numeric" pattern="[0-9]*" data-dial-manual value="${Math.trunc(p.number ?? 0)}" placeholder="Наприклад: 1234"></label>
+        <p class="dial-picker-error" aria-live="polite"></p>
     </div>`;
     document.body.append(modal); lockScroll();
     const wheels = [...modal.querySelectorAll('.dial-wheel')], manual = modal.querySelector('[data-dial-manual]');
-    picker = { source: input, modal };
+    const live = modal.querySelector('.dial-live'), error = modal.querySelector('.dial-picker-error');
+    picker = { modal, returnFocus };
     let ready = false, manualMode = false;
+    const showPreview = () => {
+        const number = integerReading(manual.value);
+        live.textContent = preview && number !== null ? preview(number) : '';
+        live.hidden = !live.textContent;
+    };
     const numberFromWheels = () => {
         wheels.forEach(wheel => {
             const index = Math.max(0, Math.min(29, Math.round(wheel.scrollTop / 44)));
@@ -46,6 +60,7 @@ function openPicker(input) {
             wheel.setAttribute('aria-valuenow', String(index % 10));
         });
         manual.value = String(Number(digits.join('')));
+        error.textContent = ''; showPreview();
     };
     wheels.forEach((wheel, index) => {
         wheel.scrollTop = (10 + Number(digits[index])) * 44;
@@ -66,8 +81,9 @@ function openPicker(input) {
         });
     });
     requestAnimationFrame(() => requestAnimationFrame(() => { ready = true; }));
+    showPreview();
     manual.addEventListener('input', () => {
-        manualMode = true;
+        manualMode = true; error.textContent = ''; showPreview();
         const next = parts(manual.value);
         if (integerReading(manual.value) === null || next.integer.length !== p.integer.length) return;
         [...next.integer].forEach((digit, index) => {
@@ -75,7 +91,16 @@ function openPicker(input) {
             wheels[index].setAttribute('aria-valuenow', digit);
         });
     });
-    modal.querySelectorAll('[data-dial-cancel]').forEach(button => button.addEventListener('click', closePicker));
+    const apply = () => {
+        const number = integerReading(manual.value);
+        if (number === null || !/^\d+$/.test(manual.value.trim())) {
+            error.textContent = 'Введіть цілий невід’ємний показник без коми чи крапки'; return;
+        }
+        closePicker(); onApply(number);
+    };
+    manual.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); apply(); } });
+    modal.querySelector('[data-dial-cancel]').addEventListener('click', closePicker);
+    modal.querySelector('[data-dial-apply]').addEventListener('click', apply);
     modal.addEventListener('click', event => { if (event.target === modal) closePicker(); });
     modal.addEventListener('keydown', event => {
         if (event.key === 'Escape') { event.stopPropagation(); closePicker(); }
@@ -86,14 +111,13 @@ function openPicker(input) {
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
         }
     });
-    modal.querySelector('[data-dial-apply]').addEventListener('click', () => {
-        const number = integerReading(manual.value);
-        if (number === null || !/^\d+$/.test(manual.value.trim())) {
-            modal.querySelector('.dial-picker-error').textContent = 'Введіть цілий невід’ємний показник без коми чи крапки'; return;
-        }
-        emit(input, number); closePicker();
-    });
-    modal.querySelector('[data-dial-cancel]').focus();
+    wheels[0]?.focus({ preventScroll: true });
+}
+
+function openPicker(input) {
+    if (input.readOnly || input.disabled || input.closest('fieldset:disabled')) return;
+    openMeterPicker({ value: input.value, onApply: number => emit(input, number),
+        returnFocus: input.closest('.meter-dial')?.querySelector('.dial-display') });
 }
 
 export function syncMeterDial(input) {

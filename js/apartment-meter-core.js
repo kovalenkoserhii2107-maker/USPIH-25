@@ -94,3 +94,19 @@ export function synchronizedApartmentChanges(records, changes) {
     }
     return [...writes.values()];
 }
+
+/**
+ * Підказка біля нового показника: порівняння з попереднім поданим місяцем
+ * і з середнім за останні пів року. «Незвично» — утричі більше за звичне,
+ * щоб мешканець перевірив, чи не зайва цифра.
+ */
+export function consumptionInsight(series, period, consumption) {
+    const before = series.filter(row => row.period < period && !row.error);
+    const last = before.at(-1) || null;
+    const recent = before.slice(-6).map(row => row.consumption);
+    const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : null;
+    const change = last && last.consumption > 0 && Number.isFinite(consumption)
+        ? Math.round((consumption - last.consumption) / last.consumption * 100) : null;
+    const unusual = recent.length >= 2 && average > 0 && consumption > average * 3;
+    return { previousPeriod: last?.period ?? null, previous: last?.consumption ?? null, change, average, unusual };
+}

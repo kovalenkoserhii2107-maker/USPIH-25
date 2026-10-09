@@ -1,8 +1,6 @@
 import { meterStore } from './meter-store.js';
-import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatCalculation, integerReading, decimalValue, readingTariff } from './meter-core.js';
+import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, integerReading, decimalValue, readingTariff } from './meter-core.js';
 import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
-import { db, currentApt } from './firebase.js';
-import { doc, getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { escapeHtml, toast, setBusy, formatMoney } from './ui.js';
 
 let context = { revision: 0, records: [] };
@@ -10,7 +8,6 @@ let loaded = false, saving = false;
 const dirty = new Set();
 const drafts = new Map();
 const views = { admin: { period: '' }, resident: { period: '' } };
-let heatRequest = 0;
 const num = value => Number(value).toLocaleString('uk-UA', { maximumFractionDigits: 6 });
 const todayPeriod = () => new Date().toLocaleDateString('sv-SE').slice(0, 7);
 
@@ -92,29 +89,6 @@ function updatePreview(card) {
         host.textContent = `Витрата: ${num(row.consumption)} ${row.unit} · Вартість: ${formatMoney(row.cost)} грн`;
         host.classList.remove('is-error');
     } catch (error) { host.textContent = error.message; host.classList.add('is-error'); }
-}
-
-function renderHeatSummary(period, data, area) {
-    const host = document.getElementById('apartmentHeatEstimate');
-    if (!host) return;
-    const row = meterSeries(data.records, 'heat').find(row => row.period === period);
-    const calculation = apartmentHeatCalculation(row, area, data.totalArea);
-    const title = `<h3>Теплопостачання</h3><p class="field-hint">${escapeHtml(periodLabel(period))}</p>`;
-    if (!row) { host.innerHTML = title + '<p class="field-hint">За цей місяць правління ще не внесло показники тепла.</p>'; return; }
-    if (row.error) { host.innerHTML = title + `<p class="meter-error">${escapeHtml(row.error)}</p>`; return; }
-    if (!calculation) {
-        host.innerHTML = title + `<dl class="heat-breakdown"><div class="heat-building-total"><dt>Всього за будинок</dt><dd>${formatMoney(row.cost)} грн</dd></div></dl>
-            <p class="field-hint">${decimalValue(area) > 0 ? 'Правління має вказати коректну загальну площу будинку в розділі лічильників.' : 'Площа вашої квартири ще не внесена до бази. Зверніться до правління.'}</p>`;
-        return;
-    }
-    const { cost, volume, perSquareMeter, totalArea, apartmentArea } = calculation;
-    host.innerHTML = title + `<div class="heat-share"><strong>${formatMoney(cost)} грн</strong><span>за вашу квартиру</span></div>
-        <dl class="heat-breakdown"><div class="heat-building-total"><dt>Всього за будинок</dt><dd>${formatMoney(row.cost)} грн</dd></div>
-        <div><dt>Загальна площа будинку</dt><dd>${num(totalArea)} м²</dd></div>
-        <div><dt>Площа квартири</dt><dd>${num(apartmentArea)} м²</dd></div>
-        <div><dt>Вартість 1 м² за місяць</dt><dd>${Number(perSquareMeter).toLocaleString('uk-UA', { maximumFractionDigits: 4 })} грн/м²</dd></div>
-        <div><dt>Частка споживання</dt><dd>${num(volume)} ${escapeHtml(row.unit)}</dd></div></dl>
-        <details class="meter-extra"><summary>Як розраховано</summary><p class="field-hint">${formatMoney(row.cost)} грн за будинок × ${num(apartmentArea)} м² / ${num(totalArea)} м² загальної площі будинку.</p></details>`;
 }
 
 function renderStats(view) {
@@ -204,20 +178,6 @@ async function saveSetting(button, operation, success) {
     finally {
         saving = false; disableSettings(!loaded);
         document.getElementById('meterInputFields').disabled = false; setBusy(button, false);
-    }
-}
-
-export async function loadApartmentHeat(period) {
-    const host = document.getElementById('apartmentHeatEstimate');
-    if (!host) return;
-    const request = ++heatRequest, apt = currentApt();
-    host.innerHTML = '<h3>Теплопостачання</h3><p class="list-empty">Завантаження…</p>';
-    try {
-        const [data, snap] = await Promise.all([meterStore.load(), getDocFromServer(doc(db, 'apartments', apt))]);
-        if (request !== heatRequest || apt !== currentApt()) return;
-        renderHeatSummary(period, data, snap.data()?.area);
-    } catch {
-        if (request === heatRequest && apt === currentApt()) host.innerHTML = '<h3>Теплопостачання</h3><p class="field-hint">Не вдалося прочитати дані для розрахунку тепла. Натисніть «Оновити».</p>';
     }
 }
 
