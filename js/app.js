@@ -515,6 +515,12 @@ function initAdminFolds() {
 // СТАРТ
 // ------------------------------------------------------------
 function init() {
+    // Довге очікування без пояснень виглядає як зависання.
+    setTimeout(() => {
+        const loader = document.getElementById('appLoader');
+        const text = loader?.querySelector('.loader-text');
+        if (text && loader.style.display !== 'none') text.textContent = 'Повільне з’єднання — ще трохи…';
+    }, 6000);
     initSheets();
     initAttachmentViewers();
     initOwners();

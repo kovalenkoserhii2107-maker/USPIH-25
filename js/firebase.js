@@ -3,7 +3,9 @@
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getFirestore, disableNetwork, enableNetwork } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+    initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { getFunctions } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
 
@@ -19,7 +21,13 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const auth = getAuth(app);
+// Не getAuth(): той додає вхід через вікна Google і на iPhone та в Safari
+// ще до відновлення сесії вантажить службовий iframe із firebaseapp.com
+// та скрипти apis.google.com — черепаха чекала саме на них. Вхід у нас
+// лише за паролем, тож лишаємо ті самі сховища сесії без цього модуля.
+export const auth = initializeAuth(app, {
+    persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence]
+});
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-central2');
 

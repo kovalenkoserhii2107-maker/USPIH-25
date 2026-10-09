@@ -33,8 +33,11 @@ export function registerServiceWorker() {
     // app.js підключається динамічним import(), який не затримує load:
     // зазвичай подія вже минула, і слухач на неї не спрацював би ніколи —
     // воркер не ставився на нових пристроях і після аварійного скидання.
-    if (document.readyState === 'complete') register();
-    else window.addEventListener('load', register, { once: true });
+    // Невелика пауза: оновлення воркера качає всю оболонку, і на старті
+    // воно відбирало б мережу в першого запиту кабінету.
+    const later = () => setTimeout(register, 4000);
+    if (document.readyState === 'complete') later();
+    else window.addEventListener('load', later, { once: true });
 }
 
 // ------------------------------------------------------------

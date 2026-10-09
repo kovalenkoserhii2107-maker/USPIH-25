@@ -14,12 +14,12 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=126">
-    <link rel="stylesheet" href="style-chat.css?v=126">
+    <link rel="stylesheet" href="style.css?v=127">
+    <link rel="stylesheet" href="style-chat.css?v=127">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самого app.js: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/app.js?v=126">
+    <link rel="modulepreload" href="js/app.js?v=127">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -2018,7 +2018,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=126' : './js/app.js?v=126').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=127' : './js/app.js?v=127').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
