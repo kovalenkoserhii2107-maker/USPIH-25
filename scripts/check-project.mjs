@@ -6,15 +6,38 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
 const read = path => readFile(join(root, path), 'utf8');
 
-const [html, sw, firebaseJson, firestoreIndexesJson] = await Promise.all([
-    read('index.html'), read('sw.js'), read('firebase.json'), read('firestore.indexes.json')
+const [html, adminHtml, sw, firebaseJson, firestoreIndexesJson] = await Promise.all([
+    read('index.html'), read('admin.html'), read('sw.js'), read('firebase.json'), read('firestore.indexes.json')
 ]);
 
-const htmlVersions = [...html.matchAll(/(?:style(?:-chat)?\.css|js\/(?:app|admin-preview)\.js)\?v=(\d+)/g)].map(m => m[1]);
 const swVersion = sw.match(/const VERSION = '(\d+)'/)?.[1];
-if (!swVersion || htmlVersions.some(version => version !== swVersion)) {
-    errors.push(`Версії index.html (${htmlVersions.join(', ')}) і sw.js (${swVersion || 'немає'}) не збігаються`);
+for (const [name, page] of [['index.html', html], ['admin.html', adminHtml]]) {
+    const versions = [...page.matchAll(/(?:style(?:-chat|-admin)?\.css|js\/(?:app|admin-main|admin-preview)\.js)\?v=(\d+)/g)].map(m => m[1]);
+    if (!swVersion || !versions.length || versions.some(version => version !== swVersion)) {
+        errors.push(`Версії ${name} (${versions.join(', ')}) і sw.js (${swVersion || 'немає'}) не збігаються`);
+    }
 }
+
+// Чат, редактор співвласників і вікна є на обох сторінках — копії мають збігатися.
+function block(page, id) {
+    const lines = page.split('\n');
+    const start = lines.findIndex(line => new RegExp(`<(\\w+)\\b[^>]*\\bid="${id}"`).test(line));
+    if (start < 0) return null;
+    const tag = lines[start].match(new RegExp(`<(\\w+)\\b[^>]*\\bid="${id}"`))[1];
+    let depth = 0;
+    for (let i = start; i < lines.length; i++) {
+        depth += (lines[i].match(new RegExp(`<${tag}\\b`, 'g')) || []).length - (lines[i].match(new RegExp(`</${tag}>`, 'g')) || []).length;
+        if (depth <= 0) return lines.slice(start, i + 1).join('\n');
+    }
+    return null;
+}
+for (const id of ['navBackdrop', 'dtekPopup', 'schedulePopup', 'powerStatsPopup', 'chatSection', 'ownersEditSection',
+    'msgModal', 'imageGalleryModal', 'docViewerModal']) {
+    const resident = block(html, id), board = block(adminHtml, id);
+    if (!resident || !board) errors.push(`Спільний блок #${id} відсутній у ${resident ? 'admin.html' : 'index.html'}`);
+    else if (resident !== board) errors.push(`Спільний блок #${id} у index.html і admin.html розійшовся`);
+}
+if (/id="adminDashboardSection"/.test(html)) errors.push('Розмітка правління має бути лише в admin.html');
 
 const config = JSON.parse(firebaseJson);
 const firestoreIndexes = JSON.parse(firestoreIndexesJson);

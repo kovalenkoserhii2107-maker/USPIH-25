@@ -22,7 +22,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, lockScroll, unlockScroll } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
-import { buildRecipients } from './messages.js';
+import { buildRecipients } from './messages-admin.js';
 import { fetchDirectory } from './directory.js';
 import { finalizeMeeting, loadMeetingContext } from './meeting_actions.js';
 import {
@@ -691,7 +691,7 @@ async function openProtocol(poll, btn) {
             votes,
             onDone: async () => {
                 try {
-                    const { populateDocsDropdown } = await import('./requests.js');
+                    const { populateDocsDropdown } = await import('./requests-admin.js');
                     await populateDocsDropdown();
                 } catch (e) { console.warn('Оновлення списку документів:', e); }
                 await Promise.all([loadMeetings(), loadProtocols()]);

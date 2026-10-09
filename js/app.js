@@ -1,131 +1,38 @@
 // ============================================================
 // Точка входу: автентифікація, маршрутизація екранів, навігація.
 // ============================================================
-import { db, auth, session, currentApt, resetSession, aptToEmail, reconnectFirestore } from './firebase.js';
+import { db, auth, session, currentApt, resetSession, aptToEmail } from './firebase.js';
 import {
-    doc, getDoc, setDoc, updateDoc, serverTimestamp
+    doc, setDoc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
     signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import {
-    toast, setBusy, showScreen, currentScreen, initSheets, toggleSheet, closeAllSheets, muteErrorToasts
+    toast, setBusy, showScreen, currentScreen, initSheets, toggleSheet, closeAllSheets
 } from './ui.js';
 import { initAttachmentViewers } from './attachments.js';
 import { initOwners, loadOwners } from './owners.js';
-import { initPowerToggle, startPowerListener, stopPowerListener } from './power.js';
+import { startPowerListener, stopPowerListener } from './power.js';
 import { initPowerStats } from './power-stats.js';
 import { initFaq, loadFaq } from './faq.js';
 import { initChat, loadChat, stopChat, refreshChatBadge } from './chat.js';
-import { initMessages, loadUserMessages, loadAdminHistory } from './messages.js';
+import { initMessages, loadUserMessages } from './messages.js';
+import { initRequests, loadUserRequests, refreshRequestsBadge, loadOsbbDocs } from './requests.js';
+import { loadBoardContacts, loadServices } from './contacts.js';
+import { loadUserPolls, refreshPollsBadge } from './polls.js';
+import { initDtek, loadPowerSchedule } from './dtek.js';
 import {
-    initRequests, loadUserRequests, loadAdminRequests, refreshRequestsBadge,
-    loadOsbbDocs, populateDocsDropdown
-} from './requests.js';
-import {
-    initContacts, loadBoardContacts, loadServices,
-    loadAdminBoard, loadAdminServices
-} from './contacts.js';
-import { initPolls, loadUserPolls, loadAdminPolls, refreshPollsBadge } from './polls.js';
-import { initDtek, loadDtekSettings, loadPowerSchedule } from './dtek.js';
-import {
-    initFinance, initPayments, initAccounts, loadBalance, loadExpenses, loadReceipts,
-    loadFinanceDetail, loadAdminExpenses, loadAdminRequisites
+    initPayments, loadBalance, loadExpenses, loadReceipts, loadFinanceDetail
 } from './finance.js';
 import {
     registerServiceWorker, initInstallPrompt, showInstallHint, triggerInstall, canInstall
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
 import { maybeShowTutorial, markFreshLogin } from './tutorial.js';
-import { createResilientLoader } from './resilient-load.js';
-import { ROLES, ROLE_LABELS, TAB_RIGHTS, hasRight } from './staff-core.js';
+import { loadProfile, loadResiliently, initAppShell, sessionExpired, storedWorkMode, rememberWorkMode } from './app-common.js';
 import { initLedger, loadLedger } from './ledger.js';
-
-const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
-
-const resilient = createResilientLoader({ reconnect, currentScreen });
-const loadResiliently = resilient.load;
-
-async function reconnect() {
-    muteErrorToasts(60000);
-    try { await reconnectFirestore(); }
-    finally { muteErrorToasts(300); }
-}
-
-let hiddenAt = 0;
-function resumeLoading() {
-    if (resilient.resume()) return;
-    if (hiddenAt && Date.now() - hiddenAt > 60000 && auth.currentUser) {
-        // Після довгої паузи канал часто вже мертвий — відкриваємо новий
-        // заздалегідь, щоб наступне натискання не чекало.
-        reconnect().catch(() => {});
-    }
-}
-const loadedAdminTabs = new Set();
-const loadingAdminTabs = new Map();
-let activeAdminTab = 'overview';
-const adminFeaturePromises = new Map();
-const featureImports = {
-    dashboard: () => import('./dashboard.js'), meetings: () => import('./meetings.js'),
-    directory: () => import('./directory.js'), importer: () => import('./import-owners.js'),
-    exporter: () => import('./export-base.js'), verify: () => import('./verify.js'),
-    documents: () => import('./admin-documents.js'), meters: () => import('./meters.js'),
-    apartmentMeters: () => import('./apartment-meters.js'), team: () => import('./admin-team.js')
-};
-const featureGroups = { overview: ['dashboard'], meetings: ['meetings', 'documents'],
-    directory: ['directory', 'importer', 'exporter', 'verify', 'documents'], finance: ['documents'],
-    meters: ['meters', 'apartmentMeters'], team: ['team'], journal: ['team'] };
-async function ensureAdminFeatures(group) {
-    const modules = await Promise.all(featureGroups[group].map(name => {
-        if (!adminFeaturePromises.has(name)) adminFeaturePromises.set(name, featureImports[name]().then(features => {
-            for (const init of ['initDirectory', 'initImportOwners', 'initExportBase', 'initMeetings', 'initVerify',
-                'initAdminDocuments', 'initMeters', 'initApartmentMeters', 'initTeam']) features[init]?.();
-            if (name === 'meetings') initMeetingWorkspace();
-            return features;
-        }).catch(error => { adminFeaturePromises.delete(name); throw error; }));
-        return adminFeaturePromises.get(name);
-    }));
-    return Object.assign({}, ...modules);
-}
-
-const ADMIN_TAB_LOADERS = {
-    overview: async () => {
-        const features = await ensureAdminFeatures('overview');
-        return Promise.all([features.loadDashboard(), loadDtekSettings()]);
-    },
-    meetings: async () => {
-        const features = await ensureAdminFeatures('meetings');
-        return Promise.all([features.loadMeetings(), features.loadProtocols()]);
-    },
-    directory: async () => {
-        const features = await ensureAdminFeatures('directory');
-        return Promise.all([features.loadDirectory(), features.loadVerifyQueue()]);
-    },
-    send: () => Promise.all([loadAdminHistory(), populateDocsDropdown()]),
-    requests: loadAdminRequests,
-    docs: populateDocsDropdown,
-    polls: loadAdminPolls,
-    finance: async () => { await ensureAdminFeatures('finance'); return Promise.all([loadAdminExpenses(), loadAdminRequisites()]); },
-    meters: async () => { const features = await ensureAdminFeatures('meters'); return Promise.all([features.loadAdminMeters(), features.loadApartmentSubmissions()]); },
-    board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
-    team: async () => (await ensureAdminFeatures('team')).loadTeam(),
-    journal: async () => (await ensureAdminFeatures('journal')).loadJournal(),
-    chat: loadChat
-};
-
-async function loadAdminTab(name = activeAdminTab, force = false) {
-    const loader = ADMIN_TAB_LOADERS[name];
-    if (!loader || (!force && loadedAdminTabs.has(name))) return;
-    if (loadingAdminTabs.has(name)) return loadingAdminTabs.get(name);
-    const task = Promise.resolve().then(() => loadResiliently(loader, 'adminDashboardSection')).then(() => loadedAdminTabs.add(name));
-    loadingAdminTabs.set(name, task);
-    try {
-        await task;
-    } finally {
-        loadingAdminTabs.delete(name);
-    }
-}
 
 // ------------------------------------------------------------
 // ВХІД
@@ -168,31 +75,12 @@ async function handleLogin() {
 // ------------------------------------------------------------
 // ЗАВАНТАЖЕННЯ КАБІНЕТУ
 // ------------------------------------------------------------
-// Режим, у якому член правління востаннє працював на цьому пристрої:
-// голова частіше відкриває панель, решта — власний кабінет.
-const WORK_MODE_KEY = 'work_mode';
-const storedWorkMode = () => { try { return localStorage.getItem(WORK_MODE_KEY); } catch { return null; } };
-const rememberWorkMode = mode => { try { localStorage.setItem(WORK_MODE_KEY, mode); } catch { /* лише зручність */ } };
-
 let homeApartment = null;
 
 async function loadCabinet(apt) {
     const aptRef = doc(db, 'apartments', apt);
-    // Свій документ ролі читати може кожен: так застосунок дізнається,
-    // чи людина в команді правління. Відсутній документ — не помилка.
-    const [snap, staffSnap] = await Promise.all([
-        getDoc(aptRef), getDoc(doc(db, 'staff', apt)).catch(() => null)
-    ]);
-    const staff = staffSnap?.exists() ? staffSnap.data() : null;
-    const apartment = snap.exists() ? snap.data() : null;
+    const { apartment, staff } = await loadProfile(apt);
     homeApartment = apartment;
-
-    session.apt = apt;
-    session.serviceAccount = apartment ? apartment.isAdmin === true : Boolean(staff);
-    session.role = staff
-        ? (staff.active === true && ROLES.includes(staff.role) ? staff.role : null)
-        : (apartment?.isAdmin === true ? 'chair' : null);
-    session.staffName = staff?.name || '';
 
     let firstLogin = true;
     if (apartment) {
@@ -225,8 +113,9 @@ async function loadCabinet(apt) {
     renderStaffEntry();
 
     const staffMode = Boolean(session.role) && (session.serviceAccount || storedWorkMode() === 'staff');
-    if (staffMode) await openStaffMode();
-    else await openHomeMode(apt);
+    // Лоадер лишається, поки відкривається панель.
+    if (staffMode) { location.replace('admin.html'); return; }
+    await openHomeMode(apt);
 }
 
 /** Плитка «Правління» в меню мешканця — лише для команди. */
@@ -235,35 +124,11 @@ function renderStaffEntry() {
     if (tile) tile.hidden = !session.role || session.serviceAccount;
 }
 
-/** Панель правління з вкладками, дозволеними цій ролі. */
-async function openStaffMode() {
+/** Панель правління — окрема сторінка зі своїм кодом. */
+function openStaffMode() {
     if (!session.role) return;
-    session.isAdmin = true;
-    if (!session.serviceAccount) rememberWorkMode('staff');
-    stopChat();
-    closeAllSheets();
-    showScreen('adminDashboardSection');
-    document.getElementById('topNav').style.display = 'none';
-    renderStaffHeader();
-    loadedAdminTabs.clear();
-    loadingAdminTabs.clear();
-    activeAdminTab = 'overview';
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'overview'));
-    document.querySelectorAll('.admin-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === 'overview'));
-    await loadAdminTab('overview');
-    refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
-}
-
-/** Хто увійшов і що йому доступно — у шапці й меню панелі. */
-function renderStaffHeader() {
-    const name = session.staffName || (session.serviceAccount ? 'Правління ОСББ' : `Квартира ${session.apt}`);
-    document.getElementById('adminAccountName').textContent = name;
-    document.getElementById('adminAccountRole').textContent = ROLE_LABELS[session.role] || '';
-    document.getElementById('adminAvatar').textContent = name.trim().charAt(0).toUpperCase() || 'П';
-    document.getElementById('adminHomeBtn').hidden = session.serviceAccount;
-    document.querySelectorAll('.admin-tab').forEach(tab => {
-        tab.hidden = !hasRight(session.role, TAB_RIGHTS[tab.dataset.tab] || 'staff');
-    });
+    rememberWorkMode('staff');
+    location.assign('admin.html');
 }
 
 /** Власний кабінет мешканця — і для члена правління, що живе в будинку. */
@@ -311,7 +176,6 @@ async function openHomeMode(apt = session.apt) {
 // ------------------------------------------------------------
 const SCREEN_RELOADERS = {
     dataSection: () => loadCabinet(session.apt),
-    adminDashboardSection: () => loadAdminTab(activeAdminTab, true),
     docsSection: loadOsbbDocs,
     requestsSection: loadUserRequests,
     pollsSection: loadUserPolls,
@@ -343,13 +207,7 @@ async function refreshCurrentScreen() {
 // ------------------------------------------------------------
 onAuthStateChanged(auth, async (user) => {
     if (user) {
-        const last = localStorage.getItem('session_timestamp');
-        if (last && (Date.now() - parseInt(last, 10)) > SESSION_TIMEOUT) {
-            localStorage.removeItem('session_timestamp');
-            await signOut(auth);
-            return;
-        }
-        localStorage.setItem('session_timestamp', Date.now());
+        if (sessionExpired()) { await signOut(auth); return; }
         try {
             await loadResiliently(() => loadCabinet(currentApt()), null);
         } catch (e) {
@@ -463,18 +321,11 @@ function initNavigation() {
 
     // Член правління перемикається між панеллю й власним кабінетом без перевходу.
     document.getElementById('menuStaffBtn')?.addEventListener('click', () => openStaffMode());
-    document.getElementById('adminHomeBtn')?.addEventListener('click', () => openHomeMode());
 
-    document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
-        localStorage.removeItem('session_timestamp');
-        await signOut(auth);
-        location.reload();
-    });
 
     const back = () => {
         stopChat();
         closeAllSheets();
-        if (session.isAdmin) { showScreen('adminDashboardSection'); return; }
         // Кабінет уже завантажений: повернення працює навіть без мережі.
         showScreen('dataSection');
         document.getElementById('topNav').style.display = 'block';
@@ -486,126 +337,20 @@ function initNavigation() {
 }
 
 // ------------------------------------------------------------
-// ВКЛАДКИ АДМІНКИ
-// ------------------------------------------------------------
-function initAdminTabs() {
-    const today = document.getElementById('adminToday');
-    if (today) today.textContent = new Date().toLocaleDateString('uk-UA', {
-        day: 'numeric', month: 'long', year: 'numeric', weekday: 'short'
-    });
-    document.querySelectorAll('.admin-tab').forEach(tab => {
-        tab.addEventListener('click', async () => {
-            // Чат — окремий екран, а не картка в панелі: у картці
-            // повідомлення тіснилися, а прокрутка всередині прокрутки
-            // збивала сторінку вище й нижче потрібного.
-            if (tab.dataset.tab === 'chat') {
-                showScreen('chatSection');
-                activeAdminTab = 'chat';
-                await loadAdminTab('chat', true);
-                return;
-            }
-            activeAdminTab = tab.dataset.tab;
-            document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t === tab));
-            document.querySelectorAll('.admin-panel').forEach(p => {
-                p.classList.toggle('active', p.dataset.panel === tab.dataset.tab);
-            });
-            const tabs = document.getElementById('adminTabs');
-            const desktop = window.matchMedia('(min-width: 960px)').matches;
-            window.scrollTo({ top: desktop ? 0 : Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
-            try {
-                await loadAdminTab(activeAdminTab);
-            } catch (error) {
-                console.error(`Завантаження вкладки ${activeAdminTab}:`, error);
-                toast('Не вдалося завантажити вкладку', 'error');
-            }
-        });
-    });
-    document.getElementById('refreshHistoryBtn')?.addEventListener('click', () => loadAdminTab('send', true));
-}
-
-// Усередині найскладнішого розділу показуємо один робочий контекст
-// за раз. Правління зазвичай продовжує активні збори, тому форма
-// створення більше не перекриває результати й протоколи на вході.
-function initMeetingWorkspace() {
-    const panel = document.querySelector('.admin-panel[data-panel="meetings"]');
-    if (!panel) return;
-
-    const tabs = [...panel.querySelectorAll('[data-meeting-view]')];
-    const views = [...panel.querySelectorAll('[data-meeting-panel]')];
-
-    const show = (name, focus = false) => {
-        views.forEach(view => { view.hidden = view.dataset.meetingPanel !== name; });
-        tabs.forEach(tab => {
-            const active = tab.dataset.meetingView === name;
-            tab.classList.toggle('active', active);
-            if (tab.getAttribute('role') === 'tab') {
-                tab.setAttribute('aria-selected', active ? 'true' : 'false');
-                tab.tabIndex = active ? 0 : -1;
-            }
-        });
-        if (focus) {
-            const target = panel.querySelector(`[data-meeting-panel="${name}"]`);
-            target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-    };
-
-    tabs.forEach(tab => tab.addEventListener('click', () => show(tab.dataset.meetingView, true)));
-    const tablist = panel.querySelector('[role="tablist"]');
-    tablist?.addEventListener('keydown', event => {
-        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
-        if (!keys.includes(event.key)) return;
-        const meetingTabs = [...tablist.querySelectorAll('[role="tab"]')];
-        const current = meetingTabs.indexOf(document.activeElement);
-        if (current < 0) return;
-        event.preventDefault();
-        let next = event.key === 'Home' ? 0 : event.key === 'End' ? meetingTabs.length - 1
-            : (current + (event.key === 'ArrowRight' ? 1 : -1) + meetingTabs.length) % meetingTabs.length;
-        meetingTabs[next].click();
-        meetingTabs[next].focus();
-    });
-    show('active');
-}
-
-/**
- * Згортання блоків адмінки. Слухач один і делегований на документ —
- * інакше картки, розмітку яких перемальовує JS, лишалися б без нього.
- */
-function initAdminFolds() {
-    document.addEventListener('click', (e) => {
-        const btn = e.target.closest('.admin-card-toggle');
-        if (!btn) return;
-        const card = btn.closest('.admin-fold');
-        if (!card) return;
-        const open = card.classList.toggle('open');
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-}
-
-// ------------------------------------------------------------
 // СТАРТ
 // ------------------------------------------------------------
 function init() {
-    // Довге очікування без пояснень виглядає як зависання.
-    setTimeout(() => {
-        const loader = document.getElementById('appLoader');
-        const text = loader?.querySelector('.loader-text');
-        if (text && loader.style.display !== 'none') text.textContent = 'Повільне з’єднання — ще трохи…';
-    }, 6000);
+    initAppShell();
     initSheets();
     initAttachmentViewers();
     initOwners();
-    initPowerToggle();
     initPowerStats();
     initFaq();
     initChat();
     initMessages();
     initRequests();
-    initContacts();
-    initPolls();
     initDtek();
-    initFinance();
     initPayments();
-    initAccounts();
     initNavigation();
     registerServiceWorker();
     initInstallPrompt();
@@ -624,13 +369,6 @@ function init() {
             });
         }
     }
-    initAdminTabs();
-    initAdminFolds();
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) hiddenAt = Date.now();
-        else resumeLoading();
-    });
-    window.addEventListener('online', resumeLoading);
     initLedger();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);

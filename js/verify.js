@@ -16,7 +16,7 @@ import {
 import { escapeHtml, toast, setBusy, promptDialog, normName, safeFileUrl } from './ui.js';
 import { fileNameFromUrl } from './attachments.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
-import { prefillAnnouncement, notifyApartment } from './messages.js';
+import { prefillAnnouncement, notifyApartment } from './messages-admin.js';
 
 const aptOf = (ref) => ref.path.split('/')[1];
 
