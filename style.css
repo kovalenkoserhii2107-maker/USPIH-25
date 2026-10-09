@@ -5039,6 +5039,7 @@ select.field-input {
 .meter-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
 .meter-entry-grid, .meter-stats-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .meter-entry-grid .field, .meter-stats-controls .field { min-width: 0; display: flex; flex-direction: column; }
+.meter-entry-card[data-resource="heat"] .meter-unit-field { grid-column: 1 / -1; }
 .meter-entry-grid .field-label { min-height: 28px; font-size: 11px; }
 .meter-entry-grid .field-input { margin-top: auto; }
 .meter-entry-card .field-input { min-height: 44px; padding: 10px 12px; font-size: 16px; }

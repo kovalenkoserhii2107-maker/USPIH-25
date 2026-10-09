@@ -38,6 +38,20 @@ export function heatTariffForPeriod(tariffs, period) {
     return tariffs.filter(row => row.effectiveFrom <= `${period}-01` && row.unit === 'Гкал')
         .slice().sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null;
 }
+
+/** Єдине джерело ціни — датований тариф; старі записи працюють до його внесення. */
+export function heatReadingTariff(tariffs, period, unit, current, prior) {
+    // 1 МВт·год = 3,6 ГДж; 1 Гкал = 4,1868 ГДж.
+    const gcalPerUnit = { 'Гкал': 1, 'МВт·год': 3.6 / 4.1868 };
+    if (!gcalPerUnit[unit]) return null;
+    for (const source of [heatTariffForPeriod(tariffs, period), current, prior]) {
+        const tariff = decimalValue(source?.tariff);
+        if (tariff !== null && tariff >= 0 && gcalPerUnit[source?.unit]) {
+            return tariff * gcalPerUnit[unit] / gcalPerUnit[source.unit];
+        }
+    }
+    return null;
+}
 export const meterRecordId = (resource, period) => `meter_${resource}_${period}`;
 export const periodLabel = period => validPeriod(period)
     ? new Date(`${period}-01T12:00:00`).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' }) : String(period || '');

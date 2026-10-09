@@ -14,8 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=121">
-    <link rel="stylesheet" href="style-chat.css?v=121">
+    <link rel="stylesheet" href="style.css?v=122">
+    <link rel="stylesheet" href="style-chat.css?v=122">
 </head>
 <body>
 
@@ -1311,7 +1311,7 @@
         <div class="admin-panel" data-panel="meters">
             <div class="admin-page-head"><div><h2>Загальнобудинкові лічильники</h2><p>Показники, витрата і вартість ресурсів будинку</p></div></div>
             <div class="card"><h3>Тариф на тепло</h3>
-                <p class="field-hint">Внесіть тариф постачальника й дату початку його дії. Він підставлятиметься для нових періодів; збережені показники залишаться зі своїм тарифом.</p>
+                <p class="field-hint">Внесіть тариф постачальника й дату початку його дії. Ціна автоматично підставляється в показники за вибраний місяць. Для виправлення вже внесеного місяця повторно збережіть його показники.</p>
                 <fieldset id="heatTariffFields" class="plain-fieldset" disabled><div class="admin-document-grid">
                     <label class="field"><span class="field-label">Тариф, грн/Гкал</span><input id="heatTariffValue" class="field-input" inputmode="decimal" placeholder="З рахунку ТГО"></label>
                     <label class="field"><span class="field-label">Діє з</span><input id="heatTariffFrom" class="field-input" type="date"></label>
@@ -1993,7 +1993,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=121' : './js/app.js?v=121').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=122' : './js/app.js?v=122').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

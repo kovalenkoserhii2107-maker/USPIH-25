@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeApartmentReading, apartmentSeries, synchronizedApartmentChanges } from '../../js/apartment-meter-core.js';
-import { normalizeMeterReading, meterSeries, apartmentHeatShare, apartmentHeatCalculation, buildingTotalArea, integerReading, normalizeHeatTariff, heatTariffForPeriod } from '../../js/meter-core.js';
+import { normalizeMeterReading, meterSeries, apartmentHeatShare, apartmentHeatCalculation, buildingTotalArea, integerReading, normalizeHeatTariff, heatTariffForPeriod, heatReadingTariff } from '../../js/meter-core.js';
 
 const row = (period, reading, baseline = 100, extra = {}) => normalizeApartmentReading({ resource: 'water', period,
     reading, baseline, unit: 'м³', ...extra });
@@ -34,6 +34,24 @@ test('тариф на тепло підставляється з дати дії
     for (const patch of [{ tariff: '' }, { tariff: -1 }, { effectiveFrom: '' }, { effectiveFrom: '2026-02-30' }]) {
         assert.throws(() => normalizeHeatTariff({ ...october, ...patch }));
     }
+});
+
+test('тепло використовує єдиний датований тариф, зберігає старі дані та враховує одиницю лічильника', () => {
+    const october = normalizeHeatTariff({ tariff: 1500.5, effectiveFrom: '2026-10-01' });
+    const november = normalizeHeatTariff({ tariff: 2000, effectiveFrom: '2026-11-01' });
+    const old = { tariff: 1000, unit: 'Гкал' };
+    assert.equal(heatReadingTariff([october, november], '2026-10', 'Гкал', old, old), 1500.5);
+    assert.equal(heatReadingTariff([november], '2026-10', 'Гкал', old), 1000);
+    assert.equal(heatReadingTariff([], '2026-10', 'Гкал', undefined, old), 1000);
+    assert.equal(heatReadingTariff([october], '2026-09', 'Гкал'), null);
+    const free = normalizeHeatTariff({ tariff: 0, effectiveFrom: '2026-10-01' });
+    assert.equal(heatReadingTariff([free], '2026-10', 'Гкал', old), 0);
+    const perMwh = heatReadingTariff([october], '2026-10', 'МВт·год', old);
+    assert.ok(Math.abs(perMwh - 1500.5 * 3.6 / 4.1868) < 1e-8);
+    assert.ok(Math.abs(heatReadingTariff([], '2026-10', 'Гкал', { tariff: perMwh, unit: 'МВт·год' }) - 1500.5) < 1e-8);
+    assert.equal(heatReadingTariff([], '2026-10', 'Гкал', { tariff: '', unit: 'Гкал' }), null);
+    assert.equal(heatReadingTariff([october], '2026-10', 'м³', old), null);
+    assert.equal(old.tariff, 1000);
 });
 
 test('загальна площа береться з усіх квартир, службовий обліковий запис не додається', () => {

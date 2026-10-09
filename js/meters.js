@@ -1,5 +1,5 @@
 import { meterStore } from './meter-store.js';
-import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatCalculation, integerReading, decimalValue, heatTariffForPeriod } from './meter-core.js';
+import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatCalculation, integerReading, decimalValue, heatReadingTariff } from './meter-core.js';
 import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
 import { db, currentApt } from './firebase.js';
 import { doc, getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
@@ -36,7 +36,6 @@ function renderEntry({ remember = true } = {}) {
         const prior = series.filter(row => row.period < period).at(-1);
         const reset = current?.reset === true;
         const unit = current?.unit || prior?.unit || resource.units[0];
-        const scheduled = key === 'heat' && unit === 'Гкал' ? heatTariffForPeriod(context.heatTariffs || [], period) : null;
         const midMonth = key === 'heat' && (context.heatTariffs || []).some(row => row.effectiveFrom.startsWith(period) && row.effectiveFrom > `${period}-01`);
         return `<fieldset class="meter-entry-card" data-resource="${key}">
             <legend><span class="meter-dot" style="background:${resource.color}"></span>${resource.label}</legend>
@@ -46,13 +45,13 @@ function renderEntry({ remember = true } = {}) {
                         ${prior && !reset ? 'readonly' : ''} placeholder="Початок обліку"></label>
                 <label class="field meter-reading-field meter-new-field"><span class="field-label">Новий показник</span>
                     <input class="field-input" data-field="reading" inputmode="numeric" value="${escapeHtml(current?.reading ?? '')}" placeholder="Нові показання"></label>
-                <label class="field"><span class="field-label" data-meter-tariff-label>Тариф, грн/${escapeHtml(unit)}</span>
-                    <input class="field-input" data-field="tariff" inputmode="decimal" value="${escapeHtml(current?.tariff ?? scheduled?.tariff ?? prior?.tariff ?? '')}" placeholder="Тариф цього місяця"></label>
-                <label class="field"><span class="field-label">Одиниця вимірювання</span>
+                ${key !== 'heat' ? `<label class="field"><span class="field-label" data-meter-tariff-label>Тариф, грн/${escapeHtml(unit)}</span>
+                    <input class="field-input" data-field="tariff" inputmode="decimal" value="${escapeHtml(current?.tariff ?? prior?.tariff ?? '')}" placeholder="Тариф цього місяця"></label>` : ''}
+                <label class="field meter-unit-field"><span class="field-label">Одиниця вимірювання</span>
                     <select class="field-input field-select" data-field="unit" ${prior && !reset ? 'disabled' : ''}>
                         ${resource.units.map(value => `<option ${value === unit ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
             </div>
-            ${key === 'heat' ? `<p class="field-hint">Загальна площа з бази: ${context.totalArea ? `${num(context.totalArea)} м²` : 'площу внесено не для всіх квартир'}. Вкажіть тариф за ${escapeHtml(unit)} з рахунку постачальника. Вартість за м² розраховується автоматично. <a href="https://www.teplo.od.ua" target="_blank" rel="noopener noreferrer">ТГО Одеси</a></p>` : ''}
+            ${key === 'heat' ? `<p class="field-hint">Загальна площа з бази: ${context.totalArea ? `${num(context.totalArea)} м²` : 'площу внесено не для всіх квартир'}. Тариф підставляється автоматично з блоку «Тариф на тепло». Вартість за м² розраховується автоматично. <a href="https://www.teplo.od.ua" target="_blank" rel="noopener noreferrer">ТГО Одеси</a></p>` : ''}
             ${midMonth ? '<p class="field-hint">Тариф змінюється всередині цього місяця. Перевірте тариф за місяць у рахунку постачальника.</p>' : ''}
             <label class="meter-reset"><input type="checkbox" data-field="reset" ${reset ? 'checked' : ''}> Заміна / обнулення лічильника</label>
             <label class="field"><span class="field-label">Примітка (за потреби)</span>
@@ -66,8 +65,12 @@ function renderEntry({ remember = true } = {}) {
 
 function readCard(card) {
     const field = name => card.querySelector(`[data-field="${name}"]`);
-    return { resource: card.dataset.resource, period: document.getElementById('meterPeriod').value,
-        reading: field('reading').value, baseline: field('baseline').value, tariff: field('tariff').value,
+    const resource = card.dataset.resource, period = document.getElementById('meterPeriod').value;
+    const series = resource === 'heat' ? meterSeries(context.records, 'heat') : [];
+    const tariff = resource === 'heat' ? heatReadingTariff(context.heatTariffs || [], period, field('unit').value,
+        series.find(row => row.period === period), series.filter(row => row.period < period).at(-1)) : field('tariff').value;
+    return { resource, period,
+        reading: field('reading').value, baseline: field('baseline').value, tariff: tariff ?? '',
         unit: field('unit').value, reset: field('reset').checked, note: field('note').value,
         ...(card.dataset.resource === 'heat' ? { totalArea: context.totalArea } : {}) };
 }
@@ -80,7 +83,9 @@ function updatePreview(card) {
         return;
     }
     try {
-        const input = normalizeMeterReading(readCard(card));
+        const values = readCard(card);
+        if (values.resource === 'heat' && decimalValue(values.tariff) === null) throw new Error('Внесіть тариф і дату його дії у блоці «Тариф на тепло»');
+        const input = normalizeMeterReading(values);
         if (integerReading(input.reading) === null) throw new Error('Новий показник вводиться лише цілим числом');
         const next = context.records.filter(row => !(row.resource === input.resource && row.period === input.period));
         next.push(input);
@@ -201,8 +206,12 @@ export async function loadApartmentHeat(period) {
 async function save(btn) {
     if (!loaded || saving) return;
     try {
-        const changes = [...document.querySelectorAll('.meter-entry-card')]
-            .filter(card => dirty.has(card.dataset.resource)).map(readCard);
+        const changes = [...document.querySelectorAll('.meter-entry-card')].map(readCard).filter(input => {
+            if (dirty.has(input.resource)) return true;
+            const saved = context.records.find(row => row.resource === input.resource && row.period === input.period);
+            return input.resource === 'heat' && saved && decimalValue(input.tariff) !== saved.tariff;
+        });
+        if (changes.some(input => input.resource === 'heat' && decimalValue(input.tariff) === null)) throw new Error('Внесіть тариф і дату його дії у блоці «Тариф на тепло»');
         validateMeterChanges(context.records, changes);
         if (!changes.length) return toast('Внесіть нові показники або змініть запис', 'error');
         saving = true;
@@ -238,7 +247,8 @@ export function initMeters() {
                 card.querySelector('[data-field="unit"]').disabled = !!prior && !reset;
             }
             updatePreview(card);
-            card.querySelector('[data-meter-tariff-label]').textContent = `Тариф, грн/${card.querySelector('[data-field="unit"]').value}`;
+            const tariffLabel = card.querySelector('[data-meter-tariff-label]');
+            if (tariffLabel) tariffLabel.textContent = `Тариф, грн/${card.querySelector('[data-field="unit"]').value}`;
         });
         document.getElementById('meterSaveBtn').addEventListener('click', function () { save(this); });
         document.getElementById('meterRefreshBtn').addEventListener('click', () => { if (!saving) loadAdminMeters(); });
