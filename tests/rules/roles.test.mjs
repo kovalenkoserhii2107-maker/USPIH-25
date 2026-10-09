@@ -194,3 +194,32 @@ test('платежі пише лише сервер; push-токен — лиш�
     await assertFails(getDoc(doc(as('10').firestore(), 'push_tokens/tok-10')));
     await assertSucceeds(deleteDoc(doc(as('10').firestore(), 'push_tokens/tok-10')));
 });
+
+test('нарахування пише лише сервер; після вхідних залишків баланс руками не змінити', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'charges/settings'), { tariffs: [] });
+        await setDoc(doc(context.firestore(), 'charges_runs/2026-10'), { period: '2026-10', totalKop: 100 });
+    });
+    for (const login of ['10', '900']) {
+        const db = as(login).firestore();
+        await assertSucceeds(getDoc(doc(db, 'charges/settings')));
+        await assertSucceeds(getDocs(collection(db, 'charges_runs')));
+        await assertFails(setDoc(doc(db, 'charges/settings'), { tariffs: [{ rate4: 1 }] }));
+        await assertFails(setDoc(doc(db, 'charges_runs/2026-11'), { period: '2026-11' }));
+    }
+    for (const login of ['11', '45']) {
+        await assertFails(getDoc(doc(as(login).firestore(), 'charges/settings')));
+        await assertFails(getDocs(collection(as(login).firestore(), 'charges_runs')));
+    }
+    // Поки залишків немає — бухгалтер веде баланс вручну.
+    await assertSucceeds(updateDoc(doc(as('900').firestore(), 'apartments/45'), { balance: -50, balanceUpdatedAt: serverTimestamp() }));
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'charges/settings'), { opening: { set: true } }, { merge: true });
+    });
+    for (const login of ['10', '900']) {
+        await assertFails(updateDoc(doc(as(login).firestore(), 'apartments/45'), { balance: 0, balanceUpdatedAt: serverTimestamp() }));
+        // Особовий рахунок і далі веде бухгалтерія.
+        await assertSucceeds(updateDoc(doc(as(login).firestore(), 'apartments/45'), { personalAccount: '1045' }));
+    }
+});

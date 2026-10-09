@@ -148,3 +148,28 @@ export async function payAct(payload) {
         invalidate();
     }
 }
+
+// ------------------------------------------------------------
+// НАРАХУВАННЯ
+// ------------------------------------------------------------
+/** Тарифи, приміщення, вхідні залишки, нараховані місяці й готове нарахування — із сервера. */
+export const loadCharges = () => once('charges', () => callBackend('chargesAction', { action: 'context' }));
+
+/** Відомість розрахунків з мешканцями за місяць. */
+export const loadStatement = period => once(`statement:${period}`, () => callBackend('chargesAction', { action: 'statement', period }));
+
+/** Реквізити ОСББ для квитанцій (ті самі, що бачить мешканець у «Сплатити»). */
+export const loadRequisites = () => once('requisites', async () => {
+    const snap = await getDoc(doc(db, 'osbb_settings', 'finance'));
+    return snap.exists() ? snap.data() : {};
+});
+
+/** Дія з нарахуваннями — на сервері, з журналом; після неї баланси й історія свіжі. */
+export async function chargeAct(payload, timeoutMs = 120000) {
+    try {
+        return await callBackend('chargesAction', payload, timeoutMs);
+    } finally {
+        invalidateDirectory();
+        invalidate();
+    }
+}

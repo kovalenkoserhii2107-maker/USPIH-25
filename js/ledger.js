@@ -23,7 +23,9 @@ const MONTHS_NOM = ['Січень', 'Лютий', 'Березень', 'Квіт�
 
 const KIND = {
     charge:  { label: 'Нарахування', cls: 'lg-charge' },
-    payment: { label: 'Оплата',      cls: 'lg-payment' }
+    payment: { label: 'Оплата',      cls: 'lg-payment' },
+    // Вхідний залишок на початок обліку в застосунку: мінус — борг.
+    opening: { label: 'Вхідний залишок', cls: 'lg-opening' }
 };
 
 // Слова, якими бухгалтерія називає ті самі дві речі.
@@ -136,12 +138,20 @@ export function parseLedgerLines(text) {
 // ------------------------------------------------------------
 // ЗВЕДЕННЯ
 // ------------------------------------------------------------
+/**
+ * Нараховано, сплачено й різниця. Якщо серед записів є вхідний
+ * залишок, різниця рахується від нього — і збігається з балансом:
+ * записи до нього вже враховані в залишку.
+ */
 export function summarizeLedger(entries) {
-    const charged = entries.filter(e => e.kind === 'charge')
+    const opening = entries.find(e => e.kind === 'opening');
+    const counted = opening ? entries.filter(e => e.at > opening.at) : entries;
+    const charged = counted.filter(e => e.kind === 'charge')
                            .reduce((s, e) => s + e.amount, 0);
-    const paid = entries.filter(e => e.kind === 'payment')
+    const paid = counted.filter(e => e.kind === 'payment')
                         .reduce((s, e) => s + e.amount, 0);
-    return { charged, paid, diff: paid - charged, count: entries.length };
+    const base = opening ? opening.amount : 0;
+    return { charged, paid, diff: Math.round((base + paid - charged) * 100) / 100, count: entries.length };
 }
 
 /** Періоди, що є в історії, від найновішого. */
@@ -186,15 +196,29 @@ async function bankStart() {
     } catch { return null; }
 }
 
+/**
+ * Після вхідних залишків нарахування з жовтня 2026 робить система
+ * (кабінет бухгалтера → «Нарахування»). Ті самі нарахування з
+ * вивантаження сервісу стали б дублікатами.
+ */
+async function chargesStart() {
+    try {
+        const settings = await getDoc(doc(db, 'charges', 'settings'));
+        const data = settings.exists() ? settings.data() : null;
+        return data?.opening?.set ? (data.startPeriod || '2026-10') : null;
+    } catch { return null; }
+}
+
 export async function saveLedger(rows) {
     const known = await loadKnownApts();
-    const fromBank = await bankStart();
+    const [fromBank, fromCharges] = await Promise.all([bankStart(), chargesStart()]);
 
     const skipped = new Set();
-    let bankPayments = 0;
+    let bankPayments = 0, systemCharges = 0;
     const usable = rows.filter(r => {
         if (known.size && !known.has(r.apt)) { skipped.add(r.apt); return false; }
         if (fromBank && r.kind === 'payment' && r.at >= fromBank) { bankPayments += 1; return false; }
+        if (fromCharges && r.kind === 'charge' && r.period >= fromCharges) { systemCharges += 1; return false; }
         return true;
     });
 
@@ -220,7 +244,7 @@ export async function saveLedger(rows) {
         });
         await batch.commit();
     }
-    return { written: items.length, skipped: [...skipped], bankPayments };
+    return { written: items.length, skipped: [...skipped], bankPayments, systemCharges };
 }
 
 // ------------------------------------------------------------
@@ -266,13 +290,14 @@ function readableNote(note) {
 
 function rowHtml(e) {
     const k = KIND[e.kind] || KIND.charge;
+    const label = e.kind === 'opening' ? (e.amount < 0 ? 'Борг на початок' : e.amount > 0 ? 'Переплата на початок' : 'Вхідний залишок') : k.label;
     const isoDate = `${e.at.getFullYear()}-${String(e.at.getMonth() + 1).padStart(2, '0')}-${String(e.at.getDate()).padStart(2, '0')}`;
     const note = String(e.note || '').trim();
     return `<article class="lg-row">
         <span class="lg-dot ${k.cls}" aria-hidden="true"></span>
         <span class="lg-main">
             <span class="lg-top">
-                <b class="lg-kind">${k.label}</b>
+                <b class="lg-kind">${label}</b>
                 <b class="lg-amount ${k.cls}">${formatMoney(e.amount)}<small> грн</small></b>
             </span>
             <time class="lg-date" datetime="${isoDate}">${escapeHtml(dayLabel(e.at))}</time>
@@ -422,8 +447,9 @@ export async function applyLedger(btn) {
 
     setBusy(btn, true, 'Збереження…');
     try {
-        const { written, skipped, bankPayments } = await saveLedger(pending.rows);
+        const { written, skipped, bankPayments, systemCharges } = await saveLedger(pending.rows);
         if (bankPayments) toast(`Оплати з виписки банку пропущено: ${bankPayments} — вони вже рознесені автоматично`, 'info');
+        if (systemCharges) toast(`Нарахування з жовтня 2026 пропущено: ${systemCharges} — їх робить система`, 'info');
         if (!written) {
             toast('Жодна квартира з файлу не знайдена в базі', 'error');
         } else {

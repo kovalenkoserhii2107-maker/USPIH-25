@@ -37,7 +37,10 @@ const DEFAULT_START = '2026-10-01';
 // Банк може дооформити операцію заднім числом — перечитуємо кілька днів.
 const OVERLAP_DAYS = 3;
 
-module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole }) {
+module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances }) {
+    // Баланс квартири з історії (charges.js): після кожної рознесеної оплати.
+    const recompute = apts => (apts.length && balances ? balances.recompute(apts) : null);
+
     const settingsRef = db.doc('bank/settings');
     const secretRef = db.doc('bank_secrets/privat');
 
@@ -117,6 +120,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             (await db.getAll(...refs)).forEach(s => { if (s.exists) existing.add(s.id); });
         }
         let added = 0, matched = 0;
+        const touched = new Set();
         let batch = db.batch(), ops = 0;
         const flush = async () => { if (ops) await batch.commit(); batch = db.batch(); ops = 0; };
         for (let i = 0; i < fresh.length; i++) {
@@ -152,6 +156,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 } else {
                     doc.status = 'done';
                     doc.allocations = writeAllocations(batch, id, doc, [{ apt: decision.apt, amountKop: t.amountKop }]);
+                    touched.add(decision.apt);
                     ops += 1;
                     matched += 1;
                 }
@@ -177,6 +182,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (ops >= 400) await flush();
         }
         await flush();
+        await recompute([...touched]);
         return { added, matched };
     }
 
@@ -269,6 +275,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
 
         // Запамʼятали платника — його інші платежі в черзі розносимо одразу.
         let alsoMatched = 0;
+        const touched = new Set(result.list.map(a => a.apt));
         if (remember && result.list.length === 1 && result.tx.payerKey) {
             const others = await db.collection('bank_tx').where('payerKey', '==', result.tx.payerKey).where('status', '==', 'review').get();
             for (const other of others.docs) {
@@ -279,9 +286,11 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 const written = writeAllocations(batch, other.id, other.data(), [{ apt: decision.apt, amountKop: other.data().amountKop }]);
                 batch.update(other.ref, { kind: 'payment', status: 'done', method: decision.method, allocations: written, auto: true });
                 await batch.commit();
+                touched.add(decision.apt);
                 alsoMatched += 1;
             }
         }
+        await recompute([...touched]);
         return { ok: true, alsoMatched };
     }
 
@@ -323,6 +332,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         });
         await audit(actor, role, 'bank.unassign', `bank_tx/${ref.id}`,
             `${core.fromKop(tx.amountKop)} грн повернуто в «Розібрати»`, { was: tx.allocations || [], category: tx.category || null });
+        await recompute((tx.allocations || []).filter(a => a.ledgerId).map(a => a.apt));
         return { ok: true };
     }
 

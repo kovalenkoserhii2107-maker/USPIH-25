@@ -16,10 +16,12 @@ import { initInbox, loadInbox } from './buh-inbox.js';
 import { loadOverview } from './buh-overview.js';
 import { initBankView, loadBankView, initSettingsView, loadSettingsView } from './buh-bank.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
+import { initChargesView, loadChargesView } from './buh-charges.js';
 
 const VIEWS = {
     overview: { title: 'Огляд', sub: 'Гроші ОСББ і що потребує уваги', load: loadOverview },
     inbox: { title: 'Вхідні', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
+    charges: { title: 'Нарахування', sub: 'Внески співвласників: площа × тариф, баланс з історії', load: loadChargesView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
     settings: { title: 'Налаштування', sub: 'Підключення банку й правила погодження', load: loadSettingsView }
@@ -42,6 +44,9 @@ async function show(name, { push = true, refresh = false } = {}) {
     document.getElementById('buhSubtitle').textContent = VIEWS[name].sub;
     document.title = `${VIEWS[name].title} — Бухгалтерія`;
     if (push && location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
+    // Фокус на пункті меню перехоплював би Enter: «Так» у розділі
+    // натискав би знову той самий пункт.
+    if (document.activeElement?.closest?.('.buh-nav-item, .buh-tab, [data-go]')) document.activeElement.blur();
     // Фонове оновлення після дії не повинно кидати сторінку вгору.
     if (!refresh) window.scrollTo({ top: 0 });
     try {
@@ -86,6 +91,7 @@ function renderAccount(apartment) {
         <div class="buh-more-account"><span class="buh-avatar">${escapeHtml(initial)}</span>
             <span><b>${escapeHtml(name)}</b><small>${escapeHtml(ROLE_LABELS[session.role] || '')}</small></span></div>
         <nav class="buh-more-nav">
+            <button class="buh-nav-item" data-view="charges" type="button">Нарахування</button>
             <button class="buh-nav-item" data-view="settings" type="button">Налаштування</button>
             <a class="buh-nav-item buh-link" href="admin.html?tab=finance">Фінанси: попередні розділи</a>
             ${links.join('')}
@@ -129,6 +135,7 @@ function init() {
     initInbox(() => view === 'inbox');
     initBankView();
     initPaymentsView();
+    initChargesView(() => view === 'charges');
     initSettingsView();
     registerServiceWorker();
 
