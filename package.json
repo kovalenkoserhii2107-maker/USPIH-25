@@ -3,13 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-site.mjs",
     "check": "node scripts/check-project.mjs",
     "test": "node --test tests/unit/*.test.mjs functions/*.test.js",
     "test:rules": "node --test tests/rules/*.test.mjs",
-    "ci": "npm run check && npm test"
+    "ci": "npm run check && npm test && npm run build"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",
+    "esbuild": "0.25.12",
     "firebase": "12.19.0",
     "firebase-tools": "15.31.0",
     "pdfmake": "0.2.7"

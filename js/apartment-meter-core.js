@@ -1,13 +1,19 @@
-import { normalizeMeterReading, validateMeterChanges, meterSeries } from './meter-core.js';
+import { normalizeMeterReading, validateMeterChanges, meterSeries, integerReading } from './meter-core.js';
 
 export const APARTMENT_METER_KIND = 'apartmentMeterReading';
 export const APARTMENT_RESOURCES = ['electricity', 'water'];
 export const apartmentMeterId = (apt, resource, period) => `${apt}_${resource}_${period}`;
 
-export function normalizeApartmentReading(input) {
+function storedApartmentReading(input) {
     if (!APARTMENT_RESOURCES.includes(input.resource)) throw new Error('Оберіть квартирний лічильник світла або води');
     const { tariff, heatedArea, ...row } = normalizeMeterReading({ ...input, tariff: 0, heatedArea: undefined });
     return { ...row, kind: APARTMENT_METER_KIND };
+}
+
+export function normalizeApartmentReading(input) {
+    const row = storedApartmentReading(input);
+    if (integerReading(row.reading) === null) throw new Error('Новий показник вводиться лише цілим числом');
+    return row;
 }
 
 export function validateApartmentChanges(records, changes) {
@@ -26,7 +32,7 @@ export function synchronizedApartmentChanges(records, changes) {
     for (const resource of new Set(clean.map(row => row.resource))) {
         for (const row of apartmentSeries([...next.values()], resource)) {
             if (row.baseline !== row.effectiveBaseline) writes.set(`${row.resource}_${row.period}`,
-                normalizeApartmentReading({ ...row, baseline: row.effectiveBaseline }));
+                storedApartmentReading({ ...row, baseline: row.effectiveBaseline }));
         }
     }
     return [...writes.values()];

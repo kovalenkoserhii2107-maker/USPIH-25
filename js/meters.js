@@ -1,5 +1,5 @@
 import { meterStore } from './meter-store.js';
-import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatShare, decimalValue } from './meter-core.js';
+import { METER_RESOURCES, meterSeries, periodLabel, normalizeMeterReading, validateMeterChanges, apartmentHeatShare, integerReading } from './meter-core.js';
 import { enhanceMeterInputs, syncMeterDial } from './meter-dial.js';
 import { db, currentApt } from './firebase.js';
 import { doc, getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
@@ -9,8 +9,8 @@ let context = { revision: 0, records: [] };
 let loaded = false, saving = false;
 const dirty = new Set();
 const drafts = new Map();
-const views = { admin: { resource: 'electricity', year: '', metric: 'consumption' },
-    resident: { resource: 'electricity', year: '', metric: 'consumption' } };
+const views = { admin: { period: '' }, resident: { period: '' } };
+let apartmentArea = null;
 const num = value => Number(value).toLocaleString('uk-UA', { maximumFractionDigits: 6 });
 const todayPeriod = () => new Date().toLocaleDateString('sv-SE').slice(0, 7);
 
@@ -39,20 +39,18 @@ function renderEntry({ remember = true } = {}) {
         return `<fieldset class="meter-entry-card" data-resource="${key}">
             <legend><span class="meter-dot" style="background:${resource.color}"></span>${resource.label}</legend>
             <div class="meter-entry-grid">
-                <label class="field meter-reading-field"><span class="field-label">Вхідний / початковий показник</span>
-                    <input class="field-input" data-field="baseline" inputmode="decimal" value="${escapeHtml(reset ? current.baseline : prior?.reading ?? current?.baseline ?? '')}"
+                <label class="field meter-reading-field meter-previous-field"><span class="field-label">Попередній показник</span>
+                    <input class="field-input" data-field="baseline" inputmode="numeric" value="${escapeHtml(reset ? current.baseline : prior?.reading ?? current?.baseline ?? '')}"
                         ${prior && !reset ? 'readonly' : ''} placeholder="Початок обліку"></label>
-                <label class="field meter-reading-field"><span class="field-label">Вихідний показник</span>
-                    <input class="field-input" data-field="reading" inputmode="decimal" value="${escapeHtml(current?.reading ?? '')}" placeholder="Нові показання"></label>
+                <label class="field meter-reading-field meter-new-field"><span class="field-label">Новий показник</span>
+                    <input class="field-input" data-field="reading" inputmode="numeric" value="${escapeHtml(current?.reading ?? '')}" placeholder="Нові показання"></label>
                 <label class="field"><span class="field-label">Тариф, грн за одиницю</span>
                     <input class="field-input" data-field="tariff" inputmode="decimal" value="${escapeHtml(current?.tariff ?? prior?.tariff ?? '')}" placeholder="Тариф цього місяця"></label>
                 <label class="field"><span class="field-label">Одиниця вимірювання</span>
                     <select class="field-input field-select" data-field="unit" ${prior && !reset ? 'disabled' : ''}>
                         ${resource.units.map(value => `<option ${value === unit ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
             </div>
-            ${key === 'heat' ? `<label class="field"><span class="field-label">Загальна опалювана площа, м²</span>
-                <input class="field-input" data-field="heatedArea" inputmode="decimal" value="${escapeHtml(current?.heatedArea ?? prior?.heatedArea ?? '')}" placeholder="Для розподілу за площею"></label>
-                <button type="button" class="btn-soft btn-compact" data-heated-area>Підставити площу з довідника</button><p class="field-hint">Після підстановки за потреби виключіть неопалювані приміщення.</p>` : ''}
+            ${key === 'heat' ? `<p class="field-hint">Загальна площа з бази: ${context.totalArea ? `${num(context.totalArea)} м²` : 'площу внесено не для всіх квартир'}. Частка тепла рахується за площею квартири.</p>` : ''}
             <label class="meter-reset"><input type="checkbox" data-field="reset" ${reset ? 'checked' : ''}> Заміна / обнулення лічильника</label>
             <label class="field"><span class="field-label">Примітка (за потреби)</span>
                 <input class="field-input" data-field="note" maxlength="500" value="${escapeHtml(current?.note || '')}" placeholder="Номер приладу, заміна, уточнення"></label>
@@ -68,7 +66,7 @@ function readCard(card) {
     return { resource: card.dataset.resource, period: document.getElementById('meterPeriod').value,
         reading: field('reading').value, baseline: field('baseline').value, tariff: field('tariff').value,
         unit: field('unit').value, reset: field('reset').checked, note: field('note').value,
-        ...(field('heatedArea') ? { heatedArea: field('heatedArea').value } : {}) };
+        ...(card.dataset.resource === 'heat' ? { totalArea: context.totalArea } : {}) };
 }
 
 function updatePreview(card) {
@@ -80,6 +78,7 @@ function updatePreview(card) {
     }
     try {
         const input = normalizeMeterReading(readCard(card));
+        if (integerReading(input.reading) === null) throw new Error('Новий показник вводиться лише цілим числом');
         const next = context.records.filter(row => !(row.resource === input.resource && row.period === input.period));
         next.push(input);
         const row = meterSeries(next, input.resource).find(row => row.period === input.period);
@@ -89,53 +88,39 @@ function updatePreview(card) {
     } catch (error) { host.textContent = error.message; host.classList.add('is-error'); }
 }
 
+function renderHeatSummary() {
+    const host = document.getElementById('apartmentHeatEstimate');
+    if (!host) return;
+    const row = meterSeries(context.records, 'heat').find(row => row.period === views.resident.period);
+    const share = apartmentHeatShare(row, apartmentArea, context.totalArea);
+    host.innerHTML = `<h3>Тепло для вашої квартири</h3>${!row ? '<p class="field-hint">За цей місяць показників тепла ще немає.</p>'
+        : share === null ? '<p class="field-hint">Для розрахунку потрібна площа квартири та загальна площа будинку з бази.</p>'
+        : `<div class="heat-share"><strong>${formatMoney(share)} грн</strong><span>${escapeHtml(periodLabel(row.period))}</span></div><p class="field-hint">${num(apartmentArea)} м² квартири / ${num(context.totalArea)} м² будинку × ${formatMoney(row.cost)} грн за тепло.</p>`}`;
+}
+
 function renderStats(view) {
     const host = document.getElementById(view === 'admin' ? 'meterStatistics' : 'residentMeterStatistics');
     if (!host) return;
+    const periods = [...new Set(context.records.map(row => row.period))].sort().reverse();
     const options = views[view];
-    const resource = METER_RESOURCES[options.resource];
-    const all = meterSeries(context.records, options.resource);
-    const years = [...new Set(all.map(row => row.period.slice(0, 4)))].sort().reverse();
-    if (options.year && !years.includes(options.year)) options.year = '';
-    const selected = (options.year ? all.filter(row => row.period.startsWith(options.year)) : all.slice(-12));
-    const unit = selected.at(-1)?.unit || all.at(-1)?.unit || resource.units[0];
-    const comparable = selected.filter(row => !row.error && row.unit === unit);
-    const consumption = comparable.reduce((sum, row) => sum + row.consumption, 0);
-    const cost = selected.filter(row => !row.error).reduce((sum, row) => sum + row.cost, 0);
-    const chartRows = options.metric === 'cost' ? selected.filter(row => !row.error) : comparable;
-    const max = Math.max(1, ...chartRows.map(row => row[options.metric]));
-    host.innerHTML = `<div class="meter-stats-controls">
-        <label class="field"><span class="field-label">Ресурс</span><select class="field-input field-select" data-meter-resource>
-            ${Object.entries(METER_RESOURCES).map(([key, data]) => `<option value="${key}" ${key === options.resource ? 'selected' : ''}>${data.label}</option>`).join('')}
-        </select></label>
-        <label class="field"><span class="field-label">Період</span><select class="field-input field-select" data-meter-year>
-            <option value="">Останні 12 записів</option>${years.map(year => `<option ${year === options.year ? 'selected' : ''}>${year}</option>`).join('')}
-        </select></label>
-    </div>
-    ${!all.length ? '<p class="list-empty">Показники цього ресурсу ще не внесено.</p>' : `
-        <div class="meter-totals"><div><small>Витрата за вибраний період</small><b>${num(consumption)} ${unit}</b></div>
-            <div><small>Розрахункова вартість</small><b>${formatMoney(cost)} грн</b></div></div>
-        <div class="segmented meter-metric">${[['consumption', 'Витрата'], ['cost', 'Вартість']].map(([key, label]) =>
-            `<button type="button" data-meter-metric="${key}" aria-pressed="${key === options.metric}" class="segmented-item ${key === options.metric ? 'active' : ''}">${label}</button>`).join('')}</div>
-        <div class="meter-chart" role="img" aria-label="${resource.label}: ${options.metric === 'cost' ? 'вартість у гривнях' : `витрата у ${unit}`} між внесеннями показників">
-            ${chartRows.map(row => `<div class="meter-bar-column" title="${escapeHtml(`${periodLabel(row.period)}: ${num(row[options.metric])} ${options.metric === 'cost' ? 'грн' : row.unit}`)}">
-                <span>${num(row[options.metric])}</span><div class="meter-bar-track"><i style="height:${Math.max(1, row[options.metric] / max * 100)}%;background:${resource.color}"></i></div>
-                <small>${row.period.slice(5)}/${row.period.slice(2, 4)}</small></div>`).join('')}
-        </div>
-        <p class="field-hint">Витрата між внесеннями показників. Тариф зберігається для кожного місяця.${
-            new Set(selected.map(row => row.unit)).size > 1 ? ` Витрату показано в ${unit}; вартість охоплює всі одиниці.` : ''}</p>
-        <div class="meter-history">${selected.slice().reverse().map(row => `<article class="meter-history-row">
-            <div class="meter-history-head"><b>${escapeHtml(periodLabel(row.period))}</b><strong>${row.error ? 'Перевірте дані' : `${formatMoney(row.cost)} грн`}</strong></div>
-            <p>${num(row.effectiveBaseline)} → ${num(row.reading)} ${escapeHtml(row.unit)}${row.error ? '' : ` · витрата ${num(row.consumption)} ${escapeHtml(row.unit)}`}</p>
-            <small>Тариф ${num(row.tariff)} грн/${escapeHtml(row.unit)}${row.previousPeriod ? ` · від ${escapeHtml(periodLabel(row.previousPeriod))}` : ' · початок обліку'}${row.reset ? ' · новий лічильник' : ''}</small>
-            ${row.note ? `<p>${escapeHtml(row.note)}</p>` : ''}${row.error ? `<p class="meter-error">${escapeHtml(row.error)}</p>` : ''}
-            ${view === 'admin' ? `<button class="btn-soft btn-compact" type="button" data-meter-edit="${row.period}">Редагувати показники</button>` : ''}
-        </article>`).join('')}</div>`}`;
+    if (!periods.includes(options.period)) options.period = periods[0] || '';
+    if (!periods.length) { host.innerHTML = '<p class="list-empty">Загальнобудинкові показники ще не внесено.</p>'; return; }
+    const rows = Object.entries(METER_RESOURCES).map(([key, resource]) => ({ key, resource,
+        row: meterSeries(context.records, key).find(row => row.period === options.period) }));
+    const total = rows.reduce((sum, { row }) => sum + (row && !row.error ? row.cost : 0), 0);
+    host.innerHTML = `<label class="field"><span class="field-label">Місяць</span><select class="field-input field-select" data-house-period>${periods.map(period => `<option value="${period}" ${period === options.period ? 'selected' : ''}>${escapeHtml(periodLabel(period))}</option>`).join('')}</select></label>
+        <div class="house-summary">${rows.map(({ key, resource, row }) => `<article class="house-summary-row">
+            <div><b><span class="meter-dot" style="background:${resource.color}"></span>${resource.label}</b><p>${!row ? 'Ще не внесено' : row.error ? escapeHtml(row.error) : `${num(row.consumption)} ${escapeHtml(row.unit)} · тариф ${num(row.tariff)} грн`}</p></div>
+            <strong>${row && !row.error ? `${formatMoney(row.cost)} грн` : '—'}</strong>
+            ${row ? `<details><summary>Показники${row.note ? ' та примітка' : ''}</summary><p>${num(row.effectiveBaseline)} → ${num(row.reading)} ${escapeHtml(row.unit)}${row.reset ? ' · новий лічильник' : ''}</p>${row.note ? `<p>${escapeHtml(row.note)}</p>` : ''}${view === 'admin' ? `<button type="button" class="btn-soft btn-compact" data-meter-edit="${row.period}">Редагувати</button>` : ''}</details>` : ''}
+        </article>`).join('')}</div><div class="house-summary-total"><span>Разом за внесеними ресурсами</span><b>${formatMoney(total)} грн</b></div>`;
+    if (view === 'resident') renderHeatSummary();
 }
 
 async function load(view) {
     const host = document.getElementById(view === 'admin' ? 'meterStatistics' : 'residentMeterStatistics');
     try {
+        if (view === 'admin') await meterStore.syncTotalArea();
         context = await meterStore.load();
         loaded = true;
         if (view === 'admin') renderEntry();
@@ -152,17 +137,16 @@ export const loadAdminMeters = () => load('admin');
 export const loadResidentMeters = () => load('resident');
 
 export async function loadHouseActivity() {
-    const fresh = await loadResidentMeters();
     const host = document.getElementById('apartmentHeatEstimate');
-    if (!host) return;
-    if (!fresh) { host.innerHTML = '<p class="field-hint">Не вдалося завантажити дані для розрахунку тепла.</p>'; return; }
+    apartmentArea = null;
     try {
-        const snap = await getDocFromServer(doc(db, 'apartments', currentApt()));
-        const area = snap.data()?.area;
-        const rows = meterSeries(context.records, 'heat').slice(-12).reverse();
-        host.innerHTML = rows.length ? `<h3>Тепло: частка вашої квартири за площею</h3><p class="field-hint">Вартість тепла будинку × площа квартири / загальна опалювана площа. Площа квартири: ${escapeHtml(area ?? 'не вказана')} м².</p>`
-            + rows.map(row => { const share = apartmentHeatShare(row, area); return `<div class="meter-history-row"><b>${escapeHtml(periodLabel(row.period))}</b><p>${share === null ? 'Для розрахунку потрібні площа квартири та загальна опалювана площа.' : `Розрахункова частка: <strong>${formatMoney(share)} грн</strong> · ${row.heatedArea} м² загалом`}</p></div>`; }).join('') : '<p class="field-hint">Розрахунок тепла за площею зʼявиться після внесення загальнобудинкових показників.</p>';
-    } catch { host.innerHTML = '<p class="field-hint">Не вдалося прочитати площу квартири.</p>'; }
+        const [fresh, snap] = await Promise.all([loadResidentMeters(), getDocFromServer(doc(db, 'apartments', currentApt()))]);
+        if (!fresh) throw new Error('Показники недоступні');
+        apartmentArea = snap.data()?.area;
+        renderHeatSummary();
+    } catch {
+        if (host) host.innerHTML = '<p class="field-hint">Не вдалося прочитати дані для розрахунку тепла.</p>';
+    }
 }
 
 async function save(btn) {
@@ -206,20 +190,6 @@ export function initMeters() {
             updatePreview(card);
         });
         document.getElementById('meterSaveBtn').addEventListener('click', function () { save(this); });
-        document.getElementById('meterEntry').addEventListener('click', async event => {
-            const button = event.target.closest('[data-heated-area]');
-            if (!button || saving) return;
-            setBusy(button, true, 'Читання площ…');
-            try {
-                const { fetchDirectory, invalidateDirectory } = await import('./directory.js');
-                invalidateDirectory(); const apartments = await fetchDirectory();
-                if (!apartments.length || apartments.some(row => decimalValue(row.area) === null || decimalValue(row.area) <= 0)) throw new Error('Не в усіх квартирах внесено площу. Вкажіть опалювану площу вручну');
-                const input = button.closest('.meter-entry-card').querySelector('[data-field="heatedArea"]');
-                input.value = String(Math.round(apartments.reduce((sum, row) => sum + decimalValue(row.area), 0) * 100) / 100);
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            } catch (error) { toast(error.message, 'error'); }
-            finally { setBusy(button, false); }
-        });
         document.getElementById('meterRefreshBtn').addEventListener('click', () => { if (!saving) loadAdminMeters(); });
     }
     for (const [view, id] of [['admin', 'meterStatistics'], ['resident', 'residentMeterStatistics']]) {
@@ -227,13 +197,10 @@ export function initMeters() {
         if (!host || host.dataset.initialized) continue;
         host.dataset.initialized = '1';
         host.addEventListener('change', event => {
-            if (event.target.matches('[data-meter-resource]')) views[view].resource = event.target.value;
-            if (event.target.matches('[data-meter-year]')) views[view].year = event.target.value;
+            if (event.target.matches('[data-house-period]')) views[view].period = event.target.value;
             renderStats(view);
         });
         host.addEventListener('click', event => {
-            const metric = event.target.closest('[data-meter-metric]');
-            if (metric) { views[view].metric = metric.dataset.meterMetric; renderStats(view); }
             const edit = event.target.closest('[data-meter-edit]');
             if (view === 'admin' && edit && !saving) {
                 period.value = edit.dataset.meterEdit; renderEntry();

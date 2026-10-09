@@ -1,12 +1,12 @@
 import { db, currentApt } from './firebase.js';
 import * as firestore from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { METER_KIND, meterRecordId, validateMeterChanges } from './meter-core.js';
+import { METER_KIND, meterRecordId, validateMeterChanges, buildingTotalArea, integerReading } from './meter-core.js';
 
 // status уже доступний мешканцям для читання і лише правлінню для запису.
 // Окремий документ на ресурс і місяць не обмежує розмір усієї історії.
 export function createMeterStore(database, apartmentOfCurrentUser, api = firestore) {
     const { doc, collection, query, where, getDocFromServer, getDocsFromServer,
-        runTransaction, serverTimestamp } = api;
+        runTransaction, serverTimestamp, setDoc } = api;
     const stateRef = doc(database, 'status', 'house_meter_state');
 
     async function load() {
@@ -14,7 +14,7 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
         // дані, транзакція відхилить застарілу форму.
         const state = await getDocFromServer(stateRef);
         const snap = await getDocsFromServer(query(collection(database, 'status'), where('kind', '==', METER_KIND)));
-        return { revision: state.data()?.revision || 0,
+        return { revision: state.data()?.revision || 0, totalArea: state.data()?.totalArea ?? null,
             records: snap.docs.map(row => ({ ...row.data(), id: row.id })) };
     }
 
@@ -25,6 +25,7 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
         if (!admin.exists() || admin.data().isAdmin !== true) throw new Error('Вносити показники може лише правління');
         const clean = validateMeterChanges(context.records, changes);
         if (!clean.length) throw new Error('Введіть показники хоча б одного ресурсу');
+        if (clean.some(row => integerReading(row.reading) === null)) throw new Error('Новий показник вводиться лише цілим числом');
         await runTransaction(database, async tx => {
             const state = await tx.get(stateRef);
             if ((state.data()?.revision || 0) !== context.revision) {
@@ -35,12 +36,25 @@ export function createMeterStore(database, apartmentOfCurrentUser, api = firesto
             clean.forEach((row, index) => tx.set(refs[index], { ...row,
                 createdAt: snapshots[index].data()?.createdAt || serverTimestamp(),
                 updatedAt: serverTimestamp(), updatedBy: apt }));
-            tx.set(stateRef, { kind: 'houseMeterState', revision: context.revision + 1,
+            tx.set(stateRef, { ...state.data(), kind: 'houseMeterState', revision: context.revision + 1,
                 updatedAt: serverTimestamp() });
         });
         return load();
     }
-    return { load, save };
+    async function syncTotalArea() {
+        const apt = apartmentOfCurrentUser();
+        if (!apt) throw new Error('Увійдіть у застосунок');
+        const admin = await getDocFromServer(doc(database, 'apartments', apt));
+        if (!admin.exists() || admin.data().isAdmin !== true) throw new Error('Оновити загальну площу може лише правління');
+        const snap = await getDocsFromServer(collection(database, 'apartments'));
+        const totalArea = buildingTotalArea(snap.docs.map(row => row.data()));
+        const state = await getDocFromServer(stateRef);
+        if (state.data()?.totalArea !== totalArea) await setDoc(stateRef, {
+            kind: 'houseMeterState', totalArea, areaUpdatedAt: serverTimestamp()
+        }, { merge: true });
+        return totalArea;
+    }
+    return { load, save, syncTotalArea };
 }
 
 export const meterStore = createMeterStore(db, currentApt);

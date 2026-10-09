@@ -414,12 +414,14 @@ test('правління зберігає показники й тариф, ме
     const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
     const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
     const store = createMeterStore(admin, () => 'board');
+    await assert.rejects(store.save(await store.load(), [{ resource: 'electricity', period: '2026-09',
+        reading: 1200.5, baseline: 1000, tariff: 4.32 }]), /цілим/);
     const first = await store.save(await store.load(), [{ resource: 'electricity', period: '2026-09', unit: 'кВт·год',
-        reading: '1 200,5', baseline: 1000, tariff: '4,32', reset: false, note: 'Загальнобудинковий прилад' }]);
-    assert.equal(first.revision, 1); assert.equal(first.records[0].reading, 1200.5);
+        reading: '1 200', baseline: 1000, tariff: '4,32', reset: false, note: 'Загальнобудинковий прилад' }]);
+    assert.equal(first.revision, 1); assert.equal(first.records[0].reading, 1200);
     assert.equal(first.records[0].tariff, 4.32);
     const residentStore = createMeterStore(resident, () => '45');
-    assert.equal((await residentStore.load()).records[0].reading, 1200.5);
+    assert.equal((await residentStore.load()).records[0].reading, 1200);
     await assert.rejects(residentStore.save(first, [{ ...first.records[0], reading: 0 }]), /лише правління/);
     await assertFails(updateDoc(doc(resident, 'status/meter_electricity_2026-09'), { tariff: 0 }));
     const anonymous = env.unauthenticatedContext().firestore();
@@ -459,9 +461,9 @@ test('мешканець подає свої показники, сусід їх
     const neighbor = env.authenticatedContext('neighbor', { email: '46@uspih-25.com' }).firestore();
     const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
     const store = createApartmentMeterStore(resident, () => '45');
-    const input = { resource: 'water', period: '2026-09', unit: 'м³', baseline: 100, reading: '120,5' };
+    const input = { resource: 'water', period: '2026-09', unit: 'м³', baseline: 100, reading: '120' };
     const first = await store.save(await store.load(), [input, { ...input, resource: 'electricity', unit: 'кВт·год', reading: 150 }]);
-    assert.equal(first.revision, 1); assert.equal(first.records.find(row => row.resource === 'water').reading, 120.5);
+    assert.equal(first.revision, 1); assert.equal(first.records.find(row => row.resource === 'water').reading, 120);
     await assertFails(getDoc(doc(neighbor, 'apartment_meter_readings/45_water_2026-09')));
     await assertFails(getDocs(collection(neighbor, 'apartment_meter_readings')));
     await assertFails(getDoc(doc(neighbor, 'apartments/45/meter_state/current')));
@@ -500,4 +502,23 @@ test('правила відхиляють підміну квартири, та�
     }
     await assertFails(setDoc(doc(resident, 'apartment_meter_readings/45_water_2026-09'), valid));
     assert.equal((await getDoc(doc(resident, 'apartments/45/meter_state/current'))).exists(), false);
+});
+
+test('загальна площа публікується з бази, зберігається разом із версією; мешканець її лише читає', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await updateDoc(doc(context.firestore(), 'apartments/45'), { area: '64,5' });
+        await setDoc(doc(context.firestore(), 'apartments/46'), { isAdmin: false, area: 100 });
+    });
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    const resident = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).firestore();
+    const store = createMeterStore(admin, () => 'board');
+    assert.equal(await store.syncTotalArea(), 164.5);
+    const context = await store.load();
+    const saved = await store.save(context, [{ resource: 'heat', period: '2026-10', unit: 'Гкал', reading: 120,
+        baseline: 100, tariff: 5, totalArea: context.totalArea }]);
+    assert.equal(saved.totalArea, 164.5); assert.equal(saved.revision, 1);
+    assert.equal((await createMeterStore(resident, () => '45').load()).totalArea, 164.5);
+    await assert.rejects(createMeterStore(resident, () => '45').syncTotalArea(), /лише правління/);
+    await assertFails(updateDoc(doc(resident, 'status/house_meter_state'), { totalArea: 1 }));
 });

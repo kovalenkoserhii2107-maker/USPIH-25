@@ -14,8 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=119">
-    <link rel="stylesheet" href="style-chat.css?v=119">
+    <link rel="stylesheet" href="style.css?v=120">
+    <link rel="stylesheet" href="style-chat.css?v=120">
 </head>
 <body>
 
@@ -1319,7 +1319,7 @@
                     <button id="meterSaveBtn" type="button" class="btn-primary">Зберегти показники</button>
                 </fieldset>
             </div>
-            <div class="card"><h3>Статистика будинку</h3><div id="meterStatistics"><p class="list-empty">Завантаження…</p></div></div>
+            <div class="card"><h3>Витрати ресурсів будинку</h3><div id="meterStatistics"><p class="list-empty">Завантаження…</p></div></div>
             <div class="card"><div class="meter-card-head"><h3>Подані показники квартир</h3><button id="apartmentSubmissionsRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
                 <div class="admin-document-grid"><label class="field"><span class="field-label">Місяць</span><input id="apartmentSubmissionsPeriod" type="month" class="field-input"></label>
                 <label class="field"><span class="field-label">Квартира</span><input id="apartmentSubmissionsSearch" class="field-input" placeholder="Пошук за номером"></label></div>
@@ -1373,7 +1373,7 @@
     <div id="metersSection" style="display: none;">
         <div class="screen-head compact-head"><button id="backFromMetersBtn" class="back-btn" type="button">‹ Назад</button><span class="head-title">Мої лічильники</span></div>
         <div class="card"><div class="meter-card-head"><h3 id="apartmentMeterApartment">Моя квартира</h3><button id="apartmentMeterRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
-            <p class="field-hint">Вхідний показник підтягується з попереднього періоду. Для першого запису вкажіть його самостійно. Натисніть на цифри для прокрутки або ручного введення.</p>
+            <p class="field-hint">Введіть новий показник: натисніть на цифри або використайте + / −. Попередній підставляється автоматично.</p>
             <fieldset id="apartmentMeterFields" class="plain-fieldset" disabled><label class="field"><span class="field-label">Місяць обліку</span><input id="apartmentMeterPeriod" type="month" class="field-input"></label>
                 <div id="apartmentMeterEntry" class="meter-entry-list apartment-meter-entry"></div><button id="apartmentMeterSaveBtn" type="button" class="btn-primary">Подати показники</button>
             </fieldset>
@@ -1962,16 +1962,14 @@
 </div>
 
 <script>
-// Рятівний механізм. Якщо оболонка не піднялася — найімовірніше,
-// Service Worker віддає несумісну суміш старих і нових модулів, і
-// сам застосунок уже нічого про це сказати не може: його код не
-// виконався. Тоді скидаємо воркер із кешем і перезавантажуємось
-// рівно один раз за сеанс, щоб не зациклитись.
+// Після підтвердженої помилки імпорту скидаємо воркер із кешем і
+// перезавантажуємось один раз за сеанс. Повільна відповідь Auth
+// або Firestore сама по собі не скидає кеш і не перезапускає вхід.
 (function () {
     var KEY = 'sw_recovery_done';
-    setTimeout(function () {
+    window.addEventListener('uspih-module-failed', function () {
         var loader = document.getElementById('appLoader');
-        if (!loader || getComputedStyle(loader).display === 'none') return;
+        if (!loader || getComputedStyle(loader).display === 'none' || !window.USPihModuleFailed) return;
         if (sessionStorage.getItem(KEY)) return;
         try { sessionStorage.setItem(KEY, '1'); } catch (e) { return; }
 
@@ -1983,12 +1981,16 @@
             .then(function () { return caches.keys(); })
             .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
             .then(reload, reload);
-    }, 8000);
+    });
 })();
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=119' : './js/app.js?v=119');
+    import(preview === 'admin' ? './js/admin-preview.js?v=120' : './js/app.js?v=120').catch(error => {
+        window.USPihModuleFailed = true;
+        console.error('Завантаження застосунку:', error);
+        window.dispatchEvent(new Event('uspih-module-failed'));
+    });
 </script>
 </body>
 </html>

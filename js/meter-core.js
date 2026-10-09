@@ -15,6 +15,11 @@ export function decimalValue(value) {
     return Number.isFinite(number) ? number : null;
 }
 
+export function integerReading(value) {
+    const number = decimalValue(value);
+    return Number.isSafeInteger(number) && number >= 0 && number <= 1e10 ? number : null;
+}
+
 export function validPeriod(period) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || '')); }
 export const meterRecordId = (resource, period) => `meter_${resource}_${period}`;
 export const periodLabel = period => validPeriod(period)
@@ -35,15 +40,23 @@ export function normalizeMeterReading(input) {
     const heatedArea = decimalValue(input.heatedArea);
     if (input.resource === 'heat' && input.heatedArea != null && String(input.heatedArea).trim() !== ''
         && (heatedArea === null || heatedArea <= 0 || heatedArea > 1e7)) throw new Error('Вкажіть додатну загальну опалювану площу');
+    const totalArea = decimalValue(input.totalArea);
     return { kind: METER_KIND, resource: input.resource, period: input.period, unit,
         reading, baseline, tariff, reset: input.reset === true, note,
-        ...(input.resource === 'heat' && heatedArea !== null ? { heatedArea } : {}) };
+        ...(input.resource === 'heat' && heatedArea !== null ? { heatedArea } : {}),
+        ...(input.resource === 'heat' && totalArea > 0 ? { totalArea } : {}) };
 }
 
-export function apartmentHeatShare(row, area) {
-    const apartmentArea = decimalValue(area), totalArea = decimalValue(row?.heatedArea);
+export function apartmentHeatShare(row, area, buildingArea = row?.totalArea ?? row?.heatedArea) {
+    const apartmentArea = decimalValue(area), totalArea = decimalValue(buildingArea);
     if (!row || row.error || apartmentArea === null || apartmentArea <= 0 || !totalArea || apartmentArea > totalArea) return null;
     return Math.round((row.cost * apartmentArea / totalArea + Number.EPSILON) * 100) / 100;
+}
+
+export function buildingTotalArea(apartments) {
+    const homes = apartments.filter(row => row.isAdmin !== true);
+    if (!homes.length || homes.some(row => decimalValue(row.area) === null || decimalValue(row.area) <= 0)) return null;
+    return Math.round(homes.reduce((sum, row) => sum + decimalValue(row.area), 0) * 1e6) / 1e6;
 }
 
 /** Зміна історичного показника перераховує наступний інтервал, з його власним тарифом. */

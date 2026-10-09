@@ -3,6 +3,7 @@ firebase-debug.log*
 firestore-debug.log*
 .firebase/
 node_modules/
+_site/
 functions/node_modules/
 
 # macOS

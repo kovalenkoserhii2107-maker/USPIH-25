@@ -49,10 +49,10 @@ function render({ remember = true } = {}) {
         const current = { ...saved, ...draft.get(key) }, reset = current.reset === true;
         const baseline = reset ? current.baseline ?? 0 : prior?.reading ?? current.baseline ?? '';
         return `<fieldset class="meter-entry-card" data-apartment-resource="${key}"><legend><span class="meter-dot" style="background:${resource.color}"></span>${resource.label} · ${resource.units[0]}</legend>
-            <label class="field"><span class="field-label">Вхідний показник ${prior && !reset ? `· ${escapeHtml(periodLabel(prior.period))}` : '· початок обліку'}</span>
-                <input class="field-input" data-field="baseline" inputmode="decimal" value="${escapeHtml(baseline)}" ${prior && !reset ? 'readonly' : ''}></label>
-            <label class="field"><span class="field-label">Вихідний показник · ${escapeHtml(periodLabel(period))}</span>
-                <input class="field-input" data-field="reading" inputmode="decimal" value="${escapeHtml(current.reading ?? prior?.reading ?? '')}"></label>
+            <label class="field meter-previous-field"><span class="field-label">Попередній показник ${prior && !reset ? `· ${escapeHtml(periodLabel(prior.period))}` : '· початок обліку'}</span>
+                <input class="field-input" data-field="baseline" inputmode="numeric" value="${escapeHtml(baseline)}" ${prior && !reset ? 'readonly' : ''}></label>
+            <label class="field meter-new-field"><span class="field-label">Новий показник · ${escapeHtml(periodLabel(period))}</span>
+                <input class="field-input" data-field="reading" inputmode="numeric" value="${escapeHtml(current.reading ?? prior?.reading ?? '')}"></label>
             <p class="meter-preview" aria-live="polite"></p>
             <details class="meter-extra"><summary>Заміна лічильника / примітка</summary>
                 <label class="meter-reset"><input type="checkbox" data-field="reset" ${reset ? 'checked' : ''}> Лічильник замінено або обнулено</label>

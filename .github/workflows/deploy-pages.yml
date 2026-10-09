@@ -29,11 +29,13 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/configure-pages@v5
-      - name: Assemble runtime only
-        run: |
-          mkdir _site
-          cp index.html style.css style-chat.css manifest.json sw.js _site/
-          cp -R js assets _site/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build runtime
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

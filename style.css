@@ -4977,28 +4977,39 @@ select.field-input {
 .meter-reading-field { grid-column: 1 / -1; }
 .meter-dial { position: relative; width: 100%; min-width: 0; margin-top: 4px; }
 .dial-source { position: absolute; width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; opacity: 0; pointer-events: none; }
-.dial-display { display: flex; gap: 3px; align-items: center; width: 100%; min-height: 66px; padding: 7px; border: 1px solid #dce6f3; border-radius: 13px; background: #f1f5fc; cursor: pointer; font: inherit; color: var(--ink); }
-.dial-digit { flex: 1; min-width: 0; line-height: 46px; border: 1px solid #dee7f5; border-radius: 6px; background: #fff; font-size: clamp(18px, 5.6vw, 28px); font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
-.dial-decimal { flex: 0 0 5px; align-self: center; color: #58749c; font-size: 22px; text-align: center; }
-.dial-fraction { color: var(--blue-ink); background: #eaf2ff; }
-.dial-empty { width: 100%; color: #58749c; font-size: 16px; }
-.dial-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.dial-step { flex: 0 0 44px; height: 44px; border: 1px solid #dce6f3; border-radius: 50%; background: #eaf2ff; color: var(--blue-ink); font: 500 26px var(--font); cursor: pointer; }
-.dial-edit { flex: 1; min-height: 44px; border: 0; border-radius: 10px; background: #f0f3f9; color: var(--blue-ink); font: 600 13px var(--font); cursor: pointer; }
+.dial-display { display: flex; gap: 4px; align-items: center; width: 100%; min-height: 90px; padding: 7px; border: 1px solid #bed4f4; border-radius: 13px; background: #eaf2ff; cursor: pointer; font: inherit; color: var(--blue-ink); }
+.dial-digit { flex: 1; min-width: 0; line-height: 72px; border: 1px solid #d4e3f7; border-radius: 7px; background: #fff; font-size: clamp(32px, 9.6vw, 48px); font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
+.dial-actions { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-top: 12px; }
+.dial-step { flex: 0 0 64px; height: 64px; border: 1px solid #cbdcf4; border-radius: 50%; background: #eaf2ff; color: var(--blue-ink); font: 500 38px var(--font); cursor: pointer; }
+.dial-previous .dial-display { justify-content: space-between; min-height: 44px; padding: 6px 12px; border-color: #e0e5ee; background: #edf2f7; color: #516783; }
+.dial-previous-value { font-size: 21px; font-weight: 600; }
+.dial-previous-edit { font-size: 12px; font-weight: 600; color: var(--blue-ink); }
+.meter-new-field .field-label { font-weight: 700; color: var(--blue-ink); }
+.meter-previous-field .field-label { font-size: 11px; color: #63758f; }
 .meter-dial.is-readonly .dial-actions { display: none; }
 .meter-dial.is-readonly .dial-display { cursor: default; background: #edf2f7; }
-.meter-dial.is-readonly .dial-digit { color: #516783; background: #f7f9fc; }
-.dial-display:focus-visible, .dial-step:focus-visible, .dial-edit:focus-visible, .dial-wheel:focus-visible { outline: 2px solid var(--blue-ink); outline-offset: 3px; }
+.dial-display:focus-visible, .dial-step:focus-visible, .dial-wheel:focus-visible { outline: 2px solid var(--blue-ink); outline-offset: 3px; }
 .dial-modal { align-items: flex-end; }
 .dial-picker { width: min(100%, 480px); margin: 0; border-radius: 24px 24px 0 0; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 .dial-wheels { position: relative; display: flex; gap: 3px; margin: 16px 0; padding: 0 4px; border-radius: 14px; background: #f3f6fb; }
 .dial-wheels::before { content: ''; position: absolute; pointer-events: none; left: 4px; right: 4px; top: 88px; height: 44px; border-top: 1px solid #cddcf0; border-bottom: 1px solid #cddcf0; }
 .dial-wheel { flex: 1; min-width: 0; height: 220px; padding: 88px 0; box-sizing: border-box; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; touch-action: pan-y; overscroll-behavior-y: contain; mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); }
 .dial-wheel::-webkit-scrollbar { display: none; }
-.dial-wheel-digit { height: 44px; line-height: 44px; scroll-snap-align: center; text-align: center; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.dial-wheel-digit { height: 44px; line-height: 44px; scroll-snap-align: center; text-align: center; font-size: 36px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
 .dial-picker-error { min-height: 20px; color: #b03232; font-size: 13px; }
 .meter-extra { margin-top: 10px; color: #516783; font-size: 13px; }
 .meter-extra summary { padding: 8px 0; cursor: pointer; }
+.house-summary-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 16px 0; border-bottom: 1px solid #e3e9f1; }
+.house-summary-row > strong { font-size: 15px; white-space: nowrap; }
+.house-summary-row p { margin: 7px 0 0; font-size: 13px; color: #516783; }
+.house-summary-row details { grid-column: 1 / -1; font-size: 12px; color: #516783; }
+.house-summary-row summary { padding: 4px 0; cursor: pointer; }
+.house-summary-row details button { margin-top: 8px; }
+.house-summary-total { display: flex; justify-content: space-between; gap: 14px; margin-top: 16px; font-size: 14px; }
+.house-summary-total b { white-space: nowrap; }
+.heat-share { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 18px 0 10px; }
+.heat-share strong { font-size: 24px; color: var(--blue-ink); }
+.heat-share span { font-size: 12px; color: #516783; }
 .meter-extra .meter-reset { margin-top: 14px; }
 .apartment-meter-entry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 600px) { .apartment-meter-entry { grid-template-columns: 1fr; } }
