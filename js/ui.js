@@ -322,6 +322,9 @@ const LOADER_MIN_MS = 700;
 const appStarted = Date.now();
 let loaderHidden = false;
 
+/** Сторінки без «екранів» (бухгалтерія) ховають лоадер самі. */
+export function hideAppLoader() { hideLoader(); }
+
 function hideLoader() {
     if (loaderHidden) return;
     loaderHidden = true;

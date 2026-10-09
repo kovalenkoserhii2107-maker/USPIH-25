@@ -137,7 +137,7 @@ self.addEventListener('fetch', (event) => {
 
     // A versioned production bundle has all local modules inside it, so it is
     // safe to reuse the exact version without mixing old and new imports.
-    if (url.searchParams.get('v') === VERSION && /\/(?:js\/(?:app|admin-main)\.js|style(?:-chat|-admin)?\.css)$/.test(url.pathname)) {
+    if (url.searchParams.get('v') === VERSION && /\/(?:js\/(?:app|admin-main|buh-main)\.js|style(?:-chat|-admin|-buh)?\.css)$/.test(url.pathname)) {
         event.respondWith(cacheFirst(req));
         return;
     }

@@ -194,6 +194,10 @@
             </div>
             <div class="admin-nav-group">
                 <span class="admin-nav-label">Облік</span>
+                <button class="admin-tab" data-tab="buh" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"></path><path d="M12 3 3 8h18z"></path><path d="M5 10v8M9 10v8M15 10v8M19 10v8"></path><path d="M3 21h18"></path></svg>
+                    <span>Бухгалтерія</span>
+                </button>
                 <button class="admin-tab" data-tab="finance" type="button">
                     <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                     <span>Фінанси</span>
@@ -805,41 +809,6 @@
         </div>
 
         <div class="admin-panel" data-panel="finance">
-            <!-- Банк: рахунки, черга «Розібрати» й операції. Наповнює js/bank-admin.js. -->
-            <div data-section="Банк" data-section-count="#bankQueueCount" class="card" id="bankAccountsCard">
-                <div class="meter-card-head"><h3 class="am-card-title">Рахунки ОСББ</h3><button id="bankSyncBtn" type="button" class="btn-soft btn-compact" hidden>Оновити з банку</button></div>
-                <p class="field-hint" id="bankSyncState">Завантаження…</p>
-                <div id="bankAccounts"></div>
-                <details class="bank-connect" id="bankConnect">
-                    <summary id="bankConnectSummary">Підключити ПриватБанк</summary>
-                    <ol class="bank-steps">
-                        <li>Увійдіть у Приват24 для бізнесу (вхід бухгалтера теж підходить).</li>
-                        <li>Облік та звіти → «Інтеграція (Автоклієнт)» → «Підключити додаток» → тип «API», назва «Застосунок ОСББ».</li>
-                        <li>У налаштуваннях додатка відкрийте «API для розробників» і скопіюйте <b>token</b>. Поле «Обмеження за IP-адресою» лишіть порожнім.</li>
-                        <li>Вставте токен сюди. Він зберігається лише на сервері, у браузері й базі його не видно. Застосунок лише читає виписку; платежі без КЕП у кабінеті банк однаково не проводить.</li>
-                    </ol>
-                    <label class="field"><span class="field-label">Токен Автоклієнта</span>
-                        <input id="bankTokenInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="Вставте токен"></label>
-                    <div class="bank-connect-actions">
-                        <button id="bankTokenSaveBtn" type="button" class="btn-primary">Перевірити й зберегти</button>
-                        <button id="bankTokenRemoveBtn" type="button" class="btn-ghost-small" hidden>Відключити</button>
-                    </div>
-                </details>
-            </div>
-            <div data-section="Банк" class="card" id="bankQueueCard">
-                <div class="meter-card-head"><h3 class="am-card-title">Розібрати<span id="bankQueueCount" class="vf-count"></span></h3></div>
-                <p class="field-hint">Надходження, які не вдалося віднести до квартири автоматично. Оберіть квартиру — і наступні оплати цього платника розійдуться самі.</p>
-                <div id="bankQueue"><p class="list-empty">Завантаження…</p></div>
-            </div>
-            <div data-section="Банк" class="card" id="bankOpsCard">
-                <h3 class="am-card-title">Операції</h3>
-                <div class="dir-toolbar">
-                    <div class="dir-filters" id="bankFilters"></div>
-                    <div class="field dir-search"><input type="search" id="bankSearch" class="field-input" placeholder="Квартира, платник або призначення"></div>
-                </div>
-                <div id="bankOps"><p class="list-empty">Завантаження…</p></div>
-                <button id="bankMoreBtn" type="button" class="btn-ghost-small bank-more" hidden>Показати ще</button>
-            </div>
             <div data-section="Баланси" class="card admin-fold">
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="false">

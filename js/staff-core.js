@@ -19,7 +19,7 @@ export const hasRight = (role, right = 'staff') => Boolean(role) && (RIGHTS[righ
 /** Вкладки панелі правління й право, без якого вкладку не показуємо. */
 export const TAB_RIGHTS = {
     overview: 'staff', meetings: 'manage', directory: 'staff', send: 'staff', requests: 'staff',
-    docs: 'staff', chat: 'staff', polls: 'manage', finance: 'account', meters: 'account',
+    docs: 'staff', chat: 'staff', polls: 'manage', finance: 'account', buh: 'account', meters: 'account',
     board: 'manage', team: 'staff', journal: 'staff'
 };
 

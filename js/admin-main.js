@@ -36,17 +36,16 @@ const featureImports = {
     directory: () => import('./directory.js'), importer: () => import('./import-owners.js'),
     exporter: () => import('./export-base.js'), verify: () => import('./verify.js'),
     documents: () => import('./admin-documents.js'), meters: () => import('./meters.js'),
-    apartmentMeters: () => import('./apartment-meters.js'), team: () => import('./admin-team.js'),
-    bank: () => import('./bank-admin.js')
+    apartmentMeters: () => import('./apartment-meters.js'), team: () => import('./admin-team.js')
 };
 const featureGroups = { overview: ['dashboard'], meetings: ['meetings', 'documents'],
-    directory: ['directory', 'importer', 'exporter', 'verify', 'documents'], finance: ['documents', 'bank'],
+    directory: ['directory', 'importer', 'exporter', 'verify', 'documents'], finance: ['documents'],
     meters: ['meters', 'apartmentMeters'], team: ['team'], journal: ['team'] };
 async function ensureAdminFeatures(group) {
     const modules = await Promise.all(featureGroups[group].map(name => {
         if (!adminFeaturePromises.has(name)) adminFeaturePromises.set(name, featureImports[name]().then(features => {
             for (const init of ['initDirectory', 'initImportOwners', 'initExportBase', 'initMeetings', 'initVerify',
-                'initAdminDocuments', 'initMeters', 'initApartmentMeters', 'initTeam', 'initBank']) features[init]?.();
+                'initAdminDocuments', 'initMeters', 'initApartmentMeters', 'initTeam']) features[init]?.();
             if (name === 'meetings') initMeetingWorkspace();
             return features;
         }).catch(error => { adminFeaturePromises.delete(name); throw error; }));
@@ -72,10 +71,7 @@ const ADMIN_TAB_LOADERS = {
     requests: loadAdminRequests,
     docs: populateDocsDropdown,
     polls: loadAdminPolls,
-    finance: async () => {
-        const features = await ensureAdminFeatures('finance');
-        return Promise.all([loadAdminExpenses(), loadAdminRequisites(), features.loadBank()]);
-    },
+    finance: async () => { await ensureAdminFeatures('finance'); return Promise.all([loadAdminExpenses(), loadAdminRequisites()]); },
     meters: async () => { const features = await ensureAdminFeatures('meters'); return Promise.all([features.loadAdminMeters(), features.loadApartmentSubmissions()]); },
     board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
     team: async () => (await ensureAdminFeatures('team')).loadTeam(),
@@ -104,12 +100,18 @@ async function openPanel(apt) {
     // Без ролі чи з непідтвердженим паролем — у кабінет мешканця:
     // там і вхід, і зміна пароля.
     if (!session.role || (apartment && !apartment.passwordChanged)) { toResident(); return; }
+    // У бухгалтера свій кабінет. Сюди він заходить лише по попередні
+    // розділи фінансів (посилання з бухгалтерії веде з ?tab=finance).
+    const wanted = new URLSearchParams(location.search).get('tab');
+    if (session.role === 'accountant' && !wanted) { location.replace('buh.html'); return; }
     session.isAdmin = true;
     if (!session.serviceAccount) rememberWorkMode('staff');
     startPowerListener();
     renderStaffHeader();
     showScreen('adminDashboardSection');
-    await loadAdminTab('overview');
+    const start = wanted && document.querySelector(`.admin-tab[data-tab="${CSS.escape(wanted)}"]:not([hidden])`);
+    if (start) start.click();
+    else await loadAdminTab('overview');
     refreshChatBadge();            // чат за вкладкою — потрібен лічильник непрочитаного
 }
 
@@ -165,6 +167,8 @@ function initAdminTabs() {
             // Чат — окремий екран, а не картка в панелі: у картці
             // повідомлення тіснилися, а прокрутка всередині прокрутки
             // збивала сторінку вище й нижче потрібного.
+            // Бухгалтерія — окрема сторінка.
+            if (tab.dataset.tab === 'buh') { location.assign('buh.html'); return; }
             if (tab.dataset.tab === 'chat') {
                 showScreen('chatSection');
                 activeAdminTab = 'chat';

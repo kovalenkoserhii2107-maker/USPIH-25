@@ -112,23 +112,37 @@ async function loadCabinet(apt) {
     startPowerListener();
     renderStaffEntry();
 
-    const staffMode = Boolean(session.role) && (session.serviceAccount || storedWorkMode() === 'staff');
-    // Лоадер лишається, поки відкривається панель.
-    if (staffMode) { location.replace('admin.html'); return; }
+    const mode = storedWorkMode();
+    const staffMode = Boolean(session.role) && (session.serviceAccount || mode === 'staff' || mode === 'buh');
+    // Лоадер лишається, поки відкривається панель чи бухгалтерія.
+    if (staffMode) { location.replace(workPage(mode)); return; }
     await openHomeMode(apt);
 }
 
-/** Плитка «Правління» в меню мешканця — лише для команди. */
-function renderStaffEntry() {
-    const tile = document.getElementById('menuStaffBtn');
-    if (tile) tile.hidden = !session.role || session.serviceAccount;
+/**
+ * Куди йде людина з роллю: бухгалтер — у кабінет бухгалтера, решта
+ * команди — у панель правління; голова повертається туди, де працював.
+ */
+function workPage(mode) {
+    if (session.role === 'accountant') return 'buh.html';
+    return mode === 'buh' && session.role === 'chair' ? 'buh.html' : 'admin.html';
 }
 
-/** Панель правління — окрема сторінка зі своїм кодом. */
+/** Плитка «Правління» («Бухгалтерія» для бухгалтера) в меню мешканця — лише для команди. */
+function renderStaffEntry() {
+    const tile = document.getElementById('menuStaffBtn');
+    if (!tile) return;
+    tile.hidden = !session.role || session.serviceAccount;
+    const label = tile.querySelector('.menu-tile-label');
+    if (label) label.textContent = session.role === 'accountant' ? 'Бухгалтерія' : 'Правління';
+}
+
+/** Панель правління чи бухгалтерія — окремі сторінки зі своїм кодом. */
 function openStaffMode() {
     if (!session.role) return;
-    rememberWorkMode('staff');
-    location.assign('admin.html');
+    const page = session.role === 'accountant' ? 'buh.html' : 'admin.html';
+    rememberWorkMode(page === 'buh.html' ? 'buh' : 'staff');
+    location.assign(page);
 }
 
 /** Власний кабінет мешканця — і для члена правління, що живе в будинку. */
