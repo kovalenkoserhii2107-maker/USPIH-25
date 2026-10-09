@@ -171,3 +171,26 @@ test('банк: читають голова й бухгалтер, пише ли
         await assertFails(getDocs(collection(as(login).firestore(), 'bank_tx')));
     }
 });
+
+test('платежі пише лише сервер; push-токен — лише своя квартира й справжня роль', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'payments/p1'), { status: 'sent', amountKop: 100 });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'payments/p1')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'payments/p2'), { status: 'sent' }));
+        await assertFails(updateDoc(doc(as(login).firestore(), 'payments/p1'), { status: 'paid' }));
+    }
+    await assertFails(getDoc(doc(as('11').firestore(), 'payments/p1')));
+    await assertFails(getDoc(doc(as('45').firestore(), 'payments/p1')));
+
+    const token = (login, role, extra = {}) => ({ apt: login, role, token: `tok-${login}`, ua: 'test', at: serverTimestamp(), ...extra });
+    await assertSucceeds(setDoc(doc(as('10').firestore(), 'push_tokens/tok-10'), token('10', 'chair')));
+    await assertSucceeds(setDoc(doc(as('45').firestore(), 'push_tokens/tok-45'), token('45', 'none')));
+    await assertFails(setDoc(doc(as('45').firestore(), 'push_tokens/tok-x'), token('45', 'chair', { token: 'tok-x' })));
+    await assertFails(setDoc(doc(as('45').firestore(), 'push_tokens/tok-y'), token('10', 'chair', { token: 'tok-y' })));
+    await assertFails(setDoc(doc(as('45').firestore(), 'push_tokens/other'), token('45', 'none')));
+    await assertFails(getDoc(doc(as('10').firestore(), 'push_tokens/tok-10')));
+    await assertSucceeds(deleteDoc(doc(as('10').firestore(), 'push_tokens/tok-10')));
+});

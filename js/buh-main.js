@@ -15,10 +15,12 @@ import { onChange, act, loadSettings, when } from './buh-data.js';
 import { initInbox, loadInbox } from './buh-inbox.js';
 import { loadOverview } from './buh-overview.js';
 import { initBankView, loadBankView, initSettingsView, loadSettingsView } from './buh-bank.js';
+import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 
 const VIEWS = {
     overview: { title: 'Огляд', sub: 'Гроші ОСББ і що потребує уваги', load: loadOverview },
     inbox: { title: 'Вхідні', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
+    payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
     settings: { title: 'Налаштування', sub: 'Підключення банку й правила погодження', load: loadSettingsView }
 };
@@ -126,6 +128,7 @@ function init() {
     initSheets();
     initInbox(() => view === 'inbox');
     initBankView();
+    initPaymentsView();
     initSettingsView();
     registerServiceWorker();
 

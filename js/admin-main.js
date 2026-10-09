@@ -57,7 +57,8 @@ async function ensureAdminFeatures(group) {
 const ADMIN_TAB_LOADERS = {
     overview: async () => {
         const features = await ensureAdminFeatures('overview');
-        return Promise.all([features.loadDashboard(), loadDtekSettings()]);
+        return Promise.all([features.loadDashboard(), loadDtekSettings(),
+            import('./sign-widget.js').then(m => m.loadSignWidget()).catch(e => console.warn('На підпис:', e))]);
     },
     meetings: async () => {
         const features = await ensureAdminFeatures('meetings');

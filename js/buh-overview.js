@@ -2,7 +2,7 @@
 // «Огляд»: гроші ОСББ і що потребує уваги — на одному екрані.
 // ============================================================
 import { escapeHtml } from './ui.js';
-import { loadSettings, loadQueue, loadSince, money, signed, when, tagOf, maskIban, ACCOUNT_PURPOSES } from './buh-data.js';
+import { loadSettings, loadQueue, loadSince, loadPayments, money, signed, when, tagOf, maskIban, ACCOUNT_PURPOSES } from './buh-data.js';
 import { deadlines, humanDate, daysLeft } from './tax-calendar.js';
 
 const MONTHS = ['січні', 'лютому', 'березні', 'квітні', 'травні', 'червні', 'липні', 'серпні', 'вересні', 'жовтні', 'листопаді', 'грудні'];
@@ -10,7 +10,8 @@ const MONTHS = ['січні', 'лютому', 'березні', 'квітні', 
 export async function loadOverview() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const [settings, queue, month] = await Promise.all([loadSettings(), loadQueue(), loadSince(monthStart)]);
+    const [settings, queue, month, outgoing] = await Promise.all([loadSettings(), loadQueue(), loadSince(monthStart), loadPayments().catch(() => [])]);
+    const signing = outgoing.filter(p => p.status === 'sent');
     const accounts = Object.entries(settings.accounts || {});
     const total = accounts.reduce((s, [, a]) => s + (a.currency === 'UAH' || !a.currency ? (a.balanceKop || 0) : 0), 0);
     const income = month.filter(t => t.direction === 'in' && t.kind !== 'internal').reduce((s, t) => s + t.amountKop, 0);
@@ -26,6 +27,11 @@ export async function loadOverview() {
             <div class="kpi"><span>Списано в ${MONTHS[now.getMonth()]}</span><b>${money(spent)}</b><small>${month.filter(t => t.direction === 'out').length} операцій</small></div>
             <button type="button" class="kpi kpi-action${queue.length ? ' is-alert' : ''}" data-go="inbox"><span>Чекають рішення</span><b>${queue.length}</b><small>${queue.length ? 'Відкрити «Вхідні» →' : 'Усе розібрано'}</small></button>
         </div>
+        ${signing.length ? `<button type="button" class="buh-card sign-strip" data-go="payments">
+            <b>${signing.length} ${signing.length === 1 ? 'платіж чекає' : 'платежі чекають'} підпису голови в Приват24</b>
+            <span>${money(signing.reduce((s, p) => s + p.amountKop, 0))} · відкрити «Платежі» →</span>
+        </button>` : ''}
+
         <div class="ov-grid">
             <section class="buh-card">
                 <div class="buh-card-head"><h2>Строки</h2><span>на 3 місяці</span></div>
