@@ -22,6 +22,7 @@ import { initLedger } from './ledger.js';
 import { registerServiceWorker } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
 import { ROLE_LABELS, TAB_RIGHTS, hasRight } from './staff-core.js';
+import { buildShell, markActive, renderAccount, initSections, initShell } from './admin-shell.js';
 import { loadProfile, loadResiliently, initAppShell, sessionExpired, rememberWorkMode } from './app-common.js';
 
 const toResident = () => location.replace('index.html');
@@ -111,13 +112,12 @@ async function openPanel(apt) {
 /** Хто увійшов і що йому доступно — у шапці й меню панелі. */
 function renderStaffHeader() {
     const name = session.staffName || (session.serviceAccount ? 'Правління ОСББ' : `Квартира ${session.apt}`);
-    document.getElementById('adminAccountName').textContent = name;
-    document.getElementById('adminAccountRole').textContent = ROLE_LABELS[session.role] || '';
-    document.getElementById('adminAvatar').textContent = name.trim().charAt(0).toUpperCase() || 'П';
-    document.getElementById('adminHomeBtn').hidden = session.serviceAccount;
+    renderAccount({ name, role: ROLE_LABELS[session.role] || '', home: !session.serviceAccount });
     document.querySelectorAll('.admin-tab').forEach(tab => {
         tab.hidden = !hasRight(session.role, TAB_RIGHTS[tab.dataset.tab] || 'staff');
     });
+    buildShell(session.role);
+    markActive(activeAdminTab);
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -168,13 +168,8 @@ function initAdminTabs() {
                 return;
             }
             activeAdminTab = tab.dataset.tab;
-            document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t === tab));
-            document.querySelectorAll('.admin-panel').forEach(p => {
-                p.classList.toggle('active', p.dataset.panel === tab.dataset.tab);
-            });
-            const tabs = document.getElementById('adminTabs');
-            const desktop = window.matchMedia('(min-width: 960px)').matches;
-            window.scrollTo({ top: desktop ? 0 : Math.max(0, tabs.offsetTop - 12), behavior: 'smooth' });
+            markActive(activeAdminTab);
+            window.scrollTo({ top: 0 });
             try {
                 await loadAdminTab(activeAdminTab);
             } catch (error) {
@@ -245,19 +240,25 @@ function init() {
     initDtek();
     initFinanceAdmin();
     initLedger();
+    initShell();
+    initSections();
     initAdminTabs();
     initPullToRefresh(refreshCurrentScreen);
     registerServiceWorker();
 
     // Член правління повертається до власного кабінету без перевходу.
-    document.getElementById('adminHomeBtn').addEventListener('click', () => {
+    const toHome = () => {
         rememberWorkMode('home');
         location.assign('index.html');
-    });
-    document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
+    };
+    const logout = async () => {
         localStorage.removeItem('session_timestamp');
         await signOut(auth);
-    });
+    };
+    document.getElementById('adminHomeBtn').addEventListener('click', toHome);
+    document.getElementById('adminMoreHomeBtn').addEventListener('click', toHome);
+    document.getElementById('adminLogoutBtn').addEventListener('click', logout);
+    document.getElementById('adminMoreLogoutBtn').addEventListener('click', logout);
     document.getElementById('backFromChatBtn')?.addEventListener('click', () => {
         stopChat();
         closeAllSheets();

@@ -94,7 +94,7 @@ export function initAppShell() {
         const btn = e.target.closest('.admin-card-toggle');
         if (!btn) return;
         const card = btn.closest('.admin-fold');
-        if (!card) return;
+        if (!card || card.classList.contains('is-section')) return;
         const open = card.classList.toggle('open');
         btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     });

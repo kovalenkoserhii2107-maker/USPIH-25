@@ -1367,11 +1367,6 @@ select.field-input {
 .req-st-btn.active.st-new  { background: var(--orange); border-color: var(--orange); color: #fff; }
 .req-st-btn.active.st-work { background: var(--blue-ink);   border-color: var(--blue-ink);   color: #fff; }
 .req-st-btn.active.st-done { background: var(--green);  border-color: var(--green);  color: #fff; }
-.admin-tab.active {
-    background: var(--surface);
-    color: var(--blue-ink);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
 .admin-panel.active { display: block; }
 @keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
@@ -3674,108 +3669,10 @@ select.field-input {
 .admin-house-strip button { margin-left: auto; border: 0; background: none; color: var(--blue-ink); font: inherit; cursor: pointer; }
 .admin-house-strip button b { color: inherit; }
 .overview-request-values .is-new b { color: #d84f4f; }
-.meeting-view-tab.active { background: white; color: var(--blue-ink); box-shadow: 0 2px 8px rgba(31,52,82,.1); }
 
 .admin-tab:focus-visible, .admin-metric:focus-visible, .admin-task:focus-visible,
-.admin-page-action:focus-visible, .meeting-view-tab:focus-visible, .btn-secondary:focus-visible {
+.admin-page-action:focus-visible, .btn-secondary:focus-visible {
     outline: 2.5px solid var(--blue-ink); outline-offset: 2px;
-}@media (max-width: 959px) {
-    /* Вкладки — сіткою, а не стрічкою з прокруткою вбік.
-       Стрічка показувала три вкладки з десяти, і про решту треба було
-       здогадатися й дотягтися пальцем: горизонтальна прокрутка на
-       телефоні — найгірше місце, щоб ховати навігацію. Десять вкладок
-       рівно лягають у пʼять колонок на два ряди й лишаються на очах
-       усі одразу. Підписи короткі, значок над словом — так плитка
-       вдвічі вужча за рядок «значок + підпис». */
-    #adminDashboardSection > .admin-tabs {
-        display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
-        position: static; margin: 0 0 12px; padding: 4px;
-        overflow: visible;
-        border: 1px solid #dfe6ee; border-radius: 14px; background: rgba(239,243,248,.94);
-        box-shadow: 0 5px 18px rgba(42,61,91,.07);
-        backdrop-filter: none; -webkit-backdrop-filter: none;
-    }
-    #adminDashboardSection .admin-tab {
-        flex-direction: column; justify-content: center; gap: 4px;
-        min-height: 56px; padding: 7px 2px;
-        border: 0; border-radius: 10px; background: transparent; box-shadow: none;
-    }
-    #adminDashboardSection .admin-tab svg { width: 18px; height: 18px; }
-    #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) {
-        /* 10,5px — розмір підпису в системній панелі вкладок iOS.
-           На 11px «Оголошення» й «Опитування» не вміщалися в колонку
-           й обрізалися трьома крапками. */
-        font-size: 10.5px; line-height: 1.1; letter-spacing: -0.2px; text-align: center;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
-    }
-    #adminDashboardSection .admin-tab.active { background: #fff; color: var(--blue-ink); box-shadow: 0 2px 8px rgba(35,57,91,.1); }
-    #adminDashboardSection .admin-tab-badge { top: 3px; right: calc(50% - 20px); }
-
-    /* На вузьких екранах пʼять колонок стискають найдовші підписи
-       («Оголошення», «Опитування») — там краще чотири колонки на три
-       ряди: плитка ширшає, слово вміщається повністю. */
-    @media (max-width: 383px) {
-        #adminDashboardSection > .admin-tabs { grid-template-columns: repeat(4, 1fr); }
-        #adminDashboardSection .admin-tab > span:not(.admin-tab-badge) { font-size: 10.5px; }
-    }
-    .admin-metrics {
-        display: flex; gap: 10px; margin: 0 -15px 14px; padding: 0 15px 2px;
-        overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
-    }
-    .admin-metrics::-webkit-scrollbar { display: none; }
-    .admin-metric { flex: 0 0 172px; min-height: 92px; padding: 12px; scroll-snap-align: start; }
-    .admin-metric-icon { width: 34px; height: 34px; font-size: 15px; }
-    .admin-metric-copy b { font-size: 19px; }
-    .admin-metric-copy span { white-space: normal; line-height: 1.25; }
-    .admin-metric .dash-go { display: none; }
-    .admin-focus-grid { gap: 10px; }
-    .admin-meeting-card { padding: 16px; }
-    .admin-meeting-head { flex-direction: column-reverse; gap: 10px; }
-    .admin-meeting-head h2, .admin-meeting-empty h2 { font-size: 21px; line-height: 1.15; }
-    .admin-section-kicker { margin-bottom: 7px; font-size: 11.5px; }
-    .admin-meeting-meta { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px 10px; }
-    .admin-meeting-row, .quorum-row { grid-template-columns: 1fr; gap: 7px; }
-    .meeting-row-note { grid-column: 1; }
-    .admin-meeting-actions { flex-direction: column; }
-    .admin-meeting-actions .btn-primary, .admin-meeting-actions .btn-secondary { width: 100%; }
-    .admin-house-strip button { margin-left: 0; }
-    .admin-page-head .eyebrow, .admin-page-head p { display: none; }
-}@media (min-width: 960px) {
-    body.admin-mode { overflow-x: hidden; background: #f7f9fc; }
-    body.admin-mode .container { max-width: none; margin: 0; padding: 0; }
-    body.admin-mode #adminDashboardSection {
-        min-height: 100vh; display: grid !important;
-        grid-template-columns: 264px minmax(0, 1fr);
-        grid-template-rows: auto 1fr; background: #f7f9fc;
-    }
-    #adminDashboardSection > .admin-header {
-        grid-column: 2; grid-row: 1; margin: 0; padding: 25px 28px;
-        border-bottom: 1px solid #e6ebf2; background: rgba(255,255,255,.92);
-    }
-    #adminDashboardSection > .admin-tabs {
-        grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; align-self: start;
-        display: flex; flex-direction: column; gap: 3px; box-sizing: border-box;
-        width: 264px; height: 100vh; margin: 0; padding: 20px 14px 14px;
-        border-right: 1px solid #dce5ef; border-radius: 0; background: #f1f6fb;
-        backdrop-filter: none; overflow-y: auto;
-    }
-    .admin-tab.active { background: #dcecff; color: var(--blue-ink); box-shadow: none; }
-    #adminDashboardSection > .admin-panel { grid-column: 2; grid-row: 2; min-width: 0; padding: 20px 28px 40px; }
-    #adminDashboardSection > .admin-panel:not(.admin-overview) { max-width: 1040px; width: calc(100% - 56px); justify-self: center; }
-    #adminDashboardSection > .admin-panel:not(.admin-overview) > .card { border: 1px solid #e3e9f1; box-shadow: 0 5px 20px rgba(35,57,91,.04); }
-    .admin-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-    .admin-metric { min-height: 112px; }
-    .admin-focus-grid { grid-template-columns: minmax(0, 2.25fr) minmax(270px, .95fr); }
-    .admin-meeting-card { min-height: 0; padding: 22px; }
-    .admin-tasks-card { min-height: 0; padding: 18px; }
-    .admin-meeting-head h2 { max-width: 680px; font-size: clamp(22px, 2vw, 29px); }
-    #adminPowerCard { max-width: none; margin-top: 14px; }
-    .admin-house-strip { display: none; }
-}
-
-@media (min-width: 1320px) {
-    #adminDashboardSection > .admin-header { padding-left: 32px; padding-right: 32px; }
-    #adminDashboardSection > .admin-panel { padding: 20px 32px 44px; }
 }
 
 /* Документи правління, приватні довідки й загальнобудинковий облік. */
