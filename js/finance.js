@@ -14,6 +14,7 @@ import {
 import { escapeHtml, formatDateTime, toast, parseMoney, formatMoney } from './ui.js';
 import { renderAttachments } from './attachments.js';
 import { fetchDirectory } from './directory.js';
+import { paymentLinks } from './nbu-qr.js';
 
 /** Номери реальних квартир — щоб не створити фіктивну через друкарську помилку. */
 let knownApts = null;
@@ -403,11 +404,56 @@ async function copyText(text) {
     }
 }
 
+/**
+ * Кнопки «Відкрити в Приват24 / monobank» і QR-код НБУ. Якщо реквізити
+ * неповні (немає IBAN чи ЄДРПОУ) — лишається копіювання вручну.
+ */
+let qrLink = '';
+function renderQuickPay(vals) {
+    const box = document.getElementById('payQuick');
+    if (!box) return;
+    let links = null;
+    try {
+        links = paymentLinks({
+            name: vals.payeeName, iban: vals.iban, code: vals.edrpou,
+            amount: vals.amount ? parseFloat(vals.amount) : null,
+            purpose: vals.purpose, reference: `KV${String(session.apt ?? '').replace(/[^\w-]/g, '')}`
+        });
+    } catch { /* неповні реквізити */ }
+    box.hidden = !links;
+    const hint = document.getElementById('payCopyHint');
+    if (hint) hint.textContent = links
+        ? 'Або скопіюйте реквізити й вставте їх у застосунку свого банку.'
+        : 'Скопіюйте реквізити та вставте їх у застосунку свого банку — у розділі переказу за реквізитами.';
+    if (!links) return;
+    document.getElementById('payApps').innerHTML = links.apps.map(app =>
+        `<a class="btn-primary pay-app" href="${escapeHtml(app.href)}" target="_blank" rel="noopener">Оплатити в ${escapeHtml(app.label)}</a>`).join('');
+    qrLink = links.link;
+    const wrap = document.getElementById('payQrWrap');
+    document.getElementById('payQr').innerHTML = '';
+    if (wrap.open) drawPayQr();
+}
+
+/** QR малюємо лише на вимогу: бібліотека не потрібна, поки мешканець не відкрив блок. */
+async function drawPayQr() {
+    const host = document.getElementById('payQr');
+    if (!host || !qrLink || host.dataset.link === qrLink) return;
+    const { default: qrcode } = await import('./vendor/qrcode.js');
+    const qr = qrcode(0, 'Q');
+    qr.addData(qrLink);
+    qr.make();
+    // Знак гривні в центрі обовʼязковий для форматів 002/003; рівень
+    // корекції Q відновлює закриту ним середину.
+    host.innerHTML = `${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}<span class="pay-qr-mark" aria-hidden="true">₴</span>`;
+    host.dataset.link = qrLink;
+}
+
 export function renderPaymentSheet() {
     const host = document.getElementById('paymentFieldsContainer');
     if (!host) return;
 
     const vals = fieldValues(requisites || {}, session.apt, session.balance);
+    renderQuickPay(vals);
     const shown = FIELDS.filter(f => vals[f]);
     const copyAllBtn = document.getElementById('openBankBtn');
 
@@ -493,6 +539,7 @@ export function initPayments() {
     });
 
     document.getElementById('openBankBtn')?.addEventListener('click', function () { copyAll(this); });
+    document.getElementById('payQrWrap')?.addEventListener('toggle', e => { if (e.currentTarget.open) drawPayQr(); });
     document.getElementById('portmoneLink')?.setAttribute('href', PORTMONE_URL);
 }
 

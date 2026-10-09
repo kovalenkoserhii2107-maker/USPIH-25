@@ -14,12 +14,12 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=130">
-    <link rel="stylesheet" href="style-chat.css?v=130">
+    <link rel="stylesheet" href="style.css?v=131">
+    <link rel="stylesheet" href="style-chat.css?v=131">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самого app.js: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/app.js?v=130">
+    <link rel="modulepreload" href="js/app.js?v=131">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -249,7 +249,18 @@
         <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
     </div>
     <div class="sheet-body">
-        <p class="pay-hint">Скопіюйте реквізити та вставте їх у застосунку свого банку —
+        <!-- Платіжне посилання НБУ: банк відкриває переказ із заповненими полями. -->
+        <div id="payQuick" class="pay-quick" hidden>
+            <p class="pay-hint">Переказ відкриється у вашому банку вже заповненим — лишиться підтвердити.</p>
+            <div id="payApps" class="pay-apps"></div>
+            <details id="payQrWrap" class="pay-qr-wrap">
+                <summary>QR-код для іншого банку чи телефона</summary>
+                <div id="payQr" class="pay-qr" aria-label="Платіжний QR-код"></div>
+                <p class="field-hint">Відскануйте камерою в застосунку свого банку.</p>
+            </details>
+        </div>
+
+        <p class="pay-hint" id="payCopyHint">Скопіюйте реквізити та вставте їх у застосунку свого банку —
             у розділі переказу за реквізитами.</p>
 
         <div id="paymentFieldsContainer" class="pay-fields"></div>
@@ -929,7 +940,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/app.js?v=130').catch(error => {
+    import('./js/app.js?v=131').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

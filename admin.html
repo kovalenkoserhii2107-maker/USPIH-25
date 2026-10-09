@@ -14,13 +14,13 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=130">
-    <link rel="stylesheet" href="style-chat.css?v=130">
-    <link rel="stylesheet" href="style-admin.css?v=130">
+    <link rel="stylesheet" href="style.css?v=131">
+    <link rel="stylesheet" href="style-chat.css?v=131">
+    <link rel="stylesheet" href="style-admin.css?v=131">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=130">
+    <link rel="modulepreload" href="js/admin-main.js?v=131">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -805,6 +805,41 @@
         </div>
 
         <div class="admin-panel" data-panel="finance">
+            <!-- Банк: рахунки, черга «Розібрати» й операції. Наповнює js/bank-admin.js. -->
+            <div data-section="Банк" data-section-count="#bankQueueCount" class="card" id="bankAccountsCard">
+                <div class="meter-card-head"><h3 class="am-card-title">Рахунки ОСББ</h3><button id="bankSyncBtn" type="button" class="btn-soft btn-compact" hidden>Оновити з банку</button></div>
+                <p class="field-hint" id="bankSyncState">Завантаження…</p>
+                <div id="bankAccounts"></div>
+                <details class="bank-connect" id="bankConnect">
+                    <summary id="bankConnectSummary">Підключити ПриватБанк</summary>
+                    <ol class="bank-steps">
+                        <li>Увійдіть у Приват24 для бізнесу (вхід бухгалтера теж підходить).</li>
+                        <li>Облік та звіти → «Інтеграція (Автоклієнт)» → «Підключити додаток» → тип «API», назва «Застосунок ОСББ».</li>
+                        <li>У налаштуваннях додатка відкрийте «API для розробників» і скопіюйте <b>token</b>. Поле «Обмеження за IP-адресою» лишіть порожнім.</li>
+                        <li>Вставте токен сюди. Він зберігається лише на сервері, у браузері й базі його не видно. Застосунок лише читає виписку; платежі без КЕП у кабінеті банк однаково не проводить.</li>
+                    </ol>
+                    <label class="field"><span class="field-label">Токен Автоклієнта</span>
+                        <input id="bankTokenInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="Вставте токен"></label>
+                    <div class="bank-connect-actions">
+                        <button id="bankTokenSaveBtn" type="button" class="btn-primary">Перевірити й зберегти</button>
+                        <button id="bankTokenRemoveBtn" type="button" class="btn-ghost-small" hidden>Відключити</button>
+                    </div>
+                </details>
+            </div>
+            <div data-section="Банк" class="card" id="bankQueueCard">
+                <div class="meter-card-head"><h3 class="am-card-title">Розібрати<span id="bankQueueCount" class="vf-count"></span></h3></div>
+                <p class="field-hint">Надходження, які не вдалося віднести до квартири автоматично. Оберіть квартиру — і наступні оплати цього платника розійдуться самі.</p>
+                <div id="bankQueue"><p class="list-empty">Завантаження…</p></div>
+            </div>
+            <div data-section="Банк" class="card" id="bankOpsCard">
+                <h3 class="am-card-title">Операції</h3>
+                <div class="dir-toolbar">
+                    <div class="dir-filters" id="bankFilters"></div>
+                    <div class="field dir-search"><input type="search" id="bankSearch" class="field-input" placeholder="Квартира, платник або призначення"></div>
+                </div>
+                <div id="bankOps"><p class="list-empty">Завантаження…</p></div>
+                <button id="bankMoreBtn" type="button" class="btn-ghost-small bank-more" hidden>Показати ще</button>
+            </div>
             <div data-section="Баланси" class="card admin-fold">
                 <div class="admin-card-head">
                     <button class="admin-card-toggle" type="button" aria-expanded="false">
@@ -1380,7 +1415,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=130' : './js/admin-main.js?v=130').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=131' : './js/admin-main.js?v=131').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

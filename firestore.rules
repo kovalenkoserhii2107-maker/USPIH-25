@@ -514,6 +514,27 @@ service cloud.firestore {
       allow write: if canAccount();
     }
 
+    // ---------- БАНК ----------
+    // Виписки, рознесення оплат, запамʼятовані платники й налаштування
+    // пише лише сервер (Cloud Functions, bankAction і синхронізація з
+    // ПриватБанком): там перевіряються суми, ролі й пишеться журнал.
+    // Читають голова й бухгалтер. Токен банку з застосунку не читає ніхто.
+    match /bank/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /bank_tx/{txId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /bank_links/{linkId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /bank_secrets/{docId} {
+      allow read, write: if false;
+    }
+
     // ---------- ТЕХНІЧНІ СЛУЖБИ ----------
     match /services/{serviceId} {
       allow read: if isSignedIn();

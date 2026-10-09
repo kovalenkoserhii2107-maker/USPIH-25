@@ -36,16 +36,17 @@ const featureImports = {
     directory: () => import('./directory.js'), importer: () => import('./import-owners.js'),
     exporter: () => import('./export-base.js'), verify: () => import('./verify.js'),
     documents: () => import('./admin-documents.js'), meters: () => import('./meters.js'),
-    apartmentMeters: () => import('./apartment-meters.js'), team: () => import('./admin-team.js')
+    apartmentMeters: () => import('./apartment-meters.js'), team: () => import('./admin-team.js'),
+    bank: () => import('./bank-admin.js')
 };
 const featureGroups = { overview: ['dashboard'], meetings: ['meetings', 'documents'],
-    directory: ['directory', 'importer', 'exporter', 'verify', 'documents'], finance: ['documents'],
+    directory: ['directory', 'importer', 'exporter', 'verify', 'documents'], finance: ['documents', 'bank'],
     meters: ['meters', 'apartmentMeters'], team: ['team'], journal: ['team'] };
 async function ensureAdminFeatures(group) {
     const modules = await Promise.all(featureGroups[group].map(name => {
         if (!adminFeaturePromises.has(name)) adminFeaturePromises.set(name, featureImports[name]().then(features => {
             for (const init of ['initDirectory', 'initImportOwners', 'initExportBase', 'initMeetings', 'initVerify',
-                'initAdminDocuments', 'initMeters', 'initApartmentMeters', 'initTeam']) features[init]?.();
+                'initAdminDocuments', 'initMeters', 'initApartmentMeters', 'initTeam', 'initBank']) features[init]?.();
             if (name === 'meetings') initMeetingWorkspace();
             return features;
         }).catch(error => { adminFeaturePromises.delete(name); throw error; }));
@@ -71,7 +72,10 @@ const ADMIN_TAB_LOADERS = {
     requests: loadAdminRequests,
     docs: populateDocsDropdown,
     polls: loadAdminPolls,
-    finance: async () => { await ensureAdminFeatures('finance'); return Promise.all([loadAdminExpenses(), loadAdminRequisites()]); },
+    finance: async () => {
+        const features = await ensureAdminFeatures('finance');
+        return Promise.all([loadAdminExpenses(), loadAdminRequisites(), features.loadBank()]);
+    },
     meters: async () => { const features = await ensureAdminFeatures('meters'); return Promise.all([features.loadAdminMeters(), features.loadApartmentSubmissions()]); },
     board: () => Promise.all([loadAdminBoard(), loadAdminServices()]),
     team: async () => (await ensureAdminFeatures('team')).loadTeam(),

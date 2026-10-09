@@ -14,7 +14,7 @@ const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 initializeApp();
 const db = getFirestore();
@@ -394,3 +394,10 @@ exports.refreshDtekSchedule = onCall(
         }
     }
 );
+
+// ------------------------------------------------------------
+// БАНК: виписка ПриватБанку й рознесення оплат (див. bank.js)
+// ------------------------------------------------------------
+const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole });
+exports.bankAction = bank.bankAction;
+exports.syncBank = bank.syncBank;

@@ -11,7 +11,7 @@
 import { db, session } from './firebase.js';
 import { audit } from './audit.js';
 import {
-    collection, doc, getDocs, query, orderBy, writeBatch, serverTimestamp
+    collection, doc, getDoc, getDocs, query, orderBy, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, parseMoney, formatMoney } from './ui.js';
 import { loadKnownApts } from './finance.js';
@@ -173,12 +173,28 @@ function ledgerId(row, seen) {
     return n === 1 ? base : `${base}-${n}`;
 }
 
+/**
+ * З дати підключення банку оплати приходять із виписки самі (Фінанси →
+ * Банк). Ті самі оплати у вивантаженні сервісу бухгалтера стали б
+ * дублікатами — їх пропускаємо, нарахування вносимо як завжди.
+ */
+async function bankStart() {
+    try {
+        const settings = await getDoc(doc(db, 'bank', 'settings'));
+        const data = settings.exists() ? settings.data() : null;
+        return data?.tokenSet && data.startDate ? new Date(`${data.startDate}T00:00:00`) : null;
+    } catch { return null; }
+}
+
 export async function saveLedger(rows) {
     const known = await loadKnownApts();
+    const fromBank = await bankStart();
 
     const skipped = new Set();
+    let bankPayments = 0;
     const usable = rows.filter(r => {
         if (known.size && !known.has(r.apt)) { skipped.add(r.apt); return false; }
+        if (fromBank && r.kind === 'payment' && r.at >= fromBank) { bankPayments += 1; return false; }
         return true;
     });
 
@@ -204,7 +220,7 @@ export async function saveLedger(rows) {
         });
         await batch.commit();
     }
-    return { written: items.length, skipped: [...skipped] };
+    return { written: items.length, skipped: [...skipped], bankPayments };
 }
 
 // ------------------------------------------------------------
@@ -406,7 +422,8 @@ export async function applyLedger(btn) {
 
     setBusy(btn, true, 'Збереження…');
     try {
-        const { written, skipped } = await saveLedger(pending.rows);
+        const { written, skipped, bankPayments } = await saveLedger(pending.rows);
+        if (bankPayments) toast(`Оплати з виписки банку пропущено: ${bankPayments} — вони вже рознесені автоматично`, 'info');
         if (!written) {
             toast('Жодна квартира з файлу не знайдена в базі', 'error');
         } else {
