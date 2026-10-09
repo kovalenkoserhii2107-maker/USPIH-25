@@ -1,7 +1,7 @@
 // ============================================================
 // Точка входу: автентифікація, маршрутизація екранів, навігація.
 // ============================================================
-import { db, auth, session, currentApt, resetSession, aptToEmail } from './firebase.js';
+import { db, auth, session, currentApt, resetSession, aptToEmail, reconnectFirestore } from './firebase.js';
 import {
     doc, getDoc, setDoc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -10,7 +10,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import {
-    toast, setBusy, showScreen, currentScreen, initSheets, toggleSheet, closeAllSheets
+    toast, setBusy, showScreen, currentScreen, initSheets, toggleSheet, closeAllSheets, muteErrorToasts
 } from './ui.js';
 import { initAttachmentViewers } from './attachments.js';
 import { initOwners, loadOwners } from './owners.js';
@@ -38,9 +38,29 @@ import {
 } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
 import { maybeShowTutorial, markFreshLogin } from './tutorial.js';
+import { createResilientLoader } from './resilient-load.js';
 import { initLedger, loadLedger } from './ledger.js';
 
 const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 днів
+
+const resilient = createResilientLoader({ reconnect, currentScreen });
+const loadResiliently = resilient.load;
+
+async function reconnect() {
+    muteErrorToasts(60000);
+    try { await reconnectFirestore(); }
+    finally { muteErrorToasts(300); }
+}
+
+let hiddenAt = 0;
+function resumeLoading() {
+    if (resilient.resume()) return;
+    if (hiddenAt && Date.now() - hiddenAt > 60000 && auth.currentUser) {
+        // Після довгої паузи канал часто вже мертвий — відкриваємо новий
+        // заздалегідь, щоб наступне натискання не чекало.
+        reconnect().catch(() => {});
+    }
+}
 const loadedAdminTabs = new Set();
 const loadingAdminTabs = new Map();
 let activeAdminTab = 'overview';
@@ -95,7 +115,7 @@ async function loadAdminTab(name = activeAdminTab, force = false) {
     const loader = ADMIN_TAB_LOADERS[name];
     if (!loader || (!force && loadedAdminTabs.has(name))) return;
     if (loadingAdminTabs.has(name)) return loadingAdminTabs.get(name);
-    const task = Promise.resolve().then(loader).then(() => loadedAdminTabs.add(name));
+    const task = Promise.resolve().then(() => loadResiliently(loader, 'adminDashboardSection')).then(() => loadedAdminTabs.add(name));
     loadingAdminTabs.set(name, task);
     try {
         await task;
@@ -245,7 +265,7 @@ async function refreshCurrentScreen() {
     // Невідомий екран — чесніше перезавантажити, ніж не зробити нічого
     if (!reloader) { location.reload(); return; }
     try {
-        await reloader();
+        await loadResiliently(reloader);
     } catch (e) {
         console.error('Оновлення екрана:', e);
         toast('Не вдалося оновити', 'error');
@@ -265,7 +285,7 @@ onAuthStateChanged(auth, async (user) => {
         }
         localStorage.setItem('session_timestamp', Date.now());
         try {
-            await loadCabinet(currentApt());
+            await loadResiliently(() => loadCabinet(currentApt()), null);
         } catch (e) {
             console.error('Завантаження кабінету:', e);
             toast('Не вдалося завантажити дані', 'error');
@@ -340,7 +360,7 @@ function initNavigation() {
         closeAllSheets();
         showScreen(screen);
         document.getElementById('topNav').style.display = 'none';
-        if (loader) await loader();
+        if (loader) await loadResiliently(loader, screen);
     };
 
     document.getElementById('menuDocsBtn').addEventListener('click', () => go('docsSection', loadOsbbDocs));
@@ -530,6 +550,11 @@ function init() {
     }
     initAdminTabs();
     initAdminFolds();
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) hiddenAt = Date.now();
+        else resumeLoading();
+    });
+    window.addEventListener('online', resumeLoading);
     initLedger();
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);

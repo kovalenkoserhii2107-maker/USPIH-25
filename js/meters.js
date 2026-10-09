@@ -7,7 +7,7 @@ let context = { revision: 0, records: [] };
 let loaded = false, saving = false;
 const dirty = new Set();
 const drafts = new Map();
-const views = { admin: { period: '' }, resident: { period: '' } };
+const views = { admin: { period: '' } };
 const num = value => Number(value).toLocaleString('uk-UA', { maximumFractionDigits: 6 });
 const todayPeriod = () => new Date().toLocaleDateString('sv-SE').slice(0, 7);
 
@@ -92,7 +92,7 @@ function updatePreview(card) {
 }
 
 function renderStats(view) {
-    const host = document.getElementById(view === 'admin' ? 'meterStatistics' : 'residentMeterStatistics');
+    const host = document.getElementById('meterStatistics');
     if (!host) return;
     const periods = [...new Set(context.records.map(row => row.period))].sort().reverse();
     const options = views[view];
@@ -110,7 +110,7 @@ function renderStats(view) {
 }
 
 async function load(view) {
-    const host = document.getElementById(view === 'admin' ? 'meterStatistics' : 'residentMeterStatistics');
+    const host = document.getElementById('meterStatistics');
     try {
         if (view === 'admin') await meterStore.syncTotalArea();
         context = await meterStore.load();
@@ -127,7 +127,6 @@ async function load(view) {
     }
 }
 export const loadAdminMeters = () => load('admin');
-export const loadResidentMeters = () => load('resident');
 
 function disableSettings(disabled) {
     for (const id of ['meterTariffFields', 'houseAreaFields']) document.getElementById(id).disabled = disabled;
@@ -247,7 +246,7 @@ export function initMeters() {
         });
         renderSettings();
     }
-    for (const [view, id] of [['admin', 'meterStatistics'], ['resident', 'residentMeterStatistics']]) {
+    for (const [view, id] of [['admin', 'meterStatistics']]) {
         const host = document.getElementById(id);
         if (!host || host.dataset.initialized) continue;
         host.dataset.initialized = '1';

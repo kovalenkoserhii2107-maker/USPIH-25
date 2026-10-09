@@ -5291,3 +5291,53 @@ select.field-input {
     .am-strip, .am-bar-track i, .am-odometer, .am-step { transition: none; }
     .am-skeleton i, .am-status.is-new, .dial-picker { animation: none; }
 }
+
+/* ============================================================
+   ФІНАНСИ БУДИНКУ (мешканець): ті самі картки, що й у «Мої лічильники».
+   ============================================================ */
+.hf-panel { margin-top: 12px; }
+.hf-asof { margin: 0; font-size: 13px; color: var(--ink-2); }
+.hf-period { margin: 2px 0 14px; font-size: 20px; font-weight: 700; letter-spacing: -0.4px; }
+.hf-flows { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; }
+.hf-flow { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.hf-flow span { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.hf-flow span::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-4); }
+.hf-flow.is-in span::before { background: var(--green); }
+.hf-flow.is-out span::before { background: var(--blue); }
+.hf-flow b { font-size: 19px; font-weight: 700; letter-spacing: -0.4px; overflow-wrap: anywhere; }
+.hf-flow small { font-size: 12px; color: var(--ink-2); }
+.hf-meter { height: 8px; margin-top: 16px; overflow: hidden; border-radius: 4px; background: rgba(52, 199, 89, 0.22); }
+.hf-meter i { display: block; height: 100%; border-radius: 4px; background: var(--blue); }
+.hf-meter.is-over { background: rgba(255, 149, 0, 0.2); }
+.hf-meter.is-over i { background: var(--orange); }
+.hf-meter-note { margin: 8px 0 0; font-size: 13.5px; color: var(--ink-2); }
+.hf-meter-note.is-over { color: #9A4700; }
+.hf-items { margin: 8px 0 0; padding: 0; list-style: none; }
+.hf-items li { padding: 11px 0; }
+.hf-items li + li { border-top: 0.5px solid var(--line); }
+.hf-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 15px; }
+.hf-item-head span { min-width: 0; overflow-wrap: anywhere; }
+.hf-item-head b { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hf-bar { height: 6px; margin: 8px 0 5px; overflow: hidden; border-radius: 3px; background: var(--surface-3); }
+.hf-bar i { display: block; height: 100%; border-radius: 3px; background: var(--blue); }
+.hf-items small { font-size: 12.5px; color: var(--ink-2); }
+.hf-footnote { margin: 4px 4px 18px; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.hf-footnote.is-inside { margin: 12px 0 0; }
+.hf-flip { transform: rotate(180deg); }
+.hf-stack { display: flex; gap: 2px; height: 10px; margin: 4px 0 6px; overflow: hidden; border-radius: 5px; }
+.hf-stack i { display: block; min-width: 4px; background: var(--am-color); }
+.hf-resources { margin: 8px 0 0; padding: 0; list-style: none; }
+.hf-res { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 0; }
+.hf-res + .hf-res { border-top: 0.5px solid var(--line); }
+.hf-res-dot { width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: var(--am-color); }
+.hf-res.is-missing .hf-res-dot { background: var(--surface-3); box-shadow: inset 0 0 0 1.5px var(--am-color); }
+.hf-res-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hf-res-main b { font-size: 15px; font-weight: 600; }
+.hf-res-main small { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.hf-res-main small.is-error { color: #C62828; }
+.hf-res-value { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.hf-res-value b { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hf-res-value small { display: inline-flex; align-items: center; gap: 3px; font-size: 12.5px; white-space: nowrap; }
+.hf-res-value small.is-good { color: #1E7A35; }
+.hf-res-value small.is-more { color: #9A4700; }
+#financeSection .am-month { margin-top: 0; }
