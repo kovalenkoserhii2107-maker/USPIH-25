@@ -8,13 +8,14 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
 import { periodName, fmtKop } from './charges-core.js';
 import { session } from './firebase.js';
 import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
+import { openBudget, publishFinance } from './buh-budget.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -140,10 +141,10 @@ function chargeCardHtml(item, index) {
     const p = item.proposal;
     const head = `<article class="inbox-card is-charge${index === focus ? ' is-focus' : ''}${busy.has(item.tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(item.tx.id)}" data-index="${index}" tabindex="-1">`;
     if (p.type === 'setup') {
-        return `${head}<div class="inbox-main"><span class="inbox-meta">налаштування нарахувань</span><p class="inbox-payer">${escapeHtml(p.title)}</p>
+        return `${head}<div class="inbox-main"><span class="inbox-meta">${escapeHtml(p.meta || 'налаштування нарахувань')}</span><p class="inbox-payer">${escapeHtml(p.title)}</p>
                 <p class="inbox-purpose">${escapeHtml(p.text)}</p></div>
             <div class="inbox-decision"><div class="inbox-actions">
-                <button type="button" class="btn-primary inbox-yes" data-act="yes">Відкрити<kbd>Enter</kbd></button></div></div></article>`;
+                <button type="button" class="btn-primary inbox-yes" data-act="yes">${escapeHtml(p.yes || 'Відкрити')}<kbd>Enter</kbd></button></div></div></article>`;
     }
     const v = p.preview;
     return `${head}<div class="inbox-main">
@@ -270,6 +271,25 @@ export function chargeItems(c) {
     return out;
 }
 
+/**
+ * Кошторис: внести, якщо його немає; з листопада — підготувати на
+ * наступний рік (збори затверджують до 01 січня, п. 4.12.2 статуту);
+ * оновити звіт для мешканців, коли є що показати.
+ */
+export function budgetItems(b) {
+    if (!b) return [];
+    const out = [];
+    const setup = (id, extra) => out.push({ tx: { id }, proposal: { type: 'setup', meta: 'кошторис', ...extra } });
+    if (!b.effective) setup(`budget:${b.year}`, { budgetYear: b.year, title: `Внесіть кошторис на ${b.year} рік`,
+        text: 'Статті й суми, затверджені загальними зборами. Без нього не видно план/факт, а документи понад статтю не контролюються.' });
+    const next = String(Number(b.year) + 1);
+    if (Number(b.today.slice(5, 7)) >= 11 && !b.years.some(y => y.year === next)) setup(`budget:${next}`, { budgetYear: next,
+        title: `Підготуйте кошторис на ${next} рік`, text: 'Загальні збори затверджують його до 01 січня (п. 4.12.2 статуту). Можна скопіювати поточний і змінити суми.' });
+    if (b.publish.stale && (b.effective || b.execution.totals.factKop)) setup(`publish:${b.year}`, { publish: true, year: b.year, yes: 'Оновити',
+        title: 'Оновіть «Фінанси будинку» для мешканців', text: 'Виконання кошторису, витрати з документами й загальний борг будинку — без прізвищ і номерів квартир.' });
+    return out;
+}
+
 /** Справи з витратами для «Вхідних» (голова бачить і затвердження). */
 export function expenseItems(ex, payments, chair) {
     if (!ex) return [];
@@ -290,9 +310,10 @@ export function expenseItems(ex, payments, chair) {
 
 let payAccount = '';
 export async function loadInbox() {
-    const [queue, dir, pays, charges, ex, payments] = await Promise.all([loadQueue(), loadDirectory(),
+    const thisYear = String(new Date().getFullYear());
+    const [queue, dir, pays, charges, ex, payments, budget] = await Promise.all([loadQueue(), loadDirectory(),
         activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null),
-        loadExpenses().catch(() => null), loadPayments().catch(() => [])]);
+        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null)]);
     dirCache = dir;
     exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
@@ -300,6 +321,7 @@ export async function loadInbox() {
     const byDocs = new Set((ex?.contracts || []).filter(c => c.status === 'approved' && c.type === 'monthly')
         .map(c => ex.suppliers.find(s => s.id === c.supplierId)?.iban).filter(Boolean));
     items = chargeItems(charges)
+        .concat(budgetItems(budget))
         .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
         .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
@@ -369,6 +391,8 @@ const confirmProposal = item => {
     if (['approve-exp', 'approve-con', 'pay-exp', 'missing-doc'].includes(item.proposal.type)) { confirmTask(item, true); return; }
     if (item.proposal.type === 'link' && item.proposal.ids.length === 1) { linkTx(item, item.proposal.ids[0]); return; }
     if (item.proposal.type === 'charge') { runCharge(item); return; }
+    if (item.proposal.type === 'setup' && item.proposal.publish) { runTask(item, () => publishFinance(item.proposal.year)); return; }
+    if (item.proposal.type === 'setup' && item.proposal.budgetYear) { openBudget(item.proposal.budgetYear); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
     if (p.type !== 'assign') { openForm(item); return; }

@@ -27,7 +27,7 @@ const { normIban, fromKop, safeId } = require('./bank-core');
 const REGION = 'europe-central2';
 const FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
 
-module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments }) {
+module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const settingsRef = db.doc('expense_settings/main');
 
@@ -160,7 +160,12 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             if (dup.docs.some(d => d.data().date === e.date && d.data().status !== 'canceled')) fail('already-exists', `Документ № ${e.number} від ${core.humanDate(e.date)} цього постачальника вже внесено`);
         }
         const settings = (await settingsRef.get()).data() || {};
-        const need = core.approvalLevel(e, contract, contract ? await spentUnder(contract, e.period, ref.id) : 0, settings);
+        let need = core.approvalLevel(e, contract, contract ? await spentUnder(contract, e.period, ref.id) : 0, settings);
+        // Навіть за договором: вихід за затверджений кошторис статті — рішення голови.
+        if (need.level === 'accountant' && budget) {
+            const over = await budget.guard(e, ref.id);
+            if (over) need = { level: 'chair', reason: over };
+        }
         // Голова затверджує будь-що; бухгалтер — лише свій рівень.
         const approved = role === 'chair' || need.level === 'accountant';
         await ref.set({

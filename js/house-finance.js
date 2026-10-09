@@ -19,7 +19,50 @@ const ITEMS_SHOWN = 6;
 
 // undefined — ще вантажиться, null — правління нічого не опублікувало.
 let report, reportFailed = false, months, monthsFailed = false;
-let tab = 'money', period = null, allItems = false, loadRequest = 0;
+let tab = 'money', period = null, allItems = false, allExpenses = false, loadRequest = 0;
+const EXPENSES_SHOWN = 8;
+const kop = value => formatMoney((Number(value) || 0) / 100);
+
+/**
+ * Виконання кошторису: план на рік, «план на сьогодні» й факт за кожною
+ * статтею. Звіт формує бухгалтерія застосунку (budgetAction), мешканець
+ * бачить лише цифри ОСББ.
+ */
+function budgetHtml(b) {
+    const share = (fact, plan) => (plan > 0 ? Math.round(fact / plan * 100) : null);
+    const line = l => {
+        const p = share(l.factKop, l.toDateKop);
+        return `<li><div class="hf-item-head"><span>${escapeHtml(l.title)}${l.outside ? ' <small class="hf-tag">поза кошторисом</small>' : ''}</span><b>${kop(l.factKop)} грн</b></div>
+            ${l.planKop ? `<div class="hf-bar${p > 100 ? ' is-over' : ''}"><i style="width:${Math.min(100, p || 0)}%"></i></div>
+            <small>${p === null ? '' : `${p}% від плану на сьогодні · `}план на рік ${kop(l.planKop)} грн</small>` : ''}</li>`;
+    };
+    return `<section class="card">
+        <p class="am-heat-kicker">Кошторис ${escapeHtml(b.year)} року${b.carried ? ' (діє попередній)' : ''}</p>
+        <h3 class="am-card-title">Виконання кошторису</h3>
+        ${b.sections.map(s => {
+            // Статті без витрат за період — одним рядком: довгий список нулів не читається.
+            const spent = s.lines.filter(l => l.factKop), idle = s.lines.filter(l => !l.factKop);
+            return `<p class="hf-sub">${escapeHtml(s.title)} · ${kop(s.factKop)} з ${kop(s.planKop)} грн</p>
+            <ul class="hf-items">${spent.map(line).join('')}</ul>
+            ${idle.length ? `<p class="hf-idle">Ще без витрат: ${idle.map(l => escapeHtml(l.title)).join(', ')}</p>` : ''}`;
+        }).join('')}
+        <p class="hf-footnote is-inside">${b.decision ? `Затверджено: ${escapeHtml(b.decision)}. ` : ''}«План на сьогодні» — частка річного плану за ${b.months} міс. обліку.</p>
+    </section>`;
+}
+
+/** Витрати з документами: мешканець відкриває рахунок чи акт сам (п. 5.1.1 статуту). */
+function expensesHtml(list) {
+    const shown = allExpenses ? list : list.slice(0, EXPENSES_SHOWN);
+    return `<section class="card">
+        <h3 class="am-card-title">Витрати з документами</h3>
+        <ul class="hf-docs">${shown.map(e => `<li>
+            <div class="hf-item-head"><span><b>${escapeHtml(e.supplier)}</b></span><b>${kop(e.amountKop)} грн</b></div>
+            <small>${escapeHtml(String(e.date).split('-').reverse().join('.'))} · ${escapeHtml(e.description)} · ${escapeHtml(e.item)}${e.paid ? '' : ' · до оплати'}</small>
+            ${(e.files || []).length ? `<p class="hf-files">${e.files.map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(e.doc)}: ${escapeHtml(f.name)}</a>`).join('')}</p>` : ''}
+        </li>`).join('')}</ul>
+        ${list.length > shown.length ? `<button type="button" class="btn-ghost am-more-btn" data-hf-allexp>Показати всі (${list.length})</button>` : ''}
+    </section>`;
+}
 
 const skeleton = () => '<section class="card am-skeleton" aria-busy="true" aria-label="Завантаження"><i></i><i></i><i></i></section>';
 const notice = text => `<section class="card"><p class="am-empty">${text}</p></section>`;
@@ -57,6 +100,8 @@ function moneyHtml() {
             : `Витрачено ${num(summary.spentShare, 0)}% зібраного · лишилося ${formatMoney(summary.difference)} грн`}</p>`}
     </section>`);
 
+    if (report.budget?.sections?.length) parts.push(budgetHtml(report.budget));
+
     if (summary.items.length) {
         const shown = allItems ? summary.items : summary.items.slice(0, ITEMS_SHOWN);
         const max = summary.items[0].amount;
@@ -69,7 +114,15 @@ function moneyHtml() {
             ${summary.items.length > shown.length ? `<button type="button" class="btn-ghost am-more-btn" data-hf-all>Показати всі статті (${summary.items.length})</button>` : ''}
         </section>`);
     }
-    parts.push(`<p class="hf-footnote">Звіт публікує правління${updated ? ` · оновлено ${escapeHtml(updated)}` : ''}.</p>`);
+    if (report.expenses?.length) parts.push(expensesHtml(report.expenses));
+    if (report.debt) {
+        parts.push(`<section class="card">
+            <p class="am-heat-kicker">Заборгованість співвласників</p>
+            <p class="am-heat-amount">${kop(report.debt.totalKop)}<span> грн</span></p>
+            <p class="hf-asof">${report.debt.count ? `борг мають ${report.debt.count} ${report.debt.count === 1 ? 'квартира' : report.debt.count < 5 ? 'квартири' : 'квартир'} — без прізвищ і номерів` : 'боргів немає'}</p>
+        </section>`);
+    }
+    parts.push(`<p class="hf-footnote">Звіт ${report.source === 'ledger' ? 'формує бухгалтерія застосунку' : 'публікує правління'}${updated ? ` · оновлено ${escapeHtml(updated)}` : ''}.</p>`);
     return parts.join('');
 }
 
@@ -148,6 +201,7 @@ function init() {
     });
     panel.addEventListener('click', event => {
         if (event.target.closest('[data-hf-all]')) { allItems = true; render(); return; }
+        if (event.target.closest('[data-hf-allexp]')) { allExpenses = true; render(); return; }
         const step = event.target.closest('[data-hf-step]');
         if (step && months?.length) {
             const index = months.findIndex(month => month.period === period) + Number(step.dataset.hfStep);
