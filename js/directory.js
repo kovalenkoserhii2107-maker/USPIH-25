@@ -168,6 +168,20 @@ function ownerLine(o) {
     </div>`;
 }
 
+/** Баланс у стовпці таблиці: коротко, знак і колір як у мешканця. */
+function balanceCell(e) {
+    if (e.balance === undefined || e.balance === null || e.balance === '') return '<span class="dir-col dir-col-balance is-none">—</span>';
+    const n = parseMoney(e.balance);
+    const cls = n < -0.005 ? 'is-debt' : n > 0.005 ? 'is-credit' : '';
+    const sign = n < -0.005 ? '−' : n > 0.005 ? '+' : '';
+    return `<span class="dir-col dir-col-balance ${cls}">${sign}${formatMoney(Math.abs(n))}</span>`;
+}
+
+// На ПК список стає таблицею: шапка стовпців і ті самі рядки, де
+// площа, власники, баланс і звірка стоять у своїх колонках.
+const TABLE_HEAD = `<div class="dir-table-head" aria-hidden="true"><span>Кв.</span><span>Власник</span>
+    <span>Площа, м²</span><span>Власників</span><span>Баланс, грн</span><span>Звірка</span><span></span></div>`;
+
 function render(list) {
     const host = document.getElementById('directoryList');
     if (!host) return;
@@ -177,7 +191,7 @@ function render(list) {
         return;
     }
 
-    host.innerHTML = list.map(e => `
+    host.innerHTML = TABLE_HEAD + list.map(e => `
         <div class="dir-card" data-apt="${escapeHtml(e.apt)}">
             <button type="button" class="dir-head">
                 <span class="dir-apt">${escapeHtml(e.apt)}</span>
@@ -190,6 +204,12 @@ function render(list) {
                         }</span>
                     </span>
                 </span>
+                <span class="dir-col dir-col-area">${e.area ? escapeHtml(String(e.area)) : '—'}</span>
+                <span class="dir-col dir-col-owners">${e.owners.length || '—'}</span>
+                ${balanceCell(e)}
+                <span class="dir-col dir-col-status"><span class="dir-verify dv-${e.ownersStatus}">${
+                    { confirmed: 'звірено', review: 'на розгляді', pending: 'не звірено' }[e.ownersStatus] || '—'
+                }</span></span>
                 <svg class="row-chevron dir-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
             <div class="dir-body" hidden>

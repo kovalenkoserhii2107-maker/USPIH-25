@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <title>Панель правління — ОСББ «Успіх-25»</title>
+
+    <!-- PWA: встановлення на головний екран -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#F2F2F7">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Успіх-25">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+
+    <link rel="stylesheet" href="style.css?v=131">
+    <link rel="stylesheet" href="style-chat.css?v=131">
+    <link rel="stylesheet" href="style-admin.css?v=131">
+
+    <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
+         й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
+    <link rel="modulepreload" href="js/admin-main.js?v=131">
+    <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
+    <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
+    <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
+    <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js">
+    <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js">
+</head>
+<body class="admin-mode">
+
+<!-- Спільні з кабінетом мешканця блоки (чат, редактор співвласників, вікна) мають
+     збігатися з index.html: це перевіряє scripts/check-project.mjs. -->
+<div id="navBackdrop" class="nav-backdrop"></div>
+<div id="dtekPopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Графік відключень ДТЕК</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body">
+        <div class="field">
+            <label class="field-label" for="dtekGroup">Черга, на якій стоїть будинок</label>
+            <select id="dtekGroup" class="field-input"></select>
+            <span class="field-hint">Подивитися свою чергу можна на
+                <a href="https://www.dtek-oem.com.ua/ua/shutdowns" target="_blank" rel="noopener">сайті ДТЕК</a>
+                — введіть адресу будинку. Далі графік оновлюється сам кожні три години.</span>
+        </div>
+        <div id="dtekState" class="dtek-state"></div>
+        <button type="button" id="saveDtekBtn" class="btn-primary">Зберегти й оновити графік</button>
+    </div>
+</div>
+<div id="schedulePopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Графік відключень</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body" id="scheduleBody"></div>
+</div>
+<div id="powerStatsPopup" class="sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Відключення світла</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body" id="powerStatsBody">
+        <p class="list-empty">Завантаження…</p>
+    </div>
+</div>
+
+
+<!-- «Ще» на телефоні: обліковий запис і всі розділи, доступні ролі.
+     Плитки збирає admin-shell.js з кнопок бічного меню. -->
+<div id="adminMoreSheet" class="sheet admin-more-sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-header">
+        <h4 class="sheet-title">Розділи</h4>
+        <button class="sheet-close" data-close-sheet aria-label="Закрити">✕</button>
+    </div>
+    <div class="sheet-body">
+        <div class="admin-more-account">
+            <span class="admin-avatar" id="adminMoreAvatar" aria-hidden="true">П</span>
+            <span class="admin-more-who"><b id="adminMoreName">Правління ОСББ</b><small id="adminMoreRole"></small></span>
+            <button id="adminMoreHomeBtn" class="btn-soft btn-compact" type="button" hidden>Мій кабінет</button>
+        </div>
+        <div id="adminMoreGroups"></div>
+        <button id="adminMoreLogoutBtn" class="menu-logout" type="button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Вийти
+        </button>
+    </div>
+</div>
+<div class="container">
+
+    <!-- ============ ЗАВАНТАЖЕННЯ ============ -->
+    <div id="appLoader">
+        <div class="turtle">
+            <svg width="90" height="70" viewBox="0 0 100 80">
+                <ellipse cx="50" cy="45" rx="30" ry="22" fill="#83B799"/>
+                <path d="M50 23c-16 0-30 10-30 22h60c0-12-14-22-30-22z" fill="#6BA383"/>
+                <circle cx="50" cy="40" r="9" fill="#5C8F72"/>
+                <circle cx="35" cy="45" r="6" fill="#5C8F72"/>
+                <circle cx="65" cy="45" r="6" fill="#5C8F72"/>
+                <ellipse cx="82" cy="42" rx="10" ry="8" fill="#95C7A8"/>
+                <circle cx="86" cy="39" r="2" fill="#1D1D1F"/>
+                <ellipse cx="26" cy="62" rx="8" ry="5" fill="#95C7A8"/>
+                <ellipse cx="70" cy="62" rx="8" ry="5" fill="#95C7A8"/>
+            </svg>
+        </div>
+        <p class="loader-text">Завантаження панелі правління…</p>
+    </div>
+
+    <div id="adminDashboardSection" style="display: none;">
+
+        <div class="admin-header">
+            <div class="admin-welcome">
+                <h1 class="admin-title" id="adminTitle">Головна</h1>
+                <span class="admin-subtitle" id="adminSubtitle">Стан будинку й справи на сьогодні</span>
+            </div>
+            <div class="admin-account">
+                <span class="admin-today" id="adminToday"></span>
+                <button id="adminHomeBtn" class="btn-ghost-small admin-home-btn" type="button" hidden>Мій кабінет</button>
+                <!-- На телефоні аватар відкриває «Ще»: там обліковий запис і всі розділи. -->
+                <button id="adminAccountBtn" class="admin-account-btn" type="button" aria-label="Обліковий запис і всі розділи">
+                    <span class="admin-avatar" id="adminAvatar" aria-hidden="true">П</span>
+                    <span class="admin-account-copy"><b id="adminAccountName">Правління ОСББ</b><small id="adminAccountRole">Голова правління</small></span>
+                </button>
+                <button id="adminLogoutBtn" class="icon-btn icon-btn-danger" type="button" aria-label="Вийти">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Бічне меню на ПК. На телефоні замість нього нижня панель
+             вкладок і аркуш «Ще» — їх збирає admin-shell.js із цих кнопок. -->
+        <nav class="admin-tabs" id="adminTabs" aria-label="Розділи панелі">
+            <div class="admin-nav-brand">
+                <span class="admin-brand-mark">У</span>
+                <span><b>ОСББ Успіх-25</b><small>Панель правління</small></span>
+            </div>
+            <div class="admin-nav-group">
+                <button class="admin-tab active" data-tab="overview" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path><path d="M9 20v-6h6v6"></path></svg>
+                    <span>Головна</span>
+                </button>
+            </div>
+            <div class="admin-nav-group">
+                <span class="admin-nav-label">Мешканці</span>
+                <button class="admin-tab" data-tab="directory" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v15"></path><path d="M12 11h7a1 1 0 0 1 1 1v9"></path><line x1="2" y1="21" x2="22" y2="21"></line></svg>
+                    <span>Власники</span>
+                    <span class="admin-tab-badge" id="adminOwnersBadge" style="display:none;">0</span>
+                </button>
+                <button class="admin-tab" data-tab="requests" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                    <span>Звернення</span>
+                    <span class="admin-tab-badge" id="adminReqBadge" style="display:none;">0</span>
+                </button>
+                <button class="admin-tab" data-tab="chat" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v10l-3-3H9a2 2 0 0 1-2-2v-1"></path><path d="M14 3H4a2 2 0 0 0-2 2v8l3-3h9a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"></path></svg>
+                    <span>Чат</span>
+                    <span class="admin-tab-badge" id="adminChatBadge" style="display:none;">0</span>
+                </button>
+            </div>
+            <div class="admin-nav-group">
+                <span class="admin-nav-label">Рішення</span>
+                <button class="admin-tab" data-tab="meetings" type="button">
+                    <!-- Календар із галочкою, а не люди: у плитці підпис дрібний,
+                         і два однакові «людські» значки (збори й контакти)
+                         розрізнити на око не виходить. -->
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><polyline points="8.5 15.5 10.5 17.5 15 13"></polyline></svg>
+                    <span>Збори<span class="admin-tab-extra"> й протоколи</span></span>
+                </button>
+                <button class="admin-tab" data-tab="polls" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                    <span>Опитування</span>
+                </button>
+            </div>
+            <div class="admin-nav-group">
+                <span class="admin-nav-label">Комунікація</span>
+                <button class="admin-tab" data-tab="send" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    <span>Оголошення</span>
+                </button>
+                <button class="admin-tab" data-tab="docs" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <span>Документи</span>
+                </button>
+                <button class="admin-tab" data-tab="board" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <span>Контакти</span>
+                </button>
+            </div>
+            <div class="admin-nav-group">
+                <span class="admin-nav-label">Облік</span>
+                <button class="admin-tab" data-tab="buh" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"></path><path d="M12 3 3 8h18z"></path><path d="M5 10v8M9 10v8M15 10v8M19 10v8"></path><path d="M3 21h18"></path></svg>
+                    <span>Бухгалтерія</span>
+                </button>
+                <button class="admin-tab" data-tab="finance" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <span>Фінанси</span>
+                </button>
+                <button class="admin-tab" data-tab="meters" type="button">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg>
+                    <span>Лічильники</span>
+                </button>
+            </div>
+            <div class="admin-nav-group">
+                <span class="admin-nav-label">Правління</span>
+                <button class="admin-tab" data-tab="team" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><polyline points="9 12 11 14 15 10"></polyline></svg>
+                    <span>Команда</span>
+                </button>
+                <button class="admin-tab" data-tab="journal" type="button">
+                    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                    <span>Журнал дій</span>
+                </button>
+            </div>
+        </nav>
+        <nav class="admin-tabbar" id="adminTabbar" aria-label="Розділи"></nav>
+
+        <div class="admin-panel active admin-overview" data-panel="overview">
+            <div id="adminDashboard" class="dash">
+                <p class="list-empty">Завантаження зведення…</p>
+            </div>
+
+            <div class="power-card" id="adminPowerCard">
+                <div class="power-card-inner">
+                    <div class="power-icon-circle" id="adminPowerIconWrap"></div>
+                    <div class="power-info">
+                        <span class="power-status-label" id="adminPowerStatusText">--</span>
+                        <span class="power-since-label" id="adminPowerSinceText"></span>
+                        <span class="power-duration-label" id="adminPowerDurationText"></span>
+                    </div>
+                    <button type="button" class="power-stats-btn" id="adminPowerStatsBtn" aria-label="Статистика відключень">
+                        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                    </button>
+                    <label class="power-toggle-switch">
+                        <input type="checkbox" id="powerToggleInput">
+                        <span class="power-toggle-slider"></span>
+                    </label>
+                </div>
+                <div id="adminScheduleHost"></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: команда правління -->
+        <div class="admin-panel" data-panel="team">
+            <div class="card"><h3 class="am-card-title">Команда правління</h3>
+                <p class="field-hint">Кожен входить під своїм номером: член правління — номером своєї квартири, бухгалтер без квартири — службовим номером. Права залежать від ролі, а в журналі видно, хто що змінив.</p>
+                <div id="teamList"><p class="list-empty">Завантаження…</p></div>
+            </div>
+            <div class="card" id="teamAddCard" hidden><h3 class="am-card-title">Додати до команди</h3>
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Номер для входу</span><input id="teamLogin" class="field-input" inputmode="numeric" maxlength="6" placeholder="Номер квартири"></label>
+                    <label class="field"><span class="field-label">Роль</span><select id="teamRole" class="field-input field-select">
+                        <option value="board">Член правління</option><option value="accountant">Бухгалтер</option><option value="chair">Голова правління</option></select></label>
+                </div>
+                <label class="field"><span class="field-label">Ім'я та прізвище</span><input id="teamName" class="field-input" maxlength="100" placeholder="Як підписувати дії в журналі"></label>
+                <label class="am-check"><input type="checkbox" id="teamService"><span>Без квартири в будинку — службовий номер (наприклад, для бухгалтера)</span></label>
+                <button id="teamAddBtn" type="button" class="btn-primary">Додати</button>
+                <p class="field-hint">Обліковий запис для входу ({номер}@uspih-25.com) створюється так само, як для квартир. Роль діє одразу після збереження.</p>
+            </div>
+        </div>
+
+        <!-- Вкладка: журнал дій -->
+        <div class="admin-panel" data-panel="journal">
+            <div class="card"><div class="meter-card-head"><h3 class="am-card-title">Журнал дій правління</h3><button id="journalRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
+                <p class="field-hint">Хто, коли й що змінив. Записи лише додаються — змінити чи видалити їх не може ніхто.</p>
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Хто</span><select id="journalActor" class="field-input field-select"><option value="">Усі</option></select></label>
+                    <label class="field"><span class="field-label">Що</span><select id="journalArea" class="field-input field-select"><option value="">Усі дії</option></select></label>
+                </div>
+                <div id="journalList"><p class="list-empty">Завантаження…</p></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: розсилка -->
+        <div class="admin-panel" data-panel="send">
+            <div data-section="Нове" class="card admin-fold open">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Нове повідомлення</h2>
+                    <span class="admin-card-sub">Дійде всім обраним мешканцям одразу</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+
+                <div class="field">
+                    <label class="field-label" for="adminMsgTitle">Заголовок</label>
+                    <input type="text" id="adminMsgTitle" class="field-input" placeholder="Наприклад: Ремонт ліфта">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="adminMsgBody">Текст повідомлення</label>
+                    <textarea id="adminMsgBody" class="field-input" rows="5" placeholder="Деталі, дати, що потрібно зробити мешканцям…"></textarea>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Кому надіслати</span>
+                    <div class="segmented" id="adminTargetSegmented">
+                        <button type="button" class="segmented-item active" data-target="all">Весь будинок</button>
+                        <button type="button" class="segmented-item" data-target="entrance">Парадна</button>
+                        <button type="button" class="segmented-item" data-target="apartment">Квартири</button>
+                    </div>
+                    <select id="adminMsgTargetType" hidden>
+                        <option value="all">Усьому будинку</option>
+                        <option value="entrance">Конкретній парадній</option>
+                        <option value="apartment">Конкретній квартирі</option>
+                    </select>
+                </div>
+
+                <div class="field" id="adminMsgTargetValueGroup" hidden>
+                    <label class="field-label" id="adminTargetValueLabel" for="adminMsgTargetValue">Номери квартир через кому</label>
+                    <input type="text" id="adminMsgTargetValue" class="field-input" placeholder="Наприклад: 45, 46">
+                    <span class="field-hint">Можна вказати кілька значень через кому.</span>
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="adminMsgLinkedDoc">Документ з Бази ОСББ</label>
+                    <select id="adminMsgLinkedDoc" class="field-input field-select">
+                        <option value="">Не прикріплювати</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Вкладення</span>
+                    <label class="dropzone" for="adminMsgFiles">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Додати фото або документи</span>
+                        <span class="dropzone-hint">PDF, Word, Excel, PowerPoint, зображення</span>
+                    </label>
+                    <input type="file" id="adminMsgFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" class="hidden-file-input">
+                    <div id="adminMsgFilesPreview" class="file-chips"></div>
+                </div>
+
+                <button id="adminSendMsgBtn" class="btn-primary" type="button">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    Надіслати повідомлення
+                </button>
+                </div></div>
+            </div>
+            <div data-section="Історія" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Історія розсилок</h2>
+                        <span class="admin-card-sub">Хто і коли прочитав</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="list-actions"><button id="refreshHistoryBtn" class="btn-ghost-small" type="button">Оновити</button></div>
+
+                <div id="adminMsgHistoryContainer" class="admin-scroll-list">
+                    <p class="list-empty">Історія порожня</p>
+                </div>
+                </div></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: звернення -->
+        <div class="admin-panel" data-panel="requests">
+            <div class="card admin-fold open">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Звернення мешканців</h2>
+                    <span class="admin-card-sub">Питання та скарги від квартир</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="req-toolbar">
+                    <div class="req-filters" id="reqFilters">
+                        <button type="button" class="req-filter active" data-filter="active">Активні <span class="req-filter-n">0</span></button>
+                        <button type="button" class="req-filter" data-filter="done">Вирішені <span class="req-filter-n">0</span></button>
+                        <button type="button" class="req-filter" data-filter="all">Усі <span class="req-filter-n">0</span></button>
+                    </div>
+                    <div class="req-search-wrap">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.7" y2="16.7"></line></svg>
+                        <input type="search" id="reqSearch" class="req-search" placeholder="Квартира або текст звернення" autocomplete="off">
+                    </div>
+                </div>
+
+                <div id="adminRequestsContainer" class="admin-scroll-list req-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+                </div></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: база документів -->
+        <div class="admin-panel" data-panel="docs">
+            <div class="card admin-fold open">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Додати документ у Базу</h2>
+                    <span class="admin-card-sub">Буде доступний усім мешканцям</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+
+                <div class="field">
+                    <label class="field-label" for="osbbDocTitle">Назва документа</label>
+                    <input type="text" id="osbbDocTitle" class="field-input" placeholder="Напр. Протокол зборів №5">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="osbbDocCategory">Категорія</label>
+                    <select id="osbbDocCategory" class="field-input field-select">
+                        <option value="Установчі документи">Установчі документи</option>
+                        <option value="Протоколи правління">Протоколи правління</option>
+                        <option value="Протоколи зборів">Протоколи загальних зборів</option>
+                        <option value="Звіти та кошториси">Фінансові звіти та кошториси</option>
+                        <option value="Інше">Інші документи</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <span class="field-label">Файл</span>
+                    <label class="dropzone" for="osbbDocFile">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span class="dropzone-text">Обрати файл</span>
+                        <span class="dropzone-hint">PDF, Word або Excel · менше 30 МБ</span>
+                    </label>
+                    <input type="file" id="osbbDocFile" accept="application/pdf,.doc,.docx,.xls,.xlsx" class="hidden-file-input">
+                    <div id="osbbDocFilePreview" class="file-chips"></div>
+                </div>
+
+                <button id="uploadOsbbDocBtn" class="btn-primary" type="button">Завантажити в Базу</button>
+                </div></div>
+            </div>
+        </div>
+
+        <div class="admin-panel" data-panel="polls">
+            <div data-section="Опитування" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Опитування</h2>
+                    <span class="admin-card-sub">Результати в реальному часі</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div id="adminPollsContainer" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+                </div></div>
+            </div>
+            <div data-section="Нове" class="card admin-fold open">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Нове опитування</h2>
+                    <span class="admin-card-sub">Кожна квартира має один голос</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+
+                <div class="field">
+                    <label class="field-label" for="pollTitle">Питання</label>
+                    <input type="text" id="pollTitle" class="field-input" placeholder="Напр. Чи встановлювати шлагбаум?">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="pollDescription">Деталі</label>
+                    <textarea id="pollDescription" class="field-input" rows="3" placeholder="Вартість, терміни, що це дасть мешканцям…"></textarea>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Варіанти відповіді</span>
+                    <div id="pollOptionsList" class="poll-options-list"></div>
+                    <button type="button" id="addPollOptionBtn" class="btn-ghost-small poll-add-option">
+                        + Додати варіант
+                    </button>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Строк голосування</span>
+                    <div class="poll-terms" id="pollQuickTerms">
+                        <button type="button" class="poll-term" data-days="7">Тиждень</button>
+                        <button type="button" class="poll-term" data-days="14">2 тижні</button>
+                        <button type="button" class="poll-term" data-days="30">Місяць</button>
+                    </div>
+                    <input type="datetime-local" id="pollDeadline" class="field-input poll-deadline-input">
+                    <span class="field-hint">Можна не вказувати — тоді опитування триватиме, доки не завершите вручну.</span>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Матеріали до голосування</span>
+                    <label class="dropzone" for="pollFiles">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Додати фото або документи</span>
+                        <span class="dropzone-hint">Кошториси, схеми, комерційні пропозиції</span>
+                    </label>
+                    <input type="file" id="pollFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" class="hidden-file-input">
+                    <div id="pollFilesPreview" class="file-chips"></div>
+                </div>
+
+                <button type="button" id="createPollBtn" class="btn-primary">Опублікувати опитування</button>
+                </div></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: загальні збори -->
+        <div class="admin-panel" data-panel="meetings">
+            <div class="meeting-toolbar">
+                <div class="admin-subnav meeting-view-tabs" role="tablist" aria-label="Розділи зборів">
+                    <button id="meetingTabActive" class="admin-subnav-item meeting-view-tab active" type="button" role="tab" aria-selected="true" aria-controls="meetingPanelActive" tabindex="0" data-meeting-view="active">Активні</button>
+                    <button id="meetingTabProtocols" class="admin-subnav-item meeting-view-tab" type="button" role="tab" aria-selected="false" aria-controls="meetingPanelProtocols" tabindex="-1" data-meeting-view="protocols">Протоколи</button>
+                    <button id="meetingTabArchive" class="admin-subnav-item meeting-view-tab" type="button" role="tab" aria-selected="false" aria-controls="meetingPanelArchive" tabindex="-1" data-meeting-view="archive">Архів</button>
+                </div>
+                <button class="admin-page-action" type="button" data-meeting-view="create">+ Створити<span class="admin-tab-extra"> збори</span></button>
+            </div>
+
+            <div class="card admin-fold open meeting-workspace-panel" role="region" aria-label="Створення нових зборів" data-meeting-panel="create" hidden>
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Нові загальні збори</h2>
+                    <span class="admin-card-sub">Порядок денний, листки для обходу квартир і протокол</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <label class="field-label" for="meetingTitle">Назва зборів</label>
+                    <input type="text" id="meetingTitle" class="field-input" value="Загальні збори співвласників">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="meetingDescription">Деталі</label>
+                    <textarea id="meetingDescription" class="field-input" rows="2" placeholder="Що обговорюємо, чому це важливо…"></textarea>
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="meetingDate">Дата зборів</label>
+                    <input type="date" id="meetingDate" class="field-input">
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="field-label" for="meetingTimeStart">Час початку</label>
+                        <input type="time" id="meetingTimeStart" class="field-input">
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="meetingTimeEnd">Час закінчення</label>
+                        <input type="time" id="meetingTimeEnd" class="field-input">
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="meetingPlace">Місце проведення</label>
+                    <select id="meetingPlace" class="field-input field-select">
+                        <option value="внутрішній двір будинку">Внутрішній двір будинку</option>
+                        <option value="приміщення правління">Приміщення правління</option>
+                        <option value="other">Інше…</option>
+                    </select>
+                    <input type="text" id="meetingPlaceOther" class="field-input meeting-place-other"
+                           placeholder="Вкажіть місце проведення" hidden>
+                </div>
+
+                <!-- Перше питання порядку денного однакове на всіх зборах,
+                     тому в формі стоять не питання, а ті, кого пропонують. -->
+                <div class="field">
+                    <span class="field-label">Питання 1 — обрання голови та секретаря</span>
+                    <span class="field-hint">Це питання додається в порядок денний завжди. Вкажіть,
+                        кого пропонують: рішення й «Слухали» для протоколу складуться самі.</span>
+                    <input type="text" id="meetingChair" class="field-input meeting-person"
+                           list="meetingOwnersList" placeholder="Голова зборів — ПІБ (кв. 12)">
+                    <input type="text" id="meetingSecretary" class="field-input meeting-person"
+                           list="meetingOwnersList" placeholder="Секретар зборів — ПІБ (кв. 177)">
+                    <datalist id="meetingOwnersList"></datalist>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Хто проводить письмове опитування</span>
+                    <span class="field-hint">ПІБ друкується на кожній сторінці листка опитування —
+                        поруч із місцем для підпису. Якщо листки друкуються по парадних,
+                        для кожної можна вказати свою відповідальну особу.</span>
+                    <div id="meetingSurveyors" class="surveyor-list"></div>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Порядок денний</span>
+                    <span class="field-hint">Нумерація проставляється сама. Проєкт рішення друкується
+                        на листку опитування й лягає в протокол рядком «Вирішили».</span>
+                    <div id="meetingAgendaList" class="poll-options-list"></div>
+                    <button type="button" id="addAgendaItemBtn" class="btn-ghost-small poll-add-option">
+                        + Додати питання
+                    </button>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Строк голосування</span>
+                    <input type="datetime-local" id="meetingDeadline" class="field-input poll-deadline-input">
+                    <span class="field-hint">До цього моменту приймаються голоси — і в застосунку,
+                        і паперові. Можна не вказувати.</span>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Матеріали до зборів</span>
+                    <label class="dropzone" for="meetingFiles">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Додати фото або документи</span>
+                        <span class="dropzone-hint">Кошториси, схеми, комерційні пропозиції · кожен файл менше 20 МБ</span>
+                    </label>
+                    <input type="file" id="meetingFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" class="hidden-file-input">
+                    <div id="meetingFilesPreview" class="file-chips"></div>
+                </div>
+
+                <label class="req-close-toggle">
+                    <input type="checkbox" id="meetingByEntrance" checked>
+                    <span>Друкувати листки опитування окремо по парадних</span>
+                </label>
+                <label class="req-close-toggle">
+                    <input type="checkbox" id="meetingNotify" checked>
+                    <span>Автоматично розіслати повідомлення про скликання зборів</span>
+                </label>
+
+                <button type="button" id="createMeetingBtn" class="btn-primary">Створити збори</button>
+
+                </div></div>
+            </div>
+            <div id="meetingPanelActive" class="card admin-fold open meeting-workspace-panel" role="tabpanel" aria-labelledby="meetingTabActive" data-meeting-panel="active">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Активні збори</h2>
+                    <span class="admin-card-sub">Тривають — голоси ще приймаються</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div id="meetingsActive" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+                </div></div>
+            </div>
+            <div id="meetingPanelArchive" class="card admin-fold open meeting-workspace-panel" role="tabpanel" aria-labelledby="meetingTabArchive" data-meeting-panel="archive" hidden>
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Архів зборів</h2>
+                    <span class="admin-card-sub">Завершені — з протоколами та підсумками</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div id="meetingsArchive" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+                </div></div>
+            </div>
+            <div id="meetingPanelProtocols" class="card admin-fold open meeting-workspace-panel" role="tabpanel" aria-labelledby="meetingTabProtocols" data-meeting-panel="protocols" hidden>
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Протоколи</h2>
+                    <span class="admin-card-sub">Протоколи зборів і засідань правління</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <form id="boardProtocolForm" class="admin-document-form">
+                    <h3>Додати протокол правління</h3>
+                    <p class="field-hint">Готовий документ або PDF із введеного тексту. Буде доступний мешканцям у Базі документів.</p>
+                    <fieldset id="boardProtocolFields" class="plain-fieldset">
+                        <div class="admin-document-grid">
+                            <label class="field"><span class="field-label">Номер протоколу</span><input id="boardProtocolNumber" class="field-input" required maxlength="50" placeholder="Наприклад: 12"></label>
+                            <label class="field"><span class="field-label">Дата засідання</span><input id="boardProtocolDate" type="date" class="field-input" required></label>
+                        </div>
+                        <label class="field"><span class="field-label">Спосіб внесення</span><select id="boardProtocolMode" class="field-input field-select">
+                            <option value="file">Прикріпити готовий файл</option><option value="generate">Сформувати PDF із тексту</option>
+                        </select></label>
+                        <div id="boardProtocolUpload" class="field">
+                            <label class="dropzone" for="boardProtocolFile"><span class="dropzone-title">Обрати протокол</span><span class="dropzone-hint">PDF, Word або скан · до 30 МБ</span></label>
+                            <input id="boardProtocolFile" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" class="hidden-file-input">
+                            <span id="boardProtocolFileName" class="field-hint">Файл не обрано</span>
+                        </div>
+                        <div id="boardProtocolText" hidden>
+                            <div class="admin-document-grid">
+                                <label class="field"><span class="field-label">Голова засідання</span><input id="boardProtocolChair" class="field-input" placeholder="ПІБ" maxlength="200"></label>
+                                <label class="field"><span class="field-label">Секретар</span><input id="boardProtocolSecretary" class="field-input" placeholder="ПІБ" maxlength="200"></label>
+                            </div>
+                            <label class="field"><span class="field-label">Місце засідання</span><input id="boardProtocolPlace" class="field-input" maxlength="300" placeholder="Адреса / приміщення"></label>
+                            <label class="field"><span class="field-label">Присутні</span><textarea id="boardProtocolPresent" class="field-input" rows="3" maxlength="5000" placeholder="Члени правління, кожен із нового рядка"></textarea></label>
+                            <label class="field"><span class="field-label">Слухали</span><textarea id="boardProtocolHeard" class="field-input" rows="4" maxlength="30000" placeholder="Питання порядку денного та зміст обговорення"></textarea></label>
+                            <label class="field"><span class="field-label">Вирішили</span><textarea id="boardProtocolDecisions" class="field-input" rows="5" maxlength="30000" placeholder="Рішення та результати голосування, кожен пункт із нового рядка"></textarea></label>
+                        </div>
+                        <button id="boardProtocolSaveBtn" class="btn-primary" type="submit">Додати протокол правління</button>
+                    </fieldset>
+                </form>
+                <div id="meetingsProtocols" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+                </div></div>
+            </div>
+        </div>
+
+        <!-- Вкладка: довідник квартир -->
+        <div class="admin-panel" data-panel="directory">
+            <div data-section="Квартири" class="card admin-fold open">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Квартири</h2>
+                        <span class="admin-card-sub" id="directoryCount">Завантаження…</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="list-actions"><button id="directoryRefreshBtn" class="btn-ghost-small" type="button">Оновити</button></div>
+
+                <div id="verifyStats"></div>
+
+                <div class="dir-toolbar">
+                    <div class="dir-filters" id="dirFilters"></div>
+                    <div class="field dir-search">
+                        <input type="search" id="directorySearch" class="field-input"
+                               placeholder="Номер квартири, прізвище або документ">
+                    </div>
+                </div>
+
+                <div id="directoryList" class="admin-scroll-list">
+                    <p class="list-empty">Завантаження…</p>
+                </div>
+                </div></div>
+            </div>
+            <div data-section="Заявки" data-section-count="#verifyQueueCount" class="card admin-fold open">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="true">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Заявки на зміну<span id="verifyQueueCount" class="vf-count"></span></h2>
+                        <span class="admin-card-sub">Мешканці пропонують — рішення за вами</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+                <div class="list-actions"><button id="verifyRefreshBtn" class="btn-ghost-small" type="button">Оновити</button></div>
+                <div id="verifyQueue"><p class="list-empty">Завантаження…</p></div>
+                </div></div>
+            </div>
+            <div data-section="Імпорт і експорт" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Завантажити базу власників</h2>
+                        <span class="admin-card-sub">Файл CSV з Excel — квартири, власники, частки</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <p class="imp-help">У файлі має бути рядок заголовка. Одна квартира — стільки рядків,
+                    скільки в неї власників; номер квартири повторюється в кожному.</p>
+                <div class="imp-format">
+                    <b>Обовʼязково:</b> Квартира · Власник · Частка<br>
+                    <b>Бажано:</b> Парадна · Площа · Документ<br>
+                    <b>Необовʼязково:</b> Особовий рахунок · Борг · Дата
+                </div>
+
+                <label class="dropzone" for="impFile">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span class="dropzone-title">Обрати файл CSV</span>
+                    <span class="dropzone-hint">Excel: «Зберегти як» → CSV</span>
+                </label>
+                <input type="file" id="impFile" accept=".csv,text/csv" class="hidden-file-input">
+
+                <div id="impPreview"></div>
+
+                <label class="imp-check">
+                    <input type="checkbox" id="impOverwrite">
+                    <span>Перезаписати навіть квартири, які мешканці вже звірили</span>
+                </label>
+                <button type="button" id="impRunBtn" class="btn-primary" disabled>Записати в базу</button>
+                </div></div>
+            </div>
+            <div data-section="Імпорт і експорт" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Вивантажити базу</h2>
+                        <span class="admin-card-sub">Обираєте поля й порядок — отримуєте файл Excel</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <label class="field-label" for="expFilter">Які квартири</label>
+                    <select id="expFilter" class="field-input"></select>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Рядок відповідає</span>
+                    <div class="exp-grain">
+                        <label><input type="radio" name="expGrain" value="owner" checked><span>Власнику</span></label>
+                        <label><input type="radio" name="expGrain" value="apt"><span>Квартирі</span></label>
+                    </div>
+                    <span class="field-hint">«Власнику» — квартира з двома власниками дасть два рядки;
+                        площа й борг у них повторяться, тож сума по стовпцю буде завищена.
+                        «Квартирі» — один рядок, власники в одній клітинці; для підсумків беріть його.</span>
+                </div>
+
+                <div class="field">
+                    <span class="field-label">Колонки та їх порядок</span>
+                    <div id="expFields" class="exp-fields"></div>
+                    <span class="field-hint" id="expCount"></span>
+                </div>
+
+                <button type="button" id="expRunBtn" class="btn-primary">Завантажити Excel</button>
+                </div></div>
+            </div>
+        </div>
+
+        <div class="admin-panel" data-panel="finance">
+            <div data-section="Баланси" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Баланси квартир</h2>
+                    <span class="admin-card-sub">Рядок на квартиру: номер і сума. Від'ємна — борг, додатна — переплата</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <textarea id="balanceBulk" class="field-input" rows="6"
+                              placeholder="298 -1250,40&#10;12 300&#10;55 0"></textarea>
+                    <span class="field-hint">Роздільник — пробіл, кома, крапка з комою або табуляція.</span>
+                </div>
+                <div id="balancePreview"></div>
+                <button type="button" id="applyBalancesBtn" class="btn-primary">Оновити баланси</button>
+
+                <hr class="board-form-divider">
+
+                <div class="field">
+                    <span class="field-label">Або файл CSV</span>
+                    <label class="dropzone" for="debtsCsvFile">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span class="dropzone-text">Обрати CSV</span>
+                        <span class="dropzone-hint">Два стовпці: квартира та сума</span>
+                    </label>
+                    <input type="file" id="debtsCsvFile" accept=".csv,text/csv" class="hidden-file-input">
+                </div>
+                <button type="button" id="uploadDebtsBtn" class="btn-soft">Оновити з файлу</button>
+                </div></div>
+            </div>
+            <div data-section="Баланси" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Особові рахунки</h2>
+                    <span class="admin-card-sub">Рядок на квартиру: номер квартири та її особовий рахунок</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <textarea id="accountsBulk" class="field-input" rows="5"
+                              placeholder="298 1234567890&#10;12 1234567891"></textarea>
+                    <span class="field-hint">Мешканець копіює рахунок у формі банку.</span>
+                </div>
+                <div id="accountsPreview"></div>
+                <button type="button" id="applyAccountsBtn" class="btn-primary">Внести рахунки</button>
+                </div></div>
+            </div>
+            <div data-section="Нарахування" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Історія нарахувань і оплат</h2>
+                    <span class="admin-card-sub">Вивантаження з бухгалтерії: мешканець бачить, звідки взявся його борг</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <span class="field-label">Файл із бухгалтерії</span>
+                    <label class="dropzone" for="ledgerCsvFile">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span class="dropzone-text">Обрати CSV</span>
+                        <span class="dropzone-hint">Квартира; дата; тип; сума; примітка</span>
+                    </label>
+                    <input type="file" id="ledgerCsvFile" accept=".csv,.txt,text/csv,text/plain" class="hidden-file-input">
+                </div>
+
+                <div class="field">
+                    <label class="field-label" for="ledgerBulk">Або вставте рядки</label>
+                    <textarea id="ledgerBulk" class="field-input" rows="6"
+                              placeholder="298;01.08.2026;Нарахування;1250,40;Внески на утримання&#10;298;05.08.2026;Оплата;1250,40;Приват24"></textarea>
+                    <span class="field-hint">Роздільник колонок — <b>крапка з комою</b> або табуляція. Кома в сумі означає копійки. Тип: «нарахування» або «оплата». Дата може бути з часом («18.08.2026 23:09») — тоді операції за одну добу стануть у правильному порядку. Заголовок таблиці можна лишити.</span>
+                </div>
+
+                <div id="ledgerPreview"></div>
+                <button type="button" id="applyLedgerBtn" class="btn-primary">Внести в базу</button>
+                </div></div>
+            </div>
+            <div data-section="Квитанції" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Квитанції</h2>
+                    <span class="admin-card-sub">Номер квартири визначається з назви файлу — перевірте перед надсиланням</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <label class="field-label" for="receiptPeriod">Період</label>
+                    <input type="text" id="receiptPeriod" class="field-input" placeholder="Серпень 2026">
+                </div>
+                <div class="field">
+                    <span class="field-label">Файли</span>
+                    <label class="dropzone" for="receiptFiles">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span class="dropzone-text">Обрати квитанції</span>
+                        <span class="dropzone-hint">Можна одразу всі. Напр. «298.pdf»</span>
+                    </label>
+                    <input type="file" id="receiptFiles" multiple accept="application/pdf,image/*" class="hidden-file-input">
+                </div>
+                <div id="receiptRows" class="receipt-rows"></div>
+                <button type="button" id="uploadReceiptsBtn" class="btn-primary">Розіслати квитанції</button>
+                </div></div>
+            </div>
+            <div data-section="Звіт" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Витрати за місяць</h2>
+                    <span class="admin-card-sub">Звіт бачать усі мешканці на головному екрані</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <label class="field-label" for="expensePeriod">Період</label>
+                    <input type="text" id="expensePeriod" class="field-input" placeholder="Серпень 2026">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="expenseFunds">Залишок на рахунку ОСББ</label>
+                    <div class="funds-input-row">
+                        <input type="text" id="expenseFunds" class="field-input" inputmode="decimal" placeholder="грн">
+                        <input type="text" id="expenseFundsDate" class="field-input" placeholder="станом на">
+                    </div>
+                    <span class="field-hint">Дата — з виписки, напр. «20.08.2026». Порожня сума — не показувати блок.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="expenseIncome">Надходження за місяць</label>
+                    <input type="text" id="expenseIncome" class="field-input" inputmode="decimal" placeholder="грн">
+                    <span class="field-hint">Скільки зібрано внесків за період. Порожнє — не показувати.</span>
+                </div>
+                <div class="field">
+                    <span class="field-label">Статті витрат</span>
+                    <div id="expenseRows" class="expense-rows"></div>
+                    <button type="button" id="addExpenseBtn" class="btn-ghost-small poll-add-option">+ Додати статтю</button>
+                </div>
+                <div id="expensePreview"></div>
+                <button type="button" id="saveExpensesBtn" class="btn-primary">Опублікувати звіт</button>
+                </div></div>
+            </div>
+            <div data-section="Реквізити" class="card admin-fold">
+                <div class="admin-card-head">
+                    <button class="admin-card-toggle" type="button" aria-expanded="false">
+                        <span class="admin-card-headings"><h2 class="admin-card-title">Реквізити ОСББ</h2>
+                    <span class="admin-card-sub">Мешканці копіюють їх у застосунку свого банку</span></span>
+                        <svg class="admin-card-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="admin-card-body"><div class="admin-card-body-inner">
+
+                <div class="field">
+                    <label class="field-label" for="reqPayee">Одержувач</label>
+                    <input type="text" id="reqPayee" class="field-input" placeholder="ОСББ «Успіх-25»">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqEdrpou">ЄДРПОУ</label>
+                    <input type="text" id="reqEdrpou" class="field-input" inputmode="numeric" placeholder="12345678">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqIban">IBAN</label>
+                    <input type="text" id="reqIban" class="field-input" placeholder="UA000000000000000000000000000">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqHouse">Адреса будинку</label>
+                    <input type="text" id="reqHouse" class="field-input" placeholder="вул. Інглезі, 3/3, м. Одеса">
+                    <span class="field-hint">До неї додасться «кв. N» — для форм банку, де питають адресу.</span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="reqPurpose">Шаблон призначення</label>
+                    <input type="text" id="reqPurpose" class="field-input" placeholder="Внески на утримання будинку, кв. {apt}">
+                    <span class="field-hint">Замість <code>{apt}</code> підставиться номер квартири мешканця.</span>
+                </div>
+                <button type="button" id="saveRequisitesBtn" class="btn-primary">Зберегти реквізити</button>
+                </div></div>
+            </div>
+            <div data-section="Довідки" class="card admin-document-launcher">
+                <div><h2 class="admin-card-title">Довідка по квартирі</h2><p class="admin-card-sub">Особовий рахунок, баланс і наявність / відсутність боргу в PDF</p></div>
+                <button id="openCertificateBtn" type="button" class="btn-primary">Сформувати довідку</button>
+            </div>
+        </div>
+
+        <!-- Вкладка: контакти (правління + технічні служби) -->
+        <div class="admin-panel" data-panel="meters">
+            <div data-section="Показники" class="card">
+                <div class="meter-card-head"><h3>Внести показники</h3><button id="meterRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
+                <p class="field-hint">Для першого запису вкажіть початковий показник. Надалі попередній береться з історії. Тариф діє для вибраного місяця.</p>
+                <fieldset id="meterInputFields" class="plain-fieldset">
+                    <label class="field"><span class="field-label">Місяць обліку</span><input id="meterPeriod" type="month" class="field-input" required></label>
+                    <div id="meterEntry" class="meter-entry-list"></div>
+                    <button id="meterSaveBtn" type="button" class="btn-primary">Зберегти показники</button>
+                </fieldset>
+            </div>
+            <div data-section="Витрати" class="card"><h3>Витрати ресурсів будинку</h3><div id="meterStatistics"><p class="list-empty">Завантаження…</p></div></div>
+            <div data-section="Квартири" class="card"><div class="meter-card-head"><h3>Подані показники квартир</h3><button id="apartmentSubmissionsRefreshBtn" type="button" class="btn-soft btn-compact">Оновити</button></div>
+                <div class="admin-document-grid"><label class="field"><span class="field-label">Місяць</span><input id="apartmentSubmissionsPeriod" type="month" class="field-input"></label>
+                <label class="field"><span class="field-label">Квартира</span><input id="apartmentSubmissionsSearch" class="field-input" placeholder="Пошук за номером"></label></div>
+                <div id="apartmentSubmissions"><p class="list-empty">Завантаження…</p></div>
+            </div>
+            <div data-section="Налаштування" class="card"><h3>Загальна площа будинку</h3>
+                <fieldset id="houseAreaFields" class="plain-fieldset" disabled>
+                    <label class="field"><span class="field-label">Площа, м²</span><input id="houseTotalArea" class="field-input" inputmode="decimal" placeholder="Загальна площа будинку"></label>
+                    <button id="houseAreaSaveBtn" type="button" class="btn-primary">Зберегти площу</button>
+                </fieldset>
+                <p class="field-hint" id="houseAreaHint"></p>
+                <p class="field-hint">Площа використовується для розподілу тепла між квартирами. Для виправлення вже внесеного місяця повторно збережіть його показники.</p>
+            </div>
+            <div data-section="Налаштування" class="card"><h3>Тарифи ресурсів будинку</h3>
+                <p class="field-hint">Внесіть тариф постачальника й дату початку його дії. Ціна автоматично підставляється в показники за вибраний місяць. Для виправлення вже внесеного місяця повторно збережіть його показники.</p>
+                <fieldset id="meterTariffFields" class="plain-fieldset" disabled><div id="meterTariffEntry" class="meter-entry-list"></div></fieldset>
+                <div id="meterTariffHistory"></div>
+            </div>
+        </div>
+
+        <div class="admin-panel" data-panel="board">
+            <div class="pos-group-head">
+                <div>
+                    <h3 class="section-head-title">Правління</h3>
+                    <span class="pos-group-sub">Контакти побачать усі мешканці</span>
+                </div>
+                <button type="button" id="addBoardPositionBtn" class="pos-add">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Додати
+                </button>
+            </div>
+            <div id="boardAdminList"></div>
+
+            <div class="pos-group-head">
+                <div>
+                    <h3 class="section-head-title">Служби</h3>
+                    <span class="pos-group-sub">Електрик, сантехнік, бухгалтер — усі, до кого звертаються мешканці</span>
+                </div>
+                <button type="button" id="addServicePositionBtn" class="pos-add">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Додати
+                </button>
+            </div>
+            <div id="servicesAdminList"></div>
+        </div>
+
+    </div>
+
+    <div id="chatSection" style="display: none;">
+        <div class="screen-head compact-head">
+            <button id="backFromChatBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+            <span class="head-title">Чат будинку</span>
+        </div>
+
+        <div class="chat-body">
+        <div id="chatList" class="chat-list"></div>
+
+        <div class="chat-compose">
+            <div id="chatComposeCtx" class="compose-ctx" hidden></div>
+            <div id="chatFilesPreview" class="file-chips"></div>
+            <div class="chat-row">
+                <label class="chat-attach-btn" for="chatFiles" aria-label="Додати фото">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                </label>
+                <input type="file" id="chatFiles" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" class="hidden-file-input">
+                <textarea id="chatInput" class="chat-input" rows="1" placeholder="Повідомлення…" maxlength="2000" autocomplete="off" autocapitalize="sentences" spellcheck="true" aria-label="Повідомлення"></textarea>
+                <button type="button" id="chatSendBtn" class="chat-send" aria-label="Надіслати">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
+        </div>
+        </div>
+    </div>
+    <div id="ownersEditSection" style="display: none;">
+        <div class="screen-head compact-head">
+            <button id="backFromOwnersEditBtn" class="back-btn" type="button">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                Назад
+            </button>
+            <span class="head-title" id="ownersEditTitle">Квартира</span>
+        </div>
+
+        <p class="own-edit-note">Ви редагуєте від імені правління. Зміни застосуються одразу,
+            без заявки, і список буде позначено як звірений правлінням.</p>
+
+        <div class="section-head">
+            <div class="section-head-text">
+                <h2 class="section-head-title">Співвласники</h2>
+                <span class="section-head-sub">Частки власності та документи</span>
+            </div>
+            <button id="addOwnerAdminBtn" class="btn-add-round" type="button" aria-label="Додати співвласника">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+        </div>
+
+        <div id="ownersEditContainer" class="owners-container"></div>
+        <button type="button" id="saveOwnersAdminBtn" class="btn-primary own-edit-save">Зберегти список</button>
+    </div>
+
+</div>
+
+<div id="msgModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="modalMsgTitle"></h3>
+            <button id="closeMsgModal" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <span class="modal-date" id="modalMsgDate"></span>
+        <p class="modal-body" id="modalMsgBody"></p>
+        <div id="modalMsgAttachments" class="attach-block"></div>
+        <div id="modalMsgLinkedDoc" class="attach-block"></div>
+
+        <div id="msgComments" class="msg-comments" hidden>
+            <span class="comments-title">Обговорення</span>
+            <div id="commentsList" class="chat-list chat-list-inline"></div>
+            <div id="commentComposeCtx" class="compose-ctx" hidden></div>
+            <div class="chat-row">
+                <textarea id="commentInput" class="chat-input" rows="1" placeholder="Написати коментар…"></textarea>
+                <button type="button" id="commentSendBtn" class="chat-send" aria-label="Надіслати">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="adminReplyModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title" id="replyModalTitle"></h3>
+            <button id="closeReplyModalBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <input type="hidden" id="replyModalReqId">
+        <input type="hidden" id="replyModalReqApt">
+
+        <div class="quote-block">
+            <p class="quote-text" id="replyModalOriginalText"></p>
+        </div>
+
+        <div class="field">
+            <label class="field-label" for="replyModalBody">Ваша відповідь</label>
+            <textarea id="replyModalBody" class="field-input" rows="4" placeholder="Напишіть відповідь мешканцю…"></textarea>
+        </div>
+        <div class="field">
+            <span class="field-label">Вкладення</span>
+            <label class="dropzone" for="replyModalFiles">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span class="dropzone-text">Додати файли</span>
+            </label>
+            <input type="file" id="replyModalFiles" multiple accept="image/*,application/pdf" class="hidden-file-input">
+            <div id="replyModalFilesPreview" class="file-chips"></div>
+        </div>
+
+        <label class="req-close-toggle">
+            <input type="checkbox" id="replyMarkDone" checked>
+            <span>Позначити вирішеним</span>
+        </label>
+
+        <div class="modal-foot"><button id="sendReplyBtn" class="btn-primary" type="button">Надіслати відповідь</button></div>
+    </div>
+</div>
+<div id="certificateModal" class="modal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="certificateTitle">
+        <div class="modal-head"><h3 id="certificateTitle" class="modal-title">Довідка по квартирі</h3><button id="closeCertificateBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button></div>
+        <form id="certificateForm">
+            <fieldset id="certificateFields" class="plain-fieldset">
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Квартира / приміщення</span><input id="certificateApt" class="field-input" list="certificateApts" required placeholder="Номер квартири"><datalist id="certificateApts"></datalist></label>
+                    <label class="field"><span class="field-label">Дата видачі</span><input id="certificateDate" class="field-input" type="date" readonly></label>
+                </div>
+                <div id="certificateAccountPreview" class="certificate-account" aria-live="polite"></div>
+                <label class="field"><span class="field-label">Тип довідки</span><select id="certificateType" class="field-input field-select">
+                    <option value="auto">За фактичним балансом</option><option value="clear">Про відсутність заборгованості</option><option value="debt">Про заборгованість</option>
+                </select></label>
+                <label class="field"><span class="field-label">Номер довідки (за потреби)</span><input id="certificateNumber" class="field-input" maxlength="50" placeholder="Реєстраційний номер"></label>
+                <div class="admin-document-grid">
+                    <label class="field"><span class="field-label">Підписант</span><input id="certificateSigner" class="field-input" maxlength="200" placeholder="ПІБ або залиште для ручного заповнення"></label>
+                    <label class="field"><span class="field-label">Посада</span><input id="certificatePosition" class="field-input" maxlength="200" value="Голова правління"></label>
+                </div>
+                <label class="field"><span class="field-label">Куди подається (за потреби)</span><input id="certificatePurpose" class="field-input" maxlength="500" placeholder="Для подання за місцем вимоги"></label>
+                <button id="certificateGenerateBtn" type="submit" class="btn-primary">Сформувати PDF</button>
+            </fieldset>
+        </form>
+        <div id="certificateResult" class="certificate-result" hidden>
+            <a id="certificateOpenPdf" class="btn-soft" target="_blank" rel="noopener">Відкрити PDF</a><a id="certificateDownload" class="btn-primary" download>Завантажити</a>
+        </div>
+    </div>
+</div>
+<div id="protocolModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title">Дані для протоколу</h3>
+            <button id="closeProtocolModalBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <span class="modal-date" id="protoMeta"></span>
+
+        <div class="field">
+            <label class="field-label" for="protoNumber">Номер протоколу</label>
+            <input type="text" id="protoNumber" class="field-input" inputmode="numeric" placeholder="Напр. 1">
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label class="field-label" for="protoChair">Голова зборів</label>
+                <input type="text" id="protoChair" class="field-input" placeholder="Прізвище І. П.">
+            </div>
+            <div class="field">
+                <label class="field-label" for="protoSecretary">Секретар зборів</label>
+                <input type="text" id="protoSecretary" class="field-input" placeholder="Прізвище І. П.">
+            </div>
+        </div>
+
+        <div id="protocolQuestions" class="proto-list"></div>
+
+        <div class="modal-foot"><button id="protoSubmitBtn" class="btn-primary" type="button">Сформувати та опублікувати</button></div>
+    </div>
+</div>
+<div id="paperVotesModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title">Паперові голоси</h3>
+            <button id="closePaperVotesBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <span class="modal-date" id="paperVotesMeta"></span>
+
+        <!-- Порядок такий самий, як у стосі листків: спершу питання,
+             далі парадна, і вже потім квартири одна за одною. -->
+        <div class="field">
+            <label class="field-label" for="paperQuestion">Питання порядку денного</label>
+            <select id="paperQuestion" class="field-input field-select"></select>
+            <span class="field-hint">Питання 1 голосують на зборах. Його підсумки вносяться під час формування протоколу.</span>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label class="field-label" for="paperEntrance">Парадна</label>
+                <select id="paperEntrance" class="field-input field-select"></select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="paperVotesSearch">Пошук</label>
+                <input type="text" id="paperVotesSearch" class="field-input"
+                       inputmode="search" placeholder="Кв. або прізвище">
+            </div>
+        </div>
+        <span class="paper-count" id="paperVotesCount"></span>
+
+        <div id="paperVotesList" class="paper-list">
+            <p class="list-empty">Завантаження…</p>
+        </div>
+
+        <div class="modal-foot"><button id="paperSaveBtn" class="btn-primary" type="button">Зберегти внесені голоси</button></div>
+    </div>
+</div>
+<div id="meetingEditModal" class="modal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3 class="modal-title">Редагування зборів</h3>
+            <button id="closeMeetingEditBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+        <span class="modal-date" id="editMeetingMeta"></span>
+
+        <div class="field">
+            <label class="field-label" for="editMeetingTitle">Назва зборів</label>
+            <input type="text" id="editMeetingTitle" class="field-input">
+        </div>
+        <div class="field">
+            <label class="field-label" for="editMeetingDescription">Деталі</label>
+            <textarea id="editMeetingDescription" class="field-input" rows="2"></textarea>
+        </div>
+        <div class="field">
+            <label class="field-label" for="editMeetingDate">Дата зборів</label>
+            <input type="date" id="editMeetingDate" class="field-input">
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label class="field-label" for="editMeetingTimeStart">Час початку</label>
+                <input type="time" id="editMeetingTimeStart" class="field-input">
+            </div>
+            <div class="field">
+                <label class="field-label" for="editMeetingTimeEnd">Час закінчення</label>
+                <input type="time" id="editMeetingTimeEnd" class="field-input">
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="editMeetingPlace">Місце проведення</label>
+            <input type="text" id="editMeetingPlace" class="field-input">
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label class="field-label" for="editMeetingChair">Голова зборів</label>
+                <input type="text" id="editMeetingChair" class="field-input" list="meetingOwnersList">
+            </div>
+            <div class="field">
+                <label class="field-label" for="editMeetingSecretary">Секретар зборів</label>
+                <input type="text" id="editMeetingSecretary" class="field-input" list="meetingOwnersList">
+            </div>
+        </div>
+
+        <div class="field">
+            <span class="field-label">Хто проводить письмове опитування</span>
+            <div id="editSurveyors" class="surveyor-list"></div>
+        </div>
+
+        <div class="field">
+            <span class="field-label">Порядок денний</span>
+            <span class="field-hint" id="editAgendaWarn">Питання, за яке вже голосували, краще не
+                переписувати: подані голоси лишаться прив’язаними до його номера.</span>
+            <div id="editAgendaList" class="poll-options-list"></div>
+            <button type="button" id="addEditAgendaBtn" class="btn-ghost-small poll-add-option">
+                + Додати питання
+            </button>
+        </div>
+
+        <div class="field">
+            <label class="field-label" for="editMeetingDeadline">Строк голосування</label>
+            <input type="datetime-local" id="editMeetingDeadline" class="field-input poll-deadline-input">
+        </div>
+
+        <label class="req-close-toggle">
+            <input type="checkbox" id="editMeetingByEntrance">
+            <span>Друкувати листки опитування окремо по парадних</span>
+        </label>
+
+        <div class="modal-foot"><button id="saveMeetingEditBtn" class="btn-primary" type="button">Зберегти зміни</button></div>
+    </div>
+</div>
+
+<div id="imageGalleryModal" class="gallery-modal">
+    <button id="galleryCloseBtn" class="gallery-close-btn" type="button" aria-label="Закрити">✕</button>
+    <span id="galleryCounter" class="gallery-counter"></span>
+    <div id="galleryTrack" class="gallery-track"></div>
+    <button id="galleryPrevBtn" class="gallery-nav-btn gallery-prev" type="button" aria-label="Попереднє">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <button id="galleryNextBtn" class="gallery-nav-btn gallery-next" type="button" aria-label="Наступне">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>
+</div>
+<div id="docViewerModal" class="doc-viewer-modal">
+    <div class="doc-viewer-header">
+        <span id="docViewerTitle" class="doc-viewer-title"></span>
+        <div class="doc-viewer-actions">
+            <a id="docViewerOpenExternal" href="#" target="_blank" class="icon-btn" aria-label="Відкрити у застосунку">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </a>
+            <button id="docViewerCloseBtn" class="sheet-close" type="button" aria-label="Закрити">✕</button>
+        </div>
+    </div>
+    <div id="docViewerBody" class="doc-viewer-body"></div>
+</div>
+
+<script>
+// Після підтвердженої помилки імпорту скидаємо воркер із кешем і
+// перезавантажуємось один раз за сеанс. Повільна відповідь Auth
+// або Firestore сама по собі не скидає кеш і не перезапускає вхід.
+(function () {
+    var KEY = 'sw_recovery_done';
+    window.addEventListener('uspih-module-failed', function () {
+        var loader = document.getElementById('appLoader');
+        if (!loader || getComputedStyle(loader).display === 'none' || !window.USPihModuleFailed) return;
+        if (sessionStorage.getItem(KEY)) return;
+        try { sessionStorage.setItem(KEY, '1'); } catch (e) { return; }
+
+        var reload = function () { location.reload(); };
+        if (!('serviceWorker' in navigator)) return reload();
+
+        navigator.serviceWorker.getRegistrations()
+            .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+            .then(function () { return caches.keys(); })
+            .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+            .then(reload, reload);
+    });
+})();
+</script>
+<script type="module">
+    const preview = new URLSearchParams(location.search).get('preview');
+    import(preview === 'admin' ? './js/admin-preview.js?v=131' : './js/admin-main.js?v=131').catch(error => {
+        window.USPihModuleFailed = true;
+        console.error('Завантаження панелі:', error);
+        window.dispatchEvent(new Event('uspih-module-failed'));
+    });
+</script>
+</body>
+</html>
