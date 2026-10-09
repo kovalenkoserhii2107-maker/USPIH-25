@@ -535,6 +535,29 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ---------- ВИХІДНІ ПЛАТЕЖІ ----------
+    // Створює й змінює лише сервер (paymentAction і виписка банку).
+    match /payments/{paymentId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
+    // ---------- PUSH-СПОВІЩЕННЯ ----------
+    // Пристрій записує свій токен під свою квартиру й справжню роль;
+    // читає токени лише сервер, коли надсилає сповіщення.
+    match /push_tokens/{tokenId} {
+      allow create, update: if isSignedIn()
+        && tokenId == request.resource.data.token
+        && request.resource.data.keys().hasOnly(['apt', 'role', 'token', 'ua', 'at'])
+        && request.resource.data.apt == myApt()
+        && request.resource.data.role == role()
+        && request.resource.data.token is string && request.resource.data.token.size() < 400
+        && request.resource.data.ua is string && request.resource.data.ua.size() <= 200
+        && request.resource.data.at == request.time;
+      allow delete: if isSignedIn() && resource.data.apt == myApt();
+      allow read: if false;
+    }
+
     // ---------- ТЕХНІЧНІ СЛУЖБИ ----------
     match /services/{serviceId} {
       allow read: if isSignedIn();

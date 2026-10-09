@@ -67,6 +67,8 @@ function normalizeTransaction(raw) {
             account: normIban(raw.AUT_CNTR_ACC),
             code: String(raw.AUT_CNTR_CRF || '').trim()
         },
+        // Референс пачки для платежів, створених через API (payment_pack_ref).
+        dlr: raw.DLR ? String(raw.DLR) : null,
         final: raw.FL_REAL === 'r' && raw.PR_PR === 'r',
         // Сторнована чи забракована — її ніби й не було.
         void: raw.PR_PR === 't' || raw.PR_PR === 'n'
@@ -147,4 +149,68 @@ async function fetchTransactions(token, { iban, from, to }) {
     return rows.map(normalizeTransaction).filter(t => t && t.final && !t.void).map(t => ({ ...t, account: normIban(iban) }));
 }
 
-module.exports = { apiDate, parseBankDate, normalizeTransaction, normalizeBalance, isReady, fetchBalances, fetchTransactions };
+// ------------------------------------------------------------
+// ПЛАТЕЖІ (POST /api/proxy/payment/…)
+// Створений через API платіж має статус new і не рухає гроші, доки
+// його не підпише КЕП людина в Приват24 для бізнесу. Підпису через
+// API застосунок не робить. У виписці такий платіж має DLR, що
+// дорівнює payment_pack_ref — за ним і закриваємо платіж.
+// Джерела полів — docs/accounting/research/2026-10-payments.md.
+// ------------------------------------------------------------
+const PAY_BASE = 'https://acp.privatbank.ua/api/proxy/payment';
+
+async function post(token, path, body) {
+    const res = await fetch(`${PAY_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'User-Agent': 'OSBB-Uspih-25', token, 'Content-Type': 'application/json;charset=utf8' },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(30000)
+    });
+    if (res.status === 401) throw new Error('Токен недійсний або відкликаний');
+    if (res.status === 204) return {};
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { throw new Error(`Банк повернув не JSON (HTTP ${res.status})`); }
+    if (!res.ok || data.status === 'ERROR') {
+        const code = data.serviceCode ? ` (${data.serviceCode})` : '';
+        throw new Error(`${data.message || `HTTP ${res.status}`}${code}`);
+    }
+    return data;
+}
+
+/** Поля платежу в форматі Автоклієнта: усі значення — рядки. */
+function paymentBody(p, today = new Date()) {
+    const date = apiDate(today).replace(/-/g, '.');            // дд.мм.рррр
+    return {
+        document_number: String(p.docNumber),
+        document_type: 'cr',
+        payer_account: normIban(p.account),
+        recipient_account: normIban(p.recipient.iban),
+        recipient_nceo: String(p.recipient.code),
+        payment_naming: String(p.recipient.name).slice(0, 140),
+        payment_amount: (p.amountKop / 100).toFixed(2),
+        payment_destination: String(p.purpose),
+        payment_ccy: 'UAH',
+        payment_date: date,
+        payment_accept_date: date
+    };
+}
+
+/** Створити платіж; повертає { bankRef (payment_pack_ref), paymentRef (payment_ref), status }. */
+async function createPayment(token, p) {
+    const data = await post(token, '/create', paymentBody(p));
+    const ref = data.payment_ref || data.payment_data?.payment_ref || null;
+    const pack = data.payment_pack_ref || data.payment_data?.payment_pack_ref || null;
+    if (!ref && !pack) throw new Error('Банк не повернув номер платежу');
+    return { bankRef: pack, paymentRef: ref, status: data.payment_data?.payment_status || 'new' };
+}
+
+/** Видалити ще не підписаний платіж. true — видалено. */
+async function deletePayment(token, paymentRef) {
+    if (!paymentRef) return false;
+    await post(token, `/delete?ref=${encodeURIComponent(paymentRef)}`);
+    return true;
+}
+
+module.exports = { apiDate, parseBankDate, normalizeTransaction, normalizeBalance, isReady, fetchBalances, fetchTransactions,
+    paymentBody, createPayment, deletePayment };

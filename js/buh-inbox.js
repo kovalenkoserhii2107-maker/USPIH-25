@@ -8,8 +8,9 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, act, signed, when, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
+import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -81,7 +82,31 @@ const rowHtml = (apt = '', withSum = false) => `<div class="inbox-row">
     <input class="field-input inbox-sum" inputmode="decimal" placeholder="Сума, грн" aria-label="Сума"${withSum ? '' : ' hidden'}>
 </div>`;
 
+/** Регулярний платіж, який система пропонує відправити в банк. */
+function payCardHtml(item, index) {
+    const p = item.proposal.payment;
+    return `<article class="inbox-card is-pay${index === focus ? ' is-focus' : ''}${busy.has(item.tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(item.tx.id)}" data-index="${index}" tabindex="-1">
+        <div class="inbox-main">
+            <span class="inbox-sum-big is-out">−${escapeHtml(money(p.amountKop).replace(' грн', ''))} ₴</span>
+            <span class="inbox-meta">платіж · зазвичай ${p.day}-го</span>
+            <p class="inbox-payer">${escapeHtml(p.recipient.name)}</p>
+            <p class="inbox-purpose">${escapeHtml(p.purpose)}</p>
+        </div>
+        <div class="inbox-decision">
+            <p class="inbox-proposal"><span class="inbox-arrow">→</span> Відправити в Приват24 на підпис голови
+                <span class="inbox-level is-high">${p.months} міс. поспіль</span></p>
+            <p class="inbox-purpose">${escapeHtml(maskIban(p.recipient.iban))} · ${escapeHtml(p.recipient.code)}</p>
+            <div class="inbox-actions">
+                <button type="button" class="btn-primary inbox-yes" data-act="yes">Так<kbd>Enter</kbd></button>
+                <button type="button" class="btn-ghost-small" data-act="edit">Змінити<kbd>E</kbd></button>
+                <button type="button" class="btn-ghost-small" data-act="skip">Не цього місяця</button>
+            </div>
+        </div>
+    </article>`;
+}
+
 function cardHtml(item, index, dir) {
+    if (item.proposal.type === 'pay') return payCardHtml(item, index);
     const tx = item.tx;
     const p = item.proposal;
     const open = editing === tx.id || !['assign'].includes(p.type);
@@ -125,17 +150,20 @@ function render() {
     focus = Math.min(focus, items.length - 1);
     const sure = items.filter(i => i.proposal.type === 'assign' && i.proposal.level === 'high');
     host.innerHTML = `<div class="inbox-head">
-            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => i.proposal.type === 'assign').length}</b></p>
+            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => ['assign', 'pay'].includes(i.proposal.type)).length}</b></p>
             ${sure.length > 1 ? `<button type="button" class="btn-soft btn-compact" data-act="bulk">Підтвердити всі з високою впевненістю (${sure.length})</button>` : ''}
             <span class="inbox-keys"><kbd>↑</kbd><kbd>↓</kbd> пункти · <kbd>Enter</kbd> так · <kbd>E</kbd> змінити</span>
         </div>
         <div class="inbox-list">${items.map((item, i) => cardHtml(item, i, dirCache)).join('')}</div>`;
 }
 
+let payAccount = '';
 export async function loadInbox() {
-    const [queue, dir] = await Promise.all([loadQueue(), loadDirectory()]);
+    const [queue, dir, pays] = await Promise.all([loadQueue(), loadDirectory(), activeProposals().catch(() => ({ list: [], context: { accounts: [] } }))]);
     dirCache = dir;
-    items = queue.map(tx => ({ tx, proposal: proposalFor(tx) }));
+    payAccount = defaultAccount(pays.context.accounts || []);
+    items = queue.map(tx => ({ tx, proposal: proposalFor(tx) }))
+        .concat(payAccount ? pays.list.map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
     render();
     return items.length;
 }
@@ -159,13 +187,28 @@ async function run(item, payload, done) {
     }
 }
 
+async function runPay(item) {
+    busy.add(item.tx.id);
+    render();
+    try { await sendProposal(item.proposal.payment, payAccount); }
+    catch (e) { toast(e.message, 'error'); }
+    finally { busy.delete(item.tx.id); await loadInbox().catch(() => render()); }
+}
+
 const confirmProposal = item => {
+    if (item.proposal.type === 'pay') { runPay(item); return; }
     const p = item.proposal;
     if (p.type !== 'assign') { openForm(item); return; }
     run(item, { action: 'assign', allocations: [{ apt: p.apt, amountKop: item.tx.amountKop }], remember: true }, `Рознесено: кв. ${p.apt}`);
 };
 
 function openForm(item) {
+    if (item.proposal.type === 'pay') {
+        // Змінити суму чи призначення — у формі «Платежів».
+        location.hash = 'payments';
+        openPaymentForm(item.proposal.payment);
+        return;
+    }
     editing = item.tx.id;
     render();
     const card = document.querySelector(`.inbox-card[data-id="${CSS.escape(item.tx.id)}"]`);
@@ -218,6 +261,7 @@ export function initInbox(isActive) {
         const act = e.target.closest('[data-act]')?.dataset.act;
         const cat = e.target.closest('[data-cat]')?.dataset.cat;
         const pick = e.target.closest('[data-pick]')?.dataset.pick;
+        if (act === 'skip' && item.proposal.type === 'pay') { skipProposal(item.proposal.payment.proposalKey); return; }
         if (act === 'yes') confirmProposal(item);
         else if (act === 'edit') openForm(item);
         else if (act === 'save') saveForm(card, item);

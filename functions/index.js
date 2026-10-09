@@ -398,6 +398,11 @@ exports.refreshDtekSchedule = onCall(
 // ------------------------------------------------------------
 // БАНК: виписка ПриватБанку й рознесення оплат (див. bank.js)
 // ------------------------------------------------------------
+const notify = require('./notify')({ db });
 const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole });
 exports.bankAction = bank.bankAction;
 exports.syncBank = bank.syncBank;
+
+// Вихідні платежі через API: бухгалтер підтверджує, голова підписує в Приват24.
+const payments = require('./payments')({ db, FieldValue, requireAdmin, staffRole, notify });
+exports.paymentAction = payments.paymentAction;

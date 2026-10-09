@@ -1857,3 +1857,18 @@
     #directoryList .dir-confirmed { flex: 1; margin: 0; white-space: nowrap; }
 }
 
+
+/* Головна правління: «На підпис у Приват24» */
+.sign-card { margin-bottom: 12px; padding: 16px 18px; border: 1px solid #e3e9f1; border-radius: 16px; background: #fff; }
+.sign-card.is-waiting { border-color: #f6d7ad; background: #fffaf2; }
+.sign-head h2 { margin: 4px 0 0; color: #101c32; font-size: 19px; letter-spacing: -.3px; }
+.sign-list { margin: 12px 0 0; padding: 0; list-style: none; }
+.sign-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(0,0,0,.06); font-size: 13.5px; }
+.sign-list li span { display: flex; flex-direction: column; min-width: 0; }
+.sign-list li small { overflow: hidden; color: #64748b; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.sign-list li > b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sign-how { margin: 10px 0 0; color: #7c5a1f; font-size: 13px; line-height: 1.45; }
+.sign-foot { margin-top: 12px; }
+.sign-foot .btn-soft { width: auto; }
+.sign-push { color: #64748b; font-size: 12.5px; }
+.sign-push.is-on { color: #1e7a35; }

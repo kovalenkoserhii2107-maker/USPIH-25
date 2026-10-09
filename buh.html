@@ -13,10 +13,10 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=131">
-    <link rel="stylesheet" href="style-buh.css?v=131">
+    <link rel="stylesheet" href="style.css?v=132">
+    <link rel="stylesheet" href="style-buh.css?v=132">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=131">
+    <link rel="modulepreload" href="js/buh-main.js?v=132">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -61,6 +61,7 @@
             <nav class="buh-nav" aria-label="Розділи бухгалтерії">
                 <button class="buh-nav-item" data-view="overview" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect></svg><span>Огляд</span></button>
                 <button class="buh-nav-item" data-view="inbox" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><span>Вхідні</span><span class="buh-badge" id="buhInboxBadge" hidden></span></button>
+                <button class="buh-nav-item" data-view="payments" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg><span>Платежі</span><span class="buh-badge is-soft" id="buhPayBadge" hidden></span></button>
                 <button class="buh-nav-item" data-view="bank" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"></path><path d="M12 3 3 8h18z"></path><path d="M5 10v8M9 10v8M15 10v8M19 10v8"></path><path d="M3 21h18"></path></svg><span>Банк</span></button>
                 <button class="buh-nav-item" data-view="settings" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg><span>Налаштування</span></button>
             </nav>
@@ -86,6 +87,7 @@
         <main class="buh-main">
             <section class="buh-view" data-view="overview" id="viewOverview"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="inbox" id="viewInbox"><p class="list-empty">Завантаження…</p></section>
+            <section class="buh-view" data-view="payments" id="viewPayments"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="bank" id="viewBank"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="settings" id="viewSettings"><p class="list-empty">Завантаження…</p></section>
         </main>
@@ -93,6 +95,7 @@
         <nav class="buh-tabbar" aria-label="Розділи">
             <button class="buh-tab" data-view="overview" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect></svg><span>Огляд</span></button>
             <button class="buh-tab" data-view="inbox" type="button"><span class="buh-tab-icon"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><span class="buh-badge" id="buhInboxBadgeTab" hidden></span></span><span>Вхідні</span></button>
+            <button class="buh-tab" data-view="payments" type="button"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg><span>Платежі</span></button>
             <button class="buh-tab" data-view="bank" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"></path><path d="M12 3 3 8h18z"></path><path d="M5 10v8M9 10v8M15 10v8M19 10v8"></path><path d="M3 21h18"></path></svg><span>Банк</span></button>
             <button class="buh-tab" data-view="more" type="button"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg><span>Ще</span></button>
         </nav>
@@ -123,7 +126,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=131').catch(error => {
+    import('./js/buh-main.js?v=132').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

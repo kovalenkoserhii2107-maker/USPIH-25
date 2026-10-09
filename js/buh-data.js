@@ -110,3 +110,41 @@ export async function act(payload, timeoutMs) {
         invalidate();
     }
 }
+
+// ------------------------------------------------------------
+// ПЛАТЕЖІ
+// ------------------------------------------------------------
+export const PAYMENT_KINDS = { supplier: 'Постачальнику', tax: 'Податок, ЄСВ', salary: 'Зарплата', other: 'Інше' };
+export const PAYMENT_STATUS = {
+    sending: ['Відправляється', 'is-review'], sent: ['Чекає підпису голови', 'is-review'], paid: ['Проведено', 'is-payment'],
+    failed: ['Банк не прийняв', 'is-error'], canceled: ['Скасовано', '']
+};
+
+/** Платежі, найновіші вгорі. */
+export const loadPayments = () => once('payments', async () => {
+    const snap = await getDocs(query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(200)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+});
+
+/** Пропозиції системи (регулярні платежі), довідник отримувачів і рахунки — із сервера. */
+export const loadPaymentContext = () => once('paymentContext', () =>
+    callBackend('paymentAction', { action: 'context' }).catch(() => ({ proposals: [], recipients: [], accounts: [] })));
+
+/** Пропозиції, які людина відклала «не цього місяця», — лише на цьому пристрої. */
+const SKIP_KEY = 'buh_skipped_proposals';
+export const skippedProposals = () => { try { return new Set(JSON.parse(localStorage.getItem(SKIP_KEY) || '[]')); } catch { return new Set(); } };
+export function skipProposal(key) {
+    const set = skippedProposals();
+    set.add(key);
+    try { localStorage.setItem(SKIP_KEY, JSON.stringify([...set].slice(-200))); } catch { /* лише зручність */ }
+    invalidate();
+}
+
+/** Дія з платежем — на сервері, з журналом і сповіщенням голові. */
+export async function payAct(payload) {
+    try {
+        return await callBackend('paymentAction', payload, 60000);
+    } finally {
+        invalidate();
+    }
+}

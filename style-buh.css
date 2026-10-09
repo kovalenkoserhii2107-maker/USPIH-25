@@ -230,6 +230,7 @@ kbd {
     .buh-tabbar {
         position: fixed; left: 0; right: 0; bottom: 0; z-index: 120; display: grid; grid-template-columns: repeat(4, 1fr);
         padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); border-top: 0.5px solid rgba(60,60,67,.2);
+        grid-template-columns: repeat(5, 1fr);
         background: rgba(249, 249, 251, .92); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
     }
     .buh-tab { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 48px; border: 0; background: none; color: #8a8a8e; font: 600 10.5px var(--font); cursor: pointer; }
@@ -273,3 +274,36 @@ kbd {
 .buh-main .field-select { padding-right: 32px; }
 .inbox-other { flex: 0 1 220px; width: auto; }
 @media (max-width: 900px) { .inbox-other { flex: 1 1 100%; } }
+
+/* ---------- Платежі ---------- */
+.pay-top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-bottom: 16px; }
+.pay-top .btn-primary { width: auto; }
+.pay-waiting { color: #b45309; font-size: 14px; }
+.pay-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+.pay-grid .field { margin: 0; }
+.pay-wide { grid-column: span 2; }
+.pay-form-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.pay-form-actions .btn-primary { width: auto; }
+.pay-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto; gap: 8px 16px; align-items: center; padding: 12px 0; border-top: 1px solid #eef2f6; }
+.buh-card-head + .pay-row { border-top: 0; }
+.pay-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pay-main b { color: #0f1b2d; font-size: 14px; }
+.pay-main small { overflow: hidden; color: #475569; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.pay-main small.t-muted { color: #94a3b8; }
+.pay-sum { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pay-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.pay-actions .btn-primary { width: auto; }
+.buh-tag.is-error { background: #fdf0ef; color: #a3382f; }
+.buh-card.is-alert { border-color: #f4c7c3; background: #fffafa; }
+.buh-badge.is-soft { background: #fff1e0; color: #b45309; }
+.inbox-card.is-pay { border-left: 4px solid #2bb673; }
+@media (max-width: 900px) {
+    .pay-grid { grid-template-columns: 1fr; }
+    .pay-wide { grid-column: auto; }
+    .pay-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .pay-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    .pay-form-actions .btn-primary { width: 100%; }
+}
+.sign-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; width: 100%; border-color: #f6d7ad; background: #fffaf2; color: #92400e; font: inherit; text-align: left; cursor: pointer; }
+.sign-strip b { font-size: 14.5px; }
+.sign-strip span { font-size: 13px; }

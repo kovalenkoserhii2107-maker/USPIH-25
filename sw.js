@@ -11,7 +11,7 @@
 // інакше браузери мешканців віддаватимуть стару оболонку.
 // ============================================================
 
-const VERSION = '131';
+const VERSION = '132';
 const CACHE = `uspih-25-v${VERSION}`;
 
 // Файли з «?v=» підключені саме так в index.html — кешуємо їх
@@ -213,3 +213,32 @@ async function networkFirst(req, event) {
         return (await cached()) || Response.error();
     }
 }
+
+// ------------------------------------------------------------
+// PUSH-СПОВІЩЕННЯ (Firebase Cloud Messaging)
+// Сервер шле webpush з notification { title, body } і посиланням у
+// fcmOptions.link — показуємо самі, бо воркер у застосунку свій.
+// ------------------------------------------------------------
+self.addEventListener('push', (event) => {
+    let payload = {};
+    try { payload = event.data ? event.data.json() : {}; } catch (e) { payload = {}; }
+    const n = payload.notification || {};
+    const link = (payload.fcmOptions && payload.fcmOptions.link) || (payload.data && payload.data.link) || './';
+    event.waitUntil(self.registration.showNotification(n.title || 'ОСББ «Успіх-25»', {
+        body: n.body || '',
+        icon: './assets/icons/icon-192x192.png',
+        badge: './assets/icons/icon-192x192.png',
+        data: { link },
+        tag: (payload.data && payload.data.tag) || undefined
+    }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const target = new URL((event.notification.data && event.notification.data.link) || './', self.registration.scope).href;
+    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        const open = list.find(c => c.url.startsWith(self.registration.scope));
+        if (open) { open.navigate(target).catch(() => {}); return open.focus(); }
+        return self.clients.openWindow(target);
+    }));
+});

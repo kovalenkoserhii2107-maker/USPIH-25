@@ -8,6 +8,7 @@ const require = createRequire(new URL('../../functions/package.json', import.met
 const { initializeApp, deleteApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const bankFunctions = require('./bank.js');
+const paymentFunctions = require('./payments.js');
 
 let app, db, bank;
 before(() => {
@@ -16,7 +17,7 @@ before(() => {
     bank = bankFunctions({ db, FieldValue, Timestamp, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
 });
 const wipe = async () => {
-    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log']) {
+    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'bank_secrets']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -95,4 +96,42 @@ test('інше надходження: категорія лише з дозво
     await assert.rejects(bank.actions.classifyTx('900', 'accountant', { txId: id, kind: 'expense', category: 'other' }), /надходження/);
     await bank.actions.classifyTx('900', 'accountant', { txId: id, kind: 'income', category: 'refund' });
     assert.deepEqual(Object.values((({ kind, category, status }) => ({ kind, category, status }))((await db.doc(`bank_tx/${id}`).get()).data())), ['income', 'refund', 'done']);
+});
+
+test('платіж через API: створюється в банку, чекає підпису, виписка його закриває', async () => {
+    await seed();
+    await db.doc('bank_secrets/privat').set({ token: 'secret-token' });
+    const notified = [];
+    const payments = paymentFunctions({ db, FieldValue, requireAdmin: async () => '900', staffRole: async () => 'accountant',
+        notify: async msg => { notified.push(msg); } });
+    const real = global.fetch;
+    const sent = [];
+    global.fetch = async (url, init) => {
+        sent.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
+        return new Response(JSON.stringify({ payment_ref: 'R1', payment_pack_ref: 'PACK1', payment_data: { payment_status: 'new' } }), { status: 201 });
+    };
+    let id;
+    try {
+        // Отримувач — IBAN з прикладу НБУ; рахунок ОСББ — з налаштувань банку.
+        const base = { recipient: { name: 'ТОВ Ліфт-Сервіс', iban: 'UA906543210000000260323012024', code: '12345678' },
+            amountKop: 425000, purpose: 'Обслуговування ліфтів за жовтень 2026', account: 'UA213052990000026001234567890', proposalKey: 'lift-2026-10' };
+        ({ id } = await payments.actions.create('900', 'accountant', base));
+        await assert.rejects(payments.actions.create('900', 'accountant', base), /уже відправлено/);
+        await assert.rejects(payments.actions.create('900', 'accountant', { ...base, proposalKey: null, recipient: { ...base.recipient, iban: 'UA00' } }), /IBAN/);
+    } finally { global.fetch = real; }
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].url, 'https://acp.privatbank.ua/api/proxy/payment/create');
+    assert.equal(sent[0].body.payment_amount, '4250.00');
+    const p = (await db.doc(`payments/${id}`).get()).data();
+    assert.deepEqual([p.status, p.bankRef, p.paymentRef], ['sent', 'PACK1', 'R1']);
+    assert.equal(notified[0].roles[0], 'chair');
+
+    // Голова підписав, банк провів: у виписці списання з DLR = payment_pack_ref.
+    await bank.storeTransactions([{ bankId: 'OUT1', account: 'UA213052990000026001234567890', at: new Date(), direction: 'out',
+        amountKop: 425000, purpose: 'Обслуговування ліфтів за жовтень 2026', dlr: 'PACK1',
+        counterparty: { name: 'ТОВ Ліфт-Сервіс', account: 'UA906543210000000260323012024', code: '12345678' } }], 'privat', await bank.loadContext());
+    const after = (await db.doc(`payments/${id}`).get()).data();
+    assert.deepEqual([after.status, after.txId], ['paid', 'UA213052990000026001234567890_OUT1']);
+    const tx = (await db.doc('bank_tx/UA213052990000026001234567890_OUT1').get()).data();
+    assert.deepEqual([tx.kind, tx.category, tx.status, tx.paymentId], ['expense', 'supplier', 'done', id]);
 });

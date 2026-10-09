@@ -24,12 +24,13 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const logger = require('firebase-functions/logger');
 const core = require('./bank-core');
+const { matchesPayment } = require('./payments-core');
 const privat = require('./privat');
 
 const REGION = 'europe-central2';
 const PURPOSES = ['current', 'repair', 'reserve', 'deposit', 'grant'];
 const INCOME = ['rent', 'interest', 'grant', 'refund', 'other'];
-const EXPENSE = ['bank_fee', 'salary', 'taxes', 'other'];
+const EXPENSE = ['bank_fee', 'supplier', 'salary', 'taxes', 'other'];
 // Облік у застосунку починається з початку IV кварталу 2026 року:
 // раніші операції лишаються в сервісі бухгалтера.
 const DEFAULT_START = '2026-10-01';
@@ -44,11 +45,12 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     // КОНТЕКСТ РОЗПІЗНАВАННЯ
     // --------------------------------------------------------
     async function loadContext() {
-        const [apts, owners, links, settings] = await Promise.all([
+        const [apts, owners, links, settings, sent] = await Promise.all([
             db.collection('apartments').get(),
             db.collectionGroup('owners').get(),
             db.collection('bank_links').get(),
-            settingsRef.get()
+            settingsRef.get(),
+            db.collection('payments').where('status', '==', 'sent').get()
         ]);
         const known = { apts: new Set(), accounts: new Map() };
         apts.forEach(d => {
@@ -67,7 +69,9 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             known, owners: ownerList, links: linkMap,
             ownAccounts: new Set(Object.keys(data.accounts || {}).map(core.normIban)),
             startDate: data.startDate || DEFAULT_START,
-            settings: data
+            settings: data,
+            // Платежі, що чекають підпису: їх закриваємо, коли списання зʼявиться у виписці.
+            sentPayments: sent.docs.map(d => ({ id: d.id, ...d.data(), sentAt: d.data().sentAt?.toDate?.() || new Date(0) }))
         };
     }
 
@@ -122,6 +126,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const t = fresh[i];
             const at = Timestamp.fromDate(t.at);
             const decision = core.classify(t, ctx);
+            const paid = t.direction === 'out' ? (ctx.sentPayments || []).find(p => matchesPayment(t, p)) : null;
             const doc = {
                 bankId: String(t.bankId), account: t.account, at, period: core.periodOf(t.at),
                 direction: t.direction, amountKop: t.amountKop, currency: t.currency || 'UAH',
@@ -152,6 +157,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 }
             } else if (decision.status === 'internal') {
                 Object.assign(doc, { kind: 'internal', status: 'done' });
+            } else if (paid) {
+                // Наш платіж через API: голова підписав, банк провів.
+                Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? 'taxes' : paid.kind === 'salary' ? 'salary' : 'supplier',
+                    status: 'done', paymentId: paid.id });
+                batch.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
+                ctx.sentPayments = ctx.sentPayments.filter(p => p.id !== paid.id);
+                ops += 1;
             } else if (decision.status === 'expense') {
                 Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category ? 'done' : 'review' });
             } else if (decision.status === 'other') {
