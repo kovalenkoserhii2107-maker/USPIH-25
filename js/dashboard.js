@@ -13,6 +13,7 @@ import { escapeHtml, parseMoney } from './ui.js';
 import { fetchDirectory } from './directory.js';
 import { isMeeting, agendaOf, computeQuorum } from './meeting.js';
 import { meterStore } from './meter-store.js';
+import { revealSection } from './admin-shell.js';
 
 /** Перемикає вкладку адмінки, повторно використовуючи звичайний клік. */
 function openTab(name, scrollToSelector) {
@@ -27,6 +28,7 @@ function openTab(name, scrollToSelector) {
         // Ціль може лежати у згорнутому блоці — тоді вона має нульову
         // висоту, і прокрутка до неї нічого не показує. Розгортаємо й
         // чекаємо на анімацію, інакше рахуватимемо позицію по старій.
+        revealSection(target);
         const fold = target?.closest('.admin-fold');
         const opened = fold && !fold.classList.contains('open');
         if (opened) {
@@ -37,10 +39,9 @@ function openTab(name, scrollToSelector) {
         // Немає конкретної цілі (нічого не чекає рішення, розділ порожній) —
         // везе принаймні до самої вкладки. Інакше після натискання екран
         // лишався на місці, і здавалося, що кнопка не спрацювала.
-        const where = target || document.getElementById('adminTabs');
-        const go = () => where?.scrollIntoView({
-            behavior: 'smooth', block: target ? 'center' : 'start'
-        });
+        const go = () => target
+            ? target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            : window.scrollTo({ top: 0, behavior: 'smooth' });
         if (opened) setTimeout(go, 360); else go();
     }, 220);
 }

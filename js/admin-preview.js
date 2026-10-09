@@ -1,5 +1,8 @@
 // Локальний, безпечний перегляд інтерфейсу правління без входу у Firebase.
 // Він показує лише демонстраційні дані й не виконує жодних записів.
+import { initSheets } from './ui.js';
+import { buildShell, markActive, renderAccount, initSections, initShell } from './admin-shell.js';
+
 const section = document.getElementById('adminDashboardSection');
 document.body.classList.add('admin-mode');
 document.getElementById('appLoader').style.display = 'none';
@@ -84,9 +87,8 @@ if (agenda) agenda.innerHTML = `<div class="poll-option-row poll-option-row-meet
 document.getElementById('adminPowerCard').hidden = true;
 
 function selectTab(name) {
-    document.querySelectorAll('.admin-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === name));
-    document.querySelectorAll('.admin-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === name));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    markActive(name);
+    window.scrollTo({ top: 0 });
 }
 
 function selectMeetingView(name) {
@@ -132,6 +134,12 @@ document.addEventListener('click', event => {
 });
 
 selectMeetingView('active');
+initSheets();
+initShell();
+initSections();
+renderAccount({ name: 'Олена Коваленко', role: 'Голова правління', home: true });
+buildShell('chair');
+markActive('overview');
 
 document.getElementById('adminLogoutBtn').addEventListener('click', () => {
     selectTab('overview');
