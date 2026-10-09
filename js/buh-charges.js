@@ -36,15 +36,21 @@ export function openCharges(seg = 'month') {
 // ------------------------------------------------------------
 // МІСЯЦЬ
 // ------------------------------------------------------------
+/** Розбивка нарахування: складова × група × тариф. */
 function groupsBreakdown(rows) {
     const by = new Map();
     for (const r of rows) {
-        const g = by.get(`${r.group}:${r.rate4}`) || { group: r.group, rate4: r.rate4, count: 0, area: 0, total: 0 };
-        g.count += 1; g.area += r.areaCenti; g.total += r.amountKop;
-        by.set(`${r.group}:${r.rate4}`, g);
+        for (const p of r.parts?.length ? r.parts : [{ component: 'main', name: 'Утримання будинку', base: 'area', rate4: r.rate4, amountKop: r.amountKop }]) {
+            const key = `${p.component}:${r.group}:${p.rate4}`;
+            const g = by.get(key) || { name: p.name, base: p.base, group: r.group, rate4: p.rate4, count: 0, area: 0, total: 0 };
+            g.count += 1; g.area += r.areaCenti || 0; g.total += p.amountKop;
+            by.set(key, g);
+        }
     }
     return [...by.values()];
 }
+const unit = base => (base === 'fixed' ? 'грн з прим.' : 'грн/м²');
+const compName = id => (ctx.components || []).find(c => c.id === (id || 'main'))?.name || 'Утримання будинку';
 
 function monthHtml() {
     const p = ctx.preview;
@@ -66,11 +72,12 @@ function monthHtml() {
            </div>`
         : `<div class="buh-card-head"><h2>Нарахувати за ${escapeHtml(periodName(p.period))}</h2><span class="buh-tag is-review">чекає підтвердження</span></div>
            <p class="ch-big">${fmtKop(p.totalKop)} <small>грн · ${p.rows.length} прим.</small></p>
-           ${p.rows.length ? `<table class="buh-table is-compact ch-groups"><thead><tr><th>Група</th><th>Прим.</th><th>Площа, м²</th><th>Тариф, грн/м²</th><th class="t-sum">Сума, ₴</th></tr></thead>
-               <tbody>${groupsBreakdown(p.rows).map(g => `<tr><td>${escapeHtml(groupName(g.group))}</td><td>${g.count}</td><td>${area(g.area / 100)}</td><td>${rate(g.rate4)}</td>${kopCell(g.total)}</tr>`).join('')}</tbody></table>` : ''}
+           ${p.rows.length ? `<table class="buh-table is-compact ch-groups"><thead><tr><th>Складова</th><th>Група</th><th>Прим.</th><th>Площа, м²</th><th>Тариф</th><th class="t-sum">Сума, ₴</th></tr></thead>
+               <tbody>${groupsBreakdown(p.rows).map(g => `<tr><td>${escapeHtml(g.name)}</td><td>${escapeHtml(groupName(g.group))}</td><td>${g.count}</td><td>${g.base === 'fixed' ? '—' : area(g.area / 100)}</td><td>${rate(g.rate4)} ${unit(g.base)}</td>${kopCell(g.total)}</tr>`).join('')}</tbody></table>` : ''}
            <div class="inbox-actions">
                <button type="button" class="btn-primary inbox-yes" data-act="run" data-period="${p.period}"${p.rows.length ? '' : ' disabled'}>Нарахувати<kbd>Enter</kbd></button>
                ${others.length ? `<span class="buh-note">Також не нараховано: ${others.map(periodName).map(escapeHtml).join(', ')}</span>` : ''}
+               ${!ctx.due.includes(p.period) ? `<span class="buh-note">Зазвичай нараховують в останній день місяця — «Вхідні» нагадають. Запис матиме дату кінця місяця.</span>` : ''}
            </div>`;
 
     return `<section class="buh-card ch-month">
@@ -139,27 +146,43 @@ async function statementHtml() {
 // ТАРИФИ
 // ------------------------------------------------------------
 function tariffsHtml() {
-    const current = ctx.groups.map(g => {
-        const t = ctx.tariffs.filter(x => x.group === g.id && x.from <= ctx.current).sort((a, b) => (a.from < b.from ? 1 : -1))[0];
-        return `<div class="kpi"><span>${escapeHtml(g.name)}</span><b>${t ? `${rate(t.rate4)} <small>грн/м²</small>` : '—'}</b><small>${t ? `з ${escapeHtml(periodName(t.from))}` : 'тариф не внесено'}</small></div>`;
-    }).join('');
+    const comps = ctx.components || [];
+    const now = (g, c) => ctx.tariffs.filter(x => x.group === g && (x.component || 'main') === c && x.from <= ctx.current).sort((a, b) => (a.from < b.from ? 1 : -1))[0];
+    // Чинні тарифи: рядок — складова, стовпчик — група приміщень.
+    const matrix = `<table class="buh-table ch-matrix"><thead><tr><th>Складова внеску</th>${ctx.groups.map(g => `<th class="t-sum">${escapeHtml(g.name)}</th>`).join('')}</tr></thead>
+        <tbody>${comps.map(c => `<tr><td><b>${escapeHtml(c.name)}</b><small class="t-muted"> ${escapeHtml(unit(c.base))}</small></td>${ctx.groups.map(g => {
+            const t = now(g.id, c.id);
+            return `<td class="t-sum">${t ? rate(t.rate4) : '<span class="t-muted">—</span>'}</td>`;
+        }).join('')}</tr>`).join('')}</tbody></table>`;
     const sorted = [...ctx.tariffs].sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0));
-    return `<div class="kpi-grid ch-kpi">${current}</div>
+    return `<section class="buh-card">
+            <div class="buh-card-head"><h2>Чинні тарифи</h2><span>на ${escapeHtml(periodName(ctx.current))}, на місяць</span></div>
+            ${matrix}
+            <p class="buh-note">«—» — складова цій групі не нараховується (напр. ліфти нежитловим приміщенням). «Утримання будинку» — обовʼязкова.</p>
+        </section>
         <section class="buh-card">
-            <div class="buh-card-head"><h2>Тарифи</h2><span>внесок за 1 м² загальної площі на місяць</span></div>
-            ${sorted.length ? `<table class="buh-table"><thead><tr><th>Група</th><th>Тариф, грн/м²</th><th>Діє з</th><th>Рішення</th><th></th></tr></thead>
-                <tbody>${sorted.map(t => `<tr><td>${escapeHtml(groupName(t.group))}</td><td><b>${rate(t.rate4)}</b></td><td>${escapeHtml(periodName(t.from))}</td>
+            <div class="buh-card-head"><h2>Усі тарифи</h2></div>
+            ${sorted.length ? `<table class="buh-table"><thead><tr><th>Складова</th><th>Група</th><th>Тариф</th><th>Діє з</th><th>Рішення</th><th></th></tr></thead>
+                <tbody>${sorted.map(t => `<tr><td>${escapeHtml(compName(t.component))}</td><td>${escapeHtml(groupName(t.group))}</td><td><b>${rate(t.rate4)}</b> <small class="t-muted">${unit(t.base)}</small></td><td>${escapeHtml(periodName(t.from))}</td>
                     <td class="t-muted">${escapeHtml(t.decision)}</td><td class="t-act"><button type="button" class="btn-ghost-small" data-act="tariff-remove" data-id="${escapeHtml(t.id)}">Прибрати</button></td></tr>`).join('')}</tbody></table>`
                 : '<p class="list-empty">Тарифів ще немає</p>'}
             <h3 class="ch-sub">Новий тариф</h3>
             <div class="buh-inline-form ch-form">
+                <select id="tfComp" class="field-input field-select" aria-label="Складова">${comps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select>
                 <select id="tfGroup" class="field-input field-select" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('')}</select>
-                <input id="tfRate" class="field-input ch-narrow" inputmode="decimal" placeholder="Тариф, грн/м²" aria-label="Тариф">
+                <input id="tfRate" class="field-input ch-narrow" inputmode="decimal" placeholder="Тариф, грн" aria-label="Тариф">
                 <input id="tfFrom" class="field-input ch-narrow" type="month" value="${escapeHtml(ctx.current)}" aria-label="Діє з місяця">
                 <input id="tfDecision" class="field-input" maxlength="200" placeholder="Рішення: протокол зборів № …, дата" aria-label="Рішення">
                 <button type="button" class="btn-primary btn-compact" data-act="tariff-add">Додати</button>
             </div>
             <p class="buh-note">Новий тариф діє з указаного місяця, попередні нарахування не змінюються. Тариф, за яким уже нараховано, не прибрати — лише замінити новим з наступного місяця. Окремий тариф для нежитлових потребує рішення загальних зборів (статут, п. 4.4).</p>
+            <h3 class="ch-sub">Складові внеску</h3>
+            <p class="ch-chips">${comps.map(c => `<span class="buh-tag">${escapeHtml(c.name)} · ${escapeHtml(unit(c.base))}</span>`).join(' ')}</p>
+            <div class="buh-inline-form ch-form">
+                <input id="cpName" class="field-input" maxlength="60" placeholder="Нова складова, напр. «Освітлення МЗК», «Ліфти», «Вивезення ТПВ»" aria-label="Назва складової">
+                <select id="cpBase" class="field-input field-select" aria-label="Як рахувати"><option value="area">за м²</option><option value="fixed">з приміщення</option></select>
+                <button type="button" class="btn-ghost-small" data-act="component-add">Додати складову</button>
+            </div>
             <h3 class="ch-sub">Групи приміщень</h3>
             <p class="ch-chips">${ctx.groups.map(g => `<span class="buh-tag">${escapeHtml(g.name)}</span>`).join(' ')}</p>
             <div class="buh-inline-form ch-form">
@@ -267,7 +290,8 @@ async function receiptHtml(r, a, req, period, qrcode) {
                 <p class="rc-apt">Кв. ${escapeHtml(r.apt)}${a.personalAccount ? ` · о/р ${escapeHtml(a.personalAccount)}` : ''}${a.area ? ` · ${escapeHtml(area(a.area))} м²` : ''}</p>
                 <table><tbody>
                     <tr><td>${r.opening < 0 ? 'Борг' : r.opening > 0 ? 'Переплата' : 'Залишок'} на ${escapeHtml(periodStart(period))}</td><td>${fmtKop(Math.abs(r.opening))}</td></tr>
-                    <tr><td>Нараховано${charge ? ` (${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(charge.rate4)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>
+                    ${charge?.parts?.length > 1 ? charge.parts.map(p => `<tr><td>${escapeHtml(p.name)} (${p.base === 'fixed' ? 'з приміщення' : `${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(p.rate4)}`})</td><td>${fmtKop(p.amountKop)}</td></tr>`).join('')
+                        : `<tr><td>Нараховано${charge ? ` (${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(charge.rate4)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>`}
                     <tr><td>Сплачено за місяць</td><td>${fmtKop(r.paid)}</td></tr>
                     <tr class="rc-total"><td>${due ? 'До сплати' : r.closing > 0 ? 'Переплата' : 'Розраховано'}</td><td>${fmtKop(due || r.closing)} грн</td></tr>
                 </tbody></table>
@@ -351,9 +375,12 @@ async function onAction(btn) {
             setBusy(btn, true);
             await chargeAct({ action: 'revert', period });
             toast('Нарахування скасовано', 'success');
+        } else if (a === 'component-add') {
+            await chargeAct({ action: 'addComponent', name: val('cpName'), base: val('cpBase') });
+            toast('Складову додано — внесіть для неї тарифи', 'success');
         } else if (a === 'tariff-add') {
             setBusy(btn, true);
-            await chargeAct({ action: 'addTariff', group: val('tfGroup'), rate: val('tfRate'), from: val('tfFrom'), decision: val('tfDecision') });
+            await chargeAct({ action: 'addTariff', component: val('tfComp'), group: val('tfGroup'), rate: val('tfRate'), from: val('tfFrom'), decision: val('tfDecision') });
             toast('Тариф додано', 'success');
         } else if (a === 'tariff-remove') {
             if (!await confirmDialog('Прибрати тариф?', 'Це можливо, лише поки за ним нічого не нараховано.', 'Прибрати')) return;

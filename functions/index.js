@@ -419,3 +419,7 @@ exports.expenseAction = expenses.expenseAction;
 const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances: charges, expenses });
 exports.bankAction = bank.bankAction;
 exports.syncBank = bank.syncBank;
+
+// Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).
+const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget });
+exports.demoAction = demo.demoAction;

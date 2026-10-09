@@ -23,6 +23,7 @@ functions/          захищені серверні операції, синх
   charges.js, charges-core.js       нарахування внесків, баланс мешканця з історії
   expenses.js, expenses-core.js     витрати й договори: документи, затвердження, звірка зі списаннями
   budget.js, budget-core.js         кошторис, план/факт, звіт для мешканців
+  demo.js                           демо-прогін бухгалтерії на тестовому акаунті
   notify.js                         push-сповіщення команді
 docs/accounting/    бухгалтерія: план частин (README), правовий аналіз (LEGAL)
 js/
@@ -392,7 +393,7 @@ Database → Rules → Publish.** Файл містить також усі по
   прізвищ. Річний звіт про виконання кошторису — друком.
 
 Для роботи потрібні опубліковані функції `bankAction`, `syncBank`,
-`paymentAction`, `chargesAction`, `expenseAction`, `budgetAction`, правила Firestore і
+`paymentAction`, `chargesAction`, `expenseAction`, `budgetAction`, `demoAction`, правила Firestore і
 Storage (див. нижче), тариф
 Blaze (функції звертаються до банку). Токен Автоклієнта — з правом
 створювати платежі.

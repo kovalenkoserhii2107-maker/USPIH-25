@@ -30,7 +30,7 @@ const privat = require('./privat');
 
 const REGION = 'europe-central2';
 const PURPOSES = ['current', 'repair', 'reserve', 'deposit', 'grant'];
-const INCOME = ['rent', 'interest', 'grant', 'refund', 'other'];
+const INCOME = ['rent', 'equipment', 'interest', 'grant', 'refund', 'other'];
 const EXPENSE = ['bank_fee', 'supplier', 'salary', 'taxes', 'other'];
 // Облік у застосунку починається з початку IV кварталу 2026 року:
 // раніші операції лишаються в сервісі бухгалтера.
@@ -62,7 +62,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const apt = core.cleanApt(d.id);
             known.apts.add(apt);
             const account = String(d.data().personalAccount || '').trim();
-            if (account) known.accounts.set(account, apt);
+            if (account) { known.accounts.set(account, apt); known.accounts.set(core.accountKey(account), apt); }
         });
         const ownerList = [];
         owners.forEach(d => ownerList.push({ apt: core.cleanApt(d.ref.parent.parent.id), name: d.data().name || '' }));
@@ -191,7 +191,8 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             } else if (decision.status === 'expense') {
                 Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category ? 'done' : 'review' });
             } else if (decision.status === 'other') {
-                Object.assign(doc, { kind: 'income', category: decision.category || null, status: decision.category ? 'done' : 'review' });
+                Object.assign(doc, { kind: 'income', category: decision.category || null, status: decision.category ? 'done' : 'review',
+                    ...(decision.relatedApt ? { relatedApt: decision.relatedApt } : {}) });
             } else {
                 Object.assign(doc, { kind: 'payment', status: beforeStart ? 'done' : 'review', reason: decision.reason || null });
             }

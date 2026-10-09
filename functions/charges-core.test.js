@@ -33,11 +33,16 @@ test('періоди й дати за Києвом', () => {
     assert.equal(c.currentPeriod(new Date('2026-10-31T21:30:00Z')), '2026-10');   // 23:30 за Києвом
     assert.equal(c.currentPeriod(new Date('2026-10-31T22:30:00Z')), '2026-11');   // 00:30 вже листопада
     assert.equal(c.periodName('2026-10'), 'жовтень 2026');
-    assert.equal(c.chargeDate('2026-10').toISOString(), '2026-10-01T09:00:00.000Z');   // літній час
-    assert.equal(c.chargeDate('2026-12').toISOString(), '2026-12-01T10:00:00.000Z');   // зимовий
+    // Нарахування — останнім днем місяця, як у сервісі бухгалтера.
+    assert.equal(c.chargeDate('2026-09').toISOString(), '2026-09-30T09:00:00.000Z');   // літній час
+    assert.equal(c.chargeDate('2026-12').toISOString(), '2026-12-31T10:00:00.000Z');   // зимовий
+    assert.equal(c.chargeDate('2027-02').toISOString(), '2027-02-28T10:00:00.000Z');
     assert.ok(c.openingDate() < c.chargeDate('2026-10'));
     assert.deepEqual(c.duePeriods({ current: '2026-12', done: new Set(['2026-10']) }), ['2026-11', '2026-12']);
     assert.deepEqual(c.duePeriods({ current: '2026-09', done: new Set() }), []);
+    // Поточний місяць — лише з його останнього дня.
+    assert.deepEqual(c.duePeriods({ current: '2026-11', done: new Set(), today: '2026-11-10' }), ['2026-10']);
+    assert.deepEqual(c.duePeriods({ current: '2026-11', done: new Set(), today: '2026-11-30' }), ['2026-10', '2026-11']);
 });
 
 test('чинний тариф — найновіший з початком не пізніше місяця', () => {
@@ -117,4 +122,39 @@ test('відомість за місяць', () => {
     assert.deepEqual(oct.totals, { opening: -5000, charged: 107525, paid: 71540, closing: -40985, debt: -40985, debtors: 1 });
     const nov = c.statement(ledgers, '2026-11');
     assert.deepEqual(nov.rows.map(r => [r.apt, r.opening, r.closing]), [['2', -40985, -40985], ['10', 0, -61540]]);
+});
+
+test('складові внеску: за м² і з приміщення, без тарифу — не нараховується', () => {
+    const components = [
+        { id: 'main', name: 'Утримання будинку', base: 'area' },
+        { id: 'light', name: 'Освітлення МЗК', base: 'area' },
+        { id: 'lift', name: 'Ліфти', base: 'area' },
+        { id: 'waste', name: 'Вивезення ТПВ', base: 'fixed' }
+    ];
+    const tariffs = [
+        { id: 'm', group: 'res', rate4: 48000, from: '2026-10' },
+        { id: 'mn', group: 'nonres', rate4: 60000, from: '2026-10' },
+        { id: 'l', component: 'light', group: 'res', rate4: 8000, from: '2026-10' },
+        { id: 'lf', component: 'lift', group: 'res', rate4: 6500, from: '2026-10' },
+        { id: 'w', component: 'waste', group: 'res', rate4: 450000, from: '2026-10' },
+        { id: 'wn', component: 'waste', group: 'nonres', rate4: 1200000, from: '2026-10' }
+    ];
+    const r = c.computeCharges({ apartments: [{ apt: '10', area: 72.4 }, { apt: 'н1', area: 30 }, { apt: '7', area: '' }],
+        premises: { 'н1': 'nonres' }, tariffs, components, period: '2026-10' });
+    const flat = r.rows.find(x => x.apt === '10');
+    // 72,4 × 4,80 = 347,52; × 0,80 = 57,92; × 0,65 = 47,06; ТПВ — 45,00 з квартири.
+    assert.deepEqual(flat.parts.map(p => [p.component, p.amountKop]), [['main', 34752], ['light', 5792], ['lift', 4706], ['waste', 4500]]);
+    assert.equal(flat.amountKop, 34752 + 5792 + 4706 + 4500);
+    // Нежитловому ліфти й освітлення не нараховуються: тарифів для групи немає.
+    assert.deepEqual(r.rows.find(x => x.apt === 'н1').parts.map(p => [p.component, p.amountKop]), [['main', 18000], ['waste', 12000]]);
+    assert.deepEqual(r.problems, [{ apt: '7', reason: 'немає площі' }]);
+    assert.equal(c.chargeNote(flat, '2026-10'),
+        'Внески за жовтень 2026: утримання будинку 72,4 м² × 4,80 грн; освітлення мзк 72,4 м² × 0,80 грн; ліфти 72,4 м² × 0,65 грн; вивезення тпв 45,00 грн');
+    // Нова складова — без дубля назви, з відомою базою.
+    assert.equal(c.checkComponent({ name: 'Домофон', base: 'fixed' }, components), null);
+    assert.match(c.checkComponent({ name: 'ліфти', base: 'area' }, components), /вже є/);
+    assert.match(c.checkComponent({ name: 'Домофон', base: 'x' }, components), /м²/);
+    // Тариф тієї самої групи, але іншої складової — не дубль.
+    assert.equal(c.checkTariff({ group: 'res', component: 'waste', base: 'fixed', rate4: 450000, from: '2026-11', decision: 'Протокол № 3' }, c.DEFAULT_GROUPS, tariffs), null);
+    assert.match(c.checkTariff({ group: 'res', component: 'waste', base: 'fixed', rate4: 450000, from: '2026-10', decision: 'Протокол № 3' }, c.DEFAULT_GROUPS, tariffs), /вже є/);
 });
