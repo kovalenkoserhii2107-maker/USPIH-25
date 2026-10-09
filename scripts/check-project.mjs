@@ -6,13 +6,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
 const read = path => readFile(join(root, path), 'utf8');
 
-const [html, adminHtml, sw, firebaseJson, firestoreIndexesJson] = await Promise.all([
-    read('index.html'), read('admin.html'), read('sw.js'), read('firebase.json'), read('firestore.indexes.json')
+const [html, adminHtml, buhHtml, sw, firebaseJson, firestoreIndexesJson] = await Promise.all([
+    read('index.html'), read('admin.html'), read('buh.html'), read('sw.js'), read('firebase.json'), read('firestore.indexes.json')
 ]);
 
 const swVersion = sw.match(/const VERSION = '(\d+)'/)?.[1];
-for (const [name, page] of [['index.html', html], ['admin.html', adminHtml]]) {
-    const versions = [...page.matchAll(/(?:style(?:-chat|-admin)?\.css|js\/(?:app|admin-main|admin-preview)\.js)\?v=(\d+)/g)].map(m => m[1]);
+for (const [name, page] of [['index.html', html], ['admin.html', adminHtml], ['buh.html', buhHtml]]) {
+    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh)?\.css|js\/(?:app|admin-main|admin-preview|buh-main)\.js)\?v=(\d+)/g)].map(m => m[1]);
     if (!swVersion || !versions.length || versions.some(version => version !== swVersion)) {
         errors.push(`Версії ${name} (${versions.join(', ')}) і sw.js (${swVersion || 'немає'}) не збігаються`);
     }

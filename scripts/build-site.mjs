@@ -6,10 +6,10 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 // content-hashed chunks, so residents never download the board's features.
 await rm('_site', { recursive: true, force: true });
 await mkdir('_site', { recursive: true });
-for (const path of ['index.html', 'admin.html', 'style.css', 'style-admin.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
+for (const path of ['index.html', 'admin.html', 'buh.html', 'style.css', 'style-admin.css', 'style-buh.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
     await cp(path, `_site/${path}`, { recursive: true });
 }
-const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js'], outdir: '_site/js', entryNames: '[name]',
+const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js', 'js/buh-main.js'], outdir: '_site/js', entryNames: '[name]',
     chunkNames: 'chunks/[name]-[hash]', bundle: true, splitting: true, format: 'esm', target: ['es2020'],
     minify: true, external: ['https://*'], metafile: true });
 const outputs = result.metafile.outputs;
@@ -30,6 +30,7 @@ function startupChunks(entry) {
 }
 const residentChunks = startupChunks('_site/js/app.js');
 const adminChunks = startupChunks('_site/js/admin-main.js');
+const buhChunks = startupChunks('_site/js/buh-main.js');
 
 // The offline shell is the resident cabinet only; the panel's files are
 // cached the first time a board member opens it.
@@ -46,9 +47,10 @@ async function injectPreloads(page, chunks) {
 }
 await injectPreloads('index.html', residentChunks);
 await injectPreloads('admin.html', adminChunks);
+await injectPreloads('buh.html', buhChunks);
 
 const kib = paths => Math.round(paths.reduce((sum, path) => sum + outputs[path.replace('./', '_site/')].bytes, 0) / 1024);
 const all = Object.keys(outputs).filter(path => path.endsWith('.js'));
 console.log(`Built cabinet (${kib(['./js/app.js', ...residentChunks])} KiB at startup) and panel `
-    + `(${kib(['./js/admin-main.js', ...adminChunks])} KiB at startup), ${Math.round(all.reduce((s, p) => s + outputs[p].bytes, 0) / 1024)} KiB total, `
+    + `(${kib(['./js/admin-main.js', ...adminChunks])} KiB at startup), accounting (${kib(['./js/buh-main.js', ...buhChunks])} KiB), ${Math.round(all.reduce((s, p) => s + outputs[p].bytes, 0) / 1024)} KiB total, `
     + `with ${shell.length} shell URLs.`);

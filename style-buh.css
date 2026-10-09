@@ -1,0 +1,275 @@
+/* ============================================================
+   КАБІНЕТ БУХГАЛТЕРА (buh.html)
+   Основний пристрій — компʼютер: бічне меню, закріплена шапка,
+   таблиці й керування з клавіатури. На телефоні — картки й нижня
+   панель вкладок.
+   ============================================================ */
+
+body.buh-mode { background: #f4f6f9; }
+body.buh-mode .container { max-width: none; margin: 0; padding: 0; }
+
+.buh { display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: auto 1fr; min-height: 100vh; }
+.buh[hidden] { display: none; }
+
+/* ---------- Бічне меню ---------- */
+.buh-side {
+    grid-row: 1 / -1; position: sticky; top: 0; align-self: start; box-sizing: border-box;
+    display: flex; flex-direction: column; height: 100vh; padding: 18px 12px 14px;
+    border-right: 1px solid #e3e8ef; background: #fff; overflow-y: auto;
+}
+.buh-brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 22px; }
+.buh-brand-mark {
+    display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px;
+    background: linear-gradient(135deg, #2bb673, #128a52); color: #fff; font-size: 19px; font-weight: 800;
+}
+.buh-brand > span:last-child { display: flex; flex-direction: column; }
+.buh-brand b { font-size: 15px; color: #0f1b2d; }
+.buh-brand small { margin-top: 2px; color: #64748b; font-size: 11.5px; }
+.buh-nav { display: flex; flex-direction: column; gap: 2px; }
+.buh-nav-item {
+    display: flex; align-items: center; gap: 11px; box-sizing: border-box; width: 100%; min-height: 38px; padding: 0 11px;
+    border: 0; border-radius: 8px; background: none; color: #334155; font: 600 13.5px var(--font);
+    text-align: left; text-decoration: none; cursor: pointer; transition: background .15s ease;
+}
+.buh-nav-item:hover { background: #f1f5f9; }
+.buh-nav-item.active { background: #e7f6ee; color: #0f7a45; }
+.buh-nav-item svg { flex-shrink: 0; }
+.buh-badge {
+    display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+    min-width: 20px; height: 20px; margin-left: auto; padding: 0 6px; border-radius: 10px;
+    background: var(--red); color: #fff; font-size: 11px; font-weight: 700;
+}
+.buh-badge[hidden] { display: none; }
+.buh-side-foot { display: flex; flex-direction: column; gap: 2px; margin-top: auto; padding-top: 12px; border-top: 1px solid #edf1f5; }
+.buh-link { color: #475569; font-weight: 500; }
+.buh-switch { display: flex; flex-direction: column; gap: 2px; }
+.buh-account { display: flex; align-items: center; gap: 10px; padding: 10px 6px 0; }
+.buh-account-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.25; }
+.buh-account-copy b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.buh-account-copy small { color: #64748b; font-size: 11.5px; }
+.buh-avatar {
+    display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+    background: #e7f6ee; color: #0f7a45; font-weight: 800; font-size: 14px;
+}
+.buh-avatar-btn { display: none; border: 0; cursor: pointer; font-family: var(--font); }
+
+/* ---------- Шапка ---------- */
+.buh-top {
+    grid-column: 2; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 16px 32px; border-bottom: 1px solid #e3e8ef; background: rgba(244, 246, 249, .92);
+    backdrop-filter: saturate(160%) blur(12px); -webkit-backdrop-filter: saturate(160%) blur(12px);
+}
+.buh-top-title { min-width: 0; }
+.buh-top h1 { margin: 0; color: #0f1b2d; font-size: 22px; font-weight: 800; letter-spacing: -.4px; }
+.buh-top-title span { display: block; margin-top: 2px; color: #64748b; font-size: 13px; }
+.buh-top-tools { display: flex; align-items: center; gap: 10px; }
+.buh-chip {
+    min-height: 34px; padding: 0 14px; border: 1px solid #dbe3ec; border-radius: 17px; background: #fff;
+    color: #334155; font: 600 12.5px var(--font); cursor: pointer; white-space: nowrap;
+}
+.buh-chip.is-error { border-color: #f4c7c3; background: #fdf0ef; color: #a3382f; }
+.buh-chip[hidden] { display: none; }
+
+.buh-main { grid-column: 2; box-sizing: border-box; width: 100%; max-width: 1240px; padding: 24px 32px 56px; }
+.buh-view[hidden] { display: none; }
+.buh-tabbar { display: none; }
+
+/* ---------- Картки, таблиці ---------- */
+.buh-card { margin-bottom: 18px; padding: 18px 20px; border: 1px solid #e3e8ef; border-radius: 14px; background: #fff; }
+.buh-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.buh-card-head h2 { margin: 0; color: #0f1b2d; font-size: 16px; }
+.buh-card-head > span { color: #64748b; font-size: 12.5px; }
+.buh-note { margin: 10px 0 0; color: #64748b; font-size: 12.5px; line-height: 1.45; }
+.buh-hint { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #475569; }
+.buh-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.buh-table th { padding: 8px 10px; border-bottom: 1px solid #e3e8ef; color: #64748b; font-size: 11.5px; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .04em; }
+.buh-table td { padding: 10px; border-bottom: 1px solid #eef2f6; vertical-align: middle; }
+.buh-table tr:last-child td { border-bottom: 0; }
+.buh-table.is-compact td { padding: 8px 6px; }
+.t-date { width: 96px; color: #64748b; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.t-main { min-width: 0; }
+.t-main b { display: block; overflow: hidden; color: #0f1b2d; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
+.t-main small { display: block; overflow: hidden; color: #64748b; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
+.t-acc { width: 64px; color: #64748b; font-variant-numeric: tabular-nums; }
+.t-sum { width: 120px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.t-muted { color: #64748b; font-size: 12.5px; }
+.is-in { color: #13804a; }
+.is-out { color: #0f1b2d; }
+.buh-tag { display: inline-block; padding: 3px 8px; border-radius: 6px; background: #eef2f6; color: #475569; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.buh-tag.is-review { background: #fff1e0; color: #b45309; }
+.buh-tag.is-payment { background: #e7f6ee; color: #13804a; }
+.buh-tag.is-income { background: #eef0ff; color: #4b5cd6; }
+.tx-row { cursor: pointer; }
+.tx-row:hover td, .tx-row.is-open td { background: #f8fafc; }
+.tx-row:focus-visible { outline: 2px solid var(--blue-ink); outline-offset: -2px; }
+.tx-detail-row td { padding: 4px 10px 14px; background: #f8fafc; }
+.tx-detail { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 13px; }
+.tx-detail dt { color: #64748b; }
+.tx-detail dd { margin: 0; word-break: break-word; }
+.tx-actions { display: flex; gap: 10px; margin-top: 10px; }
+
+.buh-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.buh-seg { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: #eef2f6; }
+.buh-seg-item { min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: none; color: #334155; font: 600 12.5px var(--font); cursor: pointer; white-space: nowrap; }
+.buh-seg-item.active { background: #fff; box-shadow: 0 1px 3px rgba(15, 27, 45, .12); color: #0f1b2d; }
+.buh-search { flex: 0 1 340px; min-height: 38px; }
+.buh-more { margin-top: 10px; }
+
+/* ---------- Огляд ---------- */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.kpi { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid #e3e8ef; border-radius: 14px; background: #fff; color: inherit; font: inherit; text-align: left; }
+.kpi span { color: #64748b; font-size: 12.5px; font-weight: 600; }
+.kpi b { color: #0f1b2d; font-size: 22px; letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
+.kpi b.is-in { color: #13804a; }
+.kpi small { overflow: hidden; color: #64748b; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-action { cursor: pointer; }
+.kpi-action.is-alert { border-color: #f6d7ad; background: #fffaf2; }
+.kpi-action.is-alert b { color: #b45309; }
+.ov-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr); gap: 18px; align-items: start; }
+.deadline-list { margin: 0; padding: 0; list-style: none; }
+.deadline { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #eef2f6; }
+.deadline:last-child { border-bottom: 0; }
+.deadline-date { display: flex; flex-direction: column; align-items: center; padding: 6px 0; border-radius: 9px; background: #f1f5f9; color: #475569; font-size: 10.5px; line-height: 1.1; }
+.deadline-date b { color: #0f1b2d; font-size: 18px; }
+.deadline-text { display: flex; flex-direction: column; min-width: 0; }
+.deadline-text b { font-size: 13.5px; }
+.deadline-text small { color: #64748b; font-size: 12px; }
+.deadline-left { color: #64748b; font-size: 12px; white-space: nowrap; }
+.deadline.is-near .deadline-date { background: #fff1e0; }
+.deadline.is-near .deadline-left { color: #b45309; font-weight: 700; }
+
+.acc-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.acc-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border: 1px solid #e3e8ef; border-radius: 14px; background: #fff; }
+.acc-purpose { color: #64748b; font-size: 12.5px; font-weight: 600; }
+.acc-balance { font-size: 20px; font-variant-numeric: tabular-nums; }
+.acc-card small { color: #94a3b8; font-size: 12px; }
+
+/* ---------- Вхідні ---------- */
+.inbox-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; color: #334155; font-size: 14px; }
+.inbox-head p { margin: 0; }
+.inbox-keys { margin-left: auto; color: #64748b; font-size: 12px; }
+kbd {
+    display: inline-block; min-width: 16px; margin: 0 2px; padding: 1px 5px; border: 1px solid #d5dde7; border-bottom-width: 2px;
+    border-radius: 5px; background: #fff; color: #334155; font: 600 11px var(--font); text-align: center;
+}
+.btn-primary kbd { border-color: rgba(255,255,255,.35); background: rgba(255,255,255,.18); color: #fff; margin-left: 8px; }
+.inbox-list { display: flex; flex-direction: column; gap: 10px; }
+.inbox-card {
+    display: grid; grid-template-columns: minmax(220px, .9fr) minmax(320px, 1.4fr); gap: 20px; padding: 16px 18px;
+    border: 1px solid #e3e8ef; border-radius: 14px; background: #fff; outline: none; transition: border-color .15s ease, box-shadow .15s ease;
+}
+.inbox-card.is-focus { border-color: #2bb673; box-shadow: 0 0 0 3px rgba(43, 182, 115, .16); }
+.inbox-card.is-busy { opacity: .55; pointer-events: none; }
+.inbox-main { min-width: 0; }
+.inbox-sum-big { font-size: 20px; font-weight: 800; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.inbox-meta { margin-left: 10px; color: #94a3b8; font-size: 12px; }
+.inbox-payer { margin: 6px 0 0; color: #0f1b2d; font-weight: 600; font-size: 14px; }
+.inbox-purpose { margin: 2px 0 0; color: #64748b; font-size: 13px; word-break: break-word; }
+.inbox-decision { min-width: 0; }
+.inbox-proposal { margin: 0 0 10px; color: #0f1b2d; font-size: 14.5px; line-height: 1.5; }
+.inbox-proposal.is-ask { color: #b45309; font-weight: 600; }
+.inbox-arrow { color: #2bb673; font-weight: 800; }
+.inbox-who { color: #475569; }
+.inbox-level { display: inline-block; margin-left: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.inbox-level.is-high { background: #e7f6ee; color: #13804a; }
+.inbox-level.is-medium { background: #fff6e0; color: #a16207; }
+.inbox-level.is-low { background: #fdf0ef; color: #a3382f; }
+.inbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.inbox-yes { width: auto; min-width: 140px; }
+.inbox-form { margin-top: 10px; }
+.inbox-chips, .inbox-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.inbox-chip, .inbox-cat {
+    display: inline-flex; flex-direction: column; align-items: flex-start; padding: 7px 11px; border: 1px solid #d5e3f5;
+    border-radius: 10px; background: #f3f8ff; color: var(--blue-ink); font: 600 13px var(--font); text-align: left; cursor: pointer;
+}
+.inbox-chip small { color: #64748b; font-size: 11px; font-weight: 500; }
+.inbox-cat.is-small { padding: 5px 9px; border-color: #e3e8ef; background: #fff; color: #475569; font-size: 12px; }
+.inbox-rows { display: flex; flex-direction: column; gap: 6px; }
+.inbox-row { display: flex; gap: 8px; }
+.inbox-apt { flex: 0 0 96px; min-width: 0; }
+.inbox-sum { flex: 1; min-width: 0; }
+.inbox-form-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.inbox-form-tools .btn-ghost-small { padding-left: 0; background: none; }
+.inbox-remember { margin: 0; font-size: 13px; }
+.inbox-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.inbox-form-actions .btn-primary { width: auto; }
+.inbox-or { color: #94a3b8; font-size: 12px; }
+
+.buh-empty { padding: 56px 20px; border: 1px dashed #d5dde7; border-radius: 16px; background: #fff; text-align: center; color: #475569; }
+.buh-empty-mark { display: inline-grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: #e7f6ee; color: #13804a; font-size: 26px; font-weight: 800; }
+.buh-empty h2 { margin: 14px 0 6px; color: #0f1b2d; }
+.buh-empty p { max-width: 460px; margin: 0 auto; line-height: 1.5; }
+
+/* ---------- Налаштування ---------- */
+.buh-steps { margin: 12px 0; padding-left: 20px; color: #475569; font-size: 13.5px; line-height: 1.55; }
+.buh-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.buh-inline-form .field-input { flex: 1 1 280px; }
+.buh-inline-form .btn-primary { width: auto; }
+
+/* ---------- «Ще» на телефоні ---------- */
+.buh-more-account { display: flex; align-items: center; gap: 12px; padding: 2px 0 14px; border-bottom: 0.5px solid var(--line); }
+.buh-more-account span:last-child { display: flex; flex-direction: column; }
+.buh-more-account small { color: var(--ink-2); }
+.buh-more-nav { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; }
+
+/* ============================================================
+   ТЕЛЕФОН І ПЛАНШЕТ
+   ============================================================ */
+@media (max-width: 1100px) {
+    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ov-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+    .buh { grid-template-columns: 1fr; }
+    .buh-side { display: none; }
+    .buh-top { grid-column: 1; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top)); }
+    .buh-top h1 { font-size: 26px; }
+    .buh-avatar-btn { display: grid; }
+    .buh-main { grid-column: 1; padding: 14px 16px calc(84px + env(safe-area-inset-bottom)); }
+    .buh-tabbar {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 120; display: grid; grid-template-columns: repeat(4, 1fr);
+        padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); border-top: 0.5px solid rgba(60,60,67,.2);
+        background: rgba(249, 249, 251, .92); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+    }
+    .buh-tab { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 48px; border: 0; background: none; color: #8a8a8e; font: 600 10.5px var(--font); cursor: pointer; }
+    .buh-tab.active { color: #0f7a45; }
+    .buh-tab svg { width: 24px; height: 24px; }
+    .buh-tab-icon { position: relative; display: block; }
+    .buh-tab .buh-badge { position: absolute; top: -4px; left: 16px; min-width: 18px; height: 18px; margin: 0; border: 2px solid #f9f9fb; font-size: 10px; }
+    body.buh-mode .toast-host { bottom: calc(84px + env(safe-area-inset-bottom)); }
+
+    .kpi b { font-size: 19px; }
+    .inbox-card { grid-template-columns: 1fr; gap: 10px; padding: 14px; }
+    .inbox-keys { display: none; }
+    .inbox-actions kbd, .inbox-head kbd { display: none; }
+    .inbox-yes { flex: 1; }
+    .buh-card { padding: 14px; }
+    .buh-search { flex: 1 1 100%; }
+    .buh-seg { overflow-x: auto; max-width: 100%; }
+    /* Таблиця операцій — картками */
+    .buh-table.is-ops thead { display: none; }
+    .buh-table.is-ops tr.tx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main sum" "date tag"; gap: 2px 10px; padding: 10px 0; border-bottom: 1px solid #eef2f6; }
+    .buh-table.is-ops td { padding: 0; border: 0; }
+    .buh-table.is-ops .t-main { grid-area: main; }
+    .buh-table.is-ops .t-sum { grid-area: sum; width: auto; }
+    .buh-table.is-ops .t-date { grid-area: date; width: auto; font-size: 12px; }
+    .buh-table.is-ops .t-acc { display: none; }
+    .buh-table.is-ops td:nth-child(4) { grid-area: tag; justify-self: end; }
+    .buh-table.is-ops tr.tx-detail-row { display: block; }
+    .t-main b, .t-main small { max-width: 64vw; }
+    .tx-detail { grid-template-columns: 1fr; }
+    .tx-detail dt { margin-top: 6px; }
+}
+
+/* Спільні дрібні кнопки й компактні поля для робочих форм бухгалтера */
+.buh-mode .btn-ghost-small {
+    display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 10px;
+    border: 0; border-radius: 8px; background: rgba(120, 120, 128, 0.1); color: var(--blue-ink);
+    font: 600 13px var(--font); cursor: pointer; white-space: nowrap;
+}
+.buh-mode .btn-ghost-small:hover { background: rgba(120, 120, 128, 0.16); }
+.buh-main .field-input { min-height: 40px; padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+.buh-main .field-select { padding-right: 32px; }
+.inbox-other { flex: 0 1 220px; width: auto; }
+@media (max-width: 900px) { .inbox-other { flex: 1 1 100%; } }
