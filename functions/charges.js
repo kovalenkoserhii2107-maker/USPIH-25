@@ -18,6 +18,7 @@
 // Історія квартири: apartments/{кв}/ledger/charge-{місяць} і /opening.
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const logger = require('firebase-functions/logger');
 const core = require('./charges-core');
 const { cleanApt, fromKop } = require('./bank-core');
@@ -410,7 +411,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             ...core.statement(byApt, period, settings.startPeriod, settings.components.map(c => c.id)) };
     }
 
-    const chargesAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, async request => {
+    const chargesAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('chargesAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -436,7 +437,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             }
             default: fail('invalid-argument', 'Невідома дія');
         }
-    });
+    }));
 
     return { chargesAction, recompute: recomputeSafe, actions: { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, context, getStatement, recompute } };
 };

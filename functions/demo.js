@@ -21,6 +21,7 @@
 // нарахувань, документів і кошторису — щоб не зачепити реальні дані.
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const logger = require('firebase-functions/logger');
 const { cleanApt, fromKop } = require('./bank-core');
 
@@ -511,7 +512,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         return { ok: true };
     }
 
-    const demoAction = onCall({ region: REGION, maxInstances: 1, timeoutSeconds: 540, memory: '512MiB' }, async request => {
+    const demoAction = onCall({ region: REGION, maxInstances: 1, timeoutSeconds: 540, memory: '512MiB' }, callGuard('demoAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -529,7 +530,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         }
         if (data.action === 'remove') return remove(actor);
         fail('invalid-argument', 'Невідома дія');
-    });
+    }));
 
     return { demoAction, actions: { run, remove, status } };
 };

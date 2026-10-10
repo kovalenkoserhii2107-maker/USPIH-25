@@ -21,6 +21,7 @@
 //       resolvedBy?, resolvedAt? }
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const logger = require('firebase-functions/logger');
 const core = require('./bank-core');
@@ -403,7 +404,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         return { ok: true };
     }
 
-    const bankAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, async request => {
+    const bankAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('bankAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -420,7 +421,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 break;
             default: fail('invalid-argument', 'Невідома дія');
         }
-    });
+    }));
 
     // Щогодини: оплати зʼявляються в історії квартир без участі людини.
     const syncBank = onSchedule(

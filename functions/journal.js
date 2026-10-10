@@ -14,6 +14,7 @@
 // ============================================================
 const crypto = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const core = require('./journal-core');
 const { cleanApt } = require('./bank-core');
 const { ITEMS } = require('./expenses-core');
@@ -170,7 +171,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         return { ok: true };
     }
 
-    const journalAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120, memory: '512MiB' }, async request => {
+    const journalAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120, memory: '512MiB' }, callGuard('journalAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -180,7 +181,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             case 'reopen': return reopen(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
-    });
+    }));
 
     return { journalAction, actions: { context, close, reopen } };
 };

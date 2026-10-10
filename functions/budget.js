@@ -15,6 +15,7 @@
 // ============================================================
 const crypto = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const core = require('./budget-core');
 const { ITEMS, DOC_TYPES } = require('./expenses-core');
 const charges = require('./charges-core');
@@ -303,7 +304,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         return { ok: true };
     }
 
-    const budgetAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, async request => {
+    const budgetAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, callGuard('budgetAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -317,7 +318,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             case 'visibility': return visibility(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
-    });
+    }));
 
     return { budgetAction, guard, actions: { context, save, approve, amend, copy, publish, visibility } };
 };
