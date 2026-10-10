@@ -5,10 +5,13 @@
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, loadExpenses, loadDemo, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadExpenses, loadDemo, loadRequisites, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
 import { toKop } from './charges-core.js';
+import { registryHtml, saveRegistry } from './buh-registry.js';
+
+let requisites = {};
 
 const FILTERS = { all: 'Усі', in: 'Надходження', out: 'Списання', review: 'Чекають рішення' };
 let rows = [];
@@ -171,7 +174,8 @@ function demoHtml(d, chair) {
 }
 
 export async function loadSettingsView() {
-    const [settings, ex, demo] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadDemo()]);
+    const [settings, ex, demo, req] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadDemo(), loadRequisites().catch(() => ({}))]);
+    requisites = req || {};
     const small = ex?.settings?.smallKop || 0;
     const chair = session.role === 'chair';
     const connected = settings.tokenSet === true;
@@ -195,6 +199,7 @@ export async function loadSettingsView() {
             </div>
             <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно.</p>
         </section>
+        ${registryHtml(requisites.registry, requisites.houseAddress)}
         ${accounts.length ? `<section class="buh-card">
             <div class="buh-card-head"><h2>Рахунки</h2></div>
             <table class="buh-table"><tbody>${accounts.map(([iban, a]) => `<tr data-iban="${escapeHtml(iban)}">
@@ -248,6 +253,7 @@ export function initSettingsView() {
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
         }
+        if (btn.dataset.act === 'registry-save') { await saveRegistry(btn, requisites.registry); return; }
         if (btn.dataset.act === 'small-save') {
             const kop = toKop(document.getElementById('smallInput').value);
             if (kop === null || kop < 0) { toast('Вкажіть суму в гривнях', 'error'); return; }

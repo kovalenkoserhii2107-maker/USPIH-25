@@ -56,11 +56,11 @@ export async function loadOverview() {
             </section>
             <section class="buh-card">
                 <div class="buh-card-head"><h2>Останні операції</h2><button type="button" class="btn-ghost-small" data-go="bank">Усі →</button></div>
-                ${month.length ? `<table class="buh-table is-compact"><tbody>${month.slice(0, 8).map(t => {
+                ${month.length ? `<table class="buh-table is-compact ov-ops"><tbody>${month.slice(0, 8).map(t => {
                     const tag = tagOf(t);
                     return `<tr><td class="t-date">${escapeHtml(when(t.at))}</td>
                         <td class="t-main"><b>${escapeHtml(t.counterparty?.name || '—')}</b><small>${escapeHtml(t.purpose || '')}</small></td>
-                        <td><span class="buh-tag ${tag.cls}">${escapeHtml(tag.text)}</span></td>
+                        <td class="t-tag"><span class="buh-tag ${tag.cls}">${escapeHtml(tag.text)}</span></td>
                         <td class="t-sum ${t.direction === 'out' ? 'is-out' : 'is-in'}">${signed(t)}</td></tr>`;
                 }).join('')}</tbody></table>` : '<p class="list-empty">Цього місяця операцій ще немає</p>'}
             </section>

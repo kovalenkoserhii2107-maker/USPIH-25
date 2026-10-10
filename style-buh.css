@@ -227,7 +227,11 @@ kbd {
     .buh { grid-template-columns: 1fr; }
     .buh-side { display: none; }
     .buh-top { grid-column: 1; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top)); }
-    .buh-top h1 { font-size: 26px; }
+    .buh-top h1 { font-size: clamp(20px, 6.2vw, 26px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Шапка не ширша за екран: «Налаштування» + «Банк · дата» не вміщались у 390 px. */
+    .buh-top { min-width: 0; gap: 10px; }
+    .buh-top-tools { flex-shrink: 0; gap: 8px; }
+    .buh-chip { padding: 0 10px; font-size: 11.5px; }
     .buh-avatar-btn { display: grid; }
     .buh-main { grid-column: 1; padding: 14px 16px calc(84px + env(safe-area-inset-bottom)); }
     .buh-tabbar {
@@ -518,4 +522,26 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
     .jr-table .jr-journal tr > td:nth-child(3)::before { content: 'Кт '; color: #64748b; }
     .jr-table .jr-journal tr > td:nth-child(5) { order: 5; grid-column: 1 / -1; font-size: 12px; }
 }
+}
+
+/* ОСББ у реєстрах */
+.rg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 14px; margin: 12px 0; }
+.rg-warn { margin: 6px 0 4px; }
+.rg-sub { margin: 14px 0 6px; font-size: 14px; }
+@media (max-width: 900px) {
+    /* Широкі таблиці (рахунки з IBAN, календар, кошторис) — прокрутка всередині картки, не сторінки. */
+    .buh-main .buh-card { overflow-x: auto; min-width: 0; }
+    #viewSettings .buh-table td.t-main b { overflow-wrap: anywhere; }
+    #viewSettings .buh-inline-form { flex-wrap: wrap; }
+    #viewSettings .buh-inline-form .field-input { min-width: 0; flex: 1 1 160px; }
+    .buh-view { min-width: 0; }
+}
+@media (max-width: 900px) {
+    /* «Останні операції» в огляді — рядок-картка: хто й сума, під ними дата й мітка. */
+    .ov-ops tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main sum" "date tag"; gap: 2px 10px; padding: 10px 0; border-bottom: 1px solid #eef2f6; }
+    .ov-ops td { padding: 0; border: 0; }
+    .ov-ops .t-main { grid-area: main; min-width: 0; }
+    .ov-ops .t-sum { grid-area: sum; }
+    .ov-ops .t-date { grid-area: date; font-size: 12px; }
+    .ov-ops .t-tag { grid-area: tag; justify-self: end; }
 }
