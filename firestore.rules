@@ -522,6 +522,14 @@ service cloud.firestore {
       allow write: if docId == 'finance' ? canAccount() : canManage();
     }
 
+    // ---------- РЕКВІЗИТИ ЗВІТІВ ДЛЯ ДПС ----------
+    // РНОКПП керівника й бухгалтера, КАТОТТГ, податкова — для XML
+    // розрахунку. Не для мешканців; пише лише сервер (reportsAction).
+    match /report_settings/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
     // ---------- ЗВІТ ПРО ВИТРАТИ ----------
     // Публічний для мешканців: у цьому й сенс прозорості.
     match /finance/{docId} {

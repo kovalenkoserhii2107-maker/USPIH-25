@@ -3,13 +3,15 @@
 // розрахунку (J0500111) з затвердженої відомості зарплати, позначки
 // «подано / прийнято» й архів квитанцій.
 //
-// XML поки не формуємо: цифри переносять у форму в Електронному
-// кабінеті ДПС, де голова підписує й подає звіт. Квитанції № 1 і № 2
+// XML (розрахунок + Д1, 4ДФ, Д5) формує сервер із затвердженої
+// відомості; голова завантажує його в Електронний кабінет ДПС, бачить
+// заповнену форму, підписує КЕП і подає. Квитанції № 1 і № 2
 // зберігаються тут (Storage reports/{ключ}/), позначки пише сервер
 // (reportsAction, functions/reports.js).
 // ============================================================
 import { escapeHtml, toast, setBusy } from './ui.js';
-import { loadReports, loadPayrollReport, reportsAct, uploadReportFiles, reportFileUrl } from './buh-data.js';
+import { loadReports, loadPayrollReport, reportsAct, reportsQuery, uploadReportFiles, reportFileUrl } from './buh-data.js';
+import { zip, saveBlob } from './xlsx-write.js';
 import { fmtKop } from './charges-core.js';
 import { deadlines, humanDate } from './tax-calendar.js';
 
@@ -33,6 +35,7 @@ const DONE = new Set(['accepted', 'paid', 'not_required', 'submitted']);
 let ctx = null;
 let selected = null;        // ключ відкритого строку
 let detail = null;          // дані розрахунку за місяць
+let xmlState = null;        // { settings } — форма реквізитів, { problems } чи { files } — результат XML
 
 /** Місяць звіту з ключа календаря: 'j0500111-2026-10' → '2026-10'. */
 export function periodOfKey(key) {
@@ -115,9 +118,82 @@ function payrollHtml(d) {
         ${d.relations.length ? `<h3 class="rp-h">Додаток Д5 — трудові відносини й договори ЦПД</h3>
         <table class="buh-table is-compact"><tbody>${d.relations.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}<small>${escapeHtml(r.position || (r.kind === 'gph' ? 'договір ЦПД' : 'працівник'))}</small></td>
             <td>${r.kind === 'gph' ? (r.event === 'start' ? 'початок договору' : 'кінець договору') : (r.event === 'start' ? 'прийнято' : 'звільнено')}</td><td>${dmy(r.date)}</td></tr>`).join('')}</tbody></table>` : ''}
-        <p class="buh-note">Звіт подає голова в Електронному кабінеті ДПС: «Введення звітності» → J0500111 і додатки, суми — з таблиць вище. Ознака доходу 101 — зарплата, 102 — договір ЦПД. Коди категорій у Д1 і Д5 перевіряє бухгалтер за довідником форми. Сплата ЄСВ — до ${dmy(s.due)}.</p>
-        <div class="rp-actions"><button type="button" class="btn-soft btn-compact" data-act="csv">CSV для перенесення</button>
-            <a class="btn-soft btn-compact" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a></div>`;
+        <p class="buh-note">Звіт подає голова в Електронному кабінеті ДПС: «Завантажити XML» нижче → у кабінеті «Звітність → Завантаження» обрати файли з архіву (розрахунок і додатки разом) → перевірити заповнену форму → підписати КЕП і надіслати. Ознака доходу 101 — зарплата, 102 — договір ЦПД. Коди категорій у Д1 (1 — працівник і ЦПД, 29 — лікарняні) і Д5 перевіряє бухгалтер за довідником форми. Сплата ЄСВ — до ${dmy(s.due)}.</p>
+        ${d.status === 'approved' ? `<div class="rp-form rp-xml-opts">
+            <label class="field"><span>Вид розрахунку</span><select class="field-input field-select" id="rpStan"><option value="1">звітний</option><option value="2">звітний новий</option><option value="3">уточнюючий</option></select></label>
+            <label class="field"><span>Номер розрахунку</span><input class="field-input" id="rpNum" inputmode="numeric" maxlength="4" value="1"></label>
+        </div>` : ''}
+        <div class="rp-actions">${d.status === 'approved' ? '<button type="button" class="btn-primary btn-compact" data-act="xml">Завантажити XML</button>' : ''}
+            <button type="button" class="btn-soft btn-compact" data-act="xml-settings">Реквізити для XML</button>
+            <button type="button" class="btn-soft btn-compact" data-act="csv">CSV для перенесення</button>
+            <a class="btn-soft btn-compact" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a></div>
+        <div id="rpXml">${xmlHtml()}</div>`;
+}
+
+// ------------------------------------------------------------
+// XML ДЛЯ ЕЛЕКТРОННОГО КАБІНЕТУ
+// ------------------------------------------------------------
+const XML_INPUTS = [
+    ['katottg', 'Код КАТОТТГ (UA і 17 цифр, з витягу ЄДР)', 'maxlength="19" spellcheck="false"'], ['zip', 'Поштовий індекс', 'inputmode="numeric" maxlength="5"'],
+    ['address', 'Податкова адреса'], ['phone', 'Телефон', 'inputmode="tel"'], ['email', 'Ел. пошта', 'type="email"'],
+    ['headName', 'Керівник: власне імʼя та прізвище'], ['headTin', 'РНОКПП керівника', 'inputmode="numeric" maxlength="10"'],
+    ['accName', 'Бухгалтер: власне імʼя та прізвище (якщо є)'], ['accTin', 'РНОКПП бухгалтера', 'inputmode="numeric" maxlength="10"']
+];
+
+function xmlHtml() {
+    if (!xmlState) return '';
+    if (xmlState.settings) {
+        const { settings: v, offices, org } = xmlState.settings;
+        return `<form class="rp-mark rp-xml" onsubmit="return false">
+            <h3 class="rp-h">Реквізити для XML</h3>
+            <p class="buh-note">${escapeHtml(org.name || 'Назва ОСББ')} · ЄДРПОУ ${escapeHtml(org.edrpou || '—')} · КВЕД ${escapeHtml(org.kved || '—')} — з «Налаштування → ОСББ у реєстрах». РНОКПП тут бачать лише голова й бухгалтер.</p>
+            <div class="rp-form">
+                <label class="field rp-wide"><span>Податкова (куди подається)</span><select class="field-input field-select" name="sti">${offices.map(o => `<option value="${o.code}"${o.code === Number(v.sti) ? ' selected' : ''}>${escapeHtml(`${o.code} — ${o.name}`)}</option>`).join('')}</select></label>
+                ${XML_INPUTS.map(([k, label, extra = '']) => `<label class="field${k === 'address' ? ' rp-wide' : ''}"><span>${label}</span><input class="field-input" name="${k}" value="${escapeHtml(v[k] || '')}" ${extra}></label>`).join('')}
+            </div>
+            <div class="rp-actions"><button type="button" class="btn-primary btn-compact" data-act="xml-save">Зберегти реквізити</button><button type="button" class="btn-ghost-small" data-act="xml-close">Закрити</button></div>
+        </form>`;
+    }
+    if (xmlState.problems) {
+        return `<div class="rp-xml"><h3 class="rp-h">Щоб сформувати XML, заповніть</h3>
+            <ul class="rp-checks">${xmlState.problems.map(p => `<li class="is-warn">${escapeHtml(p)}</li>`).join('')}</ul>
+            <p class="buh-note">Стать, код професії й накази — у картці людини («Зарплата → Люди»).</p></div>`;
+    }
+    return `<div class="rp-xml"><h3 class="rp-h">Файли для Електронного кабінету</h3>
+        <ul class="rp-files">${xmlState.files.map((f, i) => `<li><button type="button" class="btn-ghost-small" data-act="xml-file" data-i="${i}">${escapeHtml(f.name)}</button><small>${['розрахунок', 'Д1', '4ДФ', 'Д5'][i] || ''}</small></li>`).join('')}</ul>
+        <p class="buh-note">Архів уже завантажено; файли можна взяти й поодинці. Перед підписом звірте в кабінеті суми з таблицями вище. Після подання додайте квитанції в позначці нижче.</p></div>`;
+}
+
+const fileBytes = f => Uint8Array.from(atob(f.data), c => c.charCodeAt(0));
+
+function showXml() {
+    const host = document.getElementById('rpXml');
+    if (host) host.innerHTML = xmlHtml();
+}
+
+async function buildXml(btn) {
+    setBusy(btn, true, 'Формую…');
+    try {
+        const stan = Number(document.getElementById('rpStan')?.value) || 1;
+        const num = Number(document.getElementById('rpNum')?.value) || 1;
+        const out = await reportsQuery({ action: 'xml', period: detail.period, stan, num });
+        if (out.problems.length) { xmlState = { problems: out.problems }; showXml(); return; }
+        xmlState = { files: out.files };
+        showXml();
+        saveBlob(zip(out.files.map(f => ({ name: f.name, data: fileBytes(f) })), 'application/zip'), `J0500111-${detail.period}.zip`);
+        toast('XML сформовано', 'success');
+    } finally { if (btn.isConnected) setBusy(btn, false); }
+}
+
+async function saveXmlSettings(btn) {
+    const form = btn.closest('.rp-xml');
+    const data = Object.fromEntries([...form.querySelectorAll('[name]')].map(i => [i.name, i.value.trim()]));
+    setBusy(btn, true, 'Зберігаю…');
+    try {
+        await reportsAct({ action: 'saveXmlSettings', ...data, sti: Number(data.sti) });
+        xmlState = null;
+        toast('Реквізити збережено', 'success');
+    } finally { if (btn.isConnected) setBusy(btn, false); }
 }
 
 function otherHtml(t) {
@@ -214,10 +290,20 @@ async function onAction(btn) {
         if (a === 'open') {
             selected = selected === btn.dataset.key ? null : btn.dataset.key;
             detail = null;
+            xmlState = null;
             await loadReportsView();
             return;
         }
         if (a === 'csv' && detail) { csv(); return; }
+        if (a === 'xml' && detail) { await buildXml(btn); return; }
+        if (a === 'xml-settings') { xmlState = { settings: await reportsQuery({ action: 'xmlSettings' }) }; showXml(); return; }
+        if (a === 'xml-close') { xmlState = null; showXml(); return; }
+        if (a === 'xml-save') { await saveXmlSettings(btn); showXml(); return; }
+        if (a === 'xml-file') {
+            const f = xmlState?.files?.[Number(btn.dataset.i)];
+            if (f) saveBlob(new Blob([fileBytes(f)], { type: 'application/xml' }), f.name);
+            return;
+        }
         if (a === 'file') { window.open(await reportFileUrl(btn.dataset.path), '_blank', 'noopener'); return; }
         const form = btn.closest('.rp-mark');
         const key = form?.dataset.key;

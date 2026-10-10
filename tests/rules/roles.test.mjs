@@ -281,6 +281,18 @@ test('зарплату (персональні дані) читають лише
     }
 });
 
+test('реквізити звітів ДПС (РНОКПП керівника) читають лише голова й бухгалтер, пише лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'report_settings/main'), { headTin: '3124567809', sti: 1553 });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'report_settings/main')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'report_settings/main'), { headTin: '1' }));
+    }
+    for (const login of ['11', '45']) await assertFails(getDoc(doc(as(login).firestore(), 'report_settings/main')));
+});
+
 test('вхідну ОСВ читають голова й бухгалтер, пише лише сервер', async () => {
     await seed();
     await env.withSecurityRulesDisabled(async context => {

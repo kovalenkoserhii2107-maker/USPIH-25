@@ -587,6 +587,8 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .rp-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .rp-form .rp-wide { grid-column: 1 / -1; }
 .rp-form input[type=file] { padding: 8px; font-size: 12.5px; }
+.rp-xml-opts { margin-top: 12px; grid-template-columns: repeat(2, minmax(0, 220px)); }
+.rp-xml { margin-top: 14px; }
 .rp-files { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .rp-files small { margin-left: 4px; color: #64748b; font-size: 12px; }
 @media (max-width: 900px) {

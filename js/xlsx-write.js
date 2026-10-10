@@ -35,7 +35,8 @@ function crc32(bytes) {
 // ------------------------------------------------------------
 // ZIP
 // ------------------------------------------------------------
-function zip(files) {
+/** ZIP без стиснення (метод stored). type — MIME готового файлу. */
+export function zip(files, type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
     const parts = [];
     const central = [];
     let offset = 0;
@@ -73,9 +74,7 @@ function zip(files) {
         ...u16(files.length), ...u16(files.length),
         ...u32(dir.length), ...u32(offset), ...u16(0)
     ]);
-    return new Blob([...parts, dir, end], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    });
+    return new Blob([...parts, dir, end], { type });
 }
 
 // ------------------------------------------------------------

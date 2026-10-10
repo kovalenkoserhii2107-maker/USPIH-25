@@ -122,6 +122,11 @@ function personFormHtml(p) {
             ${f('pfFte', 'Ставка (1 — повна)', String(p.fte ?? 1).replace('.', ','), 'inputmode="decimal"')}`}
             ${f('pfFrom', gph ? 'Початок договору' : 'Прийнято', p.from, 'type="date"')}
             ${f('pfTo', gph ? 'Кінець договору' : 'Звільнено', p.to, 'type="date"')}
+            <label class="field"><span class="field-label">Стать (для звіту ДПС)</span><select id="pfGender" class="field-input field-select"><option value="">—</option>${['Ж', 'Ч'].map(g => `<option${g === p.gender ? ' selected' : ''}>${g}</option>`).join('')}</select></label>
+            ${gph ? '' : `${f('pfKp', 'Код професії за КП (Д5)', p.kpCode, 'inputmode="decimal" maxlength="10" placeholder="9141"')}
+            ${f('pfHireDoc', 'Наказ про прийняття (Д5)', p.hireDoc, 'placeholder="Наказ № 1-к від 15.10.2026"')}`}
+            ${f('pfFireDoc', gph ? 'Документ про припинення договору (Д5)' : 'Наказ про звільнення (Д5)', p.fireDoc)}
+            ${f('pfFireBasis', 'Підстава припинення (стаття, Д5)', p.fireBasis, 'placeholder="п. 1 ст. 36 КЗпП"')}
         </div>
         ${gph ? '' : `<div class="rg-grid">
             ${f('pfInsurance', 'Страховий стаж, років (для лікарняних)', p.insuranceYears ?? '', 'inputmode="decimal"')}
@@ -216,7 +221,8 @@ function readPerson() {
     const v = id => document.getElementById(id)?.value.trim() ?? '';
     const kind = v('pfKind');
     const p = { id: editing.id || null, name: v('pfName'), kind, position: v('pfPosition'), rnokpp: v('pfRnokpp'), iban: v('pfIban'),
-        contract: v('pfContract'), from: v('pfFrom'), to: v('pfTo'), active: document.getElementById('pfActive').checked };
+        contract: v('pfContract'), from: v('pfFrom'), to: v('pfTo'), active: document.getElementById('pfActive').checked,
+        gender: v('pfGender'), kpCode: v('pfKp'), hireDoc: v('pfHireDoc'), fireDoc: v('pfFireDoc'), fireBasis: v('pfFireBasis') };
     if (kind === 'employee') {
         p.salaryKop = toKop(v('pfSalary'));
         p.fte = Number(v('pfFte').replace(',', '.')) || 1;

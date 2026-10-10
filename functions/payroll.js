@@ -119,6 +119,10 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             salaryKop: data.kind === 'gph' ? 0 : Number(data.salaryKop), fte: data.kind === 'gph' ? null : Number(data.fte ?? 1),
             mainJob: data.mainJob !== false, from: String(data.from || ''), to: String(data.to || ''), taxNotified: Boolean(data.taxNotified),
             contract: text(data.contract, 80), active: data.active !== false,
+            // Для XML розрахунку: стать (Д1, Д5), код КП і документи про прийом / звільнення (Д5).
+            gender: ['Ж', 'Ч'].includes(data.gender) ? data.gender : '',
+            kpCode: data.kind === 'gph' ? '' : String(data.kpCode || '').replace(/[^\d.]/g, '').slice(0, 10),
+            hireDoc: text(data.hireDoc, 120), fireDoc: text(data.fireDoc, 120), fireBasis: text(data.fireBasis, 120),
             // Для лікарняних — страховий стаж (роки); ПСП — за заявою працівника; заробіток до застосунку — для середньої.
             ...(data.kind === 'gph' ? {} : {
                 insuranceYears: Math.max(0, Math.min(60, Number(data.insuranceYears) || 0)),
