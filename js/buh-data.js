@@ -227,6 +227,20 @@ export async function budgetAct(payload, timeoutMs = 60000) {
 }
 
 // ------------------------------------------------------------
+// ЗАРПЛАТА
+// ------------------------------------------------------------
+/** Відомість місяця, люди, налаштування й платежі (null — поточний місяць). */
+export const loadPayroll = period => once(`payroll:${period || ''}`, () => callBackend('payrollAction', { action: 'context', period: period || null }, 60000));
+
+export async function payrollAct(payload) {
+    try {
+        return await callBackend('payrollAction', payload, 120000);
+    } finally {
+        invalidate();
+    }
+}
+
+// ------------------------------------------------------------
 // ПРОВОДКИ Й ЗАКРИТТЯ МІСЯЦЯ
 // ------------------------------------------------------------
 /** Оборотно-сальдова, проводки й перевірки за місяць (null — місяць, який пропонує сервер). */

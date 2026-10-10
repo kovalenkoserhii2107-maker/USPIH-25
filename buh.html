@@ -13,10 +13,10 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=141">
-    <link rel="stylesheet" href="style-buh.css?v=141">
+    <link rel="stylesheet" href="style.css?v=142">
+    <link rel="stylesheet" href="style-buh.css?v=142">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=141">
+    <link rel="modulepreload" href="js/buh-main.js?v=142">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -64,6 +64,7 @@
                 <button class="buh-nav-item" data-view="charges" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg><span>Нарахування</span></button>
                 <button class="buh-nav-item" data-view="expenses" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h16v20l-3-2-3 2-2-2-2 2-3-2-3 2z"></path><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="12" y2="16"></line></svg><span>Витрати</span></button>
                 <button class="buh-nav-item" data-view="budget" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><rect x="7" y="12" width="3" height="6"></rect><rect x="12" y="8" width="3" height="10"></rect><rect x="17" y="5" width="3" height="13"></rect></svg><span>Кошторис</span></button>
+                <button class="buh-nav-item" data-view="payroll" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c.8-3.4 3.4-5.5 6.5-5.5s5.7 2.1 6.5 5.5"></path><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.9 2.6 2.6 3 5.2"></path></svg><span>Зарплата</span></button>
                 <button class="buh-nav-item" data-view="journal" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"></path><path d="M12 4v16M4 9h16M4 14h16"></path></svg><span>Проводки</span></button>
                 <button class="buh-nav-item" data-view="payments" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg><span>Платежі</span><span class="buh-badge is-soft" id="buhPayBadge" hidden></span></button>
                 <button class="buh-nav-item" data-view="bank" type="button"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"></path><path d="M12 3 3 8h18z"></path><path d="M5 10v8M9 10v8M15 10v8M19 10v8"></path><path d="M3 21h18"></path></svg><span>Банк</span></button>
@@ -94,6 +95,7 @@
             <section class="buh-view" data-view="charges" id="viewCharges"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="expenses" id="viewExpenses"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="budget" id="viewBudget"><p class="list-empty">Завантаження…</p></section>
+            <section class="buh-view" data-view="payroll" id="viewPayroll"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="journal" id="viewJournal"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="payments" id="viewPayments"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="bank" id="viewBank"><p class="list-empty">Завантаження…</p></section>
@@ -134,7 +136,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=141').catch(error => {
+    import('./js/buh-main.js?v=142').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

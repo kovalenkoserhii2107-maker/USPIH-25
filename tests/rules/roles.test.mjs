@@ -261,6 +261,22 @@ test('кошторис читають голова й бухгалтер, пиш
     await assertFails(setDoc(doc(as('45').firestore(), 'finance/current'), { items: [] }));
 });
 
+test('зарплату (персональні дані) читають лише голова й бухгалтер, пише лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'payroll_people/p1'), { name: 'Працівник Тестовий', rnokpp: '3124567809', salaryKop: 864700 });
+        await setDoc(doc(context.firestore(), 'payroll_runs/2026-10'), { status: 'draft' });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'payroll_people/p1')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'payroll_runs/2026-10'), { status: 'approved' }));
+    }
+    for (const login of ['11', '45']) {
+        await assertFails(getDoc(doc(as(login).firestore(), 'payroll_people/p1')));
+        await assertFails(getDoc(doc(as(login).firestore(), 'payroll_runs/2026-10')));
+    }
+});
+
 test('закриті місяці читають голова й бухгалтер, пише лише сервер', async () => {
     await seed();
     await env.withSecurityRulesDisabled(async context => {

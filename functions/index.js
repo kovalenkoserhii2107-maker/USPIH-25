@@ -422,10 +422,14 @@ const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffR
 exports.bankAction = bank.bankAction;
 exports.syncBank = bank.syncBank;
 
+// Зарплата й виплати фізособам: відомість, затвердження, платежі (див. payroll.js).
+const payroll = require('./payroll')({ db, FieldValue, requireAdmin, staffRole, payments, lock });
+exports.payrollAction = payroll.payrollAction;
+
 // Проводки, оборотно-сальдова й закриття місяця (див. journal.js).
 const journal = require('./journal')({ db, FieldValue, requireAdmin, staffRole, lock });
 exports.journalAction = journal.journalAction;
 
 // Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).
-const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal });
+const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal, payroll });
 exports.demoAction = demo.demoAction;

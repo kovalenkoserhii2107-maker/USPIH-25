@@ -37,6 +37,9 @@ const ACCOUNTS = {
     44: 'Нерозподілені прибутки (непокриті збитки)',
     48: 'Цільове фінансування і цільові надходження',
     631: 'Розрахунки з вітчизняними постачальниками',
+    641: 'Розрахунки за податками (ПДФО, військовий збір)',
+    651: 'Розрахунки за ЄСВ',
+    661: 'Розрахунки за виплатами працівникам і за договорами ЦПД',
     685: 'Розрахунки з іншими кредиторами (нерозібрані операції банку)',
     703: 'Дохід від реалізації робіт і послуг',
     719: 'Інші доходи від операційної діяльності',
@@ -45,7 +48,7 @@ const ACCOUNTS = {
     92: 'Адміністративні витрати'
 };
 /** Порядок у відомості — за класами рахунків. */
-const ORDER = ['00', '311', '377', '44', '48', '631', '685', '703', '719', '733', '79', '92'];
+const ORDER = ['00', '311', '377', '44', '48', '631', '641', '651', '661', '685', '703', '719', '733', '79', '92'];
 
 /** Інші надходження → рахунок. Усі — цільове фінансування (48), як у звітності ОСББ. */
 const INCOME_ACCOUNT = { rent: '48', equipment: '48', interest: '48', grant: '48', refund: '48', other: '48' };
@@ -85,7 +88,7 @@ function periodsUpTo(period, start = START_PERIOD) {
  * bankTx: [{ id, ...bank_tx }]; expenses: [{ id, ...expenses }];
  * suppliers: Map<id, { name }>; components: Map<id, name>.
  */
-function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], suppliers = new Map(), start = START_PERIOD, until }) {
+function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], suppliers = new Map(), payrollRuns = [], payrollPayments = new Map(), start = START_PERIOD, until }) {
     const out = [];
     const add = (e) => { if (e.kop) out.push(e); };
     const inRange = p => p && p >= start && (!until || p <= until);
@@ -127,6 +130,11 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
         } else if (t.direction === 'out') {
             if (t.kind === 'internal') {
                 add({ ...base, dr: '311', cr: '311', kop: t.amountKop, dA: cp.account || 'інший рахунок', cA: acc, memo: t.purpose || 'Переказ між рахунками ОСББ' });
+            } else if (t.kind === 'expense' && t.status === 'done' && payrollPayments.has(t.paymentId)) {
+                // Платіж за відомістю зарплати: погашаємо нараховане (661), утримане (641) й ЄСВ (651).
+                const pp = payrollPayments.get(t.paymentId);
+                const dr = pp.key === 'pdfo' || pp.key === 'vz' ? '641' : pp.key === 'esv' ? '651' : '661';
+                add({ ...base, dr, cr: '311', kop: t.amountKop, dA: dr === '661' ? pp.name : pp.key, cA: acc, memo: t.purpose || '' });
             } else if (t.kind === 'expense' && t.status === 'done' && t.expenseId) {
                 const e = expenses.find(x => x.id === t.expenseId);
                 add({ ...base, dr: '631', cr: '311', kop: t.amountKop, dA: e?.supplierName || cp.name || '', cA: acc, memo: t.purpose || '' });
@@ -137,6 +145,20 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
             } else {
                 add({ ...base, dr: '685', cr: '311', kop: t.amountKop, dA: 'нерозібрано', cA: acc, memo: `Нерозібране списання: ${t.purpose || cp.name || ''}` });
             }
+        }
+    }
+
+    // Затверджена відомість зарплати: нараховано (Дт 92 Кт 661), утримано
+    // ПДФО й ВЗ (Дт 661 Кт 641), ЄСВ — витрати ОСББ (Дт 92 Кт 651).
+    for (const pr of payrollRuns) {
+        if (pr.status !== 'approved' || !inRange(pr.period) || !pr.run?.rows) continue;
+        const date = lastDay(pr.period);
+        const base = { date, period: pr.period, src: 'payroll', ref: `payroll-${pr.period}` };
+        for (const r of pr.run.rows) {
+            add({ ...base, dr: '92', cr: '661', kop: r.grossKop, dA: 'salary', cA: r.name, memo: `Нараховано ${r.kind === 'gph' ? 'за договором ЦПД' : 'зарплату'} за ${monthName(pr.period)}` });
+            add({ ...base, dr: '661', cr: '641', kop: r.pdfoKop, dA: r.name, cA: 'pdfo', memo: 'Утримано ПДФО 18 %' });
+            add({ ...base, dr: '661', cr: '641', kop: r.vzKop, dA: r.name, cA: 'vz', memo: 'Утримано військовий збір 5 %' });
+            add({ ...base, dr: '92', cr: '651', kop: r.esvKop, dA: 'esv', cA: r.name, memo: 'Нараховано ЄСВ 22 %' });
         }
     }
 

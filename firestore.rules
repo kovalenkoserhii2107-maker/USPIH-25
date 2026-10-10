@@ -604,6 +604,22 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Зарплата: картки людей (РНОКПП, IBAN, оклад — персональні дані),
+    // відомості й налаштування. Читають голова й бухгалтер, пише лише
+    // сервер (payrollAction): затвердження — голова, журнал дій.
+    match /payroll_people/{id} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /payroll_runs/{period} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /payroll_settings/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
     // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
     // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.
     match /journal_periods/{period} {

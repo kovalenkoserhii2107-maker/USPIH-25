@@ -8,7 +8,7 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
@@ -17,6 +17,7 @@ import { session } from './firebase.js';
 import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
 import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
+import { openPayroll } from './buh-payroll.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -306,6 +307,40 @@ export function journalItems(j) {
         text: block ? `Що заважає: ${block.text}` : 'Перевірки пройдено: проводки збалансовано, виписку розібрано, внески нараховано. Після закриття операції місяця змінити не можна.' } }];
 }
 
+/**
+ * Зарплата: голові — затвердити відомість; бухгалтеру — скласти її,
+ * виплатити аванс (з 13-го) і остаточний розрахунок (з останнього дня
+ * місяця). Виплата — платежі в Приват24 на підпис голови.
+ */
+export function payrollItems(p, chair) {
+    if (!p || !p.activePeople) return [];
+    const out = [];
+    const month = p.today.slice(0, 7), day = Number(p.today.slice(8, 10));
+    const name = per => new Date(`${per}-15`).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' }).replace(' р.', '');
+    const lastDay = per => new Date(Date.UTC(Number(per.slice(0, 4)), Number(per.slice(5, 7)), 0)).getUTCDate();
+    const setup = (id, extra) => out.push({ tx: { id }, proposal: { type: 'setup', meta: 'зарплата', ...extra } });
+    for (const r of p.runs) {
+        if (r.status === 'draft' && chair) {
+            setup(`payroll-approve:${r.period}`, { payrollPeriod: r.period, payrollAction: 'approve', yes: 'Затвердити',
+                title: `Затвердіть відомість зарплати за ${name(r.period)}`, text: 'Бухгалтер склав відомість: нарахування, утримання ПДФО й військового збору, ЄСВ. Після затвердження — платежі на ваш підпис у Приват24.' });
+        }
+        if (r.status !== 'approved' || r.final) continue;
+        if (r.period === month && !r.advance && day >= 13) {
+            setup(`payroll-advance:${r.period}`, { payrollPeriod: r.period, payrollAction: 'advance', yes: 'Створити платежі',
+                title: `Виплатіть аванс за ${name(r.period)}`, text: 'Зарплату платять двічі на місяць (ст. 115 КЗпП). ПДФО й військовий збір з авансу — у той самий день.' });
+        }
+        if (r.period < month || (r.period === month && day >= lastDay(month))) {
+            setup(`payroll-final:${r.period}`, { payrollPeriod: r.period, payrollAction: 'final', yes: 'Створити платежі',
+                title: `Виплатіть зарплату за ${name(r.period)}`, text: 'Решта на руки, ПДФО й військовий збір, ЄСВ (до 20 числа). Якщо табель змінився — спершу виправте відомість.' });
+        }
+    }
+    if (!p.runs.some(r => r.period === month) && day >= 10) {
+        setup(`payroll-new:${month}`, { payrollPeriod: month, yes: 'Відкрити', title: `Складіть відомість зарплати за ${name(month)}`,
+            text: 'Табель і акти ЦПД — система порахує утримання й ЄСВ; голова затвердить.' });
+    }
+    return out;
+}
+
 /** Справи з витратами для «Вхідних» (голова бачить і затвердження). */
 export function expenseItems(ex, payments, chair) {
     if (!ex) return [];
@@ -327,9 +362,9 @@ export function expenseItems(ex, payments, chair) {
 let payAccount = '';
 export async function loadInbox() {
     const thisYear = String(new Date().getFullYear());
-    const [queue, dir, pays, charges, ex, payments, budget, journal] = await Promise.all([loadQueue(), loadDirectory(),
+    const [queue, dir, pays, charges, ex, payments, budget, journal, payroll] = await Promise.all([loadQueue(), loadDirectory(),
         activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null),
-        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null), loadJournal(null).catch(() => null)]);
+        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null), loadJournal(null).catch(() => null), loadPayroll(null).catch(() => null)]);
     dirCache = dir;
     exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
@@ -339,6 +374,7 @@ export async function loadInbox() {
     items = chargeItems(charges)
         .concat(budgetItems(budget))
         .concat(journalItems(journal))
+        .concat(payrollItems(payroll, session.role === 'chair'))
         .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
         .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
@@ -410,6 +446,16 @@ const confirmProposal = item => {
     if (item.proposal.type === 'charge') { runCharge(item); return; }
     if (item.proposal.type === 'setup' && item.proposal.publish) { runTask(item, () => publishFinance(item.proposal.year)); return; }
     if (item.proposal.type === 'setup' && item.proposal.budgetYear) { openBudget(item.proposal.budgetYear); return; }
+    if (item.proposal.type === 'setup' && item.proposal.payrollAction) {
+        const { payrollPeriod: period, payrollAction: what } = item.proposal;
+        runTask(item, async () => {
+            if (what === 'approve') { await payrollAct({ action: 'approve', period }); toast('Відомість затверджено', 'success'); return; }
+            const r = await payrollAct({ action: 'pay', period, stage: what });
+            toast(`Платежів у Приват24: ${r.created}. Голова підписує пачку`, 'success');
+        });
+        return;
+    }
+    if (item.proposal.type === 'setup' && item.proposal.payrollPeriod) { openPayroll(item.proposal.payrollPeriod); return; }
     if (item.proposal.type === 'setup' && item.proposal.closePeriod) {
         runTask(item, async () => { await journalAct({ action: 'close', period: item.proposal.closePeriod }); toast('Місяць закрито', 'success'); });
         return;

@@ -95,3 +95,25 @@ test('відбиток місяця змінюється, коли змінюю�
     assert.deepEqual(j.periodsUpTo('2027-01'), ['2026-10', '2026-11', '2026-12', '2027-01']);
     assert.equal(j.lastDay('2026-02'), '2026-02-28');
 });
+
+test('зарплата: нараховано 92/661, утримано 661/641, ЄСВ 92/651; виплати за відомістю закривають рахунки', () => {
+    const OWN = 'UA213052990000026001234567890';
+    const at = s => new Date(`${s}T10:00:00Z`);
+    const run = { rows: [{ name: 'Працівник Т.', kind: 'employee', grossKop: 864700, pdfoKop: 155646, vzKop: 43235, esvKop: 190234 }] };
+    const pays = [['p1', 'e1', 332909], ['p2', 'pdfo', 77823], ['p3', 'vz', 21618], ['p4', 'e1', 332910], ['p5', 'pdfo', 77823], ['p6', 'vz', 21617], ['p7', 'esv', 190234]];
+    const input = {
+        payrollRuns: [{ period: '2026-10', status: 'approved', run }, { period: '2026-11', status: 'draft', run }],
+        payrollPayments: new Map(pays.map(([id, key]) => [id, { key, name: key === 'e1' ? 'Працівник Т.' : 'ГУК' }])),
+        bankTx: pays.map(([id, , kop], i) => ({ id: `t${i}`, account: OWN, at: at(i < 3 ? '2026-10-15' : '2026-10-30'), period: '2026-10', direction: 'out', kind: 'expense',
+            category: id === 'p7' ? 'esv' : 'salary', status: 'done', paymentId: id, amountKop: kop }))
+    };
+    const tb = j.trialBalance(j.journal(input, '2026-10'), '2026-10');
+    const acc = a => tb.rows.find(r => r.acc === a);
+    assert.equal(tb.balanced, true);
+    for (const a of ['661', '641', '651']) assert.equal(acc(a).closeDr + acc(a).closeCr, 0, a);
+    // Витрати місяця: зарплата + ЄСВ, покриті цільовим фінансуванням.
+    assert.equal(acc('92').dr, 864700 + 190234);
+    assert.deepEqual(acc('641').byA.map(x => [x.a, x.cr]).sort(), [['pdfo', 155646], ['vz', 43235]]);
+    // Чернетка відомості в проводки не йде.
+    assert.equal(j.journal(input, '2026-11').filter(e => e.period === '2026-11' && e.src === 'payroll').length, 0);
+});

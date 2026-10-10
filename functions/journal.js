@@ -35,7 +35,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
 
     /** Усе, з чого будуються проводки. */
     async function load() {
-        const [ledgerSnap, txSnap, exSnap, supSnap, runSnap, periodSnap, aptSnap, chargeSettings] = await Promise.all([
+        const [ledgerSnap, txSnap, exSnap, supSnap, runSnap, periodSnap, aptSnap, chargeSettings, payrollSnap, payrollPaySnap, payrollPeople] = await Promise.all([
             db.collectionGroup('ledger').where('kind', 'in', ['charge', 'opening']).get(),
             db.collection('bank_tx').where('period', '>=', core.START_PERIOD).get(),
             db.collection('expenses').get(),
@@ -43,8 +43,14 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             db.collection('charges_runs').select().get(),
             db.collection('journal_periods').get(),
             db.collection('apartments').get(),
-            db.doc('charges/settings').get()
+            db.doc('charges/settings').get(),
+            db.collection('payroll_runs').get(),
+            db.collection('payments').where('kind', 'in', ['salary', 'tax']).get(),
+            db.collection('payroll_people').select('active').get()
         ]);
+        // Платежі за відомістю зарплати: { paymentId → { key, name } } для погашення 661/641/651.
+        const payrollPayments = new Map(payrollPaySnap.docs.filter(d => d.data().payroll?.period)
+            .map(d => [d.id, { key: d.data().payroll.key, name: d.data().recipient?.name || '' }]));
         const ledgers = new Map();
         ledgerSnap.forEach(d => {
             if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
@@ -58,8 +64,11 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 ledgers,
                 bankTx: txSnap.docs.map(d => ({ id: d.id, ...d.data() })),
                 expenses: exSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-                suppliers: new Map(supSnap.docs.map(d => [d.id, d.data()]))
+                suppliers: new Map(supSnap.docs.map(d => [d.id, d.data()])),
+                payrollRuns: payrollSnap.docs.map(d => ({ period: d.id, ...d.data() })),
+                payrollPayments
             },
+            payrollActive: payrollPeople.docs.filter(d => d.data().active !== false).length,
             charged: new Set(runSnap.docs.map(d => d.id)),
             periods,
             closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
@@ -102,6 +111,11 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 ? { level: 'ok', text: 'Місяць закрито; операції відтоді не змінювались' }
                 : { level: 'warn', text: 'Після закриття змінились операції цього місяця (наприклад, пізня виписка банку). Голова може відкрити місяць, щоб розібратися' }]
             : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb });
+        // Є працівники, а відомість місяця не затверджено — зарплата не потрапить у проводки місяця.
+        if (!isClosed && data.payrollActive && data.input.payrollRuns.find(r => r.period === p)?.status !== 'approved') {
+            const ok = checks.findIndex(c => c.level === 'ok');
+            checks.splice(ok >= 0 ? ok : checks.length, 0, { level: 'warn', text: 'Відомість зарплати за місяць не затверджено — нарахування зарплати не потрапить у проводки місяця' });
+        }
         // Порівняння з балансами квартир має сенс для останнього місяця обліку.
         if (p === now.slice(0, 7) || p === core.shift(now.slice(0, 7), -1)) {
             const latest = core.trialBalance(core.journal(data.input, now.slice(0, 7)), now.slice(0, 7));
@@ -119,7 +133,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             canReopen: isClosed && lastClosed === p,
             accounts: core.ACCOUNTS,
             // Назви для аналітики: статті витрат (92), складові внеску (48), джерела доходу.
-            labels: { 92: ITEMS, 48: { ...Object.fromEntries(data.components.map(c => [c.id, c.name])), grant: INCOME_SOURCES.grant }, 703: INCOME_SOURCES, 719: INCOME_SOURCES, 733: INCOME_SOURCES },
+            labels: { 92: ITEMS, 641: { pdfo: 'ПДФО', vz: 'Військовий збір' }, 48: { ...Object.fromEntries(data.components.map(c => [c.id, c.name])), grant: INCOME_SOURCES.grant }, 703: INCOME_SOURCES, 719: INCOME_SOURCES, 733: INCOME_SOURCES },
             tb,
             entries: entries.filter(e => e.period === p).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(0, 6000),
             checks

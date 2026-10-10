@@ -545,3 +545,19 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
     .ov-ops .t-date { grid-area: date; font-size: 12px; }
     .ov-ops .t-tag { grid-area: tag; justify-self: end; }
 }
+
+/* Зарплата */
+.pr-table .pr-in { width: 92px; min-height: 34px; padding: 4px 8px; text-align: right; }
+.pr-table .pr-days { width: 56px; }
+.pr-table .pr-input { white-space: nowrap; }
+.pr-table .pr-input small { margin-left: 4px; color: #64748b; font-size: 12px; }
+.pr-notes { display: block; margin-top: 3px; font-size: 12px; line-height: 1.35; color: #9a4700; }
+.pr-notes .is-out { color: #b42318; }
+.pr-form { margin-top: 14px; padding-top: 12px; border-top: 1px solid #eef2f6; }
+.pr-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+.pr-check input { width: 18px; height: 18px; accent-color: var(--blue, #007aff); }
+.pr-taxes .field-input { min-width: 140px; }
+.pr-table { min-width: 980px; }
+.pr-table td.t-main { min-width: 220px; max-width: 320px; white-space: normal; }
+.pr-table td.t-main small, .pr-notes { white-space: normal; overflow: visible; text-overflow: clip; }
+#viewPayroll .buh-card-head .btn-soft, #viewPayroll .buh-inline-form .btn-soft, #viewPayroll .pay-form-actions .btn-primary { width: auto; flex: 0 0 auto; }
