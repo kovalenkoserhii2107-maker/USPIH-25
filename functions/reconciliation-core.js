@@ -37,8 +37,28 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
     }
     for (const e of expenses.filter(e => managed(e.period) && ['approved', 'paid'].includes(e.status))) {
         const txIds = e.txIds || [];
-        const paid = txIds.reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0);
+        // Оплати за документом мінус повернені банком (повернення «bounce» знову робить документ до сплати).
+        const paid = txIds.reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0) - (e.refundTxIds || []).reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0);
         if (new Set(txIds).size !== txIds.length || paid !== (e.paidKop || 0) || paid > e.amountKop || txIds.some(id => txMap.get(id)?.expenseId !== e.id)) block(`Документ витрат ${e.id}: сума оплат або зв'язки не відповідають виписці`);
+    }
+    // Повернення списаного: оригінал є, знає про повернення, повернено не більше, ніж списано.
+    const refunds = new Map();
+    for (const tx of bankTx.filter(t => managed(t.period) && t.kind === 'refund' && t.status === 'done')) {
+        const o = txMap.get(tx.refundOf);
+        if (!o || o.direction !== 'out' || tx.direction !== 'in' || !(o.refundTxIds || []).includes(tx.id)) block(`Повернення ${tx.id}: немає відповідного списання`);
+        refunds.set(tx.refundOf, (refunds.get(tx.refundOf) || 0) + tx.amountKop);
+    }
+    for (const [id, kop] of refunds) {
+        const o = txMap.get(id);
+        if (o && (kop > o.amountKop || kop !== (o.refundedKop || 0))) block(`Списання ${id}: сума повернень не відповідає виписці`);
+    }
+    // Повернення переплати співвласнику: запис історії підтверджено списанням.
+    const refundEntries = new Set();
+    for (const tx of bankTx.filter(t => managed(t.period) && t.direction === 'out' && t.category === 'resident_refund' && t.status === 'done')) {
+        const a = tx.allocations?.[0];
+        const entry = a && (ledgers.get(a.apt) || []).find(e => e._id === a.ledgerId);
+        if (!entry || entry.kind !== 'refund' || entry.txId !== tx.id || entryKop(entry) !== tx.amountKop) block(`Повернення переплати ${tx.id}: запис історії квартири відсутній або не відповідає виписці`);
+        if (a) refundEntries.add(`${a.apt}/${a.ledgerId}`);
     }
     for (const p of payrollRuns.filter(p => managed(p.period) && p.status === 'approved')) {
         for (const field of ['grossKop', 'pdfoKop', 'vzKop', 'netKop', 'esvKop']) {
@@ -68,6 +88,7 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
         if (Array.isArray(parts) && parts.length && (parts.some(p => !Number.isSafeInteger(p.amountKop)) || parts.reduce((s, p) => s + p.amountKop, 0) !== entryKop(e))) block(`Прим. ${apt}, ${e.period}: сума складових не відповідає сумі запису історії`);
         if (e.kind === 'charge' && e.source === 'charges' && !(apt in (byPeriod.get(e.period)?.amounts || {}))) block(`Нарахування ${e.period}, прим. ${apt}: запис історії не включено у відомість`);
         if (e.kind === 'payment' && !expected.has(`${apt}/${e._id}`)) block(`Оплата ${e.period}, прим. ${apt}: запис історії не підтверджено розносом виписки`);
+        if (e.kind === 'refund' && !refundEntries.has(`${apt}/${e._id}`)) block(`Повернення ${e.period}, прим. ${apt}: запис історії не підтверджено списанням банку`);
     }
     if (openingSet) for (const apt of apartments) {
         const entries = ledgers.get(apt.apt) || [];

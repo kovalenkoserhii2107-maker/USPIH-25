@@ -634,6 +634,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Вхідна оборотно-сальдова на 30.09.2026: пише сервер (journal.js).
+    match /journal_opening/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
     // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
     // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.
     match /journal_periods/{period} {

@@ -22,8 +22,10 @@
 //   кінець місяця: Дт 48 Кт 719 на суму витрат (цільове фінансування
 //   використано), 719 і 92 — на 79; результат 0 (Кт 703/733 — лише якщо
 //   облікова політика колись виділить власні доходи, тоді результат — на 44).
-//   00 — технічний рахунок вхідних залишків, доки не внесено всю
-//   вхідну оборотно-сальдову (частина 10).
+//   вхідна оборотно-сальдова на 30.09.2026 (journal_opening/main): кожен
+//   рядок — проти технічного 00; залишки квартир (377) і документів
+//   постачальників до початку обліку (631) — автоматично. Затверджена й
+//   збалансована ОСВ закриває 00 у нуль.
 //
 // Тут немає ні мережі, ні бази: тести — journal-core.test.js.
 // ============================================================
@@ -33,8 +35,20 @@ const { toKop } = require('./bank-core');
 
 const ACCOUNTS = {
     '00': 'Введення залишків (технічний)',
+    10: 'Основні засоби',
+    11: 'Інші необоротні матеріальні активи',
+    131: 'Знос основних засобів',
+    132: 'Знос інших необоротних матеріальних активів',
+    20: 'Виробничі запаси',
+    22: 'Малоцінні та швидкозношувані предмети',
+    301: 'Готівка в національній валюті (каса)',
     311: 'Поточні рахунки в національній валюті',
+    313: 'Інші рахунки в банку (депозит)',
+    361: 'Розрахунки з вітчизняними покупцями (орендарі)',
+    371: 'Розрахунки за виданими авансами',
+    372: 'Розрахунки з підзвітними особами',
     377: 'Розрахунки з іншими дебіторами (співвласники)',
+    40: 'Зареєстрований (пайовий) капітал',
     44: 'Нерозподілені прибутки (непокриті збитки)',
     48: 'Цільове фінансування і цільові надходження',
     631: 'Розрахунки з вітчизняними постачальниками',
@@ -49,7 +63,16 @@ const ACCOUNTS = {
     92: 'Адміністративні витрати'
 };
 /** Порядок у відомості — за класами рахунків. */
-const ORDER = ['00', '311', '377', '44', '48', '631', '641', '651', '661', '685', '703', '719', '733', '79', '92'];
+const ORDER = ['00', '10', '11', '131', '132', '20', '22', '301', '311', '313', '361', '371', '372', '377', '40', '44', '48', '631', '641', '651', '661', '685', '703', '719', '733', '79', '92'];
+
+/**
+ * Рахунки, залишки яких вносять у вхідну ОСВ руками. 377 (співвласники) і
+ * документи постачальників до початку обліку (631) — автоматично; інші
+ * борги постачальникам, підзвітні суми, фонди (48) — рядками. Аналітика
+ * обовʼязкова там, де за нею звіряють: рахунок банку, постачальник, людина.
+ */
+const OPENING_ACCOUNTS = ['10', '11', '131', '132', '20', '22', '301', '311', '313', '361', '371', '372', '40', '44', '48', '631', '641', '651', '661', '685'];
+const OPENING_NEEDS_A = { 311: 'IBAN рахунку', 313: 'рахунок', 361: 'орендаря', 371: 'кому видано аванс', 372: 'підзвітну особу', 631: 'постачальника', 661: 'працівника', 685: 'кредитора' };
 
 /** Інші надходження → рахунок. Усі — цільове фінансування (48), як у звітності ОСББ. */
 const INCOME_ACCOUNT = { rent: '48', equipment: '48', interest: '48', grant: '48', refund: '48', other: '48' };
@@ -89,10 +112,13 @@ function periodsUpTo(period, start = START_PERIOD) {
  * bankTx: [{ id, ...bank_tx }]; expenses: [{ id, ...expenses }];
  * suppliers: Map<id, { name }>; components: Map<id, name>.
  */
-function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], suppliers = new Map(), payrollRuns = [], payrollPayments = new Map(), start = START_PERIOD, until }) {
+function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], suppliers = new Map(), payrollRuns = [], payrollPayments = new Map(), opening = null, start = START_PERIOD, until }) {
     const out = [];
     const add = (e) => { if (e.kop) out.push(e); };
     const inRange = p => p && p >= start && (!until || p <= until);
+
+    // Затверджена вхідна ОСВ: дебетовий залишок — Дт рахунку Кт 00, кредитовий — Дт 00 Кт рахунку.
+    if (opening?.status === 'approved') out.push(...openingEntries(opening.lines, start));
 
     for (const [apt, entries] of ledgers) {
         for (const e of entries) {
@@ -112,6 +138,22 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
         }
     }
 
+    const txById = new Map(bankTx.map(t => [t.id, t]));
+    /** Рахунок дебету списання (кому платили): ним же проводимо повернення цих коштів. */
+    const debitOf = t => {
+        const cp = t.counterparty || {};
+        if (t.kind === 'expense' && t.status === 'done' && t.category === 'resident_refund') return { dr: '377', dA: t.allocations?.[0]?.apt || '' };
+        if (t.kind === 'expense' && t.status === 'done' && payrollPayments.has(t.paymentId)) {
+            const pp = payrollPayments.get(t.paymentId);
+            const dr = pp.key === 'pdfo' || pp.key === 'vz' ? '641' : pp.key === 'esv' ? '651' : '661';
+            return { dr, dA: dr === '661' ? pp.name : pp.key };
+        }
+        if (t.kind === 'expense' && t.status === 'done' && t.expenseId) return { dr: '631', dA: expenses.find(x => x.id === t.expenseId)?.supplierName || cp.name || '' };
+        if (t.kind === 'expense' && t.status === 'done' && t.category === 'supplier') return { dr: '631', dA: cp.name || '', advance: true };
+        if (t.kind === 'expense' && t.status === 'done') return { dr: '92', dA: BANK_EXPENSE_ITEM[t.category] || 'other' };
+        return { dr: '685', dA: 'нерозібрано', unknown: true };
+    };
+
     for (const t of bankTx) {
         if (!inRange(t.period)) continue;
         const date = kyivDate(t.at) || lastDay(t.period);
@@ -125,26 +167,23 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
                 add({ ...base, dr: '311', cr: INCOME_ACCOUNT[t.category] || '719', kop: t.amountKop, dA: acc, cA: t.category || 'other', memo: t.purpose || cp.name || '' });
             } else if (t.kind === 'internal') {
                 // Переказ між власними рахунками — проводимо з боку списання.
+            } else if (t.kind === 'refund' && t.status === 'done' && txById.has(t.refundOf)) {
+                // Повернення списаного: назад на рахунок, з якого платили (постачальник, зарплата, витрата).
+                const back = debitOf(txById.get(t.refundOf));
+                add({ ...base, dr: '311', cr: back.dr, kop: t.amountKop, dA: acc, cA: back.dA, memo: `Повернення: ${t.purpose || cp.name || ''}` });
             } else {
                 add({ ...base, dr: '311', cr: '685', kop: t.amountKop, dA: acc, cA: 'нерозібрано', memo: `Нерозібране надходження: ${t.purpose || cp.name || ''}` });
             }
         } else if (t.direction === 'out') {
             if (t.kind === 'internal') {
                 add({ ...base, dr: '311', cr: '311', kop: t.amountKop, dA: cp.account || 'інший рахунок', cA: acc, memo: t.purpose || 'Переказ між рахунками ОСББ' });
-            } else if (t.kind === 'expense' && t.status === 'done' && payrollPayments.has(t.paymentId)) {
-                // Платіж за відомістю зарплати: погашаємо нараховане (661), утримане (641) й ЄСВ (651).
-                const pp = payrollPayments.get(t.paymentId);
-                const dr = pp.key === 'pdfo' || pp.key === 'vz' ? '641' : pp.key === 'esv' ? '651' : '661';
-                add({ ...base, dr, cr: '311', kop: t.amountKop, dA: dr === '661' ? pp.name : pp.key, cA: acc, memo: t.purpose || '' });
-            } else if (t.kind === 'expense' && t.status === 'done' && t.expenseId) {
-                const e = expenses.find(x => x.id === t.expenseId);
-                add({ ...base, dr: '631', cr: '311', kop: t.amountKop, dA: e?.supplierName || cp.name || '', cA: acc, memo: t.purpose || '' });
-            } else if (t.kind === 'expense' && t.status === 'done' && t.category === 'supplier') {
-                add({ ...base, dr: '631', cr: '311', kop: t.amountKop, dA: cp.name || '', cA: acc, memo: `Оплата без документа (аванс): ${t.purpose || ''}` });
-            } else if (t.kind === 'expense' && t.status === 'done') {
-                add({ ...base, dr: '92', cr: '311', kop: t.amountKop, dA: BANK_EXPENSE_ITEM[t.category] || 'other', cA: acc, memo: t.purpose || '' });
             } else {
-                add({ ...base, dr: '685', cr: '311', kop: t.amountKop, dA: 'нерозібрано', cA: acc, memo: `Нерозібране списання: ${t.purpose || cp.name || ''}` });
+                // Зарплата за відомістю — 661/641/651; документ постачальника — 631; без документа — аванс 631;
+                // повернення переплати співвласнику — 377; інше — 92; нерозібране — 685.
+                const d = debitOf(t);
+                const memo = d.unknown ? `Нерозібране списання: ${t.purpose || cp.name || ''}` : d.advance ? `Оплата без документа (аванс): ${t.purpose || ''}`
+                    : d.dr === '377' ? `Повернення переплати, кв. ${d.dA}` : t.purpose || '';
+                add({ ...base, dr: d.dr, cr: '311', kop: t.amountKop, dA: d.dA, cA: acc, memo });
             }
         }
     }
@@ -173,7 +212,7 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
             src: 'opening', ref: `opening-${e.id}`, memo: `Вхідний борг за документом № ${e.number || '—'} (${e.period})` });
     }
     for (const e of expenses) {
-        if (!['approved', 'paid'].includes(e.status) || !inRange(e.period)) continue;
+        if (!['approved', 'paid', 'storno'].includes(e.status) || !inRange(e.period)) continue;
         const date = e.date && e.date.startsWith(e.period) ? e.date : lastDay(e.period);
         add({ date, period: e.period, dr: '92', cr: '631', kop: e.amountKop, dA: e.item || 'other', cA: e.supplierName || suppliers.get(e.supplierId)?.name || '',
             src: 'expense', ref: e.id, memo: `${e.description || ''} (№ ${e.number || '—'})`.trim() });
@@ -182,6 +221,44 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
 }
 
 const sum = (list, f) => list.reduce((s, x) => s + f(x), 0);
+
+/** Рядки вхідної ОСВ → проводки проти 00 на останній день перед початком обліку. */
+function openingEntries(lines = [], start = START_PERIOD) {
+    const period = shift(start, -1);
+    const date = lastDay(period);
+    return lines.filter(l => l.kop > 0).map((l, i) => {
+        const base = { date, period, kop: l.kop, src: 'opening', ref: `ob-${i + 1}`, memo: l.memo || `Вхідний залишок ${l.acc}` };
+        return l.side === 'dr' ? { ...base, dr: l.acc, cr: '00', dA: l.a || '' } : { ...base, dr: '00', cr: l.acc, cA: l.a || '' };
+    });
+}
+
+/** Перевірка рядків вхідної ОСВ: null — гаразд, інакше текст помилки. */
+function checkOpening(lines) {
+    if (!Array.isArray(lines)) return 'Немає рядків';
+    if (lines.length > 500) return 'Забагато рядків: до 500';
+    const seen = new Set();
+    for (const [i, l] of lines.entries()) {
+        const n = `Рядок ${i + 1}`;
+        if (!OPENING_ACCOUNTS.includes(l.acc)) return `${n}: рахунок ${l.acc || '—'} не вносять руками (377 і документи постачальників — автоматично)`;
+        if (!['dr', 'cr'].includes(l.side)) return `${n}: оберіть дебет чи кредит`;
+        if (!Number.isSafeInteger(l.kop) || l.kop <= 0) return `${n}: сума має бути більшою за нуль`;
+        if (OPENING_NEEDS_A[l.acc] && !String(l.a || '').trim()) return `${n}: для рахунку ${l.acc} вкажіть ${OPENING_NEEDS_A[l.acc]}`;
+        if (l.acc === '311' && !/^UA\d{27}$/.test(l.a)) return `${n}: для 311 вкажіть IBAN рахунку (UA і 27 цифр)`;
+        const key = `${l.acc}|${String(l.a || '').toLowerCase()}`;
+        if (seen.has(key)) return `${n}: рахунок ${l.acc}${l.a ? ` (${l.a})` : ''} уже є — обʼєднайте рядки`;
+        seen.add(key);
+    }
+    return null;
+}
+
+/** Підсумки вхідної ОСВ разом з автоматичними залишками: різниця має бути 0. */
+function openingTotals(autoEntries, lines) {
+    const autoDr = sum(autoEntries.filter(e => e.cr === '00'), e => e.kop);
+    const autoCr = sum(autoEntries.filter(e => e.dr === '00'), e => e.kop);
+    const dr = autoDr + sum(lines.filter(l => l.side === 'dr'), l => l.kop);
+    const cr = autoCr + sum(lines.filter(l => l.side === 'cr'), l => l.kop);
+    return { autoDr, autoCr, dr, cr, diff: dr - cr };
+}
 
 /**
  * Проводки кінця місяця: використання цільового фінансування на суму
@@ -266,7 +343,7 @@ function trialBalance(entries, period) {
  * Перевірки перед закриттям місяця. level: block — закрити не можна;
  * warn — можна, але бухгалтер має бачити; ok — усе гаразд.
  */
-function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods = new Set(), closed = [], tb }) {
+function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods = new Set(), closed = [], tb, openingStatus = 'none' }) {
     const out = [];
     const month = bankTx.filter(t => t.period === period);
     if (today <= lastDay(period)) out.push({ level: 'block', text: `Місяць ще не скінчився: закрити можна після ${lastDay(period).split('-').reverse().join('.')}` });
@@ -279,8 +356,13 @@ function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods
     if (pending.length) out.push({ level: 'block', text: `Документи чекають затвердження головою: ${pending.length} — затвердьте або відхиліть їх перед закриттям місяця` });
     const advance = tb?.rows.find(r => r.acc === '631')?.byA.filter(x => x.closeDr) || [];
     if (advance.length) out.push({ level: 'warn', text: `Оплати постачальникам без документа (аванси, Дт 631): ${advance.map(x => x.a).join(', ')}` });
-    const opening = tb?.rows.find(r => r.acc === '00');
-    if (opening) out.push({ level: 'warn', text: 'Вхідні залишки — лише за співвласниками й документами постачальників до початку обліку (рахунок 00). Залишки банку й інших рахунків на 30.09.2026 — з вхідною оборотно-сальдовою при переході (частина 10)' });
+    const r00 = tb?.rows.find(r => r.acc === '00');
+    const left00 = r00 ? r00.closeDr - r00.closeCr : 0;
+    if (openingStatus !== 'approved') {
+        out.push({ level: 'warn', text: 'Вхідну оборотно-сальдову на 30.09.2026 не затверджено: банк, каса, фонди й інші рахунки — без вхідних залишків (рахунок 00). Заповніть «Вхідну ОСВ» у цьому розділі' });
+    } else if (left00) {
+        out.push({ level: 'block', text: `Вхідна ОСВ не збігається з автоматичними залишками (квартири, документи до початку обліку): на рахунку 00 лишилось ${(Math.abs(left00) / 100).toFixed(2)} грн ${left00 > 0 ? 'за дебетом' : 'за кредитом'}. Оновіть вхідну ОСВ і затвердьте знову` });
+    }
     if (tb && !tb.balanced) out.push({ level: 'block', text: 'Дебет не дорівнює кредиту — помилка в правилах проводок' });
     if (!out.some(c => c.level === 'block')) out.push({ level: 'ok', text: 'Можна закривати: після закриття операції цього місяця змінити не можна' });
     return out;
@@ -296,6 +378,6 @@ function entriesKey(entries, period) {
 const isClosed = (period, closed = []) => closed.includes(String(period || ''));
 
 module.exports = {
-    START_PERIOD, ACCOUNTS, ORDER, INCOME_ACCOUNT, lastDay, shift, periodsUpTo,
-    buildEntries, closingEntries, journal, trialBalance, closeChecks, entriesKey, isClosed
+    START_PERIOD, ACCOUNTS, ORDER, INCOME_ACCOUNT, OPENING_ACCOUNTS, OPENING_NEEDS_A, lastDay, shift, periodsUpTo,
+    buildEntries, openingEntries, checkOpening, openingTotals, closingEntries, journal, trialBalance, closeChecks, entriesKey, isClosed
 };

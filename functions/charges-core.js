@@ -287,6 +287,7 @@ function balanceFromLedger(entries, startPeriod = START_PERIOD) {
         else if (String(e.period || '') < startPeriod) continue;
         else if (e.kind === 'charge') kop -= entryKop(e);
         else if (e.kind === 'payment') kop += entryKop(e);
+        else if (e.kind === 'refund') kop -= entryKop(e);     // повернення переплати співвласнику
     }
     return kop;
 }
@@ -295,7 +296,22 @@ function balanceFromLedger(entries, startPeriod = START_PERIOD) {
 // БАЛАНС ЗА СКЛАДОВИМИ (як у сервісі бухгалтера)
 // ------------------------------------------------------------
 const msOf = at => (at?.toMillis ? at.toMillis() : at?.toDate ? at.toDate().getTime() : at instanceof Date ? at.getTime() : (Date.parse(at) || 0));
-const KIND_ORDER = { opening: 0, charge: 1, payment: 2 };
+const KIND_ORDER = { opening: 0, charge: 1, payment: 2, refund: 3 };
+
+/**
+ * Повернення переплати: зменшуємо переплату складових — спершу основну
+ * (туди йде переплата за allocatePayment), потім інші; решта — з основної.
+ */
+function refundParts(kop, balances, order) {
+    const parts = {};
+    let left = kop;
+    for (const c of ['main', ...order.filter(c => c !== 'main')]) {
+        const take = Math.min(left, Math.max(0, balances[c] || 0));
+        if (take) { parts[c] = -take; left -= take; }
+    }
+    if (left) parts.main = (parts.main || 0) - left;
+    return parts;
+}
 
 /**
  * Розподіл оплати між складовими — як у сервісі бухгалтера: спершу
@@ -332,7 +348,7 @@ function allocatePayment(kop, balances, order) {
  */
 function replay(entries, { startPeriod = START_PERIOD, order = ['main'] } = {}) {
     const list = entries.map((e, i) => ({ e, i }))
-        .filter(({ e }) => e.kind === 'opening' || (['charge', 'payment'].includes(e.kind) && String(e.period || '') >= startPeriod))
+        .filter(({ e }) => e.kind === 'opening' || (['charge', 'payment', 'refund'].includes(e.kind) && String(e.period || '') >= startPeriod))
         .sort((a, b) => (msOf(a.e.at) - msOf(b.e.at)) || (KIND_ORDER[a.e.kind] - KIND_ORDER[b.e.kind]) || a.i - b.i);
     const balances = {};
     const add = (c, v) => { balances[c] = (balances[c] || 0) + v; };
@@ -341,6 +357,7 @@ function replay(entries, { startPeriod = START_PERIOD, order = ['main'] } = {}) 
         let parts;
         if (e.kind === 'opening') parts = e.parts && Object.keys(e.parts).length ? { ...e.parts } : { main: entryKop(e) };
         else if (e.kind === 'charge') parts = Object.fromEntries((e.parts?.length ? e.parts : [{ component: 'main', amountKop: entryKop(e) }]).map(p => [p.component, -p.amountKop]));
+        else if (e.kind === 'refund') parts = refundParts(entryKop(e), balances, [...new Set([...order, ...Object.keys(balances)])]);
         else parts = allocatePayment(entryKop(e), balances, [...new Set([...order, ...Object.keys(balances)])]);
         Object.entries(parts).forEach(([c, v]) => add(c, v));
         steps.push({ entry: e, parts });
@@ -360,7 +377,7 @@ function componentStatement(entries, period, opts = {}) {
             if (before) add(opening, c, v);
             if (before || during) add(closing, c, v);
             if (during && entry.kind === 'charge') add(charged, c, -v);
-            if (during && entry.kind === 'payment') add(paid, c, v);
+            if (during && ['payment', 'refund'].includes(entry.kind)) add(paid, c, v);
         }
     }
     return { opening, charged, paid, closing };
@@ -371,7 +388,7 @@ function paidByComponent(ledgers, year, opts = {}) {
     const out = {};
     for (const entries of ledgers.values()) {
         for (const { entry, parts } of replay(entries, opts).steps) {
-            if (entry.kind !== 'payment' || !String(entry.period || '').startsWith(String(year))) continue;
+            if (!['payment', 'refund'].includes(entry.kind) || !String(entry.period || '').startsWith(String(year))) continue;
             for (const [c, v] of Object.entries(parts)) out[c] = (out[c] || 0) + v;
         }
     }
@@ -388,7 +405,7 @@ function paymentOps(ledgers, year, opts = {}) {
     const out = [];
     for (const [apt, entries] of ledgers) {
         for (const { entry, parts } of replay(entries, opts).steps) {
-            if (entry.kind !== 'payment' || !String(entry.period || '').startsWith(String(year))) continue;
+            if (!['payment', 'refund'].includes(entry.kind) || !String(entry.period || '').startsWith(String(year))) continue;
             for (const [component, kop] of Object.entries(parts)) if (kop) out.push({ apt, at: entry.at, component, kop });
         }
     }
@@ -408,7 +425,8 @@ function statement(ledgers, period, startPeriod = START_PERIOD, order = ['main']
         const during = entries.filter(e => e.kind !== 'opening' && e.period === period && period >= startPeriod);
         const opening = balanceFromLedger(before, startPeriod);
         const charged = during.filter(e => e.kind === 'charge').reduce((s, e) => s + entryKop(e), 0);
-        const paid = during.filter(e => e.kind === 'payment').reduce((s, e) => s + entryKop(e), 0);
+        // Сплачено — за мінусом повернених переплат.
+        const paid = during.reduce((s, e) => s + (e.kind === 'payment' ? entryKop(e) : e.kind === 'refund' ? -entryKop(e) : 0), 0);
         const parts = componentStatement(entries, period, { startPeriod, order });
         for (const key of ['opening', 'charged', 'paid', 'closing']) {
             for (const [c, v] of Object.entries(parts[key])) {

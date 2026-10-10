@@ -97,7 +97,10 @@ function checkPerson(p) {
 
 /**
  * Нарахування за місяць одній людині.
- * input: { workedDays, bonusKop, actKop } — табель і акти місяця.
+ * input: { workedDays, bonusKop, actKop } — табель і акти місяця;
+ *   correctionKop (±), correctionFor (місяць), correctionNote — перерахунок
+ *   уже виплаченого за минулий місяць: проходить нарахуванням цього місяця
+ *   з утриманнями й ЄСВ (стару відомість не переписуємо).
  * Повертає { grossKop, pdfoKop, vzKop, netKop, esvBaseKop, esvKop, advance, final, warnings }.
  */
 function calcRow(person, input, period, rate, { advancePct = 50 } = {}) {
@@ -127,19 +130,28 @@ function calcRow(person, input, period, rate, { advancePct = 50 } = {}) {
         }
         if (worked < norm) warnings.push(`відпрацьовано ${worked} з ${norm} дн.`);
     }
+    // Перерахунок за минулий місяць: окремо від мінімальної бази й авансу поточного місяця.
+    const regularKop = grossKop;
+    const correctionKop = Math.round(Number(input.correctionKop) || 0);
+    if (correctionKop) {
+        grossKop += correctionKop;
+        esvBaseKop = Math.max(0, esvBaseKop + correctionKop);
+        warnings.push(`перерахунок${input.correctionFor ? ` за ${input.correctionFor.split('-').reverse().join('.')}` : ''}: ${correctionKop > 0 ? '+' : '−'}${uah(Math.abs(correctionKop))} грн${input.correctionNote ? ` (${input.correctionNote})` : ''}`);
+    }
     esvBaseKop = Math.min(esvBaseKop, rate.minWageKop * rate.maxBaseMult);
     const pdfoKop = pct(grossKop, rate.pdfo);
     const vzKop = pct(grossKop, rate.vz);
     const esvKop = pct(esvBaseKop, rate.esv);
     // Аванс — лише працівникам: частина нарахування з утриманнями в день виплати.
-    const advGross = person.kind === 'employee' ? Math.round(grossKop * advancePct / 100) : 0;
+    const advGross = person.kind === 'employee' ? Math.max(0, Math.min(grossKop, Math.round(regularKop * advancePct / 100))) : 0;
     const advance = { grossKop: advGross, pdfoKop: pct(advGross, rate.pdfo), vzKop: pct(advGross, rate.vz) };
     advance.netKop = advance.grossKop - advance.pdfoKop - advance.vzKop;
     advance.esvKop = pct(Math.min(advance.grossKop, esvBaseKop), rate.esv);
     const final = { grossKop: grossKop - advance.grossKop, pdfoKop: pdfoKop - advance.pdfoKop, vzKop: vzKop - advance.vzKop };
     final.netKop = final.grossKop - final.pdfoKop - final.vzKop;
     final.esvKop = esvKop - advance.esvKop;
-    return { grossKop, pdfoKop, vzKop, netKop: grossKop - pdfoKop - vzKop, esvBaseKop, esvKop, advance, final, normDays: norm, warnings };
+    return { grossKop, pdfoKop, vzKop, netKop: grossKop - pdfoKop - vzKop, esvBaseKop, esvKop, advance, final, normDays: norm, warnings,
+        correctionKop, correctionFor: correctionKop ? input.correctionFor || '' : '', correctionNote: correctionKop ? input.correctionNote || '' : '' };
 }
 
 /** Хто в відомості місяця: діючі на місяць (прийняті до кінця, не звільнені до початку). */

@@ -27,7 +27,13 @@ const isChair = () => session.role === 'chair';
 const human = d => (d ? String(d).split('-').reverse().join('.') : '');
 const tag = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="buh-tag ${c}">${escapeHtml(t)}</span>`; };
 const contractOf = id => ctx.contracts.find(c => c.id === id);
-const remaining = e => e.amountKop - (e.paidKop || 0);
+const remaining = e => e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0);
+const LIVE = ['pending', 'approved', 'paid'];
+let attaching = null;     // документ, який привʼязують до основного
+let stornoing = null;     // документ, який сторнують
+/** Основні документи постачальника, до яких можна привʼязати doc. */
+const mainsFor = doc => ctx.expenses.filter(x => x.id !== doc.id && x.supplierId === doc.supplierId && LIVE.includes(x.status) && !x.linkedTo && x.amountKop > 0 && x.amountKop >= (doc.amountKop || 0));
+const docName = x => `${ctx.docTypes[x.docType] || 'Документ'} № ${x.number} від ${human(x.date)}`;
 const docsWord = n => (n % 10 === 1 && n % 100 !== 11 ? 'документ' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'документи' : 'документів');
 const val = id => document.getElementById(id)?.value?.trim() ?? '';
 const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
@@ -73,6 +79,9 @@ function docFormHtml(d = {}) {
             <label class="field"><span class="field-label">У т.ч. ПДВ, грн</span><input id="dfVat" class="field-input" inputmode="decimal" placeholder="без ПДВ" value="${money2(d.vatKop)}"></label>
             <label class="field pay-wide"><span class="field-label">Стаття витрат</span><select id="dfItem" class="field-input field-select">${options(ctx.items, d.item || 'other')}</select></label>
             <label class="field pay-wide"><span class="field-label">За що</span><input id="dfDesc" class="field-input" maxlength="300" placeholder="Послуга чи товар, період" value="${escapeHtml(d.description || '')}"></label>
+            ${!d.id && supplierId ? `<label class="field pay-wide"><span class="field-label">Підтверджує документ тієї самої послуги</span>
+                <select id="dfLinked" class="field-input field-select"><option value="">Ні — це окрема витрата</option>${mainsFor({ supplierId, amountKop: 0 }).map(x =>
+                    `<option value="${escapeHtml(x.id)}"${x.id === d.linkedTo ? ' selected' : ''}>${escapeHtml(docName(x))} · ${fmtKop(x.amountKop)} грн</option>`).join('')}</select></label>` : ''}
             <label class="field pay-wide"><span class="field-label">Скан або PDF документа</span><input id="dfFiles" class="field-input" type="file" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"></label>
         </div>
         ${d.files?.length ? `<p class="buh-note">Уже додано: ${filesHtml(d.files)}</p>` : ''}
@@ -134,8 +143,50 @@ function docActions(e) {
     if (e.status === 'pending' && isChair()) out.push('<button type="button" class="btn-soft btn-compact" data-act="approve-doc">Затвердити</button>', '<button type="button" class="btn-ghost-small" data-act="reject-doc">Відхилити</button>');
     if (e.status === 'approved' && remaining(e) > 0) out.push('<button type="button" class="btn-soft btn-compact" data-act="pay-doc">Сплатити</button>');
     if (['pending', 'rejected'].includes(e.status)) out.push('<button type="button" class="btn-ghost-small" data-act="edit-doc">Змінити</button>');
-    if (['pending', 'approved', 'rejected'].includes(e.status) && !(e.paidKop > 0)) out.push('<button type="button" class="btn-ghost-small" data-act="cancel-doc">Скасувати</button>');
+    if (['pending', 'approved', 'rejected'].includes(e.status) && !(e.paidKop > 0) && !e.linkedIds?.length && !e.stornoIds?.length && mainsFor(e).length) {
+        out.push('<button type="button" class="btn-ghost-small" data-act="attach-doc" title="Рахунок і акт однієї послуги — одна витрата">Це та сама послуга…</button>');
+    }
+    if (['approved', 'paid'].includes(e.status) && e.amountKop > 0 && e.amountKop > (e.stornoKop || 0)) out.push('<button type="button" class="btn-ghost-small" data-act="storno-doc">Сторно</button>');
+    if (['pending', 'approved', 'rejected', 'linked'].includes(e.status) && !(e.paidKop > 0) && !e.stornoIds?.length) out.push('<button type="button" class="btn-ghost-small" data-act="cancel-doc">Скасувати</button>');
     return out.join('');
+}
+
+/** Звʼязки документа: підтвердні документи, основний, сторно. */
+function relationsHtml(e) {
+    const byId = id => ctx.expenses.find(x => x.id === id);
+    const parts = [];
+    if (e.linkedTo) { const m = byId(e.linkedTo); parts.push(`Підтверджує ${m ? escapeHtml(docName(m)) : 'основний документ'} — окремої витрати й боргу немає`); }
+    const linked = (e.linkedIds || []).map(byId).filter(x => x && x.status === 'linked');
+    if (linked.length) parts.push(`Підтвердні документи: ${linked.map(x => escapeHtml(docName(x))).join(', ')}`);
+    if (e.stornoOf) { const o = byId(e.stornoOf); parts.push(`Коригує ${o ? escapeHtml(docName(o)) : 'документ'}`); }
+    if (e.stornoKop) parts.push(`Сторно −${fmtKop(e.stornoKop)} грн: до сплати ${fmtKop(e.amountKop - e.stornoKop)} грн`);
+    if (e.refundTxIds?.length) parts.push('Банк повернув оплату — документ знову до сплати');
+    return parts.length ? `<span class="ex-rel">${parts.join(' · ')}</span>` : '';
+}
+
+function attachHtml(e) {
+    const list = mainsFor(e);
+    return `<div class="ex-inline" id="exAttach">
+        <label class="field"><span class="field-label">Основний документ тієї самої послуги</span><select id="atMain" class="field-input field-select">${list.map(x =>
+            `<option value="${escapeHtml(x.id)}">${escapeHtml(docName(x))} · ${fmtKop(x.amountKop)} грн · ${escapeHtml(EXPENSE_STATUS[x.status]?.[0] || x.status)}</option>`).join('')}</select></label>
+        <p class="buh-note">${escapeHtml(docName(e))} стане підтвердним: витрата й борг лишаться лише за основним документом.</p>
+        <div class="pay-form-actions"><button type="button" class="btn-primary btn-compact" data-act="attach-save">Привʼязати</button><button type="button" class="btn-ghost-small" data-act="inline-close">Скасувати</button></div>
+    </div>`;
+}
+
+function stornoHtml(e) {
+    const left = e.amountKop - (e.stornoKop || 0);
+    return `<div class="ex-inline" id="exStorno">
+        <div class="pay-grid">
+            <label class="field"><span class="field-label">Сума сторно, грн (до ${fmtKop(left)})</span><input id="stAmount" class="field-input" inputmode="decimal" value="${money2(left)}"></label>
+            <label class="field"><span class="field-label">Дата коригування</span><input id="stDate" class="field-input" type="date" value="${escapeHtml(ctx.today)}" max="${escapeHtml(ctx.today)}"></label>
+            <label class="field"><span class="field-label">№ акта коригування / накладної на повернення</span><input id="stNumber" class="field-input" maxlength="60"></label>
+            <label class="field pay-wide"><span class="field-label">Причина</span><input id="stReason" class="field-input" maxlength="300" placeholder="Напр.: перерахунок за неякісну послугу, повернення товару"></label>
+            <label class="field pay-wide"><span class="field-label">Документ коригування (скан)</span><input id="stFiles" class="field-input" type="file" accept=".pdf,image/*"></label>
+        </div>
+        <p class="buh-note">Сторно зменшує витрату й борг постачальнику датою коригування — закриті місяці не змінюються. Якщо документ уже оплачено, постачальник винен ОСББ різницю: її повернення на рахунок рознесіть як «Повернення» до цієї оплати.</p>
+        <div class="pay-form-actions"><button type="button" class="btn-primary btn-compact" data-act="storno-save">Провести сторно</button><button type="button" class="btn-ghost-small" data-act="inline-close">Скасувати</button></div>
+    </div>`;
 }
 
 function docsHtml() {
@@ -164,7 +215,8 @@ function docsHtml() {
                 </tr><tr class="tx-detail-row"><td colspan="5"><div class="ex-detail">
                     <span class="t-muted">${escapeHtml(e.approval?.reason || '')}${e.approval?.by ? ` · затвердив ${escapeHtml(e.approval.by)}` : ''}${e.comment ? ` · «${escapeHtml(e.comment)}»` : ''}</span>
                     ${filesHtml(e.files) || '<span class="buh-tag is-review">без файлу</span>'}
-                    <span class="tx-actions">${docActions(e)}</span></div></td></tr>`).join('')}</tbody></table>`
+                    ${relationsHtml(e)}
+                    <span class="tx-actions">${docActions(e)}</span>${attaching === e.id ? attachHtml(e) : ''}${stornoing === e.id ? stornoHtml(e) : ''}</div></td></tr>`).join('')}</tbody></table>`
                 : '<p class="list-empty">Документів немає</p>'}
         </section>`;
 }
@@ -254,11 +306,24 @@ async function saveDoc(btn) {
     setBusy(btn, true, files.length ? 'Завантажую файли…' : 'Зберігаю…');
     try {
         const uploaded = await uploadExpenseFiles(files);
-        const r = await expAct({ action: 'saveExpense', id: form.data.id || null, supplierId: val('dfSupplier'), contractId: val('dfContract') || null,
-            docType: val('dfType'), number: val('dfNumber'), date: val('dfDate'), period: val('dfPeriod'), amountKop, vatKop: vat,
-            item: val('dfItem'), description: val('dfDesc'), files: [...(form.data.files || []), ...uploaded] });
-        form = null; files = [];
-        toast(r.status === 'approved' ? `Затверджено (${r.approval.reason}) — можна сплачувати` : `Надіслано голові: ${r.approval.reason}`, 'success');
+        form.data.files = [...(form.data.files || []), ...uploaded];
+        files = [];
+        const payload = { action: 'saveExpense', id: form.data.id || null, supplierId: form.data.supplierId, contractId: form.data.contractId || null,
+            docType: form.data.docType, number: form.data.number, date: form.data.date, period: form.data.period, amountKop, vatKop: vat,
+            item: form.data.item, description: form.data.description, files: form.data.files, linkedTo: form.data.linkedTo || null };
+        let r;
+        try {
+            r = await expAct(payload);
+        } catch (err) {
+            // Схожий документ тієї самої послуги: привʼязати до нього або підтвердити окрему витрату.
+            const similar = err.cause?.details?.similar;
+            if (!similar) throw err;
+            if (await confirmDialog('Та сама послуга?', `${err.message}`, `Привʼязати до № ${similar.number}`)) r = await expAct({ ...payload, linkedTo: similar.id });
+            else if (await confirmDialog('Це окрема послуга?', 'Документ стане окремою витратою й окремим боргом постачальнику.', 'Так, окрема')) r = await expAct({ ...payload, distinct: true });
+            else return;
+        }
+        form = null;
+        toast(r.status === 'linked' ? 'Привʼязано як підтвердний документ — окремої витрати немає' : r.status === 'approved' ? `Затверджено (${r.approval.reason}) — можна сплачувати` : `Надіслано голові: ${r.approval.reason}`, 'success');
         (r.warnings || []).forEach(w => toast(w, 'info'));
     } catch (e) { toast(e.message, 'error'); }
     finally { setBusy(btn, false); }
@@ -303,7 +368,7 @@ function snapshotForm() {
     if (form?.kind === 'supplier') return { ...form, data: { ...form.data, name: val('sfName'), kind: val('sfKind'), code: val('sfCode'), iban: val('sfIban'),
         fopChecked: document.getElementById('sfFop')?.checked === true, note: val('sfNote') } };
     if (form?.kind === 'doc') return { ...form, data: { ...form.data, supplierId: val('dfSupplier'), contractId: val('dfContract'), docType: val('dfType'), number: val('dfNumber'), date: val('dfDate'),
-        period: val('dfPeriod'), amountKop: toKop(val('dfAmount')) || null, vatKop: toKop(val('dfVat')) || 0, item: val('dfItem'), description: val('dfDesc') } };
+        period: val('dfPeriod'), amountKop: toKop(val('dfAmount')) || null, vatKop: toKop(val('dfVat')) || 0, item: val('dfItem'), description: val('dfDesc'), linkedTo: val('dfLinked') || form.data.linkedTo || '' } };
     if (form?.kind === 'contract') return { ...form, data: { ...form.data, supplierId: val('cfSupplier'), number: val('cfNumber'), date: val('cfDate'), subject: val('cfSubject'), type: val('cfType'),
         monthlyKop: toKop(val('cfAmount')), amountKop: toKop(val('cfAmount')), validFrom: val('cfFrom'), validTo: val('cfTo'), item: val('cfItem'),
         boardDecision: val('cfBoard'), meetingDecision: val('cfMeeting') } };
@@ -356,6 +421,23 @@ export function initExpensesView() {
                 if (!await confirmDialog('Сплатити документ?', `${doc.supplierName}: ${fmtKop(remaining(doc))} грн. Платіж зʼявиться в Приват24 й чекатиме підпису КЕП голови.`, 'Сплатити')) return;
                 setBusy(btn, true, 'Відправляю…');
                 await payExpense(doc);
+            } else if (a === 'attach-doc') { attaching = doc.id; stornoing = null; loadExpensesView(); }
+            else if (a === 'storno-doc') { stornoing = doc.id; attaching = null; loadExpensesView(); }
+            else if (a === 'inline-close') { attaching = null; stornoing = null; loadExpensesView(); }
+            else if (a === 'attach-save') {
+                setBusy(btn, true, 'Привʼязую…');
+                await expAct({ action: 'linkExisting', id: doc.id, to: val('atMain') });
+                attaching = null;
+                toast('Документ став підтвердним: витрата не дублюється', 'success');
+            } else if (a === 'storno-save') {
+                const amount = toKop(val('stAmount'));
+                if (!amount || amount <= 0) { toast('Вкажіть суму сторно', 'error'); return; }
+                setBusy(btn, true, 'Проводжу…');
+                const picked = [...(document.getElementById('stFiles')?.files || [])];
+                const up = picked.length ? await uploadExpenseFiles(picked) : [];
+                const r = await expAct({ action: 'storno', id: doc.id, amountKop: amount, date: val('stDate'), number: val('stNumber'), reason: val('stReason'), files: up });
+                stornoing = null;
+                toast(r.overpaidKop ? `Сторно проведено. Постачальник винен ОСББ ${fmtKop(r.overpaidKop)} грн — чекайте повернення на рахунок` : 'Сторно проведено', 'success');
             } else if (a === 'cancel-doc') {
                 if (!await confirmDialog('Скасувати документ?', `${doc.supplierName}, № ${doc.number}. Його не буде оплачено; запис лишиться в журналі.`, 'Скасувати документ')) return;
                 await expAct({ action: 'cancelExpense', id: doc.id });

@@ -67,12 +67,20 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         if (data.payroll?.period) {
             payment.payroll = { period: String(data.payroll.period).slice(0, 7), stage: data.payroll.stage === 'advance' ? 'advance' : 'final',
                 key: String(data.payroll.key || '').replace(/[^\w-]/g, '').slice(0, 60) };
+            if (data.payroll.repayOf) Object.assign(payment.payroll, { repayOf: String(data.payroll.repayOf).replace(/[^\w-]/g, '').slice(0, 80), retry: Number(data.payroll.retry) || 1 });
         }
         if (payment.expenseId) {
             const expense = (await db.doc(`expenses/${payment.expenseId}`).get()).data();
-            if (!expense || expense.status !== 'approved' || expense.amountKop - (expense.paidKop || 0) !== payment.amountKop) fail('failed-precondition', 'Документ витрат змінився або вже оплачено. Оновіть його перед відправкою.');
+            if (!expense || expense.status !== 'approved' || expense.amountKop - (expense.stornoKop || 0) - (expense.paidKop || 0) !== payment.amountKop) fail('failed-precondition', 'Документ витрат змінився або вже оплачено. Оновіть його перед відправкою.');
         }
-        if (payment.payroll) {
+        if (payment.payroll?.repayOf) {
+            // Повторна виплата поверненого банком платежу: та сама сума й призначення, рахунок — з виправленої картки.
+            const old = (await db.doc(`payments/${payment.payroll.repayOf}`).get()).data();
+            const same = old?.payroll && ['period', 'stage', 'key'].every(k => old.payroll[k] === payment.payroll[k]);
+            if (!same || old.status !== 'paid' || (old.returnedKop || 0) < old.amountKop || old.amountKop !== payment.amountKop || (old.repaidBy || []).length) {
+                fail('failed-precondition', 'Повторити можна лише повністю повернений банком зарплатний платіж');
+            }
+        } else if (payment.payroll) {
             const payroll = (await db.doc(`payroll_runs/${payment.payroll.period}`).get()).data();
             const plan = payroll?.stages?.[payment.payroll.stage]?.plan?.find(p => p.key === `${payment.payroll.stage}:${payment.payroll.key}`);
             if (payroll?.status !== 'approved' || !plan || plan.amountKop !== payment.amountKop || JSON.stringify(plan.recipient) !== JSON.stringify(payment.recipient)) fail('failed-precondition', 'Платіж має відповідати затвердженій відомості зарплати');
@@ -93,7 +101,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             const existing = await t.get(ref);
             if (payment.expenseId) {
                 const e = (await t.get(db.doc(`expenses/${payment.expenseId}`))).data();
-                if (!e || e.status !== 'approved' || e.amountKop - (e.paidKop || 0) !== payment.amountKop) fail('aborted', 'Документ витрат змінився. Оновіть сторінку.');
+                if (!e || e.status !== 'approved' || e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0) !== payment.amountKop) fail('aborted', 'Документ витрат змінився. Оновіть сторінку.');
             }
             if (existing.exists && !['failed', 'canceled'].includes(existing.data().status)) {
                 const p = existing.data();
@@ -133,7 +141,9 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         if (!snap.exists) fail('not-found', 'Платіж не знайдено');
         const p = snap.data();
         if (!['sent', 'failed'].includes(p.status)) fail('failed-precondition', 'Платіж уже проведено, скасовано або його результат ще не підтверджено банком');
-        const payrollRef = p.payroll ? db.doc(`payroll_runs/${p.payroll.period}`) : null;
+        // Повторна виплата не входить у план відомості: скасування лише знімає позначку на поверненому платежі.
+        const repayOfRef = p.payroll?.repayOf ? db.doc(`payments/${p.payroll.repayOf}`) : null;
+        const payrollRef = p.payroll && !repayOfRef ? db.doc(`payroll_runs/${p.payroll.period}`) : null;
         const canCancelPayroll = run => {
             if (run?.sending) fail('failed-precondition', 'Зачекайте завершення відправки відомості');
             if (!run?.stages?.[p.payroll.stage]?.plan) fail('failed-precondition', 'Стару зарплатну виплату треба виправити через окрему коригувальну відомість');
@@ -157,6 +167,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
                 delete completed[`${p.payroll.stage}:${p.payroll.key}`];
                 t.update(payrollRef, { [`stages.${p.payroll.stage}.complete`]: false, [`stages.${p.payroll.stage}.completed`]: completed });
             }
+            if (repayOfRef) t.update(repayOfRef, { repaidBy: FieldValue.arrayRemove(ref.id) });
             t.update(ref, { status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp(), deletedInBank });
         });
         await audit(actor, role, 'payment.cancel', `payments/${ref.id}`, `${p.recipient?.name}: ${fromKop(p.amountKop)} грн скасовано`, { deletedInBank });

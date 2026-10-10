@@ -18,7 +18,7 @@ export const ACCOUNT_PURPOSES = {
     current: 'Поточний', repair: 'Ремонтний фонд', reserve: 'Резервний фонд', deposit: 'Депозит', grant: 'Грантовий'
 };
 export const INCOME_CATEGORIES = {
-    rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення коштів', other: 'Інше надходження'
+    rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення без привʼязки до списання', other: 'Інше надходження'
 };
 export const EXPENSE_CATEGORIES = {
     bank_fee: 'Комісія банку', salary: 'Зарплата', taxes: 'Податки (ПДФО, військовий збір)', esv: 'ЄСВ', other: 'Витрата'
@@ -46,6 +46,9 @@ export function tagOf(tx) {
     }
     if (tx.kind === 'internal') return { text: 'Між рахунками', cls: 'is-internal' };
     if (tx.kind === 'income') return { text: INCOME_CATEGORIES[tx.category] || 'Надходження', cls: 'is-income' };
+    if (tx.kind === 'refund') return { text: 'Повернення списаного', cls: 'is-income' };
+    if (tx.category === 'resident_refund') return { text: `Повернення переплати, кв. ${tx.allocations?.[0]?.apt || ''}`, cls: 'is-expense' };
+    if ((tx.refundedKop || 0) > 0) return { text: `${EXPENSE_CATEGORIES[tx.category] || 'Витрата'} · ${tx.refundedKop >= tx.amountKop ? 'повернено' : 'частково повернено'}`, cls: 'is-expense' };
     return { text: EXPENSE_CATEGORIES[tx.category] || 'Витрата', cls: 'is-expense' };
 }
 
@@ -179,7 +182,8 @@ export async function chargeAct(payload, timeoutMs = 120000) {
 // ------------------------------------------------------------
 export const EXPENSE_STATUS = {
     pending: ['Чекає голову', 'is-review'], approved: ['До оплати', 'is-income'], paid: ['Оплачено', 'is-payment'],
-    rejected: ['Відхилено', 'is-error'], canceled: ['Скасовано', '']
+    rejected: ['Відхилено', 'is-error'], canceled: ['Скасовано', ''],
+    linked: ['Підтвердний', 'is-muted'], storno: ['Сторно', 'is-error']
 };
 export const CONTRACT_STATUS = { pending: ['Чекає голову', 'is-review'], approved: ['Затверджено', 'is-payment'], rejected: ['Відхилено', 'is-error'] };
 
@@ -279,6 +283,12 @@ export async function reportFileUrl(path) {
 // ------------------------------------------------------------
 /** Оборотно-сальдова, проводки й перевірки за місяць (null — місяць, який пропонує сервер). */
 export const loadJournal = period => once(`journal:${period || ''}`, () => callBackend('journalAction', { action: 'context', period: period || null }, 90000));
+
+/** Вхідна ОСВ на 30.09.2026 — читання (без скидання кешу: інакше розділ перемальовувався б по колу). */
+export const loadOpeningData = () => once('opening', () => callBackend('journalAction', { action: 'opening' }, 90000));
+
+/** Запит до банку без змін (пошук списань для повернення) — кеш не скидаємо. */
+export const bankQuery = payload => callBackend('bankAction', payload, 60000);
 
 /** Закрити чи відкрити місяць — на сервері, з журналом дій. */
 export async function journalAct(payload) {

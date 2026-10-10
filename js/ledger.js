@@ -24,6 +24,8 @@ const MONTHS_NOM = ['Січень', 'Лютий', 'Березень', 'Квіт�
 const KIND = {
     charge:  { label: 'Нарахування', cls: 'lg-charge' },
     payment: { label: 'Оплата',      cls: 'lg-payment' },
+    // Повернення переплати співвласнику з рахунку ОСББ.
+    refund:  { label: 'Повернення переплати', cls: 'lg-charge' },
     // Вхідний залишок на початок обліку в застосунку: мінус — борг.
     opening: { label: 'Вхідний залишок', cls: 'lg-opening' }
 };
@@ -149,6 +151,8 @@ export function summarizeLedger(entries) {
     const charged = counted.filter(e => e.kind === 'charge')
                            .reduce((s, e) => s + e.amount, 0);
     const paid = counted.filter(e => e.kind === 'payment')
+                        .reduce((s, e) => s + e.amount, 0)
+               - counted.filter(e => e.kind === 'refund')
                         .reduce((s, e) => s + e.amount, 0);
     const base = opening ? opening.amount : 0;
     return { charged, paid, diff: Math.round((base + paid - charged) * 100) / 100, count: entries.length };
