@@ -103,3 +103,58 @@ test('борг будинку — без прізвищ і номерів', () =
     assert.deepEqual(b.houseDebt([{ balance: -1250.4 }, { balance: 210 }, { balance: -0.6 }, { balance: null }, { isAdmin: true, balance: -5 }]),
         { totalKop: 125100, count: 2 });
 });
+
+test('розшифровка статті: ті самі операції, що й факт; фізособу мешканцям не називаємо', () => {
+    const expenses = [
+        { item: 'lift', status: 'paid', period: '2027-02', date: '2027-02-28', amountKop: 1_082_237, supplierId: 's1', supplierName: 'ТОВ «Ліфт»', docType: 'act', number: 'Л-2', description: 'ТО ліфтів за лютий' },
+        { item: 'lift', status: 'pending', period: '2027-02', date: '2027-02-28', amountKop: 1, supplierId: 's1', supplierName: 'ТОВ «Ліфт»', docType: 'act', number: 'Л-3' },
+        { item: 'cleaning', status: 'approved', period: '2027-01', date: '2027-01-31', amountKop: 800_000, supplierId: 's2', supplierName: 'Петренко Ганна Іванівна', docType: 'act', number: '1', description: 'Прибирання (ЦПД)' }
+    ];
+    const bankOut = [
+        { direction: 'out', kind: 'expense', status: 'done', category: 'esv', period: '2027-01', at: new Date('2027-01-20T10:00:00Z'), amountKop: 96_677,
+            purpose: '*;101;ЄСВ за грудень', counterparty: { name: 'ГУ ДПС В ОДЕСЬКІЙ ОБЛ.', code: '44069166' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'salary', period: '2027-01', at: new Date('2027-01-31T10:00:00Z'), amountKop: 206_920,
+            purpose: 'Заробітна плата Савченку О. за січень', counterparty: { name: 'САВЧЕНКО ОЛЕГ', code: '' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'salary', period: '2027-01', at: new Date('2027-01-15T10:00:00Z'), amountKop: 182_195,
+            purpose: 'Аванс', counterparty: { name: 'ПРАЦІВНИК ОСББ', code: '' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'bank_fee', period: '2027-01', at: new Date('2027-01-31T22:30:00Z'), amountKop: 500,
+            purpose: 'Комісія за платіж', counterparty: { name: 'АТ КБ ПРИВАТБАНК', code: '14360570' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'supplier', period: '2027-01', amountKop: 1_082_237, expenseId: 'e1', counterparty: {} }
+    ];
+    const suppliers = new Map([['s1', { kind: 'company' }], ['s2', { kind: 'person' }]]);
+    const full = b.operationsByItem({ expenses, bankOut, year: '2027', suppliers, docTypes: { act: 'Акт' } });
+    const fact = b.factByItem({ expenses, bankOut, year: '2027' });
+    for (const [item, kop] of fact) assert.equal(full[item].reduce((s, o) => s + o.amountKop, 0), kop, item);
+    assert.equal(full.salary[0].who, 'САВЧЕНКО ОЛЕГ');
+    assert.equal(full.bank[0].date, '2027-02-01');                 // дата — київська
+    assert.equal(full.lift[0].doc, 'Акт № Л-2');
+    const pub = b.operationsByItem({ expenses, bankOut, year: '2027', suppliers, docTypes: { act: 'Акт' }, publicView: true });
+    assert.deepEqual([pub.salary[0].who, pub.salary[0].what], ['Працівник ОСББ', undefined]);
+    assert.ok(pub.salary.every(o => o.who === 'Працівник ОСББ'));
+    assert.deepEqual([pub.cleaning[0].who, pub.cleaning[0].kind], ['Фізична особа', 'person']);
+    assert.deepEqual([pub.esv[0].who, pub.esv[0].kind], ['ГУ ДПС В ОДЕСЬКІЙ ОБЛ.', 'company']);
+    assert.equal(pub.lift[0].who, 'ТОВ «Ліфт»');
+    assert.equal(b.payeeKind('ФОП Коваль І. І.', '3124567809'), 'fop');
+    assert.equal(b.payeeKind('РЕМБУД ДЕМО ТОВ', ''), 'company');
+    assert.equal(b.payeeKind('КОВАЛЬЧУК ІВАН ПЕТРОВИЧ', ''), 'person');
+});
+
+test('надходження й боржники: приміщення — номером лише за рішенням правління', () => {
+    assert.equal(b.aptLabel('177', { entrance: '2' }, true), "Під'їзд 2, Квартира 177");
+    assert.equal(b.aptLabel('302', { entrance: '1', nonres: true }, true), "Під'їзд 1, Нежитлове приміщення 302");
+    assert.equal(b.aptLabel('177', { entrance: '2' }, false), 'Співвласник');
+    const bankIn = [
+        { direction: 'in', kind: 'income', category: 'rent', status: 'done', period: '2027-01', at: new Date('2027-01-05T10:00:00Z'), amountKop: 36000, relatedApt: '59', counterparty: { name: 'ІВАНЕНКО' } },
+        { direction: 'in', kind: 'income', category: 'equipment', status: 'done', period: '2027-01', at: new Date('2027-01-06T10:00:00Z'), amountKop: 43235, counterparty: { name: 'ПрАТ "ЗВʼЯЗОК-ДЕМО"', code: '' } },
+        { direction: 'in', kind: 'income', category: 'refund', status: 'done', period: '2027-01', at: new Date('2027-01-07T10:00:00Z'), amountKop: 41500, counterparty: { name: 'ПЕТРЕНКО ОЛЕГ' } },
+        { direction: 'in', kind: 'payment', status: 'done', period: '2027-01', amountKop: 40000 }
+    ];
+    const pub = b.incomeOpsBySource({ bankIn, year: '2027', label: apt => b.aptLabel(apt, { entrance: '1' }, true), publicView: true });
+    assert.deepEqual(Object.keys(pub).sort(), ['equipment', 'refund', 'rent']);
+    assert.deepEqual([pub.rent[0].who, pub.equipment[0].who, pub.refund[0].who], ["Під'їзд 1, Квартира 59", 'ПрАТ "ЗВʼЯЗОК-ДЕМО"', 'Фізична особа']);
+    const apts = [{ apt: '7', entrance: '1', balance: -6229.67 }, { apt: '191', entrance: '3', balance: -37321.47 }, { apt: '3А', entrance: '1', balance: -742.21 }, { apt: '9', balance: 10 }];
+    assert.equal(b.houseDebt(apts).list, undefined);
+    const debt = b.houseDebt(apts, apt => `Квартира ${apt}`);
+    assert.deepEqual(debt.list.map(d => [d.apt, d.kop]), [['3А', 74221], ['7', 622967], ['191', 3732147]]);
+    assert.equal(debt.totalKop, 74221 + 622967 + 3732147);
+});

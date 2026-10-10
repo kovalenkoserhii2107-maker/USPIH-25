@@ -378,6 +378,23 @@ function paidByComponent(ledgers, year, opts = {}) {
 }
 
 /**
+ * Оплати мешканців за складовими — по кожній оплаті (розшифровка
+ * «Надходження → Внесок на обслуговування ліфтів»: квартира, дата, сума).
+ * Той самий розподіл, що й paidByComponent, тож суми збігаються.
+ * Повертає [{ apt, at, component, kop }].
+ */
+function paymentOps(ledgers, year, opts = {}) {
+    const out = [];
+    for (const [apt, entries] of ledgers) {
+        for (const { entry, parts } of replay(entries, opts).steps) {
+            if (entry.kind !== 'payment' || !String(entry.period || '').startsWith(String(year))) continue;
+            for (const [component, kop] of Object.entries(parts)) if (kop) out.push({ apt, at: entry.at, component, kop });
+        }
+    }
+    return out;
+}
+
+/**
  * Відомість розрахунків з мешканцями за місяць: залишок на початок,
  * нараховано, сплачено, залишок на кінець — по кожній квартирі.
  * ledgers: Map<apt, entries[]>.
@@ -414,5 +431,5 @@ module.exports = {
     parseArea, parseRate, formatRate, formatArea, chargeKop, entryKop,
     validPeriod, shiftPeriod, currentPeriod, periodName, kyivDate, lastDay, chargeDate, openingDate, duePeriods,
     tariffFor, checkTariff, checkGroupName, computeCharges, chargeNote,
-    checkOpening, openingNote, balanceFromLedger, statement, allocatePayment, replay, componentStatement, paidByComponent
+    checkOpening, openingNote, balanceFromLedger, statement, allocatePayment, replay, componentStatement, paidByComponent, paymentOps
 };

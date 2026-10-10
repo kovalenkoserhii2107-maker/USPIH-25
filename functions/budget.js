@@ -23,9 +23,12 @@ const { fromKop, cleanApt } = require('./bank-core');
 const REGION = 'europe-central2';
 const FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
 const PUBLIC_EXPENSES = 80;
+// Операцій у документі розшифровки (finance_ops/{ключ}): ~90 байт кожна, документ — до 1 МБ.
+const OPS_LIMIT = 8000;
 
 module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffRole }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
+    const publicityRef = db.doc('finance_settings/public');
     const text = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
 
@@ -67,14 +70,16 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // ВИКОНАННЯ Й ДАНІ ДЛЯ МЕШКАНЦІВ
     // --------------------------------------------------------
     async function gather(year) {
-        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap] = await Promise.all([
+        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity] = await Promise.all([
             allBudgets(),
             db.collection('expenses').limit(3000).get(),
             db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
             db.doc('bank/settings').get(),
             db.collection('apartments').get(),
             db.doc('charges/settings').get(),
-            db.collectionGroup('ledger').where('period', '>=', `${year}-01`).get()
+            db.collectionGroup('ledger').where('period', '>=', `${year}-01`).get(),
+            db.collection('suppliers').get(),
+            publicityRef.get()
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
         const tx = bank.docs.map(d => d.data());
@@ -99,7 +104,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             });
         }
         const paid = charges.paidByComponent(ledgers, year, { order: components.map(c => c.id) });
-        const incomeParts = components.filter(c => paid[c.id]).map(c => ({ title: c.name, factKop: paid[c.id] }));
+        const incomeParts = components.filter(c => paid[c.id]).map(c => ({ component: c.id, title: c.name, factKop: paid[c.id] }));
         const result = core.execution({ budget, fact: core.factByItem({ expenses: ex, bankOut: tx, year }), income: core.incomeFact({ bankIn: tx, year }), months, incomeParts });
         const accounts = Object.values(settings.exists ? settings.data().accounts || {} : {});
         const fundsKop = accounts.reduce((s, a) => s + (!a.currency || a.currency === 'UAH' ? a.balanceKop || 0 : 0), 0);
@@ -108,17 +113,44 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         // Скільки дадуть внески за рік за чинними тарифами — підказка для плану надходжень.
         const month = charges.computeCharges({ apartments: apts.filter(a => !a.isAdmin), premises: cs.premises || {}, tariffs: cs.tariffs || [],
             groups: cs.groups?.length ? cs.groups : charges.DEFAULT_GROUPS, components, period: `${year}-${today().slice(0, 4) === String(year) ? today().slice(5, 7) : '01'}` });
-        return { budgets, budget, expenses: ex, result, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts), contributionsYearKop: month.totalKop * 12 };
+        // Розшифровка статей (як «Внесок на обслуговування ліфтів → платежі» в сервісі):
+        // { 'exp-lift': [...], 'inc-rent': [...], 'inc-c-main': [...] }.
+        // Номери квартир мешканцям — лише за рішенням правління (finance_settings/public).
+        const showApartments = Boolean(publicity.exists && publicity.data().showApartments);
+        const info = new Map(apts.map(a => [a.apt, { entrance: a.entrance, nonres: Boolean(cs.premises?.[a.apt] && cs.premises[a.apt] !== 'res') }]));
+        const labeler = show => apt => core.aptLabel(cleanApt(apt), info.get(cleanApt(apt)), show);
+        const suppliers = new Map(supplierSnap.docs.map(d => [d.id, d.data()]));
+        const payOps = charges.paymentOps(ledgers, year, { order: components.map(c => c.id) });
+        const ops = publicView => {
+            const label = labeler(!publicView || showApartments);
+            const out = {};
+            for (const [item, list] of Object.entries(core.operationsByItem({ expenses: ex, bankOut: tx, year, suppliers, docTypes: DOC_TYPES, publicView }))) out[`exp-${item}`] = list;
+            for (const [source, list] of Object.entries(core.incomeOpsBySource({ bankIn: tx, year, label, publicView }))) out[`inc-${source}`] = list;
+            for (const o of payOps) (out[`inc-c-${o.component}`] ||= []).push({ date: core.kyivDate(o.at), who: label(o.apt), kind: 'apt', amountKop: o.kop });
+            for (const k of Object.keys(out).filter(k => k.startsWith('inc-c-'))) {
+                out[k].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+                if (out[k].length > OPS_LIMIT) out[k] = out[k].slice(0, OPS_LIMIT);
+            }
+            return out;
+        };
+        return { budgets, budget, expenses: ex, result, ops, showApartments, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts, showApartments ? labeler(true) : null), contributionsYearKop: month.totalKop * 12 };
     }
 
     const human = d => String(d || '').split('-').reverse().join('.');
 
-    /** Знімок для мешканців: лише цифри ОСББ, без прізвищ і номерів квартир. */
+    /**
+     * Знімок для мешканців: лише цифри ОСББ, без прізвищ; номери квартир —
+     * лише за рішенням правління. Операції розшифровки (_ops) публікуються
+     * окремими документами finance_ops/{ключ}, у звіті — лише їхній зміст.
+     */
     function snapshot(year, g) {
         const r = g.result;
+        const ops = g.ops(true);
         const spentByItem = new Map();
+        const itemOf = new Map();
         r.sections.forEach(s => s.lines.forEach(l => spentByItem.set(l.title, (spentByItem.get(l.title) || 0) + l.factKop)));
-        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([label, kop]) => ({ label, amount: fromKop(kop) }));
+        r.sections.forEach(s => s.lines.forEach(l => itemOf.set(l.title, l.item)));
+        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([label, kop]) => ({ label, item: itemOf.get(label), amount: fromKop(kop) }));
         const start = `${year}-01` > '2026-10' ? `01.01.${year}` : '01.10.2026';
         const expenses = g.expenses.filter(e => ['approved', 'paid'].includes(e.status) && String(e.period).startsWith(year))
             .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, PUBLIC_EXPENSES)
@@ -134,18 +166,23 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             budget: g.budget ? {
                 year: String(g.budget.year), carried: g.budget.carried, decision: g.budget.decision || '', months: r.months,
                 sections: r.sections.map(s => ({ title: s.title, planKop: s.planKop, toDateKop: s.toDateKop, factKop: s.factKop,
-                    lines: s.lines.map(l => ({ title: l.title, planKop: l.planKop, toDateKop: l.toDateKop, factKop: l.factKop, outside: Boolean(l.outside) })) })),
-                income: r.income.map(i => ({ title: i.title, planKop: i.planKop, toDateKop: i.toDateKop, factKop: i.factKop, ...(i.parts ? { parts: i.parts } : {}) })),
+                    lines: s.lines.map(l => ({ item: l.item, title: l.title, planKop: l.planKop, toDateKop: l.toDateKop, factKop: l.factKop, outside: Boolean(l.outside) })) })),
+                income: r.income.map(i => ({ source: i.source, title: i.title, planKop: i.planKop, toDateKop: i.toDateKop, factKop: i.factKop, ...(i.parts ? { parts: i.parts } : {}) })),
                 totals: r.totals
             } : null,
+            // «Звідки гроші» — і без затвердженого кошторису.
+            incomeItems: r.income.filter(i => i.factKop).map(i => ({ source: i.source, title: i.title, factKop: i.factKop, ...(i.parts ? { parts: i.parts } : {}) })),
             debt: g.debt,
-            expenses
+            showApartments: g.showApartments,
+            expenses,
+            opsIndex: Object.fromEntries(Object.entries(ops).map(([k, list]) => [k, { count: list.length, totalKop: list.reduce((t, o) => t + o.amountKop, 0) }])),
+            _ops: ops
         };
     }
 
     const sha = obj => crypto.createHash('sha1').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
     /** Зміст звіту без дати й залишків на рахунках: вони змінюються щогодини й не є «новиною». */
-    const hashOf = s => sha({ items: s.items, income: s.income, budget: s.budget, debt: s.debt, expenses: s.expenses });
+    const hashOf = s => sha({ items: s.items, income: s.income, budget: s.budget, debt: s.debt, expenses: s.expenses, ops: s.opsIndex, show: s.showApartments });
     const budgetHash = s => sha(s.budget ? { year: s.budget.year, decision: s.budget.decision, plan: s.budget.totals.planKop, lines: s.budget.sections.map(x => x.lines.map(l => l.planKop)) } : null);
 
     /**
@@ -170,7 +207,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         return {
             year: y, today: today(), years: g.budgets.map(b => ({ year: String(b.year), status: b.status })).sort((a, b) => b.year.localeCompare(a.year)),
             budget: plain(own), effective: g.budget ? { year: String(g.budget.year), carried: g.budget.carried, decision: g.budget.decision || '' } : null,
-            execution: g.result, debt: g.debt, fundsKop: g.accounts ? g.fundsKop : null, contributionsYearKop: g.contributionsYearKop,
+            execution: g.result, ops: g.ops(false), showApartments: g.showApartments, debt: g.debt, fundsKop: g.accounts ? g.fundsKop : null, contributionsYearKop: g.contributionsYearKop,
             items: ITEMS, sections: core.SECTIONS, groups: core.GROUPS, incomeSources: core.INCOME_SOURCES,
             publish: { stale: isStale(pub, snap, y),
                 at: pub?.updatedAt?.toDate?.()?.toISOString() || null, legacy: Boolean(pub && pub.source !== 'ledger') }
@@ -236,11 +273,29 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         return { ok: true };
     }
 
+    /**
+     * Показувати мешканцям номери квартир у надходженнях і боргах (як у
+     * сервісі). Рішення правління — змінює лише голова; звіт оновлюється.
+     */
+    async function visibility(actor, role, { showApartments }) {
+        if (role !== 'chair') fail('permission-denied', 'Це рішення правління: змінює голова');
+        const show = Boolean(showApartments);
+        await publicityRef.set({ showApartments: show, by: actor, at: FieldValue.serverTimestamp() });
+        await audit(actor, role, 'finance.visibility', 'finance_settings/public', show ? 'Мешканці бачать номери квартир у надходженнях і боргах' : 'Номери квартир мешканцям приховано', { showApartments: show });
+        if ((await db.doc('finance/current').get()).data()?.source === 'ledger') await publish(actor, role, { year: today().slice(0, 4) });
+        return { ok: true };
+    }
+
     /** Опублікувати мешканцям («Фінанси будинку»). */
     async function publish(actor, role, { year }) {
         const y = core.validYear(year) ? String(year) : today().slice(0, 4);
-        const snap = snapshot(y, await gather(y));
+        const { _ops: ops, ...snap } = snapshot(y, await gather(y));
         const doc = { ...snap, hash: hashOf(snap), budgetHash: budgetHash(snap), publishedBy: actor, updatedAt: FieldValue.serverTimestamp() };
+        // Спершу розшифровка, потім звіт: мешканець не відкриє статтю без операцій.
+        const stale = (await db.collection('finance_ops').get()).docs.filter(d => !ops[d.id]);
+        // По одному: документ взносів великого будинку — сотні КБ, пакет обмежено 10 МБ.
+        for (const [k, list] of Object.entries(ops)) await db.doc(`finance_ops/${k}`).set({ year: y, ops: list, updatedAt: FieldValue.serverTimestamp() });
+        for (const d of stale) await d.ref.delete();
         await db.doc('finance/current').set(doc);
         // Архів за роками — для річного звіту зборам.
         await db.doc(`finance/${y}`).set(doc);
@@ -259,9 +314,10 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             case 'amend': return amend(actor, role, data);
             case 'copy': return copy(actor, role, data);
             case 'publish': return publish(actor, role, data);
+            case 'visibility': return visibility(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     });
 
-    return { budgetAction, guard, actions: { context, save, approve, amend, copy, publish } };
+    return { budgetAction, guard, actions: { context, save, approve, amend, copy, publish, visibility } };
 };

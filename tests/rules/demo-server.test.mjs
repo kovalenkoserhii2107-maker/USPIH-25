@@ -10,7 +10,7 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 
 let app, db, demo;
 const COLLECTIONS = ['apartments', 'staff', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'suppliers', 'contracts', 'expenses',
-    'expense_settings', 'budgets', 'finance', 'charges', 'charges_runs', 'demo'];
+    'expense_settings', 'budgets', 'finance', 'finance_ops', 'finance_settings', 'charges', 'charges_runs', 'demo'];
 const wipe = async () => {
     for (const name of COLLECTIONS) {
         const snap = await db.collection(name).get();
@@ -70,15 +70,36 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.ok(tx.every(t => t.category !== 'rent' || t.relatedApt));
     assert.equal(tx.filter(t => t.category === 'equipment').length, 1);
     assert.equal(tx.filter(t => t.kind === 'internal').length, 1);
-    // Акти за вересень закриті списаннями, дах — чекає голову.
+    // Акти за вересень і ремонт з резервного фонду закриті списаннями, дах — чекає голову.
     const ex = (await db.collection('expenses').get()).docs.map(d => d.data());
-    assert.equal(ex.filter(e => e.status === 'paid').length, 4);
+    assert.equal(ex.filter(e => e.status === 'paid').length, 5);
+    // ЄСВ — окремою статтею; за кожен платіж — комісія банку.
+    assert.equal(tx.filter(t => t.category === 'esv').length, 1);
+    assert.equal(tx.filter(t => t.category === 'taxes').length, 1);
+    assert.ok(tx.filter(t => t.category === 'bank_fee').length >= 8);
     assert.equal(ex.filter(e => e.status === 'pending').length, 1);
     // Кошторис затверджено, звіт для мешканців — без прізвищ.
     assert.equal((await db.doc('budgets/2026').get()).data().status, 'approved');
     const pub = (await db.doc('finance/current').get()).data();
     assert.ok(pub.debt.totalKop > 0);
     assert.ok(!JSON.stringify(pub).includes('Власник Тестовий'));
+    // Розшифровка статей: сума операцій = факт рядка; працівника мешканцям не називаємо.
+    const ops = async key => (await db.doc(`finance_ops/${key}`).get()).data().ops;
+    const lines = pub.budget.sections.flatMap(s => s.lines);
+    for (const item of ['lift', 'power', 'esv', 'bank', 'reserve']) {
+        const line = lines.find(l => l.item === item);
+        assert.equal(pub.opsIndex[`exp-${item}`].totalKop, line.factKop, item);
+        assert.equal((await ops(`exp-${item}`)).reduce((s, o) => s + o.amountKop, 0), line.factKop, item);
+    }
+    assert.equal((await ops('exp-lift'))[0].who, 'ТОВ «Ліфт-Сервіс» (демо)');
+    assert.ok((await ops('exp-salary')).every(o => o.who !== 'ПРАЦІВНИК ОСББ (ДЕМО)' && !o.what));
+    // Надходження: внески за складовими = частини рядка «Внески»; боржники — з номерами (демо вмикає).
+    const contrib = pub.budget.income.find(i => i.source === 'contributions');
+    for (const p of contrib.parts) assert.equal((await ops(`inc-c-${p.component}`)).reduce((s, o) => s + o.amountKop, 0), p.factKop, p.title);
+    assert.match((await ops('inc-c-main'))[0].who, /^(Під'їзд \d+, )?Квартира \S+$/);
+    assert.equal(pub.showApartments, true);
+    assert.equal(pub.debt.list.length, pub.debt.count);
+    assert.ok(!JSON.stringify(pub.debt).includes('Власник Тестовий'));
     assert.ok((await db.collection('audit_log').where('action', '==', 'demo.run').get()).size === 1);
     // Повторно — не можна.
     await assert.rejects(demo.actions.run('10'), /вже прогнано/);
@@ -88,6 +109,8 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal((await db.collection('expenses').get()).size, 0);
     assert.equal((await db.collection('charges_runs').get()).size, 0);
     assert.equal((await db.doc('budgets/2026').get()).exists, false);
+    assert.equal((await db.collection('finance_ops').get()).size, 0);
+    assert.equal((await db.doc('finance_settings/public').get()).exists, false);
     assert.equal((await db.doc('charges/settings').get()).exists, false);
     const a4 = (await db.doc('apartments/4').get()).data();
     const a5 = (await db.doc('apartments/5').get()).data();
