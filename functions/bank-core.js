@@ -57,9 +57,14 @@ const LIST_TAIL = /^\s*(?:,|;|\+|&|та|і|й|и|and)\s*(?:кв\.?\s*)?(\d{1,4}(
 // «квартиры 45», «apt 45». Перед позначкою — не літера, щоб «нкв» не спрацювало.
 const MARKED = new RegExp(`(?:^|[^а-яіїєґa-z])(?:кв(?:артир[аиіыу]?|-?ра|\\.)?|apt|flat)\\s*[.:№#\\-]?\\s*${APT}`, 'gi');
 // Нежитлові: «нп 1», «н/п 1», «приміщення 1», «прим. 1», «нежитлове 1».
-const NONRES = new RegExp(`(?:^|[^а-яіїєґa-z])(?:н\\/?п|прим(?:іщення|\\.)?|нежитл\\w*(?:\\s+прим\\w*)?)\\s*[.:№#\\-]?\\s*${APT}`, 'gi');
+// Літера слова: \w у JS — лише латиниця, тому кирилицю перелічуємо явно.
+const L = "[а-яіїєґʼ'a-z]";
+const NONRES = new RegExp(`(?:^|[^а-яіїєґa-z])(?:н\\/?п|прим(?:іщення|\\.)?|нежитл${L}*(?:\\s+прим${L}*)?)\\s*[.:№#\\-]?\\s*${APT}`, 'gi');
 // Особовий рахунок: «о/р 1045», «ос. рах. 1045», «особовий рахунок 1045», «л/с 1045».
-const ACCOUNT = /(?:о\/р|ос\.?\s*р(?:ах)?\.?|особов\w*\s+рахун\w*|л\/с|лс|о\.р\.)\s*[.:№#\-]?\s*(\d{2,12})/gi;
+const ACCOUNT = new RegExp(`(?:о\\/р|ос\\.?\\s*р(?:ах)?\\.?|особов${L}*\\s+рахун${L}*|л\\/с|лс|о\\.р\\.)\\s*[.:№#\\-]?\\s*(\\d{2,12})`, 'gi');
+
+/** Особовий рахунок без провідних нулів — ключ для порівняння. */
+const accountKey = value => String(value ?? '').trim().replace(/^0+(?=\d)/, '');
 
 const cleanApt = value => String(value ?? '').toLowerCase().replace(/\s+/g, '');
 
@@ -82,13 +87,16 @@ function aptCandidates(purpose, known) {
         return known.apts.has(trimmed) ? trimmed : null;
     };
 
+    // Особовий рахунок банк і сервіси пишуть то з нулями попереду («00401230045»),
+    // то без них — порівнюємо без провідних нулів.
+    const byAccount = raw => known.accounts.get(raw) || known.accounts.get(accountKey(raw));
     for (const m of text.matchAll(ACCOUNT)) {
-        const apt = known.accounts.get(m[1]);
+        const apt = byAccount(m[1]);
         if (apt) add(apt, 'account', true);
     }
     // Особовий рахунок без позначки: довгий номер, що збігся з довідником.
     for (const m of text.matchAll(/\d{4,12}/g)) {
-        const apt = known.accounts.get(m[0]);
+        const apt = byAccount(m[0]);
         if (apt) add(apt, 'account', true);
     }
     for (const re of [MARKED, NONRES]) {
@@ -154,13 +162,15 @@ function nameScore(payer, owner) {
 // ------------------------------------------------------------
 const INCOME_HINTS = [
     ['interest', /відсот|процент|нарахування %|interest/i],
-    ['rent', /оренд|аренд|розміщення обладн|антен/i],
+    // Провайдери й реклама платять за розміщення обладнання — окреме джерело доходу.
+    ['equipment', /розміщ[а-яіїєґ]* обладн|обладнан[а-яіїєґ]* зв[ʼ'’]?язку|реклам|антен|провайдер|телекомунікац/i],
+    ['rent', /оренд|аренд|найм[а-яіїєґ]* приміщ/i],
     ['grant', /грант|субвенц|співфінанс|енергодім|дотац|бюджет|благодійн/i]
 ];
 const EXPENSE_HINTS = [
     ['bank_fee', /коміс|обслуговування рахунку|за ведення рахунку|рко\b/i],
     ['salary', /заробітн|зарплат|аванс|з\/п|винагород/i],
-    ['taxes', /єсв|пдфо|військов\w* збір|податок|\*;101;/i]
+    ['taxes', /єсв|пдфо|військов[а-яіїєґ]* збір|податок|\*;101;/i]
 ];
 const guess = (hints, text) => (hints.find(([, re]) => re.test(text)) || [null])[0];
 
@@ -184,6 +194,13 @@ function classify(tx, ctx) {
 
     const candidates = aptCandidates(tx.purpose, ctx.known);
     const strong = [...new Set(candidates.filter(c => c.strong).map(c => c.apt))];
+
+    // «Оренда комори за договору, кв. 289»: платить мешканець, але це дохід
+    // ОСББ за договором оренди, а не внесок квартири — у баланс не йде.
+    const contractIncome = guess(INCOME_HINTS, tx.purpose);
+    if (['rent', 'equipment'].includes(contractIncome)) {
+        return { status: 'other', category: contractIncome, relatedApt: strong[0] || null, suggestions: [] };
+    }
     const linked = ctx.links.get(payerKey(cp.name, cp.account)) || null;
 
     if (strong.length === 1) {
@@ -249,5 +266,5 @@ function checkAllocations(allocations, amountKop, knownApts) {
 
 module.exports = {
     toKop, fromKop, normText, normIban, isLegalEntityCode, aptCandidates, payerKey, nameScore,
-    classify, periodOf, safeId, checkAllocations, cleanApt
+    classify, periodOf, safeId, checkAllocations, cleanApt, accountKey
 };

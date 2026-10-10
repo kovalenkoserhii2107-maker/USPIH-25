@@ -5,7 +5,7 @@
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, loadExpenses, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadExpenses, loadDemo, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
 import { toKop } from './charges-core.js';
@@ -145,14 +145,29 @@ const RULES = [
     ['Податкова й фінансова звітність', 'Бухгалтер готує, КЕП — голова (і бухгалтер, якщо він відповідальний за облік у ДПС)', 'пп. 48.5.1 ПКУ']
 ];
 
+/** Демо-прогін на тестовому акаунті: стан, кроки, кнопки (голова). */
+function demoHtml(d, chair) {
+    if (!d) return '';
+    const done = d.status === 'done';
+    if (!done && d.blockers?.length && d.status !== 'failed') return '';
+    return `<section class="buh-card demo-card">
+        <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag ${done ? 'is-payment' : d.status === 'failed' ? 'is-error' : 'is-review'}">${done ? 'прогнано' : d.status === 'failed' ? 'збій' : 'тестовий акаунт'}</span></div>
+        <p class="buh-note">${done ? 'Облік заповнено демо-даними через справжні функції системи. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис», «Банк», а мешканцям — «Фінанси будинку».'
+            : 'Проведе через справжні функції повний місяць: тарифи за складовими, вхідні залишки, нарахування за жовтень, виписку з оплатами мешканців, оренду й обладнання, постачальників і акти, кошторис 2026, звіт мешканцям. Цифри — у масштабі реального звіту ОСББ за 2026 рік. Уже внесені баланси квартир стануть вхідними залишками.'}</p>
+        ${d.steps?.length ? `<ol class="buh-steps">${d.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol>` : ''}
+        ${chair ? `<div class="inbox-actions">${done || d.status === 'failed' ? '<button type="button" class="btn-ghost-small" data-act="demo-remove">Прибрати демо</button>'
+            : '<button type="button" class="btn-primary btn-compact" data-act="demo-run">Прогнати демо</button>'}</div>` : '<p class="buh-note">Прогнати й прибрати демо може голова.</p>'}
+    </section>`;
+}
+
 export async function loadSettingsView() {
-    const [settings, ex] = await Promise.all([loadSettings(), loadExpenses().catch(() => null)]);
+    const [settings, ex, demo] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadDemo()]);
     const small = ex?.settings?.smallKop || 0;
     const chair = session.role === 'chair';
     const connected = settings.tokenSet === true;
     const last = settings.lastSync;
     const accounts = Object.entries(settings.accounts || {});
-    document.getElementById('viewSettings').innerHTML = `
+    document.getElementById('viewSettings').innerHTML = `${demoHtml(demo, chair)}
         <section class="buh-card">
             <div class="buh-card-head"><h2>ПриватБанк</h2><span class="buh-tag ${connected ? 'is-payment' : 'is-review'}">${connected ? `підключено · токен …${escapeHtml(settings.tokenHint || '')}` : 'не підключено'}</span></div>
             <p class="buh-note">${!connected ? 'Після підключення виписка й залишки завантажуватимуться щогодини.'
@@ -202,6 +217,20 @@ export function initSettingsView() {
             if (!token) { toast('Вставте токен', 'error'); return; }
             setBusy(btn, true, 'Перевіряю в банку…');
             try { const r = await act({ action: 'saveToken', token }, 60000); toast(`Підключено. Рахунків: ${r?.accounts ?? 0}`, 'success'); }
+            catch (err) { toast(err.message, 'error'); }
+            finally { setBusy(btn, false); }
+        }
+        if (btn.dataset.act === 'demo-run') {
+            if (!await confirmDialog('Прогнати демо?', 'Система проведе через справжні функції повний місяць обліку: тарифи, залишки, нарахування, виписку, постачальників, акти, кошторис і звіт мешканцям. Лише для тестового акаунта; потім усе можна прибрати.', 'Прогнати')) return;
+            setBusy(btn, true, 'Проганяю… до хвилини');
+            try { const r = await demoAct('run'); toast(`Готово: ${r.steps.length} кроків. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис»`, 'success'); }
+            catch (err) { toast(err.message, 'error'); }
+            finally { setBusy(btn, false); }
+        }
+        if (btn.dataset.act === 'demo-remove') {
+            if (!await confirmDialog('Прибрати демо?', 'Демо-операції, нарахування, документи й кошторис буде видалено, площі й баланси квартир повернуто як було. Журнал дій лишиться.', 'Прибрати')) return;
+            setBusy(btn, true, 'Прибираю…');
+            try { await demoAct('remove'); toast('Демо прибрано', 'success'); }
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
         }

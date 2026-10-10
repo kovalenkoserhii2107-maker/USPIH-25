@@ -133,3 +133,27 @@ test('перевірка розбиття платежу', () => {
     assert.match(bank.checkAllocations([{ apt: '45', amountKop: 1 }, { apt: '45', amountKop: 125039 }], 125040, apts), /двічі/);
     assert.match(bank.checkAllocations([], 1, apts), /Вкажіть/);
 });
+
+test('оренда й розміщення обладнання — дохід ОСББ, навіть з номером квартири', () => {
+    const tx = (purpose, cp = {}) => ({ direction: 'in', amountKop: 120000, purpose, counterparty: { name: 'Петренко', account: '', code: '', ...cp } });
+    const rent = bank.classify(tx('Оренда нежитлового приміщення по договору, кв. 45'), ctx());
+    assert.deepEqual([rent.status, rent.category, rent.relatedApt], ['other', 'rent', '45']);
+    const eq = bank.classify(tx('Плата за розміщення обладнання зв’язку за жовтень', { name: 'ТОВ ПРОВАЙДЕР', code: '14360570' }), ctx());
+    assert.deepEqual([eq.status, eq.category], ['other', 'equipment']);
+    // Звичайний внесок з номером квартири — як і раніше, у квартиру.
+    assert.equal(bank.classify(tx('Утримання будинку кв. 45'), ctx()).status, 'matched');
+});
+
+test('повний формат призначення з сервісу ОСББ: о/р з нулями, адреса, корпус', () => {
+    // Структура — як у реальних оплатах; цифри й імʼя умовні.
+    const purpose = 'О/р 00401230045, м. Одеса, вул. Садова, буд. 3, корп. 3, кв. 45, від Іван Петренко, за комунальні послуги';
+    const k = { apts: new Set(['3', '45']), accounts: new Map([['401230045', '45']]) };
+    const r = bank.classify({ direction: 'in', amountKop: 40000, purpose, counterparty: { name: 'ПЕТРЕНКО ІВАН' } }, ctx({ known: k }));
+    assert.deepEqual([r.status, r.apt, r.method], ['matched', '45', 'account']);
+    // «буд. 3» і «корп. 3» — не квартира 3.
+    assert.ok(!bank.aptCandidates(purpose, k).some(c => c.apt === '3'));
+    // Нежитлове й «особовий рахунок» кирилицею повністю.
+    const k2 = { apts: new Set(['302']), accounts: new Map([['1045', '45']]) };
+    assert.ok(bank.aptCandidates('Нежитлове приміщення 302 оренда', k2).some(c => c.apt === '302' && c.strong));
+    assert.ok(bank.aptCandidates('особовий рахунок 1045', { apts: new Set(['45']), accounts: new Map([['1045', '45']]) }).some(c => c.apt === '45' && c.method === 'account'));
+});

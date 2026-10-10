@@ -40,6 +40,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const data = snap.exists ? snap.data() : {};
         return {
             groups: data.groups?.length ? data.groups : core.DEFAULT_GROUPS,
+            components: data.components?.length ? data.components : core.DEFAULT_COMPONENTS,
             tariffs: data.tariffs || [],
             premises: data.premises || {},
             startPeriod: data.startPeriod || core.START_PERIOD,
@@ -51,7 +52,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function loadApartments() {
         const snap = await db.collection('apartments').get();
         return snap.docs.filter(d => d.data().isAdmin !== true)
-            .map(d => ({ apt: cleanApt(d.id), id: d.id, area: d.data().area ?? null, balance: d.data().balance ?? null, personalAccount: d.data().personalAccount || '' }));
+            .map(d => ({ apt: cleanApt(d.id), id: d.id, area: d.data().area ?? null, residents: d.data().residents ?? null, balance: d.data().balance ?? null, personalAccount: d.data().personalAccount || '' }));
     }
 
     // --------------------------------------------------------
@@ -129,13 +130,14 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const [settings, apartments, runs] = await Promise.all([loadSettings(), loadApartments(), loadRuns()]);
         const done = new Set((await db.collection('charges_runs').select().get()).docs.map(d => d.id));
         const current = core.currentPeriod();
-        const due = core.duePeriods({ startPeriod: settings.startPeriod, current, done });
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+        const due = core.duePeriods({ startPeriod: settings.startPeriod, current, done, today });
         const period = due[0] || current;
-        const preview = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, period });
+        const preview = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period });
         return {
-            groups: settings.groups, tariffs: settings.tariffs, premises: settings.premises,
+            groups: settings.groups, components: settings.components, tariffs: settings.tariffs, premises: settings.premises,
             startPeriod: settings.startPeriod, opening: settings.opening ? { ...settings.opening, at: settings.opening.at?.toDate?.()?.toISOString() || null } : null,
-            apartments: apartments.map(a => ({ apt: a.apt, area: a.area, balance: a.balance, personalAccount: a.personalAccount })),
+            apartments: apartments.map(a => ({ apt: a.apt, area: a.area, residents: a.residents, balance: a.balance, personalAccount: a.personalAccount })),
             runs, due, current,
             preview: { period, done: done.has(period), ...preview }
         };
@@ -144,7 +146,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function preview({ period }) {
         if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         const [settings, apartments] = await Promise.all([loadSettings(), loadApartments()]);
-        return { period, ...core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, period }) };
+        return { period, ...core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period }) };
     }
 
     // --------------------------------------------------------
@@ -163,7 +165,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         if (period < settings.startPeriod) fail('failed-precondition', `Облік у застосунку починається з ${core.periodName(settings.startPeriod)}`);
         if (period > core.currentPeriod()) fail('failed-precondition', 'Нараховувати наперед не можна');
         const apartments = await loadApartments();
-        const result = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, period });
+        const result = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period });
         if (!result.rows.length) fail('failed-precondition', 'Нема кому нараховувати: внесіть тарифи й площі приміщень');
         if (Number.isInteger(expectTotalKop) && expectTotalKop !== result.totalKop) {
             fail('aborted', `Дані змінилися: тепер ${fromKop(result.totalKop)} грн замість ${fromKop(expectTotalKop)}. Перегляньте ще раз.`);
@@ -181,6 +183,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             batch.set(db.doc(`apartments/${ids.get(r.apt)}/ledger/charge-${period}`), {
                 at, period, kind: 'charge', amount: fromKop(r.amountKop), amountKop: r.amountKop,
                 note: core.chargeNote(r, period), source: 'charges', group: r.group, areaCenti: r.areaCenti, rate4: r.rate4,
+                parts: r.parts.map(p => ({ component: p.component, name: p.name, base: p.base, rate4: p.rate4, amountKop: p.amountKop })),
                 createdAt: FieldValue.serverTimestamp(), createdBy: actor
             });
             if (++ops >= 400) await flush();
@@ -193,7 +196,9 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         }
         batch.set(runRef, {
             period, count: result.rows.length, totalKop: result.totalKop, amounts,
-            tariffs: [...new Set(result.rows.map(r => r.tariffId).filter(Boolean))],
+            tariffs: [...new Set(result.rows.flatMap(r => r.parts.map(p => p.tariffId)).filter(Boolean))],
+            // Скільки нараховано за кожною складовою — для кошторису й звірки.
+            byComponent: Object.fromEntries(settings.components.map(c => [c.id, result.rows.reduce((s, r) => s + (r.parts.find(p => p.component === c.id)?.amountKop || 0), 0)])),
             problems: result.problems.slice(0, 200), by: actor, at: FieldValue.serverTimestamp(),
             recalculated: previous.exists ? (previous.data().recalculated || 0) + 1 : 0
         });
@@ -232,19 +237,33 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     // --------------------------------------------------------
     // ТАРИФИ Й ГРУПИ
     // --------------------------------------------------------
-    async function addTariff(actor, role, { group, rate, from, decision }) {
+    async function addTariff(actor, role, { group, component, rate, from, decision }) {
         const settings = await loadSettings();
-        const tariff = { group: String(group || ''), rate4: core.parseRate(rate), from: String(from || ''), decision: String(decision || '').replace(/\s+/g, ' ').trim() };
+        const comp = settings.components.find(c => c.id === (component || 'main'));
+        if (!comp) fail('invalid-argument', 'Невідома складова внеску');
+        const tariff = { group: String(group || ''), component: comp.id, base: comp.base, rate4: core.parseRate(rate), from: String(from || ''), decision: String(decision || '').replace(/\s+/g, ' ').trim() };
         const error = core.checkTariff(tariff, settings.groups, settings.tariffs);
         if (error) fail('invalid-argument', error);
         tariff.id = db.collection('_').doc().id.slice(0, 12);
         tariff.by = actor;
         tariff.at = new Date().toISOString();
-        await settingsRef.set({ tariffs: [...settings.tariffs, tariff], groups: settings.groups }, { merge: true });
+        await settingsRef.set({ tariffs: [...settings.tariffs, tariff], groups: settings.groups, components: settings.components }, { merge: true });
         const name = settings.groups.find(g => g.id === tariff.group)?.name;
         await audit(actor, role, 'charges.tariff', 'charges/settings',
-            `Тариф «${name}»: ${core.formatRate(tariff.rate4)} грн/м² з ${core.periodName(tariff.from)}`, tariff);
+            `Тариф «${comp.name}», ${name}: ${core.formatRate(tariff.rate4)} грн ${core.BASES[comp.base]} з ${core.periodName(tariff.from)}`, tariff);
         return { ok: true, id: tariff.id };
+    }
+
+    /** Нова складова внеску (освітлення МЗК, ліфти, вивезення ТПВ…). */
+    async function addComponent(actor, role, { name, base, item }) {
+        const settings = await loadSettings();
+        const c = { name: String(name || '').trim(), base: String(base || ''), item: String(item || 'other') };
+        const error = core.checkComponent(c, settings.components);
+        if (error) fail('invalid-argument', error);
+        c.id = `c${Date.now().toString(36)}`;
+        await settingsRef.set({ components: [...settings.components, c], groups: settings.groups }, { merge: true });
+        await audit(actor, role, 'charges.component', 'charges/settings', `Складова внеску «${c.name}» (${core.BASES[c.base]})`, c);
+        return { ok: true, id: c.id };
     }
 
     /** Прибрати можна лише тариф, за яким ще нічого не нараховано. */
@@ -267,6 +286,40 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         await settingsRef.set({ groups: [...settings.groups, group] }, { merge: true });
         await audit(actor, role, 'charges.group', 'charges/settings', `Група приміщень «${group.name}»`, group);
         return { ok: true, id: group.id };
+    }
+
+    /** Перейменувати складову (напр. «Утримання будинку» → як у квитанції сервісу). */
+    async function renameComponent(actor, role, { id, name }) {
+        const settings = await loadSettings();
+        const c = settings.components.find(x => x.id === id);
+        if (!c) fail('not-found', 'Складову не знайдено');
+        const n = String(name || '').trim();
+        if (n.length < 2 || n.length > 60) fail('invalid-argument', 'Назва складової — від 2 до 60 символів');
+        if (settings.components.some(x => x.id !== id && x.name.toLowerCase() === n.toLowerCase())) fail('invalid-argument', 'Така складова вже є');
+        await settingsRef.set({ components: settings.components.map(x => (x.id === id ? { ...x, name: n } : x)), groups: settings.groups }, { merge: true });
+        await audit(actor, role, 'charges.component', 'charges/settings', `Складова «${c.name}» → «${n}»`, { id, name: n });
+        return { ok: true };
+    }
+
+    /**
+     * Кількість проживаючих — для складових «з проживаючого» (вивезення
+     * побутових відходів). rows: [{ apt, residents }]; порожнє — прибрати.
+     */
+    async function setResidents(actor, role, { rows }) {
+        const ids = new Map((await loadApartments()).map(a => [a.apt, a.id]));
+        const list = (Array.isArray(rows) ? rows : []).slice(0, 2000).map(r => ({ apt: cleanApt(r?.apt), residents: r?.residents === '' || r?.residents === null ? null : core.parseResidents(r?.residents) }));
+        if (!list.length) fail('invalid-argument', 'Немає жодного рядка');
+        const bad = list.find(r => !ids.has(r.apt));
+        if (bad) fail('invalid-argument', `Квартири ${bad.apt} немає в довіднику`);
+        if (list.some((r, i) => rows[i]?.residents !== '' && rows[i]?.residents !== null && r.residents === null)) fail('invalid-argument', 'Кількість проживаючих — ціле число від 0 до 30');
+        let batch = db.batch(), ops = 0;
+        for (const r of list) {
+            batch.set(db.doc(`apartments/${ids.get(r.apt)}`), { residents: r.residents === null ? FieldValue.delete() : r.residents }, { merge: true });
+            if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+        }
+        if (ops) await batch.commit();
+        await audit(actor, role, 'charges.residents', 'apartments', `Кількість проживаючих: ${list.length} кв.`, { count: list.length });
+        return { ok: true, count: list.length };
     }
 
     async function setPremises(actor, role, { apts, group }) {
@@ -342,6 +395,9 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             case 'addTariff': return addTariff(actor, role, data);
             case 'removeTariff': return removeTariff(actor, role, data);
             case 'addGroup': return addGroup(actor, role, data);
+            case 'addComponent': return addComponent(actor, role, data);
+            case 'setResidents': return setResidents(actor, role, data);
+            case 'renameComponent': return renameComponent(actor, role, data);
             case 'setPremises': return setPremises(actor, role, data);
             case 'setOpening': return setOpening(actor, role, data);
             case 'recompute': {
@@ -354,5 +410,5 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         }
     });
 
-    return { chargesAction, recompute: recomputeSafe, actions: { run, revert, addTariff, removeTariff, addGroup, setPremises, setOpening, context, getStatement, recompute } };
+    return { chargesAction, recompute: recomputeSafe, actions: { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, context, getStatement, recompute } };
 };

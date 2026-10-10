@@ -27,6 +27,23 @@ const DEFAULT_GROUPS = [
     { id: 'nonres', name: 'Нежитлові приміщення' }
 ];
 
+/**
+ * Складові внеску: «Утримання будинку» за м² — обовʼязкова; інші
+ * (освітлення МЗК, ліфти, вивезення ТПВ…) — за м² або фіксовано з
+ * приміщення. Складова без тарифу для групи цій групі не нараховується
+ * (напр. ліфти — нежитловим на першому поверсі). item — стаття
+ * кошторису, яку складова фінансує.
+ */
+const DEFAULT_COMPONENTS = [{ id: 'main', name: 'Утримання будинку', base: 'area', item: 'other' }];
+const BASES = { area: 'за м²', fixed: 'з приміщення', residents: 'з проживаючого' };
+
+/** Кількість проживаючих: ціле від 0 (порожня квартира) до 30; null — не внесено. */
+function parseResidents(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 0 && n <= 30 ? n : null;
+}
+
 const MONTHS = ['січень', 'лютий', 'березень', 'квітень', 'травень', 'червень',
     'липень', 'серпень', 'вересень', 'жовтень', 'листопад', 'грудень'];
 
@@ -106,22 +123,31 @@ function kyivDate(y, m, d, hh = 0, mi = 0) {
     return new Date(guess - (kyiv - utc));
 }
 
+/** Останній день місяця: 2026-02 → 28. */
+const lastDay = period => { const [y, m] = period.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+
 /**
- * Дата нарахування — перше число місяця, полудень за Києвом: так
+ * Дата нарахування — останній день місяця (як у сервісі бухгалтера:
+ * «Нарахування від 30.09.2026 за вересень»), полудень за Києвом: так
  * дата однакова в будь-якому часовому поясі телефона мешканця.
  */
 function chargeDate(period) {
     const [y, m] = period.split('-').map(Number);
-    return kyivDate(y, m, 1, 12);
+    return kyivDate(y, m, lastDay(period), 12);
 }
 
 /** Вхідний залишок — 30.09.2026: раніше за будь-яке нарахування. */
 const openingDate = () => kyivDate(2026, 9, 30, 12);
 
 /** Місяці, за які ще не нараховано: від початку обліку до поточного включно. */
-function duePeriods({ startPeriod = START_PERIOD, current, done }) {
+/**
+ * Місяці, за які пора нараховувати: минулі ще не нараховані, а поточний —
+ * з його останнього дня (today — «РРРР-ММ-ДД» за Києвом).
+ */
+function duePeriods({ startPeriod = START_PERIOD, current, done, today }) {
     const out = [];
-    for (let p = startPeriod; p <= current && out.length < 36; p = shiftPeriod(p, 1)) {
+    const endOfMonth = today && Number(today.slice(8, 10)) >= lastDay(current);
+    for (let p = startPeriod; (p < current || (p === current && (endOfMonth || !today))) && out.length < 36; p = shiftPeriod(p, 1)) {
         if (!done.has(p)) out.push(p);
     }
     return out;
@@ -130,10 +156,10 @@ function duePeriods({ startPeriod = START_PERIOD, current, done }) {
 // ------------------------------------------------------------
 // ТАРИФИ
 // ------------------------------------------------------------
-/** Тариф групи, чинний у місяці: найновіший з `from` ≤ місяця. */
-function tariffFor(tariffs, group, period) {
+/** Тариф групи (і складової), чинний у місяці: найновіший з `from` ≤ місяця. */
+function tariffFor(tariffs, group, period, component = 'main') {
     return (tariffs || [])
-        .filter(t => t.group === group && t.from <= period)
+        .filter(t => t.group === group && (t.component || 'main') === component && t.from <= period)
         .sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0] || null;
 }
 
@@ -141,15 +167,29 @@ function tariffFor(tariffs, group, period) {
 function checkTariff(t, groups, tariffs = []) {
     if (!(groups || []).some(g => g.id === t.group)) return 'Невідома група приміщень';
     if (!Number.isInteger(t.rate4) || t.rate4 <= 0) return 'Вкажіть тариф більший за нуль, до 4 знаків після коми';
-    if (t.rate4 > 1_000_000) return 'Тариф понад 100 грн за м² — перевірте число';
+    if (t.base !== 'fixed' && t.rate4 > 1_000_000) return 'Тариф понад 100 грн за м² — перевірте число';
+    if (t.base === 'fixed' && t.rate4 > 100_000_000) return 'Понад 10 000 грн з приміщення — перевірте число';
+    if (t.base === 'residents' && t.rate4 > 10_000_000) return 'Понад 1 000 грн з проживаючого — перевірте число';
     if (!validPeriod(t.from)) return 'Вкажіть місяць, з якого діє тариф';
     if (t.from < '2020-01') return 'Занадто ранній місяць';
     const decision = String(t.decision || '').trim();
     if (decision.length < 3) return 'Вкажіть рішення, яким затверджено тариф (протокол зборів, кошторис)';
     if (decision.length > 200) return 'Опис рішення задовгий (до 200 символів)';
-    if ((tariffs || []).some(x => x.group === t.group && x.from === t.from)) return 'Для цієї групи вже є тариф з цього місяця';
+    if ((tariffs || []).some(x => x.group === t.group && (x.component || 'main') === (t.component || 'main') && x.from === t.from)) return 'Для цієї групи й складової вже є тариф з цього місяця';
     return null;
 }
+
+function checkComponent(c, components) {
+    const n = String(c.name || '').trim();
+    if (n.length < 2 || n.length > 60) return 'Назва складової — від 2 до 60 символів';
+    if (!BASES[c.base]) return 'Оберіть, як рахувати: за м² чи з приміщення';
+    if ((components || []).some(x => x.name.toLowerCase() === n.toLowerCase())) return 'Така складова вже є';
+    return null;
+}
+
+/** Сума складової: за м² — площа × тариф; з приміщення — сам тариф (у 1/10000 грн). */
+const partKop = (base, areaCenti, rate4, residents = 0) => (base === 'fixed' ? Math.round(rate4 / 100)
+    : base === 'residents' ? Math.round(residents * rate4 / 100) : chargeKop(areaCenti, rate4));
 
 function checkGroupName(name, groups) {
     const n = String(name || '').trim();
@@ -168,16 +208,29 @@ function checkGroupName(name, groups) {
  * Повертає { rows: [{ apt, group, areaCenti, rate4, tariffId, amountKop }],
  *            problems: [{ apt, reason }], totalKop }.
  */
-function computeCharges({ apartments, premises = {}, tariffs, groups = DEFAULT_GROUPS, period }) {
+function computeCharges({ apartments, premises = {}, tariffs, groups = DEFAULT_GROUPS, components = DEFAULT_COMPONENTS, period }) {
     const rows = [], problems = [];
     const names = new Map(groups.map(g => [g.id, g.name]));
+    const comps = components?.length ? components : DEFAULT_COMPONENTS;
     for (const a of apartments) {
         const group = names.has(premises[a.apt]) ? premises[a.apt] : 'res';
         const areaCenti = parseArea(a.area);
-        if (!areaCenti) { problems.push({ apt: a.apt, reason: 'немає площі' }); continue; }
-        const tariff = tariffFor(tariffs, group, period);
-        if (!tariff) { problems.push({ apt: a.apt, reason: `немає тарифу «${names.get(group)}»` }); continue; }
-        rows.push({ apt: a.apt, group, areaCenti, rate4: tariff.rate4, tariffId: tariff.id || null, amountKop: chargeKop(areaCenti, tariff.rate4) });
+        const main = tariffFor(tariffs, group, period, 'main');
+        if (!main) { problems.push({ apt: a.apt, reason: `немає тарифу «${names.get(group)}»` }); continue; }
+        const residents = parseResidents(a.residents);
+        const parts = [];
+        let missing = null;
+        for (const c of comps) {
+            const t = c.id === 'main' ? main : tariffFor(tariffs, group, period, c.id);
+            if (!t) continue;
+            if (c.base === 'area' && !areaCenti) { missing = 'немає площі'; break; }
+            if (c.base === 'residents' && residents === null) { missing = 'не внесено кількість проживаючих'; break; }
+            parts.push({ component: c.id, name: c.name, base: c.base, rate4: t.rate4, tariffId: t.id || null,
+                ...(c.base === 'residents' ? { residents } : {}), amountKop: partKop(c.base, areaCenti, t.rate4, residents) });
+        }
+        if (missing) { problems.push({ apt: a.apt, reason: missing }); continue; }
+        rows.push({ apt: a.apt, group, areaCenti, residents, rate4: main.rate4, tariffId: main.id || null, parts,
+            amountKop: parts.reduce((s, p) => s + p.amountKop, 0) });
     }
     const byApt = (x, y) => String(x.apt).localeCompare(String(y.apt), 'uk', { numeric: true });
     rows.sort(byApt);
@@ -186,8 +239,13 @@ function computeCharges({ apartments, premises = {}, tariffs, groups = DEFAULT_G
 }
 
 /** Примітка запису в історії: мешканець бачить, з чого склалася сума. */
-const chargeNote = (row, period) =>
-    `Внесок за ${periodName(period)}: ${formatArea(row.areaCenti)} м² × ${formatRate(row.rate4)} грн`;
+function chargeNote(row, period) {
+    const parts = row.parts?.length ? row.parts : [{ base: 'area', rate4: row.rate4 }];
+    const one = p => (p.base === 'fixed' ? `${formatRate(p.rate4)} грн`
+        : p.base === 'residents' ? `${p.residents} прож. × ${formatRate(p.rate4)} грн` : `${formatArea(row.areaCenti)} м² × ${formatRate(p.rate4)} грн`);
+    if (parts.length === 1) return `Внесок за ${periodName(period)}: ${one(parts[0])}`;
+    return `Внески за ${periodName(period)}: ${parts.map(p => `${p.name.toLowerCase()} ${one(p)}`).join('; ')}`;
+}
 
 // ------------------------------------------------------------
 // ВХІДНІ ЗАЛИШКИ
@@ -252,9 +310,9 @@ function statement(ledgers, period, startPeriod = START_PERIOD) {
 }
 
 module.exports = {
-    START_PERIOD, OPENING_PERIOD, OPENING_ID, DEFAULT_GROUPS,
+    START_PERIOD, OPENING_PERIOD, OPENING_ID, DEFAULT_GROUPS, DEFAULT_COMPONENTS, BASES, checkComponent, partKop, parseResidents,
     parseArea, parseRate, formatRate, formatArea, chargeKop, entryKop,
-    validPeriod, shiftPeriod, currentPeriod, periodName, kyivDate, chargeDate, openingDate, duePeriods,
+    validPeriod, shiftPeriod, currentPeriod, periodName, kyivDate, lastDay, chargeDate, openingDate, duePeriods,
     tariffFor, checkTariff, checkGroupName, computeCharges, chargeNote,
     checkOpening, openingNote, balanceFromLedger, statement
 };

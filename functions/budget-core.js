@@ -36,7 +36,7 @@ const GROUPS = {
 const groupOf = item => Object.keys(GROUPS).find(g => GROUPS[g].items.includes(item)) || 'other';
 
 const INCOME_SOURCES = {
-    contributions: 'Внески співвласників', rent: 'Оренда', interest: 'Відсотки банку',
+    contributions: 'Внески співвласників', rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку',
     grant: 'Гранти, співфінансування', refund: 'Повернення коштів', other: 'Інші надходження'
 };
 

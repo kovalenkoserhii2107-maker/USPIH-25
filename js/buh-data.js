@@ -18,7 +18,7 @@ export const ACCOUNT_PURPOSES = {
     current: 'Поточний', repair: 'Ремонтний фонд', reserve: 'Резервний фонд', deposit: 'Депозит', grant: 'Грантовий'
 };
 export const INCOME_CATEGORIES = {
-    rent: 'Оренда', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення коштів', other: 'Інше надходження'
+    rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення коштів', other: 'Інше надходження'
 };
 export const EXPENSE_CATEGORIES = {
     bank_fee: 'Комісія банку', salary: 'Зарплата', taxes: 'Податки й внески', other: 'Витрата'
@@ -222,6 +222,19 @@ export async function budgetAct(payload, timeoutMs = 60000) {
     try {
         return await callBackend('budgetAction', payload, timeoutMs);
     } finally {
+        invalidate();
+    }
+}
+
+// ------------------------------------------------------------
+// ДЕМО-ПРОГІН (тестовий акаунт)
+// ------------------------------------------------------------
+export const loadDemo = () => once('demo', () => callBackend('demoAction', { action: 'status' }).catch(() => null));
+export async function demoAct(action) {
+    try {
+        return await callBackend('demoAction', { action }, 540000);
+    } finally {
+        invalidateDirectory();
         invalidate();
     }
 }
