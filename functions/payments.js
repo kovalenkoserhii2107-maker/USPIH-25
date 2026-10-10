@@ -15,6 +15,7 @@
 //   createdAt, sentAt?, paidAt?, txId?, proposalKey? }
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const logger = require('firebase-functions/logger');
 const core = require('./payments-core');
 const { normIban, fromKop } = require('./bank-core');
@@ -138,7 +139,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         return { proposals, recipients: [...recipients.values()], accounts };
     }
 
-    const paymentAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, async request => {
+    const paymentAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, callGuard('paymentAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -146,7 +147,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         if (data.action === 'cancel') return cancel(actor, role, data);
         if (data.action === 'context') return contextFor();
         fail('invalid-argument', 'Невідома дія');
-    });
+    }));
 
     return { paymentAction, actions: { create, cancel } };
 };

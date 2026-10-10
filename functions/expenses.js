@@ -20,6 +20,7 @@
 //   expense_settings/main — { smallKop } (поріг дрібних витрат, задає голова)
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const logger = require('firebase-functions/logger');
 const core = require('./expenses-core');
 const { normIban, fromKop, safeId } = require('./bank-core');
@@ -312,7 +313,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         return { ok: true };
     }
 
-    const expenseAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, async request => {
+    const expenseAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, callGuard('expenseAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -330,7 +331,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             case 'settings': return setSettings(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
-    });
+    }));
 
     return { expenseAction, linkUpdate, release, openForMatching,
         actions: { saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, pay, linkTx, setSettings, context } };

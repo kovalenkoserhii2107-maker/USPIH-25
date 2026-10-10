@@ -19,6 +19,11 @@ export async function callBackend(name, payload, timeoutMs = 45000) {
             deadline: 'Сервер не встиг відповісти. Безпечно повторіть дію.',
             'deadline-exceeded': 'Сервер не встиг відповісти. Безпечно повторіть дію.'
         };
+        // Голе «internal» — відповіді від функції не було (зв'язок, перевантаження):
+        // текст помилки самої функції сервер передає повністю.
+        if (code === 'internal' && /^internal$/i.test(String(error?.message || '').trim())) {
+            friendly.internal = 'Сервер не відповів (зв\'язок або перевантаження). Повторіть дію за хвилину.';
+        }
         const wrapped = new Error(friendly[code] || error?.message || 'Помилка сервера');
         wrapped.code = code;
         wrapped.cause = error;
