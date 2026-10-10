@@ -10,7 +10,7 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 
 let app, db, demo;
 const COLLECTIONS = ['apartments', 'staff', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'suppliers', 'contracts', 'expenses',
-    'expense_settings', 'budgets', 'finance', 'finance_ops', 'finance_settings', 'charges', 'charges_runs', 'demo'];
+    'expense_settings', 'budgets', 'finance', 'finance_ops', 'finance_settings', 'charges', 'charges_runs', 'demo', 'payroll_people', 'payroll_runs', 'payroll_settings'];
 const wipe = async () => {
     for (const name of COLLECTIONS) {
         const snap = await db.collection(name).get();
@@ -28,7 +28,8 @@ before(async () => {
     const bank = require('./bank.js')({ ...deps, balances: charges, expenses });
     const lock = require('./period-lock.js')(db);
     const journal = require('./journal.js')({ ...deps, lock });
-    demo = require('./demo.js')({ ...deps, charges, bank, expenses, budget, journal });
+    const payroll = require('./payroll.js')({ ...deps, payments, lock });
+    demo = require('./demo.js')({ ...deps, charges, bank, expenses, budget, journal, payroll });
     await wipe();
 });
 after(async () => { await wipe(); await deleteApp(app); });
@@ -43,7 +44,7 @@ test('прогін лишає слід у всіх розділах, «Приб�
 
     assert.deepEqual((await demo.actions.status()).blockers, []);
     const r = await demo.actions.run('10');
-    assert.equal(r.steps.length, 10);
+    assert.equal(r.steps.length, 11);
     assert.equal(r.summary.apartments, 40);
 
     // Нарахування: 4 складові, сума ~ річні надходження / 12.
@@ -103,6 +104,9 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal(pub.debt.list.length, pub.debt.count);
     assert.ok(!JSON.stringify(pub.debt).includes('Власник Тестовий'));
     assert.ok((await db.collection('audit_log').where('action', '==', 'demo.run').get()).size === 1);
+    // Зарплата: відомість затверджена, у проводках — нарахування 92/661 і ЄСВ 92/651.
+    assert.equal((await db.doc('payroll_runs/2026-10').get()).data().status, 'approved');
+    assert.match((await demo.actions.status()).steps.find(st => /^Зарплата/.test(st)), /нараховано 16\s647/);
     // Проводки з демо-операцій збалансовано.
     assert.match((await demo.actions.status()).steps.find(st => /^Проводки/.test(st)), /дебет = кредит/);
     // Повторно — не можна.
@@ -114,6 +118,8 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal((await db.collection('charges_runs').get()).size, 0);
     assert.equal((await db.doc('budgets/2026').get()).exists, false);
     assert.equal((await db.collection('finance_ops').get()).size, 0);
+    assert.equal((await db.collection('payroll_people').get()).size, 0);
+    assert.equal((await db.collection('payroll_runs').get()).size, 0);
     assert.equal((await db.doc('finance_settings/public').get()).exists, false);
     assert.equal((await db.doc('charges/settings').get()).exists, false);
     const a4 = (await db.doc('apartments/4').get()).data();

@@ -61,6 +61,11 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         const proposalKey = data.proposalKey ? String(data.proposalKey).slice(0, 80) : null;
         // Платіж за документом витрат (expenses.js → pay): виписка закриє й документ.
         payment.expenseId = data.expenseId ? String(data.expenseId).replace(/[^\w-]/g, '').slice(0, 60) : null;
+        // Платіж за відомістю зарплати (payroll.js): у проводках — погашення 661/641/651.
+        if (data.payroll?.period) {
+            payment.payroll = { period: String(data.payroll.period).slice(0, 7), stage: data.payroll.stage === 'advance' ? 'advance' : 'final',
+                key: String(data.payroll.key || '').replace(/[^\w-]/g, '').slice(0, 60) };
+        }
         if (proposalKey) {
             const dup = await db.collection('payments').where('proposalKey', '==', proposalKey).where('status', 'in', ['sent', 'paid']).limit(1).get();
             if (!dup.empty) fail('already-exists', 'Цей платіж уже відправлено в банк');
@@ -125,7 +130,12 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         const payments = list.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null, sentAt: d.data().sentAt?.toDate?.() || null }));
         const now = new Date();
         const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        // Зарплату й податки з неї платить відомість (payroll.js) — «за історією» не пропонуємо, щоб не заплатити двічі.
+        const payroll = new Set();
+        (await db.collection('payroll_people').select('iban').get()).forEach(d => d.data().iban && payroll.add(normIban(d.data().iban)));
+        Object.values((await db.doc('payroll_settings/main').get()).data()?.taxes || {}).forEach(t => t?.iban && payroll.add(normIban(t.iban)));
         const proposals = core.recurringRecipients(history)
+            .filter(r => !payroll.has(normIban(r.recipient.iban)))
             .filter(r => !core.alreadyPaidThisMonth(r, payments, history, now))
             .map(r => ({ ...r, lastAt: r.lastAt.toISOString(), purpose: core.purposeForMonth(r.purpose, now), proposalKey: `${r.key}-${month}` }));
         const recipients = new Map();

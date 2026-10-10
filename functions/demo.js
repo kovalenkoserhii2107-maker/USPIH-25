@@ -114,7 +114,7 @@ function parseHistory(text) {
     return rows;
 }
 
-module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal }) {
+module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal, payroll }) {
     const stateRef = db.doc('demo/state');
     const fail = (code, message) => { throw new HttpsError(code, message); };
 
@@ -152,7 +152,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (blocked.length) fail('failed-precondition', `Демо лише для чистого тестового обліку: ${blocked.join('; ')}`);
         const steps = [];
         const step = text => { steps.push(text); logger.info('Демо:', text); };
-        const created = { suppliers: [], contracts: [], expenses: [], history: [], links: [] };
+        const created = { suppliers: [], contracts: [], expenses: [], history: [], links: [], people: [], payrollRuns: [] };
 
         // Бухгалтер для дій бухгалтера — справжній, якщо є в команді.
         const acc = await db.collection('staff').where('role', '==', 'accountant').where('active', '==', true).limit(1).get();
@@ -422,7 +422,23 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         const pub = (await db.doc('finance/current').get()).data();
         step(`«Фінанси будинку» для мешканців опубліковано: борг будинку ${fromKop(pub.debt.totalKop).toLocaleString('uk-UA')} грн (${pub.debt.count} кв.) — без прізвищ; розшифровка статей: ${Object.keys(pub.opsIndex || {}).length}, з номерами квартир (як у сервісі)`);
 
-        // 10. Проводки за жовтень: з тих самих операцій, дебет = кредит.
+        // 10. Зарплата за жовтень: двірник на мінімальній зарплаті й виконавець за ЦПД;
+        // відомість затверджує голова. Платежів немає — банк на тестовому акаунті не підключено.
+        if (payroll) {
+            const emp = await payroll.actions.savePerson(...A, { name: 'Двірник Демо', kind: 'employee', position: 'двірник', salaryKop: 864700, fte: 1,
+                mainJob: true, rnokpp: rnokpp('312456781'), iban: iban('2600100000000081'), taxNotified: true, from: '2025-03-01' });
+            const gph = await payroll.actions.savePerson(...A, { name: 'Виконавець Демо', kind: 'gph', position: 'прибирання прибудинкової території',
+                rnokpp: rnokpp('312456782'), iban: iban('2600100000000082'), contract: '№ 5 від 01.10.2026' });
+            created.people.push(emp.id, gph.id);
+            await payroll.actions.saveRun(...A, { period: PERIOD, inputs: { [gph.id]: { actKop: 800000 } } });
+            created.payrollRuns.push(PERIOD);
+            await payroll.actions.approve(...C, { period: PERIOD });
+            const pr = await payroll.actions.context({ period: PERIOD });
+            await stateRef.set({ created }, { merge: true });
+            step(`Зарплата за жовтень 2026 (затверджено головою): нараховано ${fromKop(pr.run.totals.grossKop).toLocaleString('uk-UA')} грн, утримано ПДФО й ВЗ ${fromKop(pr.run.totals.pdfoKop + pr.run.totals.vzKop).toLocaleString('uk-UA')} грн, ЄСВ ${fromKop(pr.run.totals.esvKop).toLocaleString('uk-UA')} грн; платежі — після підключення банку`);
+        }
+
+        // 11. Проводки за жовтень: з тих самих операцій, дебет = кредит.
         if (journal) {
             const j = await journal.actions.context({ period: PERIOD });
             step(`Проводки за жовтень 2026: ${j.entries.length}, обороти ${fromKop(j.tb.totals.dr).toLocaleString('uk-UA')} грн, дебет ${j.tb.balanced ? '=' : '≠'} кредит; закрити місяць можна після 31.10, коли «Вхідні» розібрано`);
@@ -479,6 +495,8 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         for (const col of ['suppliers', 'contracts', 'expenses']) for (const id of s.created?.[col] || []) await db.doc(`${col}/${id}`).delete();
         for (const path of s.created?.history || []) await db.doc(path).delete();
         for (const key of s.created?.links || []) await db.doc(`bank_links/${key}`).delete();
+        for (const id of s.created?.people || []) await db.doc(`payroll_people/${id}`).delete();
+        for (const period of s.created?.payrollRuns || []) await db.doc(`payroll_runs/${period}`).delete();
         await deleteAll(db.collection('charges_runs'));
         if (s.chargeSettings) await db.doc('charges/settings').set(s.chargeSettings); else await db.doc('charges/settings').delete();
         await db.doc('budgets/2026').delete();
