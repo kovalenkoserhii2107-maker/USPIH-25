@@ -151,8 +151,22 @@ const RULES = [
 /** Демо-прогін на тестовому акаунті: стан, кроки, кнопки (голова). */
 function demoHtml(d, chair) {
     if (!d) return '';
+    // Голова завжди бачить картку й причину; іншим — лише коли демо можна дивитися.
+    if (d.error) {
+        return chair ? `<section class="buh-card demo-card">
+            <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag is-error">недоступне</span></div>
+            <p class="buh-note">Сервер не відповів: ${escapeHtml(d.error)}. Найчастіше це означає, що функції ще не розгорнуто: <code>firebase deploy --only firestore:rules,firestore:indexes,functions</code>, потім оновіть сторінку.</p>
+        </section>` : '';
+    }
     const done = d.status === 'done';
-    if (!done && d.blockers?.length && d.status !== 'failed') return '';
+    if (!done && d.blockers?.length && d.status !== 'failed') {
+        return chair ? `<section class="buh-card demo-card">
+            <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag is-review">недоступне</span></div>
+            <p class="buh-note">Демо проганяється лише на чистому обліку, щоб не зачепити справжні дані. Зараз заважає:</p>
+            <ul class="jr-checks">${d.blockers.map(b => `<li class="is-block"><span aria-hidden="true">✕</span>${escapeHtml(b)}</li>`).join('')}</ul>
+            <p class="buh-note">Якщо це тестовий акаунт і дані можна видалити — очистіть їх (або напишіть розробнику), тоді тут зʼявиться кнопка «Прогнати демо».</p>
+        </section>` : '';
+    }
     return `<section class="buh-card demo-card">
         <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag ${done ? 'is-payment' : d.status === 'failed' ? 'is-error' : 'is-review'}">${done ? 'прогнано' : d.status === 'failed' ? 'збій' : 'тестовий акаунт'}</span></div>
         <p class="buh-note">${done ? 'Облік заповнено демо-даними через справжні функції системи. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис», «Банк», а мешканцям — «Фінанси будинку».'
