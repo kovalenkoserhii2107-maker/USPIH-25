@@ -31,7 +31,7 @@ const privat = require('./privat');
 
 const REGION = 'europe-central2';
 const PURPOSES = ['current', 'repair', 'reserve', 'deposit', 'grant'];
-const INCOME = ['rent', 'equipment', 'interest', 'grant', 'refund', 'other'];
+const INCOME = ['rent', 'equipment', 'interest', 'grant', 'refund', 'sick_fund', 'other'];
 const EXPENSE = ['bank_fee', 'supplier', 'salary', 'taxes', 'esv', 'other'];
 // Повернення на рахунок ОСББ, привʼязане до списання: проводка — назад на рахунок, з якого платили.
 const REFUND_REASONS = { bounce: 'банк повернув платіж (документ знову до сплати)', supplier: 'постачальник повернув кошти (сторно, знижка, переплата)', other: 'інше повернення списаного' };

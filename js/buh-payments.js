@@ -3,7 +3,8 @@
 // підтверджує — платіж зʼявляється в Приват24 й чекає підпису КЕП
 // голови. Проведення видно з виписки: статус змінюється сам.
 // ============================================================
-import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
+import { session } from './firebase.js';
+import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import {
     loadPayments, loadPaymentContext, payAct, skippedProposals, skipProposal, money, when, maskIban,
     PAYMENT_KINDS, PAYMENT_STATUS, ACCOUNT_PURPOSES
@@ -112,7 +113,7 @@ export async function loadPaymentsView() {
         </section>
         <section class="buh-card">
             <div class="buh-card-head"><h2>Відправляються, перевіряються або чекають підпису</h2></div>
-            ${waiting.length ? waiting.map(p => rowHtml(p, p.status === 'sent' ? `<button type="button" class="btn-ghost-small" data-act="cancel" data-id="${escapeHtml(p.id)}">Скасувати</button>` : '')).join('')
+            ${waiting.length ? waiting.map(p => rowHtml(p, p.status === 'sent' ? `<button type="button" class="btn-ghost-small" data-act="cancel" data-id="${escapeHtml(p.id)}">Скасувати</button>` : uncertainActions(p))).join('')
             : '<p class="list-empty">Нічого не чекає підпису</p>'}
         </section>
         <section class="buh-card">
@@ -120,6 +121,19 @@ export async function loadPaymentsView() {
             ${history.length ? history.map(p => rowHtml(p, '')).join('') : '<p class="list-empty">Платежів через застосунок ще не було</p>'}
         </section>`;
     afterRender();
+}
+
+/**
+ * Банк не підтвердив результат (або відправка зависла понад 10 хв): голова
+ * перевіряє в Приват24 і фіксує — платежу немає (можна відправити знову)
+ * чи він там є (далі його закриє виписка). Бухгалтер бачить підказку.
+ */
+function uncertainActions(p) {
+    const stale = p.status === 'unknown' || (p.status === 'sending' && Date.now() - (p.createdAt?.toMillis?.() ?? (Date.parse(p.createdAt) || Date.now())) > 10 * 60 * 1000);
+    if (!stale) return '';
+    if (session.role !== 'chair') return '<small class="t-muted">Голова перевіряє цей платіж у Приват24</small>';
+    return `<button type="button" class="btn-ghost-small" data-act="resolve-missing" data-id="${escapeHtml(p.id)}">У Приват24 його немає</button>
+        <button type="button" class="btn-ghost-small" data-act="resolve-found" data-id="${escapeHtml(p.id)}">Він є в Приват24</button>`;
 }
 
 function rowHtml(p, actions) {
@@ -192,6 +206,17 @@ export function initPaymentsView() {
             if (!await confirmDialog('Скасувати платіж?', 'Якщо голова ще не підписав, платіж буде видалено й у Приват24 (або видаліть його там вручну).', 'Скасувати платіж')) return;
             try { const r = await payAct({ action: 'cancel', id: btn.dataset.id }); toast(r?.deletedInBank ? 'Скасовано й видалено в банку' : 'Скасовано. Перевірте, чи видалено його в Приват24', 'success'); }
             catch (err) { toast(err.message, 'error'); }
+        } else if (act === 'resolve-missing' || act === 'resolve-found') {
+            const missing = act === 'resolve-missing';
+            const reason = await promptDialog(missing ? 'Платежу в Приват24 немає?' : 'Платіж є в Приват24?',
+                missing ? 'Перевірте список платежів у Приват24 (зокрема «Чернетки» й «На підписі»). Після позначки його можна буде відправити знову — дубля не буде, лише якщо в банку його справді немає.'
+                    : 'Платіж позначиться «чекає підпису»; виписка закриє його, коли голова підпише.',
+                { confirmLabel: missing ? 'Платежу немає' : 'Платіж є', placeholder: missing ? 'Напр.: перевірила 14.11, у Приват24 немає' : 'Номер чи дата в Приват24', maxLength: 300 });
+            if (!reason) return;
+            try {
+                await payAct({ action: 'resolve', id: btn.dataset.id, outcome: missing ? 'not_created' : 'created', reason });
+                toast(missing ? 'Позначено: у банку немає. Платіж можна відправити знову' : 'Позначено: платіж чекає підпису в Приват24', 'success');
+            } catch (err) { toast(err.message, 'error'); }
         } else if (act === 'retry') {
             const p = (await loadPayments()).find(x => x.id === btn.dataset.id);
             if (p) openForm(p);

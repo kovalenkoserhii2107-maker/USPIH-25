@@ -3,9 +3,14 @@
 // не виявляє пропущене нарахування або загублений рознос оплати.
 const { entryKop, balanceFromLedger, START_PERIOD } = require('./charges-core');
 
-function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartments = [], openingSet = false, expenses = [], payments = [], payrollRuns = [] }) {
+function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartments = [], openingSet = false, openingPending = false, expenses = [], payments = [], payrollRuns = [] }) {
     const issues = new Set();
     const block = text => issues.add(text);
+    // Перервана масова операція: записи історії неповні, поки її не завершено.
+    for (const run of runs.filter(r => ['writing', 'reverting'].includes(r.status))) {
+        block(`${run.status === 'writing' ? 'Нарахування' : 'Скасування нарахування'} за ${run.period} перервано посередині — «Нарахування» → «Завершити операцію»`);
+    }
+    if (openingPending) block('Внесення вхідних залишків квартир перервано посередині — «Нарахування» → «Завершити операцію»');
     const managed = p => p >= START_PERIOD && p <= period;
     const positive = n => Number.isSafeInteger(n) && n > 0;
     const expected = new Map();

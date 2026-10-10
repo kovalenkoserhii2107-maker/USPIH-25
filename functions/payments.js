@@ -135,6 +135,51 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         return { id: ref.id };
     }
 
+    /**
+     * Банк не підтвердив результат (unknown) або відправка зависла (sending
+     * понад 10 хв): голова перевіряє в Приват24 і фіксує, що сталося.
+     *   not_created — платежу в банку немає: статус failed, його можна
+     *     відправити знову (зарплатна пачка продовжить саме цей платіж);
+     *   created — платіж є в Приват24: статус sent, далі його закриє виписка.
+     * Лише голова: вона бачить список платежів у Приват24.
+     */
+    const STALE_MS = 10 * 60 * 1000;
+    async function resolve(actor, role, { id, outcome, reason, bankRef }) {
+        if (role !== 'chair') fail('permission-denied', 'Результат у Приват24 підтверджує голова');
+        if (!['not_created', 'created'].includes(outcome)) fail('invalid-argument', 'Оберіть, що показав Приват24');
+        const why = String(reason || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        if (why.length < 5) fail('invalid-argument', 'Опишіть, що саме перевірили (дата, сума, отримувач у Приват24)');
+        const ref = db.doc(`payments/${String(id || '').replace(/[^\w-]/g, '')}`);
+        const p = await db.runTransaction(async t => {
+            const snap = await t.get(ref);
+            if (!snap.exists) fail('not-found', 'Платіж не знайдено');
+            const data = snap.data();
+            const created = data.createdAt?.toMillis?.() || 0;
+            const stale = data.status === 'sending' && Date.now() - created > STALE_MS;
+            if (data.status !== 'unknown' && !stale) fail('failed-precondition', data.status === 'sending' ? 'Платіж ще відправляється — зачекайте 10 хвилин' : 'Результат цього платежу вже відомий');
+            const payrollRef = outcome === 'not_created' && data.payroll && !data.payroll.repayOf ? db.doc(`payroll_runs/${data.payroll.period}`) : null;
+            const payroll = payrollRef ? await t.get(payrollRef) : null;
+            if (outcome === 'not_created') {
+                t.update(ref, { status: 'failed', error: `Платежу в Приват24 немає (перевірила голова): ${why}`, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
+                // Пачка зарплати: цей платіж знову «не створено» — повторна відправка відомості створить лише його.
+                const stage = payroll?.data()?.stages?.[data.payroll.stage];
+                if (stage) {
+                    const completed = { ...(stage.completed || {}) };
+                    delete completed[`${data.payroll.stage}:${data.payroll.key}`];
+                    t.update(payrollRef, { [`stages.${data.payroll.stage}.complete`]: false, [`stages.${data.payroll.stage}.completed`]: completed });
+                }
+                if (data.payroll?.repayOf) t.update(db.doc(`payments/${data.payroll.repayOf}`), { repaidBy: FieldValue.arrayRemove(ref.id) });
+            } else {
+                t.update(ref, { status: 'sent', bankRef: String(bankRef || '').trim().slice(0, 60) || data.bankRef || null, error: null,
+                    sentAt: FieldValue.serverTimestamp(), resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
+            }
+            return data;
+        });
+        await audit(actor, role, outcome === 'not_created' ? 'payment.notCreated' : 'payment.foundInBank', `payments/${ref.id}`,
+            `${p.recipient?.name}: ${fromKop(p.amountKop)} грн — ${outcome === 'not_created' ? 'у Приват24 платежу немає, можна відправити знову' : 'платіж є в Приват24'} (${why})`, { was: p.status, reason: why });
+        return { ok: true };
+    }
+
     async function cancel(actor, role, { id }) {
         const ref = db.doc(`payments/${String(id || '').replace(/[^\w-]/g, '')}`);
         const snap = await ref.get();
@@ -217,9 +262,10 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         const data = request.data || {};
         if (data.action === 'create') return create(actor, role, data);
         if (data.action === 'cancel') return cancel(actor, role, data);
+        if (data.action === 'resolve') return resolve(actor, role, data);
         if (data.action === 'context') return contextFor();
         fail('invalid-argument', 'Невідома дія');
     }));
 
-    return { paymentAction, actions: { create, cancel } };
+    return { paymentAction, actions: { create, cancel, resolve } };
 };
