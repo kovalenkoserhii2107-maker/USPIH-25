@@ -31,7 +31,7 @@ const privat = require('./privat');
 const REGION = 'europe-central2';
 const PURPOSES = ['current', 'repair', 'reserve', 'deposit', 'grant'];
 const INCOME = ['rent', 'equipment', 'interest', 'grant', 'refund', 'other'];
-const EXPENSE = ['bank_fee', 'supplier', 'salary', 'taxes', 'other'];
+const EXPENSE = ['bank_fee', 'supplier', 'salary', 'taxes', 'esv', 'other'];
 // Облік у застосунку починається з початку IV кварталу 2026 року:
 // раніші операції лишаються в сервісі бухгалтера.
 const DEFAULT_START = '2026-10-01';
@@ -179,7 +179,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 Object.assign(doc, { kind: 'internal', status: 'done' });
             } else if (paid) {
                 // Наш платіж через API: голова підписав, банк провів.
-                Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? 'taxes' : paid.kind === 'salary' ? 'salary' : 'supplier',
+                Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(t.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : 'supplier',
                     status: 'done', paymentId: paid.id });
                 batch.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
                 if (paid.expenseId && settle(paid.expenseId)) doc.expenseId = paid.expenseId;

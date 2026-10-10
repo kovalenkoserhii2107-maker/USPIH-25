@@ -9,6 +9,7 @@
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { loadBudget, budgetAct } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
+import { opsListHtml, opsFilterHtml, opsInMonth, opsTotalKop } from './finance-ops.js';
 
 let year = String(new Date().getFullYear());
 let ctx = null;
@@ -34,6 +35,13 @@ function bar(fact, toDate) {
     return `<span class="bd-bar${p > 100 ? ' is-over' : ''}" title="${p}% від плану на сьогодні"><i style="width:${Math.min(100, p)}%"></i></span><small>${p}%</small>`;
 }
 
+/** Назва рядка: якщо є операції — кнопка розшифровки (ключ exp-…/inc-…, як у звіті мешканцям). */
+function opsTitle(key, title, plain = false) {
+    const n = ctx.ops?.[key]?.length || 0;
+    const name = plain ? escapeHtml(title) : `<b>${escapeHtml(title)}</b>`;
+    return n ? `<button type="button" class="bd-open" data-act="ops" data-key="${escapeHtml(key)}" aria-expanded="false">${plain ? `<span>${name}</span>` : name}<small>операцій: ${n}</small></button>` : name;
+}
+
 function executionHtml() {
     const ex = ctx.execution;
     if (!ex.sections.length && !ex.income.length) return '<section class="buh-card"><p class="list-empty">Ні плану, ні фактичних витрат за цей рік ще немає</p></section>';
@@ -44,7 +52,8 @@ function executionHtml() {
             const g = groupTitle(l.item);
             const head = s.id === 'main' && g !== lastGroup ? `<tr class="bd-group"><td colspan="5">${escapeHtml(g)}</td></tr>` : '';
             lastGroup = g;
-            return `${head}<tr${l.outside ? ' class="bd-outside"' : ''}><td class="t-main"><b>${escapeHtml(l.title)}</b>${l.outside ? '<small>поза кошторисом</small>' : ''}</td>
+            const title = opsTitle(`exp-${l.item}`, l.title);
+            return `${head}<tr${l.outside ? ' class="bd-outside"' : ''}><td class="t-main">${title}${l.outside ? '<small>поза кошторисом</small>' : ''}</td>
                 <td class="t-sum">${fmtKop(l.planKop)}</td><td class="t-sum t-muted">${fmtKop(l.toDateKop)}</td>
                 <td class="t-sum${l.factKop > l.toDateKop && l.toDateKop ? ' is-out' : ''}">${fmtKop(l.factKop)}</td><td class="bd-cell">${bar(l.factKop, l.toDateKop)}</td></tr>`;
         }).join('');
@@ -57,9 +66,9 @@ function executionHtml() {
     }).join('') + (ex.income.length ? `<section class="buh-card">
             <div class="buh-card-head"><h2>Надходження</h2><span>${fmtKop(ex.totals.incomeFactKop)} з ${fmtKop(ex.totals.incomePlanKop)} грн</span></div>
             <table class="buh-table bd-table"><thead><tr><th>Джерело</th><th class="t-sum">План на рік</th><th class="t-sum">План на сьогодні</th><th class="t-sum">Факт</th><th>Виконання</th></tr></thead>
-                <tbody>${ex.income.map(i => `<tr><td><b>${escapeHtml(i.title)}</b></td><td class="t-sum">${fmtKop(i.planKop)}</td><td class="t-sum t-muted">${fmtKop(i.toDateKop)}</td>
+                <tbody>${ex.income.map(i => `<tr><td class="t-main">${i.source === 'contributions' ? `<b>${escapeHtml(i.title)}</b>` : opsTitle(`inc-${i.source}`, i.title)}</td><td class="t-sum">${fmtKop(i.planKop)}</td><td class="t-sum t-muted">${fmtKop(i.toDateKop)}</td>
                     <td class="t-sum is-in">${fmtKop(i.factKop)}</td><td class="bd-cell">${bar(i.factKop, i.toDateKop)}</td></tr>
-                    ${(i.parts || []).map(p => `<tr class="bd-sub"><td>${escapeHtml(p.title)}</td><td></td><td></td><td class="t-sum">${fmtKop(p.factKop)}</td><td></td></tr>`).join('')}`).join('')}</tbody></table>
+                    ${(i.parts || []).map(p => `<tr class="bd-sub"><td>${opsTitle(`inc-c-${p.component}`, p.title, true)}</td><td></td><td></td><td class="t-sum">${fmtKop(p.factKop)}</td><td></td></tr>`).join('')}`).join('')}</tbody></table>
             <p class="buh-note">Внески — оплати мешканців з виписки; «план на сьогодні» — частка річного плану за ${ex.months} міс. обліку в застосунку.</p>
         </section>` : '');
 }
@@ -183,6 +192,10 @@ export async function loadBudgetView() {
             <button type="button" class="kpi kpi-action${p.stale ? ' is-alert' : ''}" data-act="publish"><span>Для мешканців</span><b>${p.stale ? 'Оновити' : 'Актуально'}</b><small>${p.at ? `опубліковано ${escapeHtml(human(p.at))}` : 'ще не публікувалося'}</small></button>
         </div>
         ${executionHtml()}
+        <section class="buh-card bd-public">
+            <label class="bd-switch"><input type="checkbox" data-act="visibility"${ctx.showApartments ? ' checked' : ''}>
+                <span><b>Показувати мешканцям номери квартир</b><small>У надходженнях («Під'їзд 2, Квартира 177 — 28,30 грн») і в списку боржників, як у сервісі. Прізвищ — ніколи. Номер квартири теж персональні дані: вмикайте за рішенням правління чи зборів. Змінює голова.</small></span></label>
+        </section>
         ${b?.revisions?.length ? `<section class="buh-card"><div class="buh-card-head"><h2>Редакції</h2></div>
             <table class="buh-table is-compact"><tbody>${b.revisions.map(r => `<tr><td class="t-date">${escapeHtml(human(r.at))}</td><td>${escapeHtml(r.decision)}</td><td class="t-sum">${fmtKop(r.planKop)}</td><td class="t-muted">${escapeHtml(r.by)}</td></tr>`).join('')}</tbody></table></section>` : ''}`;
     return p.stale ? 1 : 0;
@@ -227,9 +240,33 @@ async function onAction(btn) {
         } else if (a === 'publish') {
             if (!await confirmDialog('Оновити «Фінанси будинку»?', 'Мешканці побачать виконання кошторису, витрати з документами й загальний борг будинку — без прізвищ і номерів квартир.', 'Оновити')) return;
             await publishFinance();
+        } else if (a === 'visibility') {
+            const show = btn.checked;
+            if (!await confirmDialog(show ? 'Показувати номери квартир?' : 'Приховати номери квартир?',
+                show ? 'Мешканці побачать номери квартир у надходженнях і список боржників із сумами (без прізвищ). Звіт оновиться одразу.' : 'У звіті замість квартир буде «Співвласник», список боржників зникне.', show ? 'Показувати' : 'Приховати')) { btn.checked = !show; return; }
+            try { await budgetAct({ action: 'visibility', showApartments: show }); } catch (e) { btn.checked = !show; throw e; }
+            toast(show ? 'Номери квартир мешканцям показано' : 'Номери квартир приховано', 'success');
         } else if (a === 'report') printReport();
     } catch (e) { toast(e.message, 'error'); }
     finally { if (btn.isConnected) setBusy(btn, false); }
+}
+
+/** Розшифровка статті під рядком таблиці: хто й коли отримав гроші, з призначенням платежу. */
+function opsRowHtml(key, month = '') {
+    const list = ctx.ops?.[key] || [];
+    const shown = opsInMonth(list, month);
+    const income = key.startsWith('inc-');
+    return `<tr class="bd-ops-row" data-ops-for="${escapeHtml(key)}"><td colspan="5">
+        <div class="bd-ops"><p class="buh-note">Разом ${fmtKop(opsTotalKop(shown))} грн · операцій: ${shown.length}. Мешканці бачать те саме без прізвищ і без призначення платежу${ctx.showApartments ? '' : ', а замість квартир — «Співвласник»'}.</p>
+        ${opsFilterHtml(list, month)}${opsListHtml(shown, { withPurpose: true, income })}</div></td></tr>`;
+}
+
+function toggleOps(btn) {
+    const tr = btn.closest('tr');
+    const open = tr.nextElementSibling?.classList.contains('bd-ops-row');
+    if (open) tr.nextElementSibling.remove();
+    else tr.insertAdjacentHTML('afterend', opsRowHtml(btn.dataset.key));
+    btn.setAttribute('aria-expanded', String(!open));
 }
 
 function readEditorSafe() { try { readEditor(); } catch { /* незрозуміле число лишається як є */ } }
@@ -237,11 +274,16 @@ function readEditorSafe() { try { readEditor(); } catch { /* незрозумі�
 export function initBudgetView() {
     const host = document.getElementById('viewBudget');
     host.addEventListener('click', e => {
+        const chip = e.target.closest('.bd-ops-row [data-fo-month]');
+        if (chip) { const row = chip.closest('.bd-ops-row'); row.outerHTML = opsRowHtml(row.dataset.opsFor, chip.dataset.foMonth); return; }
         const btn = e.target.closest('[data-act]');
+        if (btn?.dataset.act === 'ops') { toggleOps(btn); return; }
+        if (btn?.dataset.act === 'visibility') return;          // перемикач — через change
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('change', e => {
         if (e.target.id === 'bdYear') { year = e.target.value; edit = null; loadBudgetView(); }
+        if (e.target.dataset?.act === 'visibility') onAction(e.target);
     });
     host.addEventListener('input', e => {
         if (!e.target.closest('.bd-edit')) return;

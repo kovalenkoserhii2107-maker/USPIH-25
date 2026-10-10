@@ -157,3 +157,13 @@ test('повний формат призначення з сервісу ОСБ�
     assert.ok(bank.aptCandidates('Нежитлове приміщення 302 оренда', k2).some(c => c.apt === '302' && c.strong));
     assert.ok(bank.aptCandidates('особовий рахунок 1045', { apts: new Set(['45']), accounts: new Map([['1045', '45']]) }).some(c => c.apt === '45' && c.method === 'account'));
 });
+
+test('ЄСВ — окрема стаття, ПДФО й військовий збір — податки', () => {
+    const ctx = { known: { apts: new Set(), accounts: new Map(), byAccount: new Map() }, ownAccounts: new Set(), links: new Map(), owners: [] };
+    const cat = purpose => bank.classify({ direction: 'out', amountKop: 100, purpose, counterparty: { name: 'ГУ ДПС', account: '', code: '' } }, ctx).category;
+    assert.equal(cat('*;101;ЄСВ за вересень 2026'), 'esv');
+    assert.equal(cat('Єдиний соціальний внесок із заробітної плати'), 'esv');
+    assert.equal(cat('*;101;ПДФО із зарплати за вересень'), 'taxes');
+    assert.equal(cat('Заробітна плата за вересень'), 'salary');
+    assert.equal(bank.isEsv('єдиний внесок'), true);
+});

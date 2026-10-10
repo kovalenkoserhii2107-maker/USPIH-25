@@ -152,7 +152,7 @@ test('протокол друкує очний підсумок питання 1
     const { docDefinition: doc } = buildProtocolDoc({
         options: [CHAIR_QUESTION, 'Кошторис'],
         chairVote: { present: 15, yes: 15, no: 0, abstain: 0 },
-        chairName: 'Савельєв Юрій', secretaryName: 'Кройтор Вікторія'
+        chairName: 'Головенко Юрій', secretaryName: 'Секретаренко Вікторія'
     }, [{ apt: '1', area: 40, owners: [{ name: 'Власник' }] }], [
         { apt: '1', source: 'paper', answers: { 0: 'Проти', 1: 'За' } }
     ], osbb);
