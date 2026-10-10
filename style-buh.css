@@ -615,3 +615,8 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .inbox-refund { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e3e8ef; }
 .inbox-refund .inbox-ref-apt { width: 90px; }
 .inbox-refund-list { flex-basis: 100%; }
+.ch-unfinished { border-color: #f4c7a1; background: #fff8f1; }
+.ch-unfinished p { margin: 0 0 10px; font-size: 13.5px; }
+.ch-unfinished .btn-primary { width: auto; }
+.pr-abs-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 4px; min-width: 520px; }
+.pr-abs-row .field-input { padding: 6px 8px; font-size: 12.5px; }

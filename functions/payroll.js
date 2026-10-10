@@ -17,6 +17,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const callGuard = require('./call-guard');
 const core = require('./payroll-core');
+const leave = require('./leave-core');
 const { randomUUID } = require('crypto');
 const { fromKop } = require('./bank-core');
 
@@ -43,8 +44,30 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     /** Розрахунок місяця з урахуванням уже виплаченого авансу (його суми не змінюються). */
-    function compute(people, stored, period, settings) {
-        const run = core.buildRun({ people, inputs: stored?.inputs || {}, period, advancePct: settings.advancePct });
+    /**
+     * Заробіток за 12 місяців перед period — для середньоденної (відпускні,
+     * лікарняні): лише затверджені відомості застосунку; раніші місяці —
+     * з картки людини (заробіток до застосунку).
+     */
+    async function loadHistory(period) {
+        const from = leave.shift(period, -12);
+        const snap = await db.collection('payroll_runs').where('status', '==', 'approved').get();
+        const history = new Map();
+        for (const d of snap.docs) {
+            if (d.id < from || d.id >= period) continue;
+            for (const r of d.data().run?.rows || []) {
+                if (r.kind !== 'employee') continue;
+                const list = history.get(r.personId) || [];
+                list.push({ period: d.id, regularKop: r.regularKop ?? (r.grossKop - (r.correctionKop || 0)), vacationKop: r.vacationKop || 0,
+                    sickKop: (r.sickKop || 0) + (r.fundSickKop || 0), vacationDays: r.vacationDays || 0, sickDays: r.sickDays || 0, calendarDays: r.calendarDays });
+                history.set(r.personId, list);
+            }
+        }
+        return history;
+    }
+
+    function compute(people, stored, period, settings, history = new Map()) {
+        const run = core.buildRun({ people, inputs: stored?.inputs || {}, period, advancePct: settings.advancePct, history });
         if (run.error) fail('failed-precondition', run.error);
         const paid = stored?.paidAdvance || {};
         if (Object.keys(paid).some(id => !run.rows.some(r => r.personId === id))) {
@@ -71,13 +94,14 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             db.collection('payments').where('payroll.period', '==', p).get()
         ]);
         const stored = runSnap.exists ? runSnap.data() : null;
-        const run = stored?.run || compute(people, stored, p, settings);
+        const run = stored?.run || compute(people, stored, p, settings, await loadHistory(p));
         const paymentsList = sent.docs.map(d => ({ id: d.id, stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status,
             amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null,
             returnedKop: d.data().returnedKop || 0, repaid: Boolean(d.data().repaidBy?.length), retry: d.data().payroll?.retry || 0 }));
         const closed = lock ? await lock.closed() : [];
         return {
-            period: p, today: now, kinds: core.KINDS, people, settings, run,
+            period: p, today: now, kinds: core.KINDS, pspKinds: Object.fromEntries(Object.entries(leave.PSP_KINDS).map(([k, v]) => [k, v.label])), people, settings, run,
+            inputs: stored?.inputs || {},
             status: stored?.status || 'none', savedAt: stored?.savedAt?.toDate?.()?.toISOString() || null,
             approvedBy: stored?.approvedBy || null, approvedAt: stored?.approvedAt?.toDate?.()?.toISOString() || null,
             stages: stored?.stages || {}, paidAdvance: Boolean(stored?.paidAdvance), payments: paymentsList,
@@ -94,7 +118,14 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             rnokpp: String(data.rnokpp || '').replace(/\D/g, '').slice(0, 10), iban: String(data.iban || '').replace(/\s+/g, '').toUpperCase(),
             salaryKop: data.kind === 'gph' ? 0 : Number(data.salaryKop), fte: data.kind === 'gph' ? null : Number(data.fte ?? 1),
             mainJob: data.mainJob !== false, from: String(data.from || ''), to: String(data.to || ''), taxNotified: Boolean(data.taxNotified),
-            contract: text(data.contract, 80), active: data.active !== false
+            contract: text(data.contract, 80), active: data.active !== false,
+            // Для лікарняних — страховий стаж (роки); ПСП — за заявою працівника; заробіток до застосунку — для середньої.
+            ...(data.kind === 'gph' ? {} : {
+                insuranceYears: Math.max(0, Math.min(60, Number(data.insuranceYears) || 0)),
+                psp: leave.PSP_KINDS[data.psp?.kind] ? { kind: data.psp.kind, children: Math.max(0, Math.min(15, Math.round(Number(data.psp.children) || 0))), from: String(data.psp.from || '').slice(0, 10) } : null,
+                priorEarnings: Object.fromEntries(Object.entries(data.priorEarnings || {}).filter(([m, e]) => validPeriod(m) && Number.isSafeInteger(e?.kop) && e.kop >= 0)
+                    .slice(0, 24).map(([m, e]) => [m, { kop: e.kop, ...(Number.isInteger(e.days) && e.days >= 0 && e.days <= 31 ? { days: e.days } : {}) }]))
+            })
         };
         const error = core.checkPerson(p);
         if (error) fail('invalid-argument', error);
@@ -141,14 +172,27 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             if (!Number.isSafeInteger(correction) || Math.abs(correction) > 100000000000) fail('invalid-argument', 'Перерахунок — сума в копійках');
             if (correction && (!validPeriod(v.correctionFor) || v.correctionFor >= period)) fail('invalid-argument', 'Перерахунок: вкажіть минулий місяць, за який він');
             if (correction && text(v.correctionNote, 120).length < 3) fail('invalid-argument', 'Перерахунок: коротко поясніть причину');
+            // Відпустки й лікарняні — лише працівникам, у межах місяця.
+            const absences = (Array.isArray(v?.absences) ? v.absences : []).filter(a => a?.from || a?.to).map(a => ({
+                type: a.type === 'sick' ? 'sick' : a.type === 'vacation' ? 'vacation' : '', from: String(a.from || ''), to: String(a.to || ''),
+                ...(a.type === 'sick' && a.caseStart ? { caseStart: String(a.caseStart) } : {}),
+                ...(a.avgDailyKop !== undefined && a.avgDailyKop !== null && a.avgDailyKop !== '' ? { avgDailyKop: Number(a.avgDailyKop) } : {})
+            }));
+            if (absences.length && person.kind !== 'employee') fail('invalid-argument', 'Відпустки й лікарняні — лише для працівників за трудовим договором');
+            const absError = leave.checkAbsences(absences, period);
+            if (absError) fail('invalid-argument', `${person.name}: ${absError}`);
+            const fundSick = v?.fundSickKop === undefined || v.fundSickKop === '' ? 0 : Number(v.fundSickKop);
+            if (!Number.isSafeInteger(fundSick) || fundSick < 0 || fundSick > 100000000000) fail('invalid-argument', 'Кошти ПФУ за лікарняний — сума в копійках');
             clean[String(id).replace(/[^\w-]/g, '')] = {
+                ...(absences.length ? { absences } : {}),
+                ...(fundSick ? { fundSickKop: fundSick } : {}),
                 ...(v?.workedDays !== undefined && v.workedDays !== '' ? { workedDays: Math.max(0, Math.min(31, Math.round(Number(v.workedDays) || 0))) } : {}),
                 ...(v?.bonusKop ? { bonusKop: Math.max(0, Math.round(Number(v.bonusKop))) } : {}),
                 ...(v?.actKop ? { actKop: Math.max(0, Math.round(Number(v.actKop))) } : {}),
                 ...(correction ? { correctionKop: correction, correctionFor: v.correctionFor, correctionNote: text(v.correctionNote, 120) } : {})
             };
         }
-        const run = compute(people, { ...prev, inputs: clean }, period, await loadSettings());
+        const run = compute(people, { ...prev, inputs: clean }, period, await loadSettings(), await loadHistory(period));
         const negative = run.rows.filter(r => r.grossKop < 0 || r.final.netKop < 0);
         if (negative.length) fail('failed-precondition', `${negative.map(r => r.name).join(', ')}: перерахунок у мінус більший за нарахування місяця. Надміру виплачене людина повертає на рахунок ОСББ — рознесіть це як повернення до виплати`);
         await db.runTransaction(async t => {
@@ -174,7 +218,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (!snap.exists) fail('not-found', 'Спершу збережіть відомість');
         if (snap.data().status === 'approved') fail('failed-precondition', 'Відомість уже затверджено');
         // Затверджується збережений розрахунок, який бачить голова.
-        const run = snap.data().run || compute(await loadPeople(), snap.data(), period, await loadSettings());
+        const run = snap.data().run || compute(await loadPeople(), snap.data(), period, await loadSettings(), await loadHistory(period));
         await db.runTransaction(async t => {
             const fresh = await t.get(ref);
             await lock?.assertOpen(period, 'Відомість зарплати', t);
@@ -203,7 +247,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (stage === 'advance' && stored.stages?.final) fail('failed-precondition', 'Зарплату за місяць уже виплачено повністю');
         const people = await loadPeople();
         const settings = await loadSettings();
-        const run = JSON.parse(JSON.stringify(stored.run || compute(people, stored, period, settings)));
+        const run = JSON.parse(JSON.stringify(stored.run || compute(people, stored, period, settings, await loadHistory(period))));
         for (const r of run.rows) {
             r.advance.esvKop ||= 0;
             r.final.esvKop ??= r.esvKop - r.advance.esvKop;

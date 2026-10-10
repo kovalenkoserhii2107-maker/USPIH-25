@@ -106,7 +106,7 @@ function payrollHtml(d) {
         </div>
         <h3 class="rp-h">Додаток 4ДФ — доходи, ПДФО й військовий збір</h3>
         <div class="jr-scroll"><table class="buh-table is-compact rp-table"><thead><tr><th>РНОКПП</th><th>ПІБ</th><th>Ознака</th><th class="t-sum">Нараховано</th><th class="t-sum">Виплачено</th><th class="t-sum">ПДФО</th><th class="t-sum">ВЗ</th></tr></thead>
-            <tbody>${d.income.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}</td><td>${r.sign}<small>${r.kind === 'gph' ? 'ЦПД' : 'зарплата'}</small></td>
+            <tbody>${d.income.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}</td><td>${r.sign}<small>${r.kind === 'gph' ? 'ЦПД' : 'зарплата'}${r.vacationKop ? `, з них відпускні ${fmtKop(r.vacationKop)}` : ''}${r.sickKop ? `, лікарняні ${fmtKop(r.sickKop)}` : ''}${r.pspKop ? ` · ПСП ${r.pspCode}: ${fmtKop(r.pspKop)}` : ''}</small></td>
                 <td class="t-sum">${fmtKop(r.grossKop)}</td><td class="t-sum">${fmtKop(r.paidKop)}</td><td class="t-sum">${sum(r.pdfoKop, r.pdfoPaidKop)}</td><td class="t-sum">${sum(r.vzKop, r.vzPaidKop)}</td></tr>`).join('')}</tbody></table></div>
         <h3 class="rp-h">Додаток Д1 — єдиний внесок</h3>
         <div class="jr-scroll"><table class="buh-table is-compact rp-table"><thead><tr><th>РНОКПП</th><th>ПІБ</th><th>Відносини</th><th class="t-sum">Нараховано</th><th class="t-sum">Доплата до мін.</th><th class="t-sum">База</th><th class="t-sum">ЄСВ</th></tr></thead>
@@ -197,7 +197,7 @@ function csv() {
     const m = (kop) => (kop / 100).toFixed(2).replace('.', ',');
     const cell = v => (/[;"\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
     const rows = [['Додаток', 'РНОКПП', 'ПІБ', 'Ознака / відносини', 'Нараховано', 'Виплачено', 'ПДФО', 'ПДФО сплачено', 'ВЗ', 'ВЗ сплачено', 'База ЄСВ', 'ЄСВ']];
-    for (const r of detail.income) rows.push(['4ДФ', r.rnokpp, r.name, r.sign, m(r.grossKop), m(r.paidKop), m(r.pdfoKop), m(r.pdfoPaidKop), m(r.vzKop), m(r.vzPaidKop), '', '']);
+    for (const r of detail.income) rows.push(['4ДФ', r.rnokpp, r.name, `${r.sign}${r.pspCode ? ` ПСП ${r.pspCode}` : ''}`, m(r.grossKop), m(r.paidKop), m(r.pdfoKop), m(r.pdfoPaidKop), m(r.vzKop), m(r.vzPaidKop), '', '']);
     for (const r of detail.esv) rows.push(['Д1', r.rnokpp, r.name, r.kind === 'gph' ? 'ЦПД' : `трудові ${r.days}/${r.normDays}`, m(r.grossKop), '', '', '', '', '', m(r.baseKop), m(r.esvKop)]);
     for (const r of detail.relations) rows.push(['Д5', r.rnokpp, r.name, `${r.event === 'start' ? 'початок' : 'кінець'} ${dmy(r.date)}`, '', '', '', '', '', '', '', '']);
     const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });

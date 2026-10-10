@@ -118,7 +118,8 @@ function factByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPaym
     }
     for (const p of payrollRuns) {
         if (p.status !== 'approved' || !inYear(p.period, year)) continue;
-        add('salary', p.run?.totals?.grossKop || 0);
+        // Лікарняні з 6-го дня платить ПФУ — це не витрата ОСББ.
+        add('salary', (p.run?.totals?.grossKop || 0) - (p.run?.rows || []).reduce((s, r) => s + (r.fundSickKop || 0), 0));
         add('esv', p.run?.totals?.esvKop || 0);
     }
     return fact;
@@ -180,7 +181,7 @@ function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payro
         if (p.status !== 'approved' || !inYear(p.period, year)) continue;
         const date = `${p.period}-${new Date(Date.UTC(Number(p.period.slice(0, 4)), Number(p.period.slice(5, 7)), 0)).getUTCDate()}`;
         for (const r of p.run?.rows || []) {
-            for (const [item, amountKop] of [['salary', r.grossKop], ['esv', r.esvKop]]) {
+            for (const [item, amountKop] of [['salary', r.grossKop - (r.fundSickKop || 0)], ['esv', r.esvKop]]) {
                 if (amountKop) add(item, { date, who: publicView ? 'Працівник ОСББ' : r.name, kind: 'person', amountKop, what: 'Нараховано за відомістю', paid: false });
             }
         }
@@ -209,7 +210,7 @@ function aptLabel(apt, { entrance, nonres } = {}, show = false) {
 function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвласник', publicView = false, limit = Infinity }) {
     const out = {};
     for (const t of bankIn) {
-        if (t.direction !== 'in' || t.status !== 'done' || t.kind !== 'income' || !inYear(t.period, year)) continue;
+        if (t.direction !== 'in' || t.status !== 'done' || t.kind !== 'income' || t.category === 'sick_fund' || !inYear(t.period, year)) continue;
         const source = INCOME_SOURCES[t.category] ? t.category : 'other';
         const cp = t.counterparty || {};
         const kind = t.relatedApt ? 'apt' : payeeKind(cp.name, cp.code);
@@ -231,7 +232,8 @@ function incomeFact({ bankIn = [], year }) {
         // Повернена співвласнику переплата зменшує надходження внесків.
         if (t.direction === 'out' && t.category === 'resident_refund') { fact.set('contributions', (fact.get('contributions') || 0) - t.amountKop); continue; }
         if (t.direction !== 'in') continue;
-        const source = t.kind === 'payment' ? 'contributions' : t.kind === 'income' ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
+        // Кошти ПФУ на лікарняні — транзит працівнику, не надходження ОСББ.
+        const source = t.kind === 'payment' ? 'contributions' : t.kind === 'income' && t.category !== 'sick_fund' ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
         if (source) fact.set(source, (fact.get(source) || 0) + t.amountKop);
     }
     return fact;
