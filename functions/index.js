@@ -400,7 +400,9 @@ exports.refreshDtekSchedule = onCall(
 // ------------------------------------------------------------
 const notify = require('./notify')({ db });
 // Нарахування внесків і баланс мешканця з історії (див. charges.js).
-const charges = require('./charges')({ db, FieldValue, Timestamp, requireAdmin, staffRole });
+// Закриті місяці: операції за ними не змінюються (див. period-lock.js, journal.js).
+const lock = require('./period-lock')(db);
+const charges = require('./charges')({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock });
 exports.chargesAction = charges.chargesAction;
 
 // Вихідні платежі через API: бухгалтер підтверджує, голова підписує в Приват24.
@@ -412,14 +414,18 @@ const budget = require('./budget')({ db, FieldValue, requireAdmin, staffRole });
 exports.budgetAction = budget.budgetAction;
 
 // Витрати й договори: документи, затвердження, оплата (див. expenses.js).
-const expenses = require('./expenses')({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget });
+const expenses = require('./expenses')({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget, lock });
 exports.expenseAction = expenses.expenseAction;
 
 // Банк — після витрат: виписка закриває документи, сплачені постачальникам.
-const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances: charges, expenses });
+const bank = require('./bank')({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances: charges, expenses, lock });
 exports.bankAction = bank.bankAction;
 exports.syncBank = bank.syncBank;
 
+// Проводки, оборотно-сальдова й закриття місяця (див. journal.js).
+const journal = require('./journal')({ db, FieldValue, requireAdmin, staffRole, lock });
+exports.journalAction = journal.journalAction;
+
 // Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).
-const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget });
+const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal });
 exports.demoAction = demo.demoAction;

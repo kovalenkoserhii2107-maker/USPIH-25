@@ -261,6 +261,18 @@ test('кошторис читають голова й бухгалтер, пиш
     await assertFails(setDoc(doc(as('45').firestore(), 'finance/current'), { items: [] }));
 });
 
+test('закриті місяці читають голова й бухгалтер, пише лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'journal_periods/2026-10'), { status: 'closed' });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'journal_periods/2026-10')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'journal_periods/2026-10'), { status: 'open' }));
+    }
+    for (const login of ['11', '45']) await assertFails(getDoc(doc(as(login).firestore(), 'journal_periods/2026-10')));
+});
+
 test('розшифровку статей читають усі, пише лише сервер; рішення про номери квартир — лише сервер', async () => {
     await seed();
     await env.withSecurityRulesDisabled(async context => {

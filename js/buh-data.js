@@ -227,6 +227,21 @@ export async function budgetAct(payload, timeoutMs = 60000) {
 }
 
 // ------------------------------------------------------------
+// ПРОВОДКИ Й ЗАКРИТТЯ МІСЯЦЯ
+// ------------------------------------------------------------
+/** Оборотно-сальдова, проводки й перевірки за місяць (null — місяць, який пропонує сервер). */
+export const loadJournal = period => once(`journal:${period || ''}`, () => callBackend('journalAction', { action: 'context', period: period || null }, 90000));
+
+/** Закрити чи відкрити місяць — на сервері, з журналом дій. */
+export async function journalAct(payload) {
+    try {
+        return await callBackend('journalAction', payload, 90000);
+    } finally {
+        invalidate();
+    }
+}
+
+// ------------------------------------------------------------
 // ДЕМО-ПРОГІН (тестовий акаунт)
 // ------------------------------------------------------------
 export const loadDemo = () => once('demo', () => callBackend('demoAction', { action: 'status' }).catch(() => null));

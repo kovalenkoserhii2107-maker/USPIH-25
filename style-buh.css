@@ -70,7 +70,7 @@ body.buh-mode .container { max-width: none; margin: 0; padding: 0; }
 .buh-chip.is-error { border-color: #f4c7c3; background: #fdf0ef; color: #a3382f; }
 .buh-chip[hidden] { display: none; }
 
-.buh-main { grid-column: 2; box-sizing: border-box; width: 100%; max-width: 1240px; padding: 24px 32px 56px; }
+.buh-main { grid-column: 2; box-sizing: border-box; width: 100%; min-width: 0; max-width: 1240px; padding: 24px 32px 56px; }
 .buh-view[hidden] { display: none; }
 .buh-tabbar { display: none; }
 
@@ -459,3 +459,63 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .bd-switch input { width: 20px; height: 20px; margin-top: 2px; flex-shrink: 0; accent-color: var(--blue); }
 .bd-switch span { display: flex; flex-direction: column; gap: 3px; }
 .bd-switch small { font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+
+/* Проводки: оборотно-сальдова, перевірки, журнал рахунку */
+.jr-checks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.jr-checks li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.4; }
+.jr-checks li span { display: grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; font-size: 12px; font-weight: 800; }
+.jr-checks .is-block span { background: #fde8e8; color: #b42318; }
+.jr-checks .is-warn span { background: #fff4e0; color: #9a4700; }
+.jr-checks .is-ok span { background: #e6f6ea; color: #1e7a35; }
+#viewJournal, .jr-card { min-width: 0; max-width: 100%; }
+.jr-scroll { overflow-x: auto; max-width: 100%; margin: 0 -4px; padding: 0 4px; -webkit-overflow-scrolling: touch; }
+.jr-table { min-width: 860px; }
+.jr-table td.t-main { min-width: 230px; }
+.jr-table th[colspan] { text-align: center; }
+.jr-table .t-sum { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.jr-table .jr-turn { background: #f8fafc; }
+.jr-table tfoot td { font-weight: 700; border-top: 1px solid #e3e8ef; }
+.jr-toggle { min-width: 44px; padding: 4px 8px; border: 0; border-radius: 8px; background: #eef4ff; color: var(--blue-ink, #0a58ca); font: inherit; font-weight: 700; cursor: pointer; }
+.jr-acc.is-open .jr-toggle { background: var(--blue, #007aff); color: #fff; }
+.jr-sub td { color: #475569; font-size: 12.5px; padding-top: 6px; padding-bottom: 6px; }
+.jr-sub td:nth-child(2) { padding-left: 18px; }
+.jr-entries > td { padding: 6px 8px 14px; background: #f8fafc; }
+.jr-journal { min-width: 640px; background: #fff; border-radius: 10px; }
+.jr-journal small { color: #64748b; }
+@media (max-width: 900px) {
+    .jr-table { font-size: 12.5px; }
+}
+@media (max-width: 700px) {
+    /* Відомість карткою: рахунок і назва, під ними сальдо й обороти з підписами. */
+    .jr-table { min-width: 0; display: block; }
+    .jr-table thead { display: none; }
+    .jr-table tbody, .jr-table tfoot { display: block; }
+    .jr-table tr.jr-acc, .jr-table tr.jr-sub, .jr-table tfoot tr { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid #eef2f6; }
+    .jr-table tr.jr-sub { padding: 6px 0 6px 14px; background: #f8fafc; }
+    .jr-table tr.jr-acc td, .jr-table tr.jr-sub td, .jr-table tfoot td { padding: 0; border: 0; background: none; }
+    .jr-table tr > td:first-child { grid-column: 1 / -1; }
+    .jr-table tr.jr-acc > td:first-child { display: flex; align-items: center; gap: 8px; }
+    .jr-table tr.jr-sub > td:first-child, .jr-table tfoot td:first-child { display: none; }
+    .jr-table tr > td:nth-child(2) { grid-column: 1 / -1; margin-bottom: 4px; font-weight: 600; }
+    .jr-table td.t-main { min-width: 0; }
+    .jr-table td.t-sum { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; }
+    .jr-table td.t-sum::before { content: attr(data-l); color: #64748b; font-weight: 500; }
+    .jr-table td.t-sum.is-zero { display: none; }
+    .jr-table tr.jr-acc > td:nth-child(2) { margin-top: -30px; padding-left: 56px; }
+    .jr-entries { display: block; }
+    .jr-entries > td { display: block; padding: 6px 0 12px; }
+    .jr-table .jr-journal { min-width: 0; display: block; }
+    .jr-table .jr-journal thead { display: none; }
+    .jr-table .jr-journal tbody { display: block; }
+    .jr-table .jr-journal tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 10px; border-bottom: 1px solid #eef2f6; }
+    .jr-table .jr-journal tr > td { display: block; grid-column: auto; margin: 0; padding: 0; border: 0; font-weight: 400; }
+    .jr-table .jr-journal tr > td:nth-child(1) { order: 1; font-size: 12px; color: #64748b; }
+    .jr-table .jr-journal tr > td:nth-child(4) { order: 2; text-align: right; font-weight: 700; }
+    .jr-table .jr-journal td.t-sum::before { content: none; }
+    .jr-table .jr-journal tr > td:nth-child(2) { order: 3; grid-column: 1 / -1; }
+    .jr-table .jr-journal tr > td:nth-child(3) { order: 4; grid-column: 1 / -1; }
+    .jr-table .jr-journal tr > td:nth-child(2)::before { content: 'Дт '; color: #64748b; }
+    .jr-table .jr-journal tr > td:nth-child(3)::before { content: 'Кт '; color: #64748b; }
+    .jr-table .jr-journal tr > td:nth-child(5) { order: 5; grid-column: 1 / -1; font-size: 12px; }
+}
+}

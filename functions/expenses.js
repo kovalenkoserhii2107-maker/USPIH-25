@@ -27,7 +27,7 @@ const { normIban, fromKop, safeId } = require('./bank-core');
 const REGION = 'europe-central2';
 const FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
 
-module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget }) {
+module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget, lock }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const settingsRef = db.doc('expense_settings/main');
 
@@ -148,6 +148,11 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         };
         const error = core.checkExpense(e);
         if (error) fail('invalid-argument', error);
+        await lock?.assertOpen(e.period, 'Документ витрат');
+        if (data.id) {
+            const prev = await db.doc(`expenses/${id(data.id)}`).get();
+            if (prev.exists) await lock?.assertOpen(prev.data().period, 'Документ витрат');
+        }
         const supplier = await get(`suppliers/${e.supplierId}`, 'Постачальника');
         const contract = e.contractId ? await get(`contracts/${e.contractId}`, 'Договір') : null;
         if (contract && contract.supplierId !== e.supplierId) fail('invalid-argument', 'Договір укладено з іншим постачальником');
@@ -186,6 +191,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         if (role !== 'chair') fail('permission-denied', 'Цей документ затверджує голова');
         const e = await get(`expenses/${id(eid)}`, 'Документ');
         if (e.status !== 'pending') fail('failed-precondition', 'Документ уже розглянуто');
+        await lock?.assertOpen(e.period, 'Документ витрат');
         if (!approve && text(comment, 300).length < 3) fail('invalid-argument', 'Напишіть, чому відхиляєте — бухгалтер побачить причину');
         await db.doc(`expenses/${e.id}`).update({ status: approve ? 'approved' : 'rejected', 'approval.by': actor, 'approval.at': FieldValue.serverTimestamp(), comment: text(comment, 300) });
         await audit(actor, role, approve ? 'expenses.approve' : 'expenses.reject', `expenses/${e.id}`,
@@ -196,6 +202,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     async function cancelExpense(actor, role, { id: eid }) {
         const e = await get(`expenses/${id(eid)}`, 'Документ');
         if (e.paidKop > 0 || e.status === 'paid') fail('failed-precondition', 'Документ уже оплачено. Спершу поверніть списання у «Вхідні».');
+        await lock?.assertOpen(e.period, 'Документ витрат');
         const sent = await db.collection('payments').where('expenseId', '==', e.id).where('status', '==', 'sent').limit(1).get();
         if (!sent.empty) fail('failed-precondition', 'По документу є платіж на підписі — спершу скасуйте його в «Платежах»');
         await db.doc(`expenses/${e.id}`).update({ status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp() });
@@ -229,6 +236,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
 
     async function linkTx(actor, role, { txId, expenseId }) {
         const txRef = db.doc(`bank_tx/${id(txId)}`);
+        await lock?.assertOpen((await txRef.get()).data()?.period, 'Списання банку');
         const exRef = db.doc(`expenses/${id(expenseId)}`);
         const result = await db.runTransaction(async t => {
             const [txSnap, exSnap] = await Promise.all([t.get(txRef), t.get(exRef)]);
