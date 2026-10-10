@@ -8,7 +8,7 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, loadReports, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
@@ -18,6 +18,7 @@ import { openExpenses, draftFromContract, payExpense, decideExpense, decideContr
 import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
 import { openPayroll } from './buh-payroll.js';
+import { openReports, reportTasks } from './buh-reports.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -341,6 +342,19 @@ export function payrollItems(p, chair) {
     return out;
 }
 
+/**
+ * Звітність: звіт, строк якого за 10 днів чи минув, і не позначений;
+ * ЄСВ — за 3 дні, якщо платежі ще не проведено; кошторис — за місяць.
+ */
+export function reportItems(r) {
+    const near = t => (t.kind === 'decision' ? 30 : t.kind === 'payment' ? 3 : 10);
+    return reportTasks(r).filter(t => !t.done && t.left <= near(t)).map(t => ({ tx: { id: `report:${t.key}` }, proposal: {
+        type: 'setup', meta: 'звітність', reportKey: t.key, yes: 'Відкрити',
+        title: t.left < 0 ? `Прострочено: ${t.title.charAt(0).toLowerCase()}${t.title.slice(1)}` : t.title,
+        text: `${t.detail}. Строк — ${t.date.getUTCDate()}.${String(t.date.getUTCMonth() + 1).padStart(2, '0')}${t.left >= 0 ? ` (${t.left === 0 ? 'сьогодні' : `через ${t.left} дн.`})` : ''}. ${t.kind === 'report' ? 'Цифри готові в «Звітності»; подає голова в Електронному кабінеті, потім позначте «подано» й додайте квитанцію.' : ''}`.trim()
+    } }));
+}
+
 /** Справи з витратами для «Вхідних» (голова бачить і затвердження). */
 export function expenseItems(ex, payments, chair) {
     if (!ex) return [];
@@ -362,9 +376,10 @@ export function expenseItems(ex, payments, chair) {
 let payAccount = '';
 export async function loadInbox() {
     const thisYear = String(new Date().getFullYear());
-    const [queue, dir, pays, charges, ex, payments, budget, journal, payroll] = await Promise.all([loadQueue(), loadDirectory(),
+    const [queue, dir, pays, charges, ex, payments, budget, journal, payroll, reports] = await Promise.all([loadQueue(), loadDirectory(),
         activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null),
-        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null), loadJournal(null).catch(() => null), loadPayroll(null).catch(() => null)]);
+        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null), loadJournal(null).catch(() => null), loadPayroll(null).catch(() => null),
+        loadReports().catch(() => null)]);
     dirCache = dir;
     exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
@@ -375,9 +390,16 @@ export async function loadInbox() {
         .concat(budgetItems(budget))
         .concat(journalItems(journal))
         .concat(payrollItems(payroll, session.role === 'chair'))
+        .concat(reportItems(reports))
         .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
         .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
+    const reportBadge = document.getElementById('buhReportBadge');
+    if (reportBadge) {
+        const urgent = reportTasks(reports).filter(t => !t.done && t.kind === 'report' && t.left <= 10).length;
+        reportBadge.hidden = !urgent;
+        reportBadge.textContent = urgent || '';
+    }
     render();
     return items.length;
 }
@@ -456,6 +478,7 @@ const confirmProposal = item => {
         return;
     }
     if (item.proposal.type === 'setup' && item.proposal.payrollPeriod) { openPayroll(item.proposal.payrollPeriod); return; }
+    if (item.proposal.type === 'setup' && item.proposal.reportKey) { openReports(item.proposal.reportKey); return; }
     if (item.proposal.type === 'setup' && item.proposal.closePeriod) {
         runTask(item, async () => { await journalAct({ action: 'close', period: item.proposal.closePeriod }); toast('Місяць закрито', 'success'); });
         return;

@@ -628,6 +628,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Звітність ДПС: позначки «подано / прийнято» й квитанції пише сервер (reports.js).
+    match /reports/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
     // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
     // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.
     match /journal_periods/{period} {

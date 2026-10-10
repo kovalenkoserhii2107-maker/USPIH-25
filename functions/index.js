@@ -430,6 +430,10 @@ exports.payrollAction = payroll.payrollAction;
 const journal = require('./journal')({ db, FieldValue, requireAdmin, staffRole, lock });
 exports.journalAction = journal.journalAction;
 
+// Звітність: строки, дані для форм ДПС, позначки й квитанції (див. reports.js).
+const reports = require('./reports')({ db, FieldValue, requireAdmin, staffRole });
+exports.reportsAction = reports.reportsAction;
+
 // Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).
 const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal, payroll });
 exports.demoAction = demo.demoAction;

@@ -79,6 +79,12 @@ service firebase.storage {
       allow delete: if accountant();
     }
 
+    // Звіти ДПС: XML, PDF, квитанції № 1 і № 2 (запис у базу — сервер).
+    match /reports/{key}/{file=**} {
+      allow read: if accountant();
+      allow create: if accountant() && safeUpload(10);
+    }
+
     match /receipts/{apt}/{file=**} {
       allow read: if signedIn() && (apt == myApt() || admin());
       allow write: if accountant() && (request.resource == null || safeUpload(20));
