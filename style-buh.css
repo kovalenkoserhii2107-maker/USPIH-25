@@ -561,3 +561,35 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .pr-table td.t-main { min-width: 220px; max-width: 320px; white-space: normal; }
 .pr-table td.t-main small, .pr-notes { white-space: normal; overflow: visible; text-overflow: clip; }
 #viewPayroll .buh-card-head .btn-soft, #viewPayroll .buh-inline-form .btn-soft, #viewPayroll .pay-form-actions .btn-primary { width: auto; flex: 0 0 auto; }
+
+/* Звітність */
+.buh-tag.is-muted { background: #f1f5f9; color: #64748b; }
+.rp-list .rp-item { display: block; padding: 0; }
+.rp-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; padding: 10px 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.rp-row:focus-visible { outline: 2px solid #4b5cd6; outline-offset: 2px; border-radius: 8px; }
+.rp-state { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; white-space: nowrap; }
+.rp-state small { color: #64748b; font-size: 12px; }
+.rp-item.is-near .rp-state small { color: #b45309; font-weight: 700; }
+.rp-item.is-open .rp-row .deadline-text b { color: #4b5cd6; }
+.rp-detail { padding: 4px 0 16px 64px; min-width: 0; }
+.rp-h { margin: 16px 0 8px; font-size: 14px; }
+.rp-kpi { margin-top: 8px; }
+.rp-kpi .kpi small { white-space: normal; overflow: visible; text-overflow: clip; }
+.rp-table { min-width: 720px; }
+.rp-table td small { display: block; color: #64748b; font-size: 11.5px; }
+.rp-checks { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.rp-checks li { padding: 6px 10px; border-radius: 8px; background: #f1f5f9; color: #475569; }
+.rp-checks li.is-block { background: #fdf0ef; color: #a3382f; }
+.rp-checks li.is-warn { background: #fff1e0; color: #9a4700; }
+.rp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.rp-actions .btn-soft, .rp-actions .btn-primary { width: auto; text-decoration: none; }
+.rp-mark { margin-top: 14px; padding-top: 4px; border-top: 1px solid #eef2f6; }
+.rp-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.rp-form .rp-wide { grid-column: 1 / -1; }
+.rp-form input[type=file] { padding: 8px; font-size: 12.5px; }
+.rp-files { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.rp-files small { margin-left: 4px; color: #64748b; font-size: 12px; }
+@media (max-width: 900px) {
+    .rp-detail { padding-left: 0; }
+    .rp-form { grid-template-columns: minmax(0, 1fr); }
+}

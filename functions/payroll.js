@@ -15,6 +15,7 @@
 // пачку в Приват24. Змінена після затвердження відомість знову чекає голову.
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const callGuard = require('./call-guard');
 const core = require('./payroll-core');
 const { randomUUID } = require('crypto');
 const { fromKop } = require('./bank-core');
@@ -252,7 +253,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         return { ok: complete, created: created.length, errors };
     }
 
-    const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, async request => {
+    const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('payrollAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -265,7 +266,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             case 'pay': return pay(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
-    });
+    }));
 
     return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay } };
 };

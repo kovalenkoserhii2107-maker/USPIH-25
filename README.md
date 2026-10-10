@@ -393,7 +393,7 @@ Database → Rules → Publish.** Файл містить також усі по
   прізвищ. Річний звіт про виконання кошторису — друком.
 
 Для роботи потрібні опубліковані функції `bankAction`, `syncBank`,
-`paymentAction`, `chargesAction`, `expenseAction`, `budgetAction`, `journalAction`, `payrollAction`, `demoAction`, правила Firestore і
+`paymentAction`, `chargesAction`, `expenseAction`, `budgetAction`, `journalAction`, `payrollAction`, `reportsAction`, `demoAction`, правила Firestore і
 Storage (див. нижче), тариф
 Blaze (функції звертаються до банку). Токен Автоклієнта — з правом
 створювати платежі.

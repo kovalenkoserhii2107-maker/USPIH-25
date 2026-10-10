@@ -281,6 +281,18 @@ test('зарплату (персональні дані) читають лише
     }
 });
 
+test('позначки звітів ДПС читають голова й бухгалтер, пише лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'reports/j0500111-2026-10'), { status: 'submitted' });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'reports/j0500111-2026-10')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'reports/j0500111-2026-10'), { status: 'accepted' }));
+    }
+    for (const login of ['11', '45']) await assertFails(getDoc(doc(as(login).firestore(), 'reports/j0500111-2026-10')));
+});
+
 test('закриті місяці читають голова й бухгалтер, пише лише сервер', async () => {
     await seed();
     await env.withSecurityRulesDisabled(async context => {

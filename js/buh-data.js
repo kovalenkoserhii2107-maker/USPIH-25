@@ -241,6 +241,40 @@ export async function payrollAct(payload) {
 }
 
 // ------------------------------------------------------------
+// ЗВІТНІСТЬ ДПС
+// ------------------------------------------------------------
+export const loadReports = () => once('reports', () => callBackend('reportsAction', { action: 'context' }, 60000));
+export const loadPayrollReport = period => once(`report:${period}`, () => callBackend('reportsAction', { action: 'payroll', period }, 60000));
+
+export async function reportsAct(payload) {
+    try {
+        return await callBackend('reportsAction', payload, 60000);
+    } finally {
+        invalidate();
+    }
+}
+
+/** Квитанції й файли звіту — у теку reports/{ключ}/; у базу їх записує сервер. */
+export async function uploadReportFiles(key, files) {
+    const { storage } = await import('./firebase.js');
+    const { ref, uploadBytes } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js');
+    const out = [];
+    for (const { file, kind } of files) {
+        if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: файл понад 10 МБ`);
+        const path = `reports/${key}/${Date.now()}_${file.name.replace(/[^\wа-яіїєґ.\-]+/gi, '_').slice(-80)}`;
+        await uploadBytes(ref(storage, path), file, { contentType: file.type || 'application/octet-stream' });
+        out.push({ name: file.name, path, kind });
+    }
+    return out;
+}
+
+export async function reportFileUrl(path) {
+    const { storage } = await import('./firebase.js');
+    const { ref, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js');
+    return getDownloadURL(ref(storage, path));
+}
+
+// ------------------------------------------------------------
 // ПРОВОДКИ Й ЗАКРИТТЯ МІСЯЦЯ
 // ------------------------------------------------------------
 /** Оборотно-сальдова, проводки й перевірки за місяць (null — місяць, який пропонує сервер). */
