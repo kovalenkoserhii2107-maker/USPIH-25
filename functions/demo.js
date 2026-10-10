@@ -114,7 +114,7 @@ function parseHistory(text) {
     return rows;
 }
 
-module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget }) {
+module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal }) {
     const stateRef = db.doc('demo/state');
     const fail = (code, message) => { throw new HttpsError(code, message); };
 
@@ -421,6 +421,12 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         await budget.actions.publish(...A, { year: '2026' });
         const pub = (await db.doc('finance/current').get()).data();
         step(`«Фінанси будинку» для мешканців опубліковано: борг будинку ${fromKop(pub.debt.totalKop).toLocaleString('uk-UA')} грн (${pub.debt.count} кв.) — без прізвищ; розшифровка статей: ${Object.keys(pub.opsIndex || {}).length}, з номерами квартир (як у сервісі)`);
+
+        // 10. Проводки за жовтень: з тих самих операцій, дебет = кредит.
+        if (journal) {
+            const j = await journal.actions.context({ period: PERIOD });
+            step(`Проводки за жовтень 2026: ${j.entries.length}, обороти ${fromKop(j.tb.totals.dr).toLocaleString('uk-UA')} грн, дебет ${j.tb.balanced ? '=' : '≠'} кредит; закрити місяць можна після 31.10, коли «Вхідні» розібрано`);
+        }
 
         const summary = { apartments: apts.length, chargedKop: charged.totalKop, transactions: stored.added, matched: stored.matched, queue, debtKop: pub.debt.totalKop };
         await stateRef.set({ status: 'done', steps, summary, created, components: Object.values(ids), at: FieldValue.serverTimestamp() }, { merge: true });

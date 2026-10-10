@@ -8,7 +8,7 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
@@ -16,6 +16,7 @@ import { periodName, fmtKop } from './charges-core.js';
 import { session } from './firebase.js';
 import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
 import { openBudget, publishFinance } from './buh-budget.js';
+import { openJournal } from './buh-journal.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -290,6 +291,21 @@ export function budgetItems(b) {
     return out;
 }
 
+/**
+ * Місяць скінчився — закрити його: Enter, якщо перевірки пройдено;
+ * інакше — що заважає (відкриває «Проводки»).
+ */
+export function journalItems(j) {
+    if (!j || j.status === 'closed') return [];
+    const end = new Date(Date.UTC(Number(j.period.slice(0, 4)), Number(j.period.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    if (j.today <= end) return [];
+    const name = new Date(`${j.period}-15`).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' }).replace(' р.', '');
+    const block = j.checks.find(c => c.level === 'block');
+    return [{ tx: { id: `close:${j.period}` }, proposal: { type: 'setup', meta: 'проводки', journalPeriod: j.period, closePeriod: block ? null : j.period,
+        yes: block ? 'Відкрити' : 'Закрити', title: `Закрийте ${name}`,
+        text: block ? `Що заважає: ${block.text}` : 'Перевірки пройдено: проводки збалансовано, виписку розібрано, внески нараховано. Після закриття операції місяця змінити не можна.' } }];
+}
+
 /** Справи з витратами для «Вхідних» (голова бачить і затвердження). */
 export function expenseItems(ex, payments, chair) {
     if (!ex) return [];
@@ -311,9 +327,9 @@ export function expenseItems(ex, payments, chair) {
 let payAccount = '';
 export async function loadInbox() {
     const thisYear = String(new Date().getFullYear());
-    const [queue, dir, pays, charges, ex, payments, budget] = await Promise.all([loadQueue(), loadDirectory(),
+    const [queue, dir, pays, charges, ex, payments, budget, journal] = await Promise.all([loadQueue(), loadDirectory(),
         activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null),
-        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null)]);
+        loadExpenses().catch(() => null), loadPayments().catch(() => []), loadBudget(thisYear).catch(() => null), loadJournal(null).catch(() => null)]);
     dirCache = dir;
     exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
@@ -322,6 +338,7 @@ export async function loadInbox() {
         .map(c => ex.suppliers.find(s => s.id === c.supplierId)?.iban).filter(Boolean));
     items = chargeItems(charges)
         .concat(budgetItems(budget))
+        .concat(journalItems(journal))
         .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
         .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
@@ -393,6 +410,11 @@ const confirmProposal = item => {
     if (item.proposal.type === 'charge') { runCharge(item); return; }
     if (item.proposal.type === 'setup' && item.proposal.publish) { runTask(item, () => publishFinance(item.proposal.year)); return; }
     if (item.proposal.type === 'setup' && item.proposal.budgetYear) { openBudget(item.proposal.budgetYear); return; }
+    if (item.proposal.type === 'setup' && item.proposal.closePeriod) {
+        runTask(item, async () => { await journalAct({ action: 'close', period: item.proposal.closePeriod }); toast('Місяць закрито', 'success'); });
+        return;
+    }
+    if (item.proposal.type === 'setup' && item.proposal.journalPeriod) { openJournal(item.proposal.journalPeriod); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
     if (p.type !== 'assign') { openForm(item); return; }

@@ -38,7 +38,7 @@ const DEFAULT_START = '2026-10-01';
 // Банк може дооформити операцію заднім числом — перечитуємо кілька днів.
 const OVERLAP_DAYS = 3;
 
-module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses }) {
+module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses, lock }) {
     // Баланс квартири з історії (charges.js): після кожної рознесеної оплати.
     const recompute = apts => (apts.length && balances ? balances.recompute(apts) : null);
 
@@ -267,6 +267,8 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (!core.safeId(txId) || core.safeId(txId) !== txId) fail('invalid-argument', 'Невідома операція');
         const ctx = await loadContext();
         const ref = db.doc(`bank_tx/${txId}`);
+        await lock?.assertOpen((await ref.get()).data()?.period, 'Операція банку');
+        const closed = new Set(await lock?.closed() || []);
         const result = await db.runTransaction(async t => {
             const snap = await t.get(ref);
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
@@ -300,7 +302,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (remember && result.list.length === 1 && result.tx.payerKey) {
             const others = await db.collection('bank_tx').where('payerKey', '==', result.tx.payerKey).where('status', '==', 'review').get();
             for (const other of others.docs) {
-                if (other.data().direction !== 'in') continue;
+                if (other.data().direction !== 'in' || closed.has(other.data().period)) continue;
                 const decision = core.classify(other.data(), { ...ctx, links: new Map([[result.tx.payerKey, result.list[0].apt]]) });
                 if (decision.status !== 'matched') continue;
                 const batch = db.batch();
@@ -320,6 +322,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         const allowed = kind === 'income' ? INCOME : kind === 'expense' ? EXPENSE : [null, undefined];
         if (!allowed.includes(category)) fail('invalid-argument', 'Невідома категорія');
         const ref = db.doc(`bank_tx/${core.safeId(txId)}`);
+        await lock?.assertOpen((await ref.get()).data()?.period, 'Операція банку');
         const tx = await db.runTransaction(async t => {
             const snap = await t.get(ref);
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
@@ -337,6 +340,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
 
     async function unassign(actor, role, { txId }) {
         const ref = db.doc(`bank_tx/${core.safeId(txId)}`);
+        await lock?.assertOpen((await ref.get()).data()?.period, 'Операція банку');
         const tx = await db.runTransaction(async t => {
             const snap = await t.get(ref);
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');

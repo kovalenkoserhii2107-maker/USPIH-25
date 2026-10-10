@@ -26,7 +26,9 @@ before(async () => {
     const budget = require('./budget.js')(deps);
     const expenses = require('./expenses.js')({ ...deps, payments, budget });
     const bank = require('./bank.js')({ ...deps, balances: charges, expenses });
-    demo = require('./demo.js')({ ...deps, charges, bank, expenses, budget });
+    const lock = require('./period-lock.js')(db);
+    const journal = require('./journal.js')({ ...deps, lock });
+    demo = require('./demo.js')({ ...deps, charges, bank, expenses, budget, journal });
     await wipe();
 });
 after(async () => { await wipe(); await deleteApp(app); });
@@ -41,7 +43,7 @@ test('прогін лишає слід у всіх розділах, «Приб�
 
     assert.deepEqual((await demo.actions.status()).blockers, []);
     const r = await demo.actions.run('10');
-    assert.equal(r.steps.length, 9);
+    assert.equal(r.steps.length, 10);
     assert.equal(r.summary.apartments, 40);
 
     // Нарахування: 4 складові, сума ~ річні надходження / 12.
@@ -101,6 +103,8 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal(pub.debt.list.length, pub.debt.count);
     assert.ok(!JSON.stringify(pub.debt).includes('Власник Тестовий'));
     assert.ok((await db.collection('audit_log').where('action', '==', 'demo.run').get()).size === 1);
+    // Проводки з демо-операцій збалансовано.
+    assert.match((await demo.actions.status()).steps.find(st => /^Проводки/.test(st)), /дебет = кредит/);
     // Повторно — не можна.
     await assert.rejects(demo.actions.run('10'), /вже прогнано/);
 

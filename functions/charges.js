@@ -24,7 +24,7 @@ const { cleanApt, fromKop } = require('./bank-core');
 
 const REGION = 'europe-central2';
 
-module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole }) {
+module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock }) {
     const settingsRef = db.doc('charges/settings');
     const fail = (code, message) => { throw new HttpsError(code, message); };
 
@@ -179,6 +179,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         if (period < settings.startPeriod) fail('failed-precondition', `Облік у застосунку починається з ${core.periodName(settings.startPeriod)}`);
         if (period > core.currentPeriod()) fail('failed-precondition', 'Нараховувати наперед не можна');
+        await lock?.assertOpen(period, 'Нарахування');
         const apartments = await loadApartments();
         const result = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period });
         if (!result.rows.length) fail('failed-precondition', 'Нема кому нараховувати: внесіть тарифи й площі приміщень');
@@ -232,6 +233,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         const last = await db.collection('charges_runs').orderBy('period', 'desc').limit(1).get();
         if (last.empty || last.docs[0].id !== period) fail('failed-precondition', 'Скасувати можна лише нарахування за останній місяць');
+        await lock?.assertOpen(period, 'Скасування нарахування');
         const runDoc = last.docs[0];
         const ids = new Map((await loadApartments()).map(a => [a.apt, a.id]));
         const amounts = runDoc.data().amounts || {};
@@ -362,6 +364,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
      * рахує сервер.
      */
     async function setOpening(actor, role, { rows }) {
+        if (await lock?.anyClosed()) fail('failed-precondition', 'Вхідні залишки змінювати не можна: уже є закритий місяць');
         const apartments = await loadApartments();
         const ids = new Map(apartments.map(a => [a.apt, a.id]));
         const settings = await loadSettings();

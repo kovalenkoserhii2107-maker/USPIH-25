@@ -604,6 +604,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
+    // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.
+    match /journal_periods/{period} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
     // Демо-прогін на тестовому акаунті: стан і резервна копія — лише сервер.
     match /demo/{docId} {
       allow read: if canAccount();
