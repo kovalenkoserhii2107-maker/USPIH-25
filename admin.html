@@ -14,13 +14,13 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=140">
-    <link rel="stylesheet" href="style-chat.css?v=140">
-    <link rel="stylesheet" href="style-admin.css?v=140">
+    <link rel="stylesheet" href="style.css?v=141">
+    <link rel="stylesheet" href="style-chat.css?v=141">
+    <link rel="stylesheet" href="style-admin.css?v=141">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=140">
+    <link rel="modulepreload" href="js/admin-main.js?v=141">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -1385,7 +1385,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=140' : './js/admin-main.js?v=140').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=141' : './js/admin-main.js?v=141').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

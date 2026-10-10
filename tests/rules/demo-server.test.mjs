@@ -164,3 +164,18 @@ test('квартира-зразок: залишок і оплата за ста�
     const back = (await db.doc('apartments/45').get()).data();
     assert.deepEqual([back.area, back.residents, back.balance], [50, undefined, null]);
 });
+
+test('замало квартир — відмова без «збою»; прибирання без резервної копії нічого не чіпає', async () => {
+    await wipe();
+    await db.doc('apartments/1').set({ area: 50, balance: 0 });
+    await db.doc('apartments/2').set({ area: 60, balance: 0 });
+    await db.doc('finance/current').set({ period: 'Вересень', items: [] });
+    await assert.rejects(demo.actions.run('10'), /Завантажити базу власників/);
+    assert.equal((await demo.actions.status()).status, 'none');
+    // Стан «збій» без резервної копії (як після старої версії) — прибирання лише скидає стан.
+    await db.doc('demo/state').set({ status: 'failed', error: 'щось' });
+    assert.equal((await demo.actions.status()).lastError, 'щось');
+    await demo.actions.remove('10');
+    assert.equal((await demo.actions.status()).status, 'none');
+    assert.equal((await db.doc('finance/current').get()).data().period, 'Вересень');
+});

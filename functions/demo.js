@@ -140,7 +140,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
     async function status() {
         const snap = await stateRef.get();
         const s = snap.exists ? snap.data() : null;
-        return { status: s?.status || 'none', steps: s?.steps || [], summary: s?.summary || null,
+        return { status: s?.status || 'none', steps: s?.steps || [], summary: s?.summary || null, lastError: s?.status === 'failed' ? s.error || '' : '',
             at: s?.at?.toDate?.()?.toISOString() || null, blockers: s?.status === 'done' ? [] : await blockers() };
     }
 
@@ -162,7 +162,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         // 0. Стан до прогону — для «Прибрати демо».
         const aptSnap = await db.collection('apartments').get();
         const apts = aptSnap.docs.filter(d => d.data().isAdmin !== true);
-        if (apts.length < 10) fail('failed-precondition', 'У довіднику менше 10 квартир — спершу імпортуйте квартири');
+        if (apts.length < 10) fail('failed-precondition', `У довіднику ${apts.length} кв. — демо рахує внески за справжнім списком квартир. Спершу завантажте базу власників: панель правління → «Власники» → «Завантажити базу власників»`);
         const [bankSettings, financeCurrent, chargeSettings, publicity] = await Promise.all([db.doc('bank/settings').get(), db.doc('finance/current').get(), db.doc('charges/settings').get(),
             db.doc('finance_settings/public').get()]);
         const backup = {};
@@ -453,6 +453,12 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         const snap = await stateRef.get();
         if (!snap.exists || !['done', 'running', 'failed'].includes(snap.data().status)) fail('failed-precondition', 'Демо не прогнано');
         const s = snap.data();
+        // Прогін не почався (немає резервної копії) — прибирати нічого: лише скидаємо стан,
+        // щоб не видалити справжній звіт мешканцям чи налаштування.
+        if (!s.backup) {
+            await stateRef.set({ status: 'none', error: FieldValue.delete() }, { merge: true });
+            return { ok: true };
+        }
         // Історія квартир: оплати з демо-виписки, нарахування, вхідні залишки.
         const demoTx = await db.collection('bank_tx').where('source', '==', 'demo').get();
         let batch = db.batch(), ops = 0;
@@ -497,7 +503,9 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (data.action === 'run') {
             try { return await run(actor, data); }
             catch (e) {
-                await stateRef.set({ status: 'failed', error: String(e.message || e).slice(0, 300) }, { merge: true }).catch(() => {});
+                // «Збій» — лише якщо прогін почав змінювати дані; відмова до старту стан не чіпає.
+                const s = (await stateRef.get().catch(() => null))?.data();
+                if (s?.status === 'running') await stateRef.set({ status: 'failed', error: String(e.message || e).slice(0, 300) }, { merge: true }).catch(() => {});
                 throw e;
             }
         }
