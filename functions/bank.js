@@ -41,7 +41,11 @@ const OVERLAP_DAYS = 3;
 
 module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses, lock }) {
     // Баланс квартири з історії (charges.js): після кожної рознесеної оплати.
-    const recompute = apts => (apts.length && balances ? balances.recompute(apts) : null);
+    const recompute = async apts => {
+        const result = apts.length && balances ? await balances.recompute(apts) : null;
+        if (result?.error) throw new Error('Оплати збережено, але баланси не перераховано. Повторіть синхронізацію або перерахунок балансів.');
+        return result;
+    };
 
     const settingsRef = db.doc('bank/settings');
     const secretRef = db.doc('bank_secrets/privat');
@@ -57,14 +61,23 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             settingsRef.get(),
             db.collection('payments').where('status', 'in', ['sent', 'unknown']).get()
         ]);
-        const known = { apts: new Set(), accounts: new Map() };
+        const known = { apts: new Set(), ids: new Map(), accounts: new Map(), ambiguousAccounts: new Set() };
+        const ambiguousApts = new Set();
         apts.forEach(d => {
             if (d.data().isAdmin === true) return;
             const apt = core.cleanApt(d.id);
             known.apts.add(apt);
+            if (known.ids.has(apt)) ambiguousApts.add(apt);
+            known.ids.set(apt, d.id);
             const account = String(d.data().personalAccount || '').trim();
-            if (account) { known.accounts.set(account, apt); known.accounts.set(core.accountKey(account), apt); }
+            if (account) {
+                const key = core.accountKey(account);
+                if (known.accounts.has(key) && known.accounts.get(key) !== apt) known.ambiguousAccounts.add(key);
+                known.accounts.set(account, apt); known.accounts.set(key, apt);
+            }
         });
+        for (const apt of ambiguousApts) { known.apts.delete(apt); known.ids.delete(apt); }
+        for (const [key, apt] of known.accounts) if (known.ambiguousAccounts.has(core.accountKey(key)) || ambiguousApts.has(apt)) known.accounts.delete(key);
         const ownerList = [];
         owners.forEach(d => ownerList.push({ apt: core.cleanApt(d.ref.parent.parent.id), name: d.data().name || '' }));
         const linkMap = new Map();
@@ -86,9 +99,10 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     const ledgerRef = (apt, txId, index) => db.doc(`apartments/${apt}/ledger/bank-${txId}${index ? `-${index}` : ''}`);
 
     /** Записи «Оплата» в історії квартир — тим самим батчем, що й операція. */
-    function writeAllocations(batch, txId, tx, allocations) {
+    function writeAllocations(batch, txId, tx, allocations, ctx) {
         return allocations.map((a, index) => {
-            const ref = ledgerRef(a.apt, txId, index);
+            const aptId = ctx.known.ids?.get(a.apt) || a.apt;
+            const ref = ledgerRef(aptId, txId, index);
             batch.set(ref, {
                 at: tx.at, period: tx.period, kind: 'payment', amount: core.fromKop(a.amountKop),
                 // Розділений платіж: призначення чужого платника іншим квартирам не показуємо.
@@ -96,7 +110,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 source: 'bank', txId, amountKop: a.amountKop,
                 createdAt: FieldValue.serverTimestamp()
             });
-            return { apt: a.apt, amountKop: a.amountKop, ledgerId: ref.id };
+            return { apt: a.apt, aptId, amountKop: a.amountKop, ledgerId: ref.id };
         });
     }
 
@@ -120,14 +134,15 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (!fresh.length) return { added: 0, matched: 0 };
         const ids = fresh.map(t => core.safeId(`${t.account}_${t.bankId}`));
         const existing = new Set();
+        const touched = new Set();
         for (let i = 0; i < ids.length; i += 300) {
             const refs = ids.slice(i, i + 300).map(id => db.doc(`bank_tx/${id}`));
             (await db.getAll(...refs)).forEach(s => {
                 if (s.exists && !(s.data().reason === 'closed-period' && s.data().status === 'review' && !s.data().resolvedBy)) existing.add(s.id);
+                for (const a of s.data()?.allocations || []) if (a.ledgerId) touched.add(a.aptId || ctx.known.ids?.get(a.apt) || a.apt);
             });
         }
         let added = 0, matched = 0;
-        const touched = new Set();
         for (let i = 0; i < fresh.length; i++) {
             const id = ids[i];
             if (existing.has(id)) continue;
@@ -139,9 +154,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 if (previous.exists && !(previous.data().reason === 'closed-period' && previous.data().status === 'review' && !previous.data().resolvedBy)) return null;
                 const at = Timestamp.fromDate(raw.at);
                 const period = core.periodOf(raw.at);
-                const closed = (await t.get(db.doc(`journal_periods/${period}`))).data()?.status === 'closed';
+                const closed = ['closed', 'closing'].includes((await t.get(db.doc(`journal_periods/${period}`))).data()?.status);
                 if (previous.exists && closed) return null;
-                const decision = core.classify(raw, ctx);
+                let decision = core.classify(raw, ctx);
+                if (decision.status === 'matched') {
+                    const apartment = await t.get(db.doc(`apartments/${ctx.known.ids?.get(decision.apt) || decision.apt}`));
+                    if (!apartment.exists || apartment.data().isAdmin === true) decision = { status: 'review', reason: 'missing-apartment', suggestions: [] };
+                }
                 const candidates = raw.direction === 'out' ? (ctx.sentPayments || []).filter(p => matchesPayment(raw, p)) : [];
                 let paid = candidates.length === 1 ? candidates[0] : null;
                 if (paid) {
@@ -168,7 +187,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 } else if (decision.status === 'matched') {
                     Object.assign(doc, { kind: 'payment', status: 'done', method: decision.method });
                     doc.allocations = beforeStart ? [{ apt: decision.apt, amountKop: raw.amountKop, ledgerId: null }]
-                        : writeAllocations(t, id, doc, [{ apt: decision.apt, amountKop: raw.amountKop }]);
+                        : writeAllocations(t, id, doc, [{ apt: decision.apt, amountKop: raw.amountKop }], ctx);
                 } else if (decision.status === 'internal') {
                     Object.assign(doc, { kind: 'internal', status: 'done' });
                 } else if (paid) {
@@ -194,7 +213,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (!saved) continue;
             existing.add(id);
             if (saved.newDocument) added++;
-            if (saved.allocations.some(a => a.ledgerId)) { matched++; saved.allocations.forEach(a => touched.add(a.apt)); }
+            if (saved.allocations.some(a => a.ledgerId)) { matched++; saved.allocations.forEach(a => touched.add(a.aptId || a.apt)); }
             if (saved.paymentId) ctx.sentPayments = ctx.sentPayments.filter(p => p.id !== saved.paymentId);
             if (saved.expenseId) {
                 const e = ctx.openExpenses.find(e => e.id === saved.expenseId);
@@ -277,8 +296,10 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const list = (allocations || []).map(a => ({ apt: core.cleanApt(a?.apt), amountKop: Number(a?.amountKop) }));
             const error = core.checkAllocations(list, tx.amountKop, ctx.known.apts);
             if (error) fail('invalid-argument', error);
+            const apartments = await Promise.all(list.map(a => t.get(db.doc(`apartments/${ctx.known.ids?.get(a.apt) || a.apt}`))));
+            if (apartments.some(a => !a.exists || a.data().isAdmin === true)) fail('failed-precondition', 'Довідник квартир змінився. Перегляньте рознос ще раз.');
             const batch = { set: (r, d) => t.set(r, d) };
-            const written = writeAllocations(batch, txId, tx, list);
+            const written = writeAllocations(batch, txId, tx, list, ctx);
             t.update(ref, {
                 kind: 'payment', status: 'done', method: 'manual', auto: false, allocations: written,
                 category: null, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
@@ -297,7 +318,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
 
         // Запамʼятали платника — його інші платежі в черзі розносимо одразу.
         let alsoMatched = 0;
-        const touched = new Set(result.list.map(a => a.apt));
+        const touched = new Set(result.list.map(a => ctx.known.ids?.get(a.apt) || a.apt));
         if (remember && result.list.length === 1 && result.tx.payerKey) {
             const others = await db.collection('bank_tx').where('payerKey', '==', result.tx.payerKey).where('status', '==', 'review').get();
             for (const other of others.docs) {
@@ -308,11 +329,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                     const snap = await t.get(other.ref);
                     if (!snap.exists || snap.data().status !== 'review' || snap.data().direction !== 'in') return false;
                     await lock?.assertOpen(snap.data().period, 'Операція банку', t);
-                    const written = writeAllocations(t, other.id, snap.data(), [{ apt: decision.apt, amountKop: snap.data().amountKop }]);
+                    const apartment = await t.get(db.doc(`apartments/${ctx.known.ids?.get(decision.apt) || decision.apt}`));
+                    if (!apartment.exists || apartment.data().isAdmin === true) return false;
+                    const written = writeAllocations(t, other.id, snap.data(), [{ apt: decision.apt, amountKop: snap.data().amountKop }], ctx);
                     t.update(other.ref, { kind: 'payment', status: 'done', method: decision.method, allocations: written, auto: true });
                     return true;
                 });
-                if (assigned) { touched.add(decision.apt); alsoMatched++; }
+                if (assigned) { touched.add(ctx.known.ids?.get(decision.apt) || decision.apt); alsoMatched++; }
             }
         }
         await recompute([...touched]);
@@ -359,7 +382,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 t.update(expenseRef, { paidKop: Math.max(0, (expense.data().paidKop || 0) - data.amountKop), txIds: FieldValue.arrayRemove(ref.id), status: 'approved', paidAt: null });
             }
             for (const a of data.allocations || []) {
-                if (a.ledgerId) t.delete(db.doc(`apartments/${a.apt}/ledger/${a.ledgerId}`));
+                if (a.ledgerId) t.delete(db.doc(`apartments/${a.aptId || a.apt}/ledger/${a.ledgerId}`));
             }
             t.update(ref, {
                 kind: data.direction === 'in' ? 'payment' : 'expense', status: 'review', allocations: [],
@@ -369,7 +392,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         });
         await audit(actor, role, 'bank.unassign', `bank_tx/${ref.id}`,
             `${core.fromKop(tx.amountKop)} грн повернуто в «Розібрати»`, { was: tx.allocations || [], category: tx.category || null });
-        await recompute((tx.allocations || []).filter(a => a.ledgerId).map(a => a.apt));
+        await recompute((tx.allocations || []).filter(a => a.ledgerId).map(a => a.aptId || a.apt));
         return { ok: true };
     }
 

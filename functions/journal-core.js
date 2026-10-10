@@ -276,7 +276,7 @@ function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods
     if (review.length) out.push({ level: 'block', text: `У «Вхідних» чекають рішення операції банку за цей місяць: ${review.length}` });
     if (!chargedPeriods.has(period)) out.push({ level: 'block', text: 'Внески за цей місяць не нараховано' });
     const pending = expenses.filter(e => e.status === 'pending' && e.period === period);
-    if (pending.length) out.push({ level: 'warn', text: `Документи чекають затвердження головою: ${pending.length} — увійдуть у місяць, коли їх затвердять, лише якщо місяць ще відкритий` });
+    if (pending.length) out.push({ level: 'block', text: `Документи чекають затвердження головою: ${pending.length} — затвердьте або відхиліть їх перед закриттям місяця` });
     const advance = tb?.rows.find(r => r.acc === '631')?.byA.filter(x => x.closeDr) || [];
     if (advance.length) out.push({ level: 'warn', text: `Оплати постачальникам без документа (аванси, Дт 631): ${advance.map(x => x.a).join(', ')}` });
     const opening = tb?.rows.find(r => r.acc === '00');

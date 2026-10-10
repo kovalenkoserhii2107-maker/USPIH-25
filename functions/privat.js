@@ -115,7 +115,8 @@ async function pages(token, path, params, key) {
     let followId;
     for (let i = 0; i < MAX_PAGES; i++) {
         const body = await call(token, path, { ...params, limit: PAGE, followId });
-        out.push(...(body[key] || []));
+        if (!Array.isArray(body[key])) throw new Error('Банк повернув некоректний список операцій або залишків');
+        out.push(...body[key]);
         // exist_next_page буває і булевим, і рядком 'true'.
         if (String(body.exist_next_page) !== 'true') return out;
         if (!body.next_page_id || seen.has(body.next_page_id)) throw new Error('Банк повернув неповну виписку: сторінка повторюється або відсутня');
@@ -140,14 +141,20 @@ async function isReady(token) {
 async function fetchBalances(token) {
     const today = apiDate(new Date());
     const rows = await pages(token, '/balance', { startDate: today, endDate: today }, 'balances');
-    return rows.map(normalizeBalance).filter(Boolean);
+    const balances = rows.map(normalizeBalance);
+    if (balances.some(b => !b)) throw new Error('Банк повернув некоректний залишок рахунку: синхронізацію не завершено');
+    return balances;
 }
 
 /** Операції рахунку за період, нормалізовані. Неостаточні пропускаємо — підхопимо наступного разу. */
 async function fetchTransactions(token, { iban, from, to }) {
     const rows = await pages(token, '/transactions', { acc: iban, startDate: apiDate(from), endDate: apiDate(to) }, 'transactions');
     // Рахунок беремо з запиту: у старих відповідях AUT_MY_ACC — не IBAN.
-    return rows.map(normalizeTransaction).filter(t => t && t.final && !t.void).map(t => ({ ...t, account: normIban(iban) }));
+    return rows.filter(raw => raw.FL_REAL === 'r' && raw.PR_PR === 'r').map(raw => {
+        const transaction = normalizeTransaction(raw);
+        if (!transaction) throw new Error('Банк повернув некоректну проведену операцію: синхронізацію не завершено');
+        return { ...transaction, account: normIban(iban) };
+    });
 }
 
 // ------------------------------------------------------------

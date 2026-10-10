@@ -111,12 +111,13 @@ export async function loadJournalView() {
     period = ctx.period;
     const chair = session.role === 'chair';
     const closed = ctx.status === 'closed';
+    const closing = ctx.status === 'closing';
     const last = ctx.history.at(-1);
     document.getElementById('viewJournal').innerHTML = `
         <div class="buh-toolbar">
             <select id="jrPeriod" class="field-input field-select ch-period" aria-label="Місяць">${ctx.periods.slice().reverse().map(p => `<option value="${p.id}"${p.id === ctx.period ? ' selected' : ''}>${monthTitle(p.id)}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
-            <span class="buh-tag ${closed ? 'is-payment' : 'is-review'}">${closed ? 'закрито' : 'відкритий'}</span>
-            <span class="buh-note">${closed ? `Закрито ${escapeHtml(ctx.closedAt ? new Date(ctx.closedAt).toLocaleDateString('uk-UA') : '')}${ctx.closedBy ? ` · ${escapeHtml(ctx.closedBy)}` : ''}` : last?.action === 'reopen' ? `Відкрито знову: ${escapeHtml(last.reason || '')}` : 'Операції місяця ще можна змінювати'}</span>
+            <span class="buh-tag ${closed ? 'is-payment' : 'is-review'}">${closed ? 'закрито' : closing ? 'закривається' : 'відкритий'}</span>
+            <span class="buh-note">${closed ? `Закрито ${escapeHtml(ctx.closedAt ? new Date(ctx.closedAt).toLocaleDateString('uk-UA') : '')}${ctx.closedBy ? ` · ${escapeHtml(ctx.closedBy)}` : ''}` : closing ? 'Дочекайтеся завершення перевірки місяця' : last?.action === 'reopen' ? `Відкрито знову: ${escapeHtml(last.reason || '')}` : 'Операції місяця ще можна змінювати'}</span>
             <span class="ch-tools">
                 ${ctx.canClose ? '<button type="button" class="btn-primary btn-compact" data-act="close">Закрити місяць</button>' : ''}
                 ${ctx.canReopen && chair ? '<button type="button" class="btn-ghost-small" data-act="reopen">Відкрити знову</button>' : ''}

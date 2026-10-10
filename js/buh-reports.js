@@ -110,7 +110,7 @@ function payrollHtml(d) {
                 <td class="t-sum">${fmtKop(r.grossKop)}</td><td class="t-sum">${fmtKop(r.paidKop)}</td><td class="t-sum">${sum(r.pdfoKop, r.pdfoPaidKop)}</td><td class="t-sum">${sum(r.vzKop, r.vzPaidKop)}</td></tr>`).join('')}</tbody></table></div>
         <h3 class="rp-h">Додаток Д1 — єдиний внесок</h3>
         <div class="jr-scroll"><table class="buh-table is-compact rp-table"><thead><tr><th>РНОКПП</th><th>ПІБ</th><th>Відносини</th><th class="t-sum">Нараховано</th><th class="t-sum">Доплата до мін.</th><th class="t-sum">База</th><th class="t-sum">ЄСВ</th></tr></thead>
-            <tbody>${d.esv.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}</td><td>${r.kind === 'gph' ? 'договір ЦПД' : `трудові · ${r.days} з ${r.normDays} дн.`}</td>
+            <tbody>${d.esv.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}</td><td>${r.kind === 'gph' ? 'договір ЦПД' : 'трудові'} · ${r.days ?? '—'} з ${r.normDays} кал. дн.</td>
                 <td class="t-sum">${fmtKop(r.grossKop)}</td><td class="t-sum">${r.topUpKop ? fmtKop(r.topUpKop) : '—'}</td><td class="t-sum">${fmtKop(r.baseKop)}</td><td class="t-sum">${fmtKop(r.esvKop)}</td></tr>`).join('')}</tbody></table></div>
         ${d.relations.length ? `<h3 class="rp-h">Додаток Д5 — трудові відносини й договори ЦПД</h3>
         <table class="buh-table is-compact"><tbody>${d.relations.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}<small>${escapeHtml(r.position || (r.kind === 'gph' ? 'договір ЦПД' : 'працівник'))}</small></td>
@@ -123,7 +123,7 @@ function payrollHtml(d) {
 function otherHtml(t) {
     if (t.key.startsWith('esv-')) {
         const p = periodOfKey(t.key);
-        return `<p class="buh-note">ЄСВ за ${escapeHtml(monthName(p))} — 22 % нарахованих виплат, платіж за реквізитами з «Зарплата → Податки й аванс». Позначка «сплачено» ставиться сама, коли банк проведе всі платежі ЄСВ за відомістю.</p>
+        return `<p class="buh-note">ЄСВ за ${escapeHtml(monthName(p))} — 22 % нарахованих виплат, платіж за реквізитами з «Зарплата → Податки й аванс». Позначка «сплачено» ставиться сама, коли сума проведених платежів покриває все місячне нарахування.</p>
             <button type="button" class="btn-soft btn-compact" data-go="payroll">Відкрити «Зарплату»</button>`;
     }
     if (t.key.startsWith('budget-')) {

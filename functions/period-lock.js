@@ -12,14 +12,14 @@ const monthName = p => `${MONTHS[Number(String(p).slice(5, 7)) - 1] || p} ${Stri
 module.exports = function periodLock(db) {
     /** Закриті місяці: ['2026-10', …]. */
     async function closed() {
-        const snap = await db.collection('journal_periods').where('status', '==', 'closed').get();
+        const snap = await db.collection('journal_periods').where('status', 'in', ['closed', 'closing']).get();
         return snap.docs.map(d => d.id).sort();
     }
 
     async function assertOpen(period, what = 'Зміни', transaction = null) {
         const p = String(period || '');
         if (!p) return;
-        const locked = transaction ? (await transaction.get(db.doc(`journal_periods/${p}`))).data()?.status === 'closed' : (await closed()).includes(p);
+        const locked = transaction ? ['closed', 'closing'].includes((await transaction.get(db.doc(`journal_periods/${p}`))).data()?.status) : (await closed()).includes(p);
         if (locked) {
             throw new HttpsError('failed-precondition', `${what}: ${monthName(p)} закрито. Змінити можна, лише якщо голова відкриє місяць знову (розділ «Проводки»).`);
         }

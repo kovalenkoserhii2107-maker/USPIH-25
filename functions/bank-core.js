@@ -202,6 +202,11 @@ function classify(tx, ctx) {
 
     const candidates = aptCandidates(tx.purpose, ctx.known);
     const strong = [...new Set(candidates.filter(c => c.strong).map(c => c.apt))];
+    const accountNumbers = [...String(tx.purpose || '').matchAll(ACCOUNT)].map(m => m[1])
+        .concat([...String(tx.purpose || '').matchAll(/\d{4,12}/g)].map(m => m[0]));
+    if (accountNumbers.some(n => ctx.known.ambiguousAccounts?.has(accountKey(n)))) {
+        return { status: 'review', reason: 'ambiguous-account', suggestions: strong.map(apt => ({ apt, reason: 'призначення' })) };
+    }
 
     // «Оренда комори за договору, кв. 289»: платить мешканець, але це дохід
     // ОСББ за договором оренди, а не внесок квартири — у баланс не йде.

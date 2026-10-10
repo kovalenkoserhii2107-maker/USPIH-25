@@ -79,7 +79,7 @@ test('вхідні залишки, нарахування, оплата з ви�
     await assert.rejects(a.run('900', 'accountant', { period: '2026-10', expectTotalKop: 1 }), /змінилися/);
     await assert.rejects(a.run('900', 'accountant', { period: '2026-09' }), /починається/);
     await assert.rejects(a.run('900', 'accountant', { period: '2099-01' }), /наперед/);
-    const r = await a.run('900', 'accountant', { period: '2026-10', expectTotalKop: 61540 + 54400 });
+    const r = await a.run('900', 'accountant', { period: '2026-10', expectTotalKop: 61540 + 54400, allowPartial: true });
     assert.equal(r.count, 2);
     assert.deepEqual(r.problems.map(p => p.apt), ['7', 'н1']);
     const entry = (await db.doc('apartments/10/ledger/charge-2026-10').get()).data();
@@ -99,7 +99,7 @@ test('вхідні залишки, нарахування, оплата з ви�
 
     // Площа змінилася — перерахунок за той самий місяць оновлює суму.
     await db.doc('apartments/10').update({ area: 70 });
-    const again = await a.run('900', 'accountant', { period: '2026-10' });
+    const again = await a.run('900', 'accountant', { period: '2026-10', allowPartial: true });
     assert.equal(again.changed, 1);
     assert.equal((await db.doc('apartments/10/ledger/charge-2026-10').get()).data().amountKop, 59500);
     assert.equal(await balance('10'), 200 - 595);

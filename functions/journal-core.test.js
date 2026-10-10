@@ -76,11 +76,13 @@ test('перевірки перед закриттям', () => {
     const tb = j.trialBalance(j.journal(data, '2026-10'), '2026-10');
     const checks = j.closeChecks({ period: '2026-10', today: '2026-10-20', bankTx: data.bankTx, expenses: data.expenses, chargedPeriods: new Set(['2026-10']), closed: [], tb });
     const blocks = checks.filter(c => c.level === 'block').map(c => c.text);
-    assert.equal(blocks.length, 2);
+    assert.equal(blocks.length, 3);
     assert.match(blocks[0], /ще не скінчився/);
     assert.match(blocks[1], /чекають рішення.*1/);
+    assert.match(blocks[2], /Документи чекають затвердження/);
     assert.ok(checks.some(c => c.level === 'warn' && /ТОВ АВАНС/.test(c.text)));
     data.bankTx = data.bankTx.filter(t => t.status !== 'review');
+    data.expenses = data.expenses.filter(e => e.status !== 'pending');
     const ok = j.closeChecks({ period: '2026-10', today: '2026-11-01', bankTx: data.bankTx, expenses: data.expenses, chargedPeriods: new Set(['2026-10']), closed: [], tb });
     assert.equal(ok.at(-1).level, 'ok');
     const nov = j.closeChecks({ period: '2026-11', today: '2026-12-01', bankTx: [], expenses: [], chargedPeriods: new Set(), closed: [], tb });

@@ -416,7 +416,10 @@ function statement(ledgers, period, startPeriod = START_PERIOD, order = ['main']
                 byComponent[c][key] += v;
             }
         }
-        rows.push({ apt, opening, charged, paid, closing: opening - charged + paid, parts });
+        const charges = during.filter(e => e.kind === 'charge');
+        const saved = charges.length === 1 ? charges[0] : null;
+        const charge = saved ? { areaCenti: saved.areaCenti ?? null, rate4: saved.rate4 ?? null, parts: saved.parts || [] } : null;
+        rows.push({ apt, opening, charged, paid, closing: opening - charged + paid, parts, charge });
     }
     rows.sort((a, b) => String(a.apt).localeCompare(String(b.apt), 'uk', { numeric: true }));
     const sum = key => rows.reduce((s, r) => s + r[key], 0);

@@ -20,6 +20,8 @@ const { cleanApt } = require('./bank-core');
 const { ITEMS } = require('./expenses-core');
 const { INCOME_SOURCES } = require('./budget-core');
 const { DEFAULT_COMPONENTS } = require('./charges-core');
+const { reconcile } = require('./reconciliation-core');
+const { activeIn } = require('./payroll-core');
 
 const REGION = 'europe-central2';
 
@@ -35,19 +37,20 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     /** Усе, з чого будуються проводки. */
-    async function load() {
+    async function load(transaction = null) {
+        const get = ref => transaction ? transaction.get(ref) : ref.get();
         const [ledgerSnap, txSnap, exSnap, supSnap, runSnap, periodSnap, aptSnap, chargeSettings, payrollSnap, payrollPaySnap, payrollPeople] = await Promise.all([
-            db.collectionGroup('ledger').where('kind', 'in', ['charge', 'opening']).get(),
-            db.collection('bank_tx').where('period', '>=', core.START_PERIOD).get(),
-            db.collection('expenses').get(),
-            db.collection('suppliers').get(),
-            db.collection('charges_runs').select().get(),
-            db.collection('journal_periods').get(),
-            db.collection('apartments').get(),
-            db.doc('charges/settings').get(),
-            db.collection('payroll_runs').get(),
-            db.collection('payments').where('kind', 'in', ['salary', 'tax']).get(),
-            db.collection('payroll_people').select('active').get()
+            get(db.collectionGroup('ledger').where('kind', 'in', ['charge', 'opening', 'payment'])),
+            get(db.collection('bank_tx').where('period', '>=', core.START_PERIOD)),
+            get(db.collection('expenses')),
+            get(db.collection('suppliers')),
+            get(db.collection('charges_runs')),
+            get(db.collection('journal_periods')),
+            get(db.collection('apartments')),
+            get(db.doc('charges/settings')),
+            get(db.collection('payroll_runs')),
+            get(db.collection('payments')),
+            get(db.collection('payroll_people').select('active', 'from', 'to', 'kind', 'name'))
         ]);
         // Платежі за відомістю зарплати: { paymentId → { key, name } } для погашення 661/641/651.
         const payrollPayments = new Map(payrollPaySnap.docs.filter(d => d.data().payroll?.period)
@@ -57,7 +60,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
             const apt = cleanApt(d.ref.parent.parent.id);
             if (!ledgers.has(apt)) ledgers.set(apt, []);
-            ledgers.get(apt).push(d.data());
+            ledgers.get(apt).push({ _id: d.id, ...d.data() });
         });
         const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
         return {
@@ -69,8 +72,11 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 payrollRuns: payrollSnap.docs.map(d => ({ period: d.id, ...d.data() })),
                 payrollPayments
             },
-            payrollActive: payrollPeople.docs.filter(d => d.data().active !== false).length,
+            people: payrollPeople.docs.map(d => ({ id: d.id, ...d.data() })),
+            payments: payrollPaySnap.docs.map(d => ({ id: d.id, ...d.data() })),
             charged: new Set(runSnap.docs.map(d => d.id)),
+            runs: runSnap.docs.map(d => ({ period: d.id, ...d.data() })),
+            openingSet: Boolean(chargeSettings.data()?.opening?.set),
             periods,
             closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
             apartments: aptSnap.docs.map(d => ({ apt: cleanApt(d.id), ...d.data() })).filter(a => !a.isAdmin),
@@ -98,24 +104,27 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             : { level: 'ok', text: 'Рахунок 377 збігається з балансами всіх співвласників' };
     }
 
-    async function context({ period } = {}) {
+    async function context({ period } = {}, transaction = null) {
         const now = today();
-        const data = await load();
+        const data = await load(transaction);
         const p = validPeriod(period) ? period : defaultPeriod(data.closed, now);
         const entries = core.journal(data.input, p);
         const tb = core.trialBalance(entries, p);
         const stored = data.periods.get(p);
         const isClosed = stored?.status === 'closed';
+        const isClosing = stored?.status === 'closing' && stored.closingUntil > Date.now();
         const key = sha(core.entriesKey(entries, p));
         const checks = isClosed
             ? [stored.key === key
                 ? { level: 'ok', text: 'Місяць закрито; операції відтоді не змінювались' }
                 : { level: 'warn', text: 'Після закриття змінились операції цього місяця (наприклад, пізня виписка банку). Голова може відкрити місяць, щоб розібратися' }]
             : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb });
+        checks.push(...reconcile({ period: p, runs: data.runs, bankTx: data.input.bankTx, ledgers: data.input.ledgers,
+            apartments: data.apartments, openingSet: data.openingSet, expenses: data.input.expenses, payments: data.payments, payrollRuns: data.input.payrollRuns }));
         // Є працівники, а відомість місяця не затверджено — зарплата не потрапить у проводки місяця.
-        if (!isClosed && data.payrollActive && data.input.payrollRuns.find(r => r.period === p)?.status !== 'approved') {
+        if (!isClosed && activeIn(data.people, p).length && data.input.payrollRuns.find(r => r.period === p)?.status !== 'approved') {
             const ok = checks.findIndex(c => c.level === 'ok');
-            checks.splice(ok >= 0 ? ok : checks.length, 0, { level: 'warn', text: 'Відомість зарплати за місяць не затверджено — нарахування зарплати не потрапить у проводки місяця' });
+            checks.splice(ok >= 0 ? ok : checks.length, 0, { level: 'block', text: 'Відомість зарплати за місяць не затверджено — нарахування зарплати не потрапить у проводки місяця' });
         }
         const payroll = data.input.payrollRuns.find(r => r.period === p);
         const payrollSent = [...data.input.payrollPayments.values()].some(payment => payment.period === p);
@@ -129,13 +138,17 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             checks.splice(ok >= 0 ? ok : checks.length, 0, balanceCheck(latest, data.apartments));
         }
         const lastClosed = data.closed.at(-1) || null;
+        if (checks.some(c => c.level === 'block')) {
+            const ready = checks.findIndex(c => c.level === 'ok' && c.text.startsWith('Можна закривати'));
+            if (ready >= 0) checks.splice(ready, 1);
+        }
         return {
             period: p, today: now, start: core.START_PERIOD,
             periods: core.periodsUpTo(now.slice(0, 7)).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
-            status: isClosed ? 'closed' : 'open', key,
+            status: isClosed ? 'closed' : isClosing ? 'closing' : 'open', key,
             closedAt: stored?.closedAt?.toDate?.()?.toISOString() || null, closedBy: stored?.closedBy || null,
             history: (stored?.history || []).map(h => ({ ...h, at: h.at?.toDate?.()?.toISOString?.() || h.at || null })),
-            canClose: !isClosed && !checks.some(c => c.level === 'block'),
+            canClose: !isClosed && !isClosing && !checks.some(c => c.level === 'block'),
             canReopen: isClosed && lastClosed === p,
             accounts: core.ACCOUNTS,
             // Назви для аналітики: статті витрат (92), складові внеску (48), джерела доходу.
@@ -148,20 +161,45 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
 
     async function close(actor, role, { period }) {
         if (!validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
-        const ctx = await context({ period });
-        if (ctx.status === 'closed') fail('failed-precondition', 'Місяць уже закрито');
-        const blocks = ctx.checks.filter(c => c.level === 'block');
-        if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
-        const at = new Date().toISOString();
-        await db.doc(`journal_periods/${period}`).set({
-            status: 'closed', key: ctx.key, totals: ctx.tb.totals,
-            tb: ctx.tb.rows.map(r => ({ ...r, byA: r.byA.slice(0, 2000) })), entries: ctx.entries.length,
-            closedBy: actor, closedAt: FieldValue.serverTimestamp(),
-            history: FieldValue.arrayUnion({ action: 'close', by: actor, at })
-        }, { merge: true });
-        await audit(actor, role, 'journal.close', `journal_periods/${period}`, `Місяць ${lock.monthName(period)} закрито: обороти ${(ctx.tb.totals.dr / 100).toFixed(2)} грн`,
-            { period, totals: ctx.tb.totals });
-        return { ok: true };
+        const ref = db.doc(`journal_periods/${period}`);
+        const token = db.collection('_').doc().id;
+        await db.runTransaction(async t => {
+            const [previous, operation] = await Promise.all([t.get(ref), t.get(db.doc('charges/operation'))]);
+            if (previous.data()?.status === 'closed') fail('failed-precondition', 'Місяць уже закрито');
+            if (previous.data()?.status === 'closing' && previous.data().closingUntil > Date.now()) fail('aborted', 'Місяць уже закривається. Дочекайтеся завершення.');
+            if (operation.data()?.active && operation.data().until > Date.now()) fail('aborted', 'Виконується операція нарахувань. Закрийте місяць після її завершення.');
+            t.set(ref, { status: 'closing', closingToken: token, closingUntil: Date.now() + 10 * 60 * 1000 }, { merge: true });
+        });
+        try {
+            const at = new Date().toISOString();
+            // Узгоджений знімок усіх джерел і фінальна позначка —
+            // в одній транзакції після резервування місяця.
+            const ctx = await db.runTransaction(async t => {
+                const current = await t.get(ref);
+                if (current.data()?.closingToken !== token || current.data()?.status !== 'closing') fail('aborted', 'Стан закриття місяця змінився. Перевірте місяць знову.');
+                const fresh = await context({ period }, t);
+                const blocks = fresh.checks.filter(c => c.level === 'block');
+                if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
+                t.set(ref, {
+                    status: 'closed', key: fresh.key, totals: fresh.tb.totals,
+                    tb: fresh.tb.rows.map(r => ({ ...r, byA: r.byA.slice(0, 2000) })), entries: fresh.entries.length,
+                    closedBy: actor, closedAt: FieldValue.serverTimestamp(),
+                    history: FieldValue.arrayUnion({ action: 'close', by: actor, at }),
+                    closingToken: FieldValue.delete(), closingUntil: FieldValue.delete()
+                }, { merge: true });
+                return fresh;
+            });
+            await audit(actor, role, 'journal.close', `journal_periods/${period}`, `Місяць ${lock.monthName(period)} закрито: обороти ${(ctx.tb.totals.dr / 100).toFixed(2)} грн`,
+                { period, totals: ctx.tb.totals });
+            return { ok: true };
+        } finally {
+            await db.runTransaction(async t => {
+                const current = await t.get(ref);
+                if (current.data()?.status === 'closing' && current.data().closingToken === token) t.update(ref, {
+                    status: 'open', closingToken: FieldValue.delete(), closingUntil: FieldValue.delete()
+                });
+            });
+        }
     }
 
     async function reopen(actor, role, { period, reason }) {
@@ -171,7 +209,11 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const closed = await lock.closed();
         if (!closed.includes(period)) fail('failed-precondition', 'Цей місяць не закрито');
         if (closed.at(-1) !== period) fail('failed-precondition', `Спершу відкрийте пізніший місяць (${closed.at(-1)})`);
-        await db.doc(`journal_periods/${period}`).update({ status: 'open', history: FieldValue.arrayUnion({ action: 'reopen', by: actor, at: new Date().toISOString(), reason: why }) });
+        await db.runTransaction(async t => {
+            const ref = db.doc(`journal_periods/${period}`);
+            if ((await t.get(ref)).data()?.status !== 'closed') fail('failed-precondition', 'Місяць ще не закрито або його стан змінився');
+            t.update(ref, { status: 'open', history: FieldValue.arrayUnion({ action: 'reopen', by: actor, at: new Date().toISOString(), reason: why }) });
+        });
         await audit(actor, role, 'journal.reopen', `journal_periods/${period}`, `Місяць ${lock.monthName(period)} відкрито знову: ${why}`, { period, reason: why });
         return { ok: true };
     }

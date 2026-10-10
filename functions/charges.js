@@ -28,6 +28,25 @@ const REGION = 'europe-central2';
 module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock }) {
     const settingsRef = db.doc('charges/settings');
     const fail = (code, message) => { throw new HttpsError(code, message); };
+    const operationRef = db.doc('charges/operation');
+    // Пакетні зміни всього будинку не можуть перетинатися між собою
+    // або із закриттям місяця. Токен дозволяє відновитись після тайм-ауту.
+    async function withOperation(name, fn, period) {
+        const token = db.collection('_').doc().id;
+        await db.runTransaction(async t => {
+            const current = (await t.get(operationRef)).data();
+            if (current?.active && current.until > Date.now()) fail('aborted', 'Інша операція нарахувань ще виконується. Спробуйте після її завершення.');
+            if (period) await lock?.assertOpen(period, 'Нарахування', t);
+            t.set(operationRef, { token, name, active: true, until: Date.now() + 10 * 60 * 1000 });
+        });
+        try { return await fn(); }
+        finally {
+            await db.runTransaction(async t => {
+                const current = (await t.get(operationRef)).data();
+                if (current?.token === token) t.update(operationRef, { active: false });
+            });
+        }
+    }
 
     async function audit(actor, role, action, target, summary, details = {}) {
         await db.collection('audit_log').add({
@@ -52,8 +71,10 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     /** Приміщення будинку — без службових записів (правління, бухгалтер). */
     async function loadApartments() {
         const snap = await db.collection('apartments').get();
-        return snap.docs.filter(d => d.data().isAdmin !== true)
+        const rows = snap.docs.filter(d => d.data().isAdmin !== true)
             .map(d => ({ apt: cleanApt(d.id), id: d.id, area: d.data().area ?? null, residents: d.data().residents ?? null, balance: d.data().balance ?? null, personalAccount: d.data().personalAccount || '' }));
+        if (new Set(rows.map(a => a.apt)).size !== rows.length) fail('failed-precondition', 'У довіднику є приміщення з однаковими номерами після нормалізації. Усуньте дублікати перед нарахуванням.');
+        return rows;
     }
 
     // --------------------------------------------------------
@@ -127,14 +148,15 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const snap = await db.collection('charges_runs').orderBy('period', 'desc').limit(limit).get();
         return snap.docs.map(d => {
             const r = d.data();
-            return { period: r.period, count: r.count, totalKop: r.totalKop, problems: r.problems || [], by: r.by,
+            return { period: r.period, count: r.count, totalKop: r.totalKop, complete: r.complete !== false && !r.problems?.length, problems: r.problems || [], by: r.by,
                 at: r.at?.toDate?.()?.toISOString() || null, recalculated: r.recalculated || 0 };
         });
     }
 
     async function context() {
         const [settings, apartments, runs] = await Promise.all([loadSettings(), loadApartments(), loadRuns()]);
-        const done = new Set((await db.collection('charges_runs').select().get()).docs.map(d => d.id));
+        const done = new Set((await db.collection('charges_runs').select('complete', 'problems').get()).docs
+            .filter(d => d.data().complete !== false && !d.data().problems?.length).map(d => d.id));
         const current = core.currentPeriod();
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         const due = core.duePeriods({ startPeriod: settings.startPeriod, current, done, today });
@@ -162,10 +184,10 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
      * Нарахувати внески за місяць. expectTotalKop — сума, яку людина
      * бачила, коли підтверджувала: якщо дані відтоді змінилися (площа,
      * тариф), нічого не пишемо й просимо подивитися ще раз.
-     * Повторний запуск за той самий місяць — перерахунок: записи
-     * оновлюються, зайві прибираються.
+     * Повторний запуск за той самий місяць — перерахунок коректних
+     * рядків. Проблемні рядки зберігають попереднє нарахування.
      */
-    async function run(actor, role, { period, expectTotalKop }) {
+    async function run(actor, role, { period, expectTotalKop, allowPartial }) {
         const settings = await loadSettings();
         if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         if (period < settings.startPeriod) fail('failed-precondition', `Облік у застосунку починається з ${core.periodName(settings.startPeriod)}`);
@@ -181,42 +203,50 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const previous = await runRef.get();
         const before = previous.exists ? previous.data().amounts || {} : {};
         const ids = new Map(apartments.map(a => [a.apt, a.id]));
+        for (const apt of Object.keys(before)) if (!ids.has(apt)) result.problems.push({ apt, reason: 'приміщення з попереднім нарахуванням відсутнє в довіднику' });
+        if (result.problems.length && allowPartial !== true) fail('failed-precondition', `Нарахування неповне: ${result.problems.length} прим. мають помилки. Виправте дані або явно підтвердьте часткове нарахування.`);
         const amounts = {};
+        const byComponent = {};
+        const addParts = parts => { for (const p of parts || []) byComponent[p.component] = (byComponent[p.component] || 0) + p.amountKop; };
         const at = Timestamp.fromDate(core.chargeDate(period));
         let batch = db.batch(), ops = 0;
         const flush = async () => { if (ops) await batch.commit(); batch = db.batch(); ops = 0; };
         for (const r of result.rows) {
             amounts[r.apt] = r.amountKop;
+            addParts(r.parts);
             batch.set(db.doc(`apartments/${ids.get(r.apt)}/ledger/charge-${period}`), {
                 at, period, kind: 'charge', amount: fromKop(r.amountKop), amountKop: r.amountKop,
                 note: core.chargeNote(r, period), source: 'charges', group: r.group, areaCenti: r.areaCenti, rate4: r.rate4,
-                parts: r.parts.map(p => ({ component: p.component, name: p.name, base: p.base, rate4: p.rate4, amountKop: p.amountKop })),
+                parts: r.parts.map(p => ({ component: p.component, name: p.name, base: p.base, rate4: p.rate4, amountKop: p.amountKop,
+                    ...(p.residents !== undefined ? { residents: p.residents } : {}) })),
                 createdAt: FieldValue.serverTimestamp(), createdBy: actor
             });
             if (++ops >= 400) await flush();
         }
-        // Приміщення, якому нараховано раніше, а тепер ні (прибрали площу) — запис прибираємо.
-        const removed = Object.keys(before).filter(apt => !(apt in amounts));
-        for (const apt of removed) {
-            batch.delete(db.doc(`apartments/${ids.get(apt) || apt}/ledger/charge-${period}`));
-            if (++ops >= 400) await flush();
+        // Помилка площі/тарифу не скасовує вже нарахований внесок.
+        const preserved = Object.keys(before).filter(apt => !(apt in amounts));
+        for (const apt of preserved) {
+            amounts[apt] = before[apt];
+            const old = (await db.doc(`apartments/${ids.get(apt) || apt}/ledger/charge-${period}`).get()).data();
+            addParts(old?.parts?.length ? old.parts : [{ component: 'main', amountKop: before[apt] }]);
         }
+        const totalKop = Object.values(amounts).reduce((sum, amount) => sum + amount, 0);
+        const count = Object.keys(amounts).length;
         batch.set(runRef, {
-            period, count: result.rows.length, totalKop: result.totalKop, amounts,
-            tariffs: [...new Set(result.rows.flatMap(r => r.parts.map(p => p.tariffId)).filter(Boolean))],
+            period, count, totalKop, amounts, complete: result.problems.length === 0, expectedApts: apartments.map(a => a.apt),
+            tariffs: [...new Set([...(preserved.length ? previous.data()?.tariffs || [] : []), ...result.rows.flatMap(r => r.parts.map(p => p.tariffId)).filter(Boolean)])],
             // Скільки нараховано за кожною складовою — для кошторису й звірки.
-            byComponent: Object.fromEntries(settings.components.map(c => [c.id, result.rows.reduce((s, r) => s + (r.parts.find(p => p.component === c.id)?.amountKop || 0), 0)])),
-            problems: result.problems.slice(0, 200), by: actor, at: FieldValue.serverTimestamp(),
+            byComponent, problems: result.problems, by: actor, at: FieldValue.serverTimestamp(),
             recalculated: previous.exists ? (previous.data().recalculated || 0) + 1 : 0
         });
         ops += 1;
         await flush();
-        const changed = previous.exists ? Object.keys(amounts).filter(a => before[a] !== amounts[a]).length + removed.length : result.rows.length;
+        const changed = previous.exists ? Object.keys(amounts).filter(a => before[a] !== amounts[a]).length : result.rows.length;
         await audit(actor, role, previous.exists ? 'charges.recalc' : 'charges.run', `charges_runs/${period}`,
-            `${previous.exists ? 'Перераховано' : 'Нараховано'} внески за ${core.periodName(period)}: ${result.rows.length} прим., ${fromKop(result.totalKop)} грн`,
-            { period, count: result.rows.length, totalKop: result.totalKop, problems: result.problems.length, changed });
+            `${previous.exists ? 'Перераховано' : 'Нараховано'} внески за ${core.periodName(period)}: ${count} прим., ${fromKop(totalKop)} грн`,
+            { period, count, totalKop, problems: result.problems.length, changed, preserved });
         const balances = await recompute();
-        return { ok: true, count: result.rows.length, totalKop: result.totalKop, problems: result.problems, changed, balances: balances.updated || 0 };
+        return { ok: true, count, totalKop, complete: !result.problems.length, problems: result.problems, preserved, changed, balances: balances.updated || 0 };
     }
 
     /** Скасувати нарахування — лише за останній нарахований місяць. */
@@ -268,7 +298,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const c = { name: String(name || '').trim(), base: String(base || ''), item: String(item || 'other') };
         const error = core.checkComponent(c, settings.components);
         if (error) fail('invalid-argument', error);
-        c.id = `c${Date.now().toString(36)}`;
+        c.id = `c${db.collection('_').doc().id}`;
         await settingsRef.set({ components: [...settings.components, c], groups: settings.groups }, { merge: true });
         await audit(actor, role, 'charges.component', 'charges/settings', `Складова внеску «${c.name}» (${core.BASES[c.base]})`, c);
         return { ok: true, id: c.id };
@@ -290,7 +320,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const settings = await loadSettings();
         const error = core.checkGroupName(name, settings.groups);
         if (error) fail('invalid-argument', error);
-        const group = { id: `g${Date.now().toString(36)}`, name: String(name).trim() };
+        const group = { id: `g${db.collection('_').doc().id}`, name: String(name).trim() };
         await settingsRef.set({ groups: [...settings.groups, group] }, { merge: true });
         await audit(actor, role, 'charges.group', 'charges/settings', `Група приміщень «${group.name}»`, group);
         return { ok: true, id: group.id };
@@ -401,6 +431,10 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             ...core.statement(byApt, period, settings.startPeriod, settings.components.map(c => c.id)) };
     }
 
+    const changes = { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, recompute };
+    const actions = { context, preview, getStatement, ...Object.fromEntries(Object.entries(changes).map(([name, fn]) =>
+        [name, (...args) => withOperation(name, () => fn(...args), args[2]?.period)])) };
+
     const chargesAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('chargesAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
@@ -409,18 +443,10 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             case 'context': return context();
             case 'preview': return preview(data);
             case 'statement': return getStatement(data);
-            case 'run': return run(actor, role, data);
-            case 'revert': return revert(actor, role, data);
-            case 'addTariff': return addTariff(actor, role, data);
-            case 'removeTariff': return removeTariff(actor, role, data);
-            case 'addGroup': return addGroup(actor, role, data);
-            case 'addComponent': return addComponent(actor, role, data);
-            case 'setResidents': return setResidents(actor, role, data);
-            case 'renameComponent': return renameComponent(actor, role, data);
-            case 'setPremises': return setPremises(actor, role, data);
-            case 'setOpening': return setOpening(actor, role, data);
+            case 'run': case 'revert': case 'addTariff': case 'removeTariff': case 'addGroup': case 'addComponent':
+            case 'setResidents': case 'renameComponent': case 'setPremises': case 'setOpening': return actions[data.action](actor, role, data);
             case 'recompute': {
-                const r = await recompute();
+                const r = await actions.recompute();
                 if (r.skipped) fail('failed-precondition', 'Спершу внесіть вхідні залишки на 30.09.2026');
                 await audit(actor, role, 'charges.recompute', 'apartments', `Баланси перераховано з історії: ${r.updated} змін`, r);
                 return r;
@@ -429,5 +455,5 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         }
     }));
 
-    return { chargesAction, recompute: recomputeSafe, actions: { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, context, getStatement, recompute } };
+    return { chargesAction, recompute: recomputeSafe, actions };
 };

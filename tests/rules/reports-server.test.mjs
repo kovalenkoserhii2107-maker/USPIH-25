@@ -35,8 +35,8 @@ test('розрахунок за жовтень: суми за людьми, сп
     await db.doc('osbb_settings/finance').set({ edrpou: '40562894' });
     const run = payroll.buildRun({ people: [{ id: 'e1', ...person }], period: '2026-10' });
     await db.doc('payroll_runs/2026-10').set({ period: '2026-10', status: 'approved', run: JSON.parse(JSON.stringify(run)) });
-    for (const [key, status] of [['e1', 'paid'], ['pdfo', 'paid'], ['vz', 'paid'], ['esv', 'paid']]) {
-        await db.collection('payments').add({ status, amountKop: 1, payroll: { period: '2026-10', stage: 'final', key } });
+    for (const [key, amountKop] of Object.entries({ e1: 665819, pdfo: 155646, vz: 43235, esv: 190234 })) {
+        await db.collection('payments').add({ status: 'paid', amountKop, payroll: { period: '2026-10', stage: 'final', key } });
     }
     const d = await a().payrollData({ period: '2026-10' });
     assert.equal(d.key, 'j0500111-2026-10');

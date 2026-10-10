@@ -62,7 +62,7 @@ function monthHtml() {
     if (!ctx.opening?.set) setup.push('<button type="button" class="btn-ghost-small" data-seg="opening">Внести вхідні залишки →</button>');
 
     const head = run
-        ? `<div class="buh-card-head"><h2>${escapeHtml(cap(periodName(p.period)))}</h2><span class="buh-tag is-payment">нараховано</span></div>
+        ? `<div class="buh-card-head"><h2>${escapeHtml(cap(periodName(p.period)))}</h2><span class="buh-tag ${run.complete === false ? 'is-review' : 'is-payment'}">${run.complete === false ? 'нараховано частково' : 'нараховано'}</span></div>
            <p class="ch-big">${fmtKop(run.totalKop)} <small>грн · ${run.count} прим.</small></p>
            <p class="buh-note">${run.at ? `${escapeHtml(dateOnly(run.at))} · ` : ''}${escapeHtml(run.by || '')}${run.recalculated ? ` · перераховано ${run.recalculated} р.` : ''}</p>
            <div class="inbox-actions">
@@ -82,7 +82,7 @@ function monthHtml() {
 
     return `<section class="buh-card ch-month">
             ${head}
-            ${p.problems.length ? `<details class="ch-problems"${run ? '' : ' open'}><summary>Не нараховано: ${p.problems.length} прим.</summary>
+            ${p.problems.length ? `<details class="ch-problems"${run ? '' : ' open'}><summary>Потребують виправлення: ${p.problems.length} прим.</summary>
                 <p>${p.problems.slice(0, 60).map(x => `<span class="buh-tag is-review">${escapeHtml(x.apt)}: ${escapeHtml(x.reason)}</span>`).join(' ')}</p>
                 <p class="buh-note">Площу вносить правління в довіднику квартир; тарифи й групи — на вкладках поруч.</p></details>` : ''}
             ${!ctx.opening?.set ? '<p class="buh-note ch-warn">Поки немає вхідних залишків, баланс у кабінеті мешканця не змінюється: нарахування лише записуються в історію.</p>' : ''}
@@ -91,7 +91,7 @@ function monthHtml() {
         <section class="buh-card">
             <div class="buh-card-head"><h2>Нараховані місяці</h2></div>
             ${ctx.runs.length ? `<table class="buh-table"><thead><tr><th>Місяць</th><th>Прим.</th><th>Хто й коли</th><th class="t-sum">Сума, ₴</th><th></th></tr></thead>
-                <tbody>${ctx.runs.map(r => `<tr><td><b>${escapeHtml(periodName(r.period))}</b></td><td>${r.count}${r.problems.length ? ` <small class="t-muted">(${r.problems.length} без нарахування)</small>` : ''}</td>
+                <tbody>${ctx.runs.map(r => `<tr><td><b>${escapeHtml(periodName(r.period))}</b></td><td>${r.count}${r.problems.length ? ` <small class="t-muted">(${r.problems.length} потребують виправлення)</small>` : ''}</td>
                     <td class="t-muted">${escapeHtml(r.by || '')}${r.at ? ` · ${escapeHtml(dateOnly(r.at))}` : ''}</td>${kopCell(r.totalKop)}
                     <td class="t-act"><button type="button" class="btn-ghost-small" data-act="recalc" data-period="${r.period}">Перерахувати</button></td></tr>`).join('')}</tbody></table>`
                 : '<p class="list-empty">Ще нічого не нараховано</p>'}
@@ -299,7 +299,7 @@ function receiptPartsHtml(r, comps, charge) {
     const calc = c => {
         const part = charge?.parts?.find(x => x.component === c.id);
         if (!part) return '';
-        return part.base === 'fixed' ? 'з приміщення' : part.base === 'residents' ? `${part.residents} прож. × ${rate(part.rate4)}` : `${area(charge.areaCenti / 100)} м² × ${rate(part.rate4)}`;
+        return part.base === 'fixed' ? 'з приміщення' : part.base === 'residents' ? (Number.isInteger(part.residents) ? `${part.residents} прож. × ${rate(part.rate4)}` : 'з проживаючого') : `${area(charge.areaCenti / 100)} м² × ${rate(part.rate4)}`;
     };
     return `<table class="rc-parts"><thead><tr><th>Стаття</th><th>Баланс до нарахування</th><th>Нараховано</th><th>Сплачено за період</th><th>До сплати</th></tr></thead>
         <tbody>${used.map(c => `<tr><td>${escapeHtml(c.name)}${calc(c) ? `<small>${escapeHtml(calc(c))}</small>` : ''}</td>
@@ -318,16 +318,21 @@ async function receiptHtml(r, a, req, period, qrcode, comps = []) {
         code.make();
         qr = `<div class="rc-qr">${code.createSvgTag({ cellSize: 3, margin: 1, scalable: true })}<span aria-hidden="true">₴</span></div>`;
     } catch { /* немає реквізитів — квитанція без QR */ }
-    const charge = ctx.preview.period === period ? ctx.preview.rows.find(x => x.apt === r.apt) : null;
+    const charge = r.charge;
+    const receiptArea = charge?.areaCenti ? charge.areaCenti / 100 : a.area;
+    const part = charge?.parts?.[0];
+    const calculation = part?.base === 'fixed' ? 'з приміщення'
+        : part?.base === 'residents' && Number.isInteger(part.residents) ? `${part.residents} прож. × ${rate(part.rate4)}`
+        : charge?.areaCenti && charge.rate4 ? `${area(charge.areaCenti / 100)} м² × ${rate(charge.rate4)}` : '';
     return `<article class="rc">
         <header><b>${escapeHtml(req.payeeName || 'ОСББ')}</b><span>Рахунок-квитанція за ${escapeHtml(periodName(period))}</span></header>
         <div class="rc-body">
             <div class="rc-main">
-                <p class="rc-apt">Кв. ${escapeHtml(r.apt)}${a.personalAccount ? ` · о/р ${escapeHtml(a.personalAccount)}` : ''}${a.area ? ` · ${escapeHtml(area(a.area))} м²` : ''}</p>
+                <p class="rc-apt">Кв. ${escapeHtml(r.apt)}${a.personalAccount ? ` · о/р ${escapeHtml(a.personalAccount)}` : ''}${receiptArea ? ` · ${escapeHtml(area(receiptArea))} м²` : ''}</p>
                 ${receiptPartsHtml(r, comps, charge)}
                 <table><tbody>
                     <tr><td>${r.opening < 0 ? 'Борг' : r.opening > 0 ? 'Переплата' : 'Залишок'} на ${escapeHtml(periodStart(period))}</td><td>${fmtKop(Math.abs(r.opening))}</td></tr>
-                    <tr><td>Нараховано${charge && !(charge.parts?.length > 1) ? ` (${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(charge.rate4)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>
+                    <tr><td>Нараховано${calculation && !(charge.parts?.length > 1) ? ` (${escapeHtml(calculation)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>
                     <tr><td>Сплачено за місяць</td><td>${fmtKop(r.paid)}</td></tr>
                     <tr class="rc-total"><td>${due ? 'До сплати' : r.closing > 0 ? 'Переплата' : 'Розраховано'}</td><td>${fmtKop(due || r.closing)} грн</td></tr>
                 </tbody></table>
@@ -388,9 +393,12 @@ export async function loadChargesView() {
 
 /** Нарахувати місяць: сума, яку бачила людина, звіряється на сервері. */
 export async function runCharges(period, expectTotalKop) {
-    const r = await chargeAct({ action: 'run', period, expectTotalKop });
+    const preview = await chargeAct({ action: 'preview', period });
+    if (preview.problems?.length && !await confirmDialog('Нарахування неповне',
+        `${preview.problems.length} прим. мають помилки: ${preview.problems.slice(0, 8).map(p => `${p.apt}: ${p.reason}`).join('; ')}. Буде нараховано лише коректні рядки. Попередні нарахування проблемних приміщень збережуться. Місяць залишиться неповним до виправлення даних.`, 'Нарахувати частково')) return null;
+    const r = await chargeAct({ action: 'run', period, expectTotalKop: expectTotalKop ?? preview.totalKop, allowPartial: Boolean(preview.problems?.length) });
     toast(`Нараховано за ${periodName(period)}: ${r.count} прим., ${fmtKop(r.totalKop)} грн`, 'success');
-    if (r.problems?.length) toast(`Без нарахування: ${r.problems.length} прим. — див. «Нарахування»`, 'info');
+    if (r.problems?.length) toast(`Неповне нарахування: ${r.problems.length} прим. потребують виправлення — див. «Нарахування»`, 'info');
     return r;
 }
 
@@ -404,7 +412,8 @@ async function onAction(btn) {
         } else if (a === 'recalc') {
             if (!await confirmDialog(`Перерахувати ${periodName(period)}?`, 'Суми буде перераховано за поточними площами й тарифами. Записи в історії квартир оновляться, баланси теж.', 'Перерахувати')) return;
             setBusy(btn, true, 'Рахую…');
-            const r = await chargeAct({ action: 'run', period });
+            const r = await runCharges(period);
+            if (!r) return;
             toast(r.changed ? `Перераховано: змінилося ${r.changed} прим.` : 'Суми не змінилися', 'success');
         } else if (a === 'revert') {
             if (!await confirmDialog(`Скасувати нарахування за ${periodName(period)}?`, 'Записи «Нарахування» за цей місяць буде прибрано з історії всіх квартир, баланси перераховано.', 'Скасувати нарахування')) return;

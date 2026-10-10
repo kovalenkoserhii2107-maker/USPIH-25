@@ -69,6 +69,16 @@ function employmentDays(person, period) {
     return dates.filter(d => (!person.from || d >= person.from) && (!person.to || d <= person.to)).length;
 }
 
+/** Календарні дні трудових/цивільних відносин для Д1, включно з вихідними. */
+function calendarDays(person, period) {
+    const [year, month] = period.split('-').map(Number);
+    const first = `${period}-01`;
+    const last = `${period}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+    const from = person.from && person.from > first ? person.from : first;
+    const to = person.to && person.to < last ? person.to : last;
+    return from > to ? 0 : Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+}
+
 /** Перевірка картки людини. */
 function checkPerson(p) {
     const name = String(p.name || '').trim();
@@ -137,7 +147,7 @@ function activeIn(people, period) {
     const start = `${period}-01`;
     const end = `${period}-${String(workingDaysEnd(period)).padStart(2, '0')}`;
     // Порядок відомості сталий: працівники, потім ЦПД; за прізвищем.
-    return people.filter(p => p.active !== false && (!p.from || p.from <= end) && (!p.to || p.to >= start))
+    return people.filter(p => (p.active !== false || p.to) && (!p.from || p.from <= end) && (!p.to || p.to >= start))
         .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'employee' ? -1 : 1) || String(a.name).localeCompare(String(b.name), 'uk'));
 }
 const workingDaysEnd = period => {
@@ -162,6 +172,7 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
         return { personId: p.id, name: p.name, kind: p.kind, position: p.position || '', fte: p.fte || null, salaryKop: p.salaryKop || 0,
             workedDays: p.kind === 'employee' ? Math.min(employmentDays(p, period), Number(input.workedDays ?? employmentDays(p, period))) : null,
             payee: { iban: p.iban || '', rnokpp: p.rnokpp || '', contract: p.contract || '' },
+            relationship: { from: p.from || '', to: p.to || '', mainJob: p.mainJob !== false, position: p.position || '', kind: p.kind },
             bonusKop: Math.round(Number(input.bonusKop) || 0), actKop: p.kind === 'gph' ? Math.round(Number(input.actKop) || 0) : null,
             ...r, problems };
     });
@@ -169,6 +180,7 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
     const sumIn = (stage, key) => rows.reduce((s, r) => s + r[stage][key], 0);
     return {
         period, rate, rows,
+        peopleSnapshot: people.map(p => ({ id: p.id, name: p.name, rnokpp: p.rnokpp || '', kind: p.kind, position: p.position || '', from: p.from || '', to: p.to || '', active: p.active !== false })),
         totals: { grossKop: sum('grossKop'), pdfoKop: sum('pdfoKop'), vzKop: sum('vzKop'), netKop: sum('netKop'), esvKop: sum('esvKop'),
             advance: { grossKop: sumIn('advance', 'grossKop'), pdfoKop: sumIn('advance', 'pdfoKop'), vzKop: sumIn('advance', 'vzKop'), netKop: sumIn('advance', 'netKop'), esvKop: sumIn('advance', 'esvKop') },
             final: { grossKop: sumIn('final', 'grossKop'), pdfoKop: sumIn('final', 'pdfoKop'), vzKop: sumIn('final', 'vzKop'), netKop: sumIn('final', 'netKop'), esvKop: sumIn('final', 'esvKop') },
@@ -218,5 +230,5 @@ function paymentProblems(payments) {
 
 module.exports = {
     DEFAULT_RATES, KINDS, rateFor, workingDays, validRnokpp, validIban, checkPerson, calcRow, activeIn, buildRun,
-    stagePayments, paymentProblems, monthName, employmentDays
+    stagePayments, paymentProblems, monthName, employmentDays, calendarDays
 };

@@ -14,6 +14,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const callGuard = require('./call-guard');
 const core = require('./reports-core');
 const { START_PERIOD } = require('./journal-core');
+const { validDate } = require('./expenses-core');
 
 const REGION = 'europe-central2';
 const FILE_KINDS = { report: 'звіт', receipt1: 'квитанція № 1', receipt2: 'квитанція № 2', other: 'інше' };
@@ -43,18 +44,16 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             db.collection('payments').where('payroll.key', '==', 'esv').get()
         ]);
         const statuses = Object.fromEntries(reports.docs.map(d => [d.id, plain(d)]));
-        // ЄСВ за місяць вважаємо сплаченим, коли проведено всі платежі ЄСВ за відомістю.
+        // Порівнюємо фактичну суму з усім місячним нарахуванням, а не кількість платежів.
         const esv = new Map();
         for (const d of esvPaid.docs) {
             const p = d.data();
-            const cur = esv.get(p.payroll.period) || { paid: 0, all: 0 };
-            cur.all += 1;
-            if (p.status === 'paid') cur.paid += 1;
-            esv.set(p.payroll.period, cur);
+            if (p.status === 'paid' && Number.isSafeInteger(p.amountKop) && p.amountKop > 0) esv.set(p.payroll.period, (esv.get(p.payroll.period) || 0) + p.amountKop);
         }
-        for (const [period, e] of esv) {
+        for (const run of runs.docs) {
+            const period = run.id, expected = run.data().run?.totals?.esvKop || 0;
             const key = core.keyFor('esv', period);
-            if (e.paid && e.paid === e.all && !statuses[key]) statuses[key] = { key, status: 'paid', auto: true, regNumber: '', date: '', note: 'за платежами відомості', files: [] };
+            if (run.data().status === 'approved' && expected > 0 && (esv.get(period) || 0) >= expected && !statuses[key]) statuses[key] = { key, status: 'paid', auto: true, regNumber: '', date: '', note: 'сума проведених платежів покриває місячне нарахування', files: [] };
         }
         return {
             today: today(), start: START_PERIOD, statuses, fileKinds: FILE_KINDS,
@@ -89,30 +88,40 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         if (period && period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
         const ref = db.doc(`reports/${key}`);
         if (status === 'open') {
-            const before = await ref.get();
-            if (!before.exists) return { ok: true };
-            if (role !== 'chair' && before.data().status === 'accepted') fail('permission-denied', 'Позначку прийнятого звіту знімає лише голова');
-            await ref.delete();
+            const before = await db.runTransaction(async t => {
+                const snap = await t.get(ref);
+                if (!snap.exists) return null;
+                if (role !== 'chair' && snap.data().status === 'accepted') fail('permission-denied', 'Позначку прийнятого звіту знімає лише голова');
+                t.delete(ref);
+                return snap;
+            });
+            if (!before) return { ok: true };
             await audit(actor, role, 'reports.reopen', `reports/${key}`, `Знято позначку «${core.STATUSES[before.data().status] || before.data().status}»`, { before: before.data() });
             return { ok: true };
         }
         if (!core.STATUSES[status]) fail('invalid-argument', 'Невідомий стан');
         if (status === 'paid' && !key.startsWith('esv-')) fail('invalid-argument', '«Сплачено» — лише для платежів');
         const day = String(date || '') || today();
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today()) fail('invalid-argument', 'Дата подання — не пізніше сьогодні');
-        const list = (Array.isArray(files) ? files : []).slice(0, 12).map(f => ({
+        if (!validDate(day) || day > today()) fail('invalid-argument', 'Вкажіть правильну дату подання — не пізніше сьогодні');
+        if (files !== undefined && (!Array.isArray(files) || files.length > 12)) fail('invalid-argument', 'Додайте не більше 12 файлів');
+        const list = (Array.isArray(files) ? files : []).map(f => ({
             name: text(f?.name, 120), path: String(f?.path || ''), kind: FILE_KINDS[f?.kind] ? f.kind : 'other'
         }));
         for (const f of list) {
             if (!f.path.startsWith(`reports/${key}/`) || f.path.includes('..')) fail('invalid-argument', 'Файл має бути в теці цього звіту');
         }
-        if (status === 'accepted' && !list.some(f => f.kind === 'receipt2') && !text(regNumber, 40)) {
-            fail('invalid-argument', 'Для «прийнято» додайте квитанцію № 2 або реєстраційний номер документа');
-        }
-        const doc = { key, status, regNumber: text(regNumber, 40), date: day, note: text(note, 300), files: list, by: actor, at: FieldValue.serverTimestamp() };
-        await ref.set(doc);
+        const doc = await db.runTransaction(async t => {
+            const before = (await t.get(ref)).data();
+            if (before?.status === 'accepted' && status !== 'accepted' && role !== 'chair') fail('permission-denied', 'Стан прийнятого звіту змінює лише голова');
+            const keptFiles = files === undefined ? before?.files || [] : list;
+            const number = regNumber === undefined ? before?.regNumber || '' : text(regNumber, 40);
+            if (status === 'accepted' && !keptFiles.some(f => f.kind === 'receipt2') && !number) fail('invalid-argument', 'Для «прийнято» додайте квитанцію № 2 або реєстраційний номер документа');
+            const value = { key, status, regNumber: number, date: day, note: note === undefined ? before?.note || '' : text(note, 300), files: keptFiles, by: actor, at: FieldValue.serverTimestamp() };
+            t.set(ref, value);
+            return value;
+        });
         await audit(actor, role, 'reports.mark', `reports/${key}`, `Звіт ${key}: ${core.STATUSES[status]}${doc.regNumber ? `, № ${doc.regNumber}` : ''}`,
-            { status, regNumber: doc.regNumber, date: day, files: list.map(f => f.kind) });
+            { status, regNumber: doc.regNumber, date: day, files: doc.files.map(f => f.kind) });
         return { ok: true };
     }
 

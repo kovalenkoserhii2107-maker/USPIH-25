@@ -22,8 +22,8 @@ test('розрахунок за місяць: 4ДФ, ЄСВ, прийом і к�
     const people = new Map([[emp.id, emp], [gph.id, gph]]);
     // Аванс працівнику й податки з нього проведено банком; остаточний розрахунок ще на підписі.
     const payments = [
-        { stage: 'advance', key: 'e1', status: 'paid' }, { stage: 'advance', key: 'pdfo', status: 'paid' }, { stage: 'advance', key: 'vz', status: 'paid' },
-        { stage: 'advance', key: 'esv', status: 'paid' }, { stage: 'final', key: 'e1', status: 'sent' }, { stage: 'final', key: 'esv', status: 'sent' }
+        { stage: 'advance', key: 'e1', status: 'paid', amountKop: run.rows[0].advance.netKop }, { stage: 'advance', key: 'pdfo', status: 'paid', amountKop: run.totals.advance.pdfoKop }, { stage: 'advance', key: 'vz', status: 'paid', amountKop: run.totals.advance.vzKop },
+        { stage: 'advance', key: 'esv', status: 'paid', amountKop: run.totals.advance.esvKop }, { stage: 'final', key: 'e1', status: 'sent' }, { stage: 'final', key: 'esv', status: 'sent' }
     ];
     const rep = r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, people, payments });
     const e = rep.income.find(x => x.personId === 'e1');
@@ -38,16 +38,17 @@ test('розрахунок за місяць: 4ДФ, ЄСВ, прийом і к�
     assert.equal(rep.summary.esvPaidKop, run.totals.advance.esvKop);
     // Неповний місяць — ЄСВ з фактичної бази, без доплати до мінімальної.
     const es = rep.esv.find(x => x.personId === 'e1');
-    assert.deepEqual([es.days, es.normDays, es.topUpKop], [11, 22, 0]);
+    assert.deepEqual([es.days, es.normDays, es.topUpKop], [16, 31, 0]);
     assert.deepEqual(rep.relations.map(x => [x.personId, x.event, x.date]), [['e1', 'start', '2026-10-16'], ['g1', 'end', '2026-10-31']]);
-    assert.deepEqual(rep.checks.map(c => c.level), ['block', 'warn', 'warn', 'info']);
+    assert.deepEqual(rep.checks.map(c => c.level), ['block', 'block', 'warn', 'warn', 'info']);
     assert.match(rep.checks[0].text, /Виконавець Тестовий: немає правильного РНОКПП/);
     assert.equal(rep.summary.due, '2026-11-20');
 });
 
 test('без авансу остаточний розрахунок сплачує все нараховане', () => {
     const run = payroll.buildRun({ people: [{ ...emp, from: '2026-01-01' }], period: '2026-10' });
-    const payments = ['e1', 'pdfo', 'vz', 'esv'].map(key => ({ stage: 'final', key, status: 'paid' }));
+    const amounts = { e1: 665819, pdfo: 155646, vz: 43235, esv: 190234 };
+    const payments = Object.entries(amounts).map(([key, amountKop]) => ({ stage: 'final', key, status: 'paid', amountKop }));
     const s = r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, people: new Map([[emp.id, emp]]), payments }).summary;
     assert.deepEqual([s.paidKop, s.pdfoPaidKop, s.vzPaidKop, s.esvPaidKop], [864700, 155646, 43235, 190234]);
 });
