@@ -4017,6 +4017,12 @@ select.field-input {
 .fo-icon { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: rgba(229, 57, 53, 0.12); color: #D32F2F; }
 .fo-op.is-person .fo-icon { background: rgba(0, 122, 255, 0.12); color: var(--blue); }
 .fo-op.is-fee .fo-icon { background: var(--surface-3); color: var(--ink-2); }
+.fo-list.is-income .fo-icon { background: rgba(52, 199, 89, 0.14); color: #1E7A35; }
+.fo-op.is-debt { align-items: center; }
+.fo-op.is-debt .fo-amount { margin-left: auto; white-space: nowrap; color: #B3261E; }
+.hf-part { padding-left: 14px; border-left: 2px solid var(--line); }
+.hf-part .hf-item-head { font-size: 14px; color: var(--ink-2); }
+.hf-debt-open .am-heat-amount { margin: 2px 0; }
 .fo-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .fo-main time { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .fo-who { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }

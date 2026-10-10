@@ -170,6 +170,37 @@ function operationsByItem({ expenses = [], bankOut = [], year, suppliers = new M
     return out;
 }
 
+/**
+ * Як назвати приміщення мешканцям: «Під'їзд 2, Квартира 177» — якщо
+ * правління вирішило показувати номери (як у сервісі), інакше «Співвласник».
+ */
+function aptLabel(apt, { entrance, nonres } = {}, show = false) {
+    if (!show) return 'Співвласник';
+    return `${entrance ? `Під'їзд ${entrance}, ` : ''}${nonres ? 'Нежитлове приміщення' : 'Квартира'} ${apt}`;
+}
+
+/**
+ * Інші надходження (оренда, обладнання, відсотки…) за джерелами — ті
+ * самі, що дають факт (incomeFact). Платник-мешканець (оренда комори) —
+ * приміщенням, юрособа й ФОП — назвою, інша фізособа — без імені.
+ */
+function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвласник', publicView = false, limit = 2000 }) {
+    const out = {};
+    for (const t of bankIn) {
+        if (t.direction !== 'in' || t.status !== 'done' || t.kind !== 'income' || !inYear(t.period, year)) continue;
+        const source = INCOME_SOURCES[t.category] ? t.category : 'other';
+        const cp = t.counterparty || {};
+        const kind = t.relatedApt ? 'apt' : payeeKind(cp.name, cp.code);
+        const who = t.relatedApt ? label(t.relatedApt) : publicView && kind === 'person' ? 'Фізична особа' : cp.name || '';
+        (out[source] ||= []).push({ date: kyivDate(t.at), who, kind, amountKop: t.amountKop, ...(publicView ? {} : { what: t.purpose || '' }) });
+    }
+    for (const k of Object.keys(out)) {
+        out[k].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.amountKop - a.amountKop));
+        if (out[k].length > limit) out[k] = out[k].slice(0, limit);
+    }
+    return out;
+}
+
 /** Факт надходжень за джерелами: внески (оплати мешканців) та інше з виписки. */
 function incomeFact({ bankIn = [], year }) {
     const fact = new Map();
@@ -254,13 +285,22 @@ function itemOverrun(budget, item, spentKop, amountKop) {
     return null;
 }
 
-/** Загальний борг будинку без прізвищ і номерів квартир. */
-function houseDebt(apartments) {
+/**
+ * Загальний борг будинку. Без прізвищ завжди; список приміщень з боргом
+ * (як «Заборгованість» у сервісі) — лише якщо label заданий, тобто
+ * правління вирішило показувати номери. Порядок — за адресою.
+ */
+function houseDebt(apartments, label = null) {
     const debtors = apartments.filter(a => !a.isAdmin && Number(a.balance) < 0);
-    return { totalKop: debtors.reduce((s, a) => s + Math.round(-Number(a.balance) * 100), 0), count: debtors.length };
+    const out = { totalKop: debtors.reduce((s, a) => s + Math.round(-Number(a.balance) * 100), 0), count: debtors.length };
+    if (label) {
+        out.list = debtors.map(a => ({ apt: String(a.apt), label: label(a.apt), entrance: String(a.entrance || ''), kop: Math.round(-Number(a.balance) * 100) }))
+            .sort((x, y) => x.entrance.localeCompare(y.entrance, 'uk', { numeric: true }) || x.apt.localeCompare(y.apt, 'uk', { numeric: true }));
+    }
+    return out;
 }
 
 module.exports = {
     SECTIONS, GROUPS, INCOME_SOURCES, BANK_ITEM, sectionOf, groupOf, validYear,
-    checkBudget, checkDecision, effectiveBudget, factByItem, operationsByItem, payeeKind, incomeFact, monthsElapsed, execution, itemOverrun, houseDebt
+    checkBudget, checkDecision, effectiveBudget, factByItem, operationsByItem, payeeKind, kyivDate, aptLabel, incomeOpsBySource, incomeFact, monthsElapsed, execution, itemOverrun, houseDebt
 };

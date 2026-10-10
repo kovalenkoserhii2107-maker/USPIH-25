@@ -260,3 +260,18 @@ test('кошторис читають голова й бухгалтер, пиш
     await assertSucceeds(getDoc(doc(as('45').firestore(), 'finance/current')));
     await assertFails(setDoc(doc(as('45').firestore(), 'finance/current'), { items: [] }));
 });
+
+test('розшифровку статей читають усі, пише лише сервер; рішення про номери квартир — лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'finance_ops/exp-lift'), { year: '2027', ops: [] });
+        await setDoc(doc(context.firestore(), 'finance_settings/public'), { showApartments: false });
+    });
+    await assertSucceeds(getDoc(doc(as('45').firestore(), 'finance_ops/exp-lift')));
+    for (const login of ['45', '10', '900']) await assertFails(setDoc(doc(as(login).firestore(), 'finance_ops/exp-lift'), { ops: [] }));
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'finance_settings/public')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'finance_settings/public'), { showApartments: true }));
+    }
+    await assertFails(getDoc(doc(as('45').firestore(), 'finance_settings/public')));
+});

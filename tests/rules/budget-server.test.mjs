@@ -20,7 +20,7 @@ before(() => {
     ex = expenseFunctions({ ...deps, budget: bud });
 });
 const wipe = async () => {
-    for (const name of ['apartments', 'bank', 'bank_tx', 'audit_log', 'suppliers', 'contracts', 'expenses', 'budgets', 'finance', 'charges']) {
+    for (const name of ['apartments', 'bank', 'bank_tx', 'audit_log', 'suppliers', 'contracts', 'expenses', 'budgets', 'finance', 'finance_ops', 'finance_settings', 'charges']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -99,4 +99,39 @@ test('план/факт і звіт для мешканців без прізв�
     // Зміни до кошторису — одразу.
     await bud.actions.amend(...A, { year: YEAR, lines: lines.slice(0, 2), income: [], decision: 'Протокол № 5' });
     assert.equal((await bud.actions.context({ year: YEAR })).publish.stale, true);
+});
+
+test('розшифровка статей і боржники: номери квартир — лише за рішенням голови', async () => {
+    await db.doc('apartments/45').set({ area: 64, entrance: '3', balance: -1250.4, personalAccount: '1045' });
+    await db.doc('apartments/45/owners/o1').set({ name: 'Шевченко Ірина Миколаївна' });
+    await db.doc('bank_tx/r1').set({ direction: 'in', kind: 'income', category: 'rent', status: 'done', period: `${YEAR}-01`, at: new Date(`${YEAR}-01-05T10:00:00Z`),
+        amountKop: 7000, relatedApt: '45', purpose: 'Оренда комори, кв. 45', counterparty: { name: 'ШЕВЧЕНКО ІРИНА', code: '' } });
+    await db.doc('bank_tx/r2').set({ direction: 'in', kind: 'income', category: 'equipment', status: 'done', period: `${YEAR}-01`, at: new Date(`${YEAR}-01-06T10:00:00Z`),
+        amountKop: 1000000, purpose: 'Розміщення обладнання', counterparty: { name: 'ТОВ "ТЕЛЕКОМ-ДЕМО"', code: '12345678' } });
+    await db.doc('bank_tx/x1').set({ direction: 'out', kind: 'expense', category: 'salary', status: 'done', period: `${YEAR}-01`, at: new Date(`${YEAR}-01-15T10:00:00Z`),
+        amountKop: 182195, purpose: 'Аванс Петренку', counterparty: { name: 'ПЕТРЕНКО ОЛЕГ', code: '' } });
+    await bud.actions.publish(...A, { year: YEAR });
+    const ops = async key => (await db.doc(`finance_ops/${key}`).get()).data()?.ops;
+    const pub = (await db.doc('finance/current').get()).data();
+    assert.equal(pub.showApartments, false);
+    assert.deepEqual(pub.opsIndex['inc-equipment'], { count: 1, totalKop: 1000000 });
+    assert.deepEqual((await ops('inc-equipment'))[0].who, 'ТОВ "ТЕЛЕКОМ-ДЕМО"');
+    assert.deepEqual((await ops('inc-rent'))[0].who, 'Співвласник');
+    assert.deepEqual((await ops('exp-salary'))[0].who, 'Працівник ОСББ');
+    assert.equal(pub.debt.list, undefined);
+    for (const key of Object.keys(pub.opsIndex)) assert.ok(!/Шевченко|ШЕВЧЕНКО|ПЕТРЕНКО|1045|кв\. 45|Квартира 45/.test(JSON.stringify(await ops(key))), key);
+
+    // Бухгалтер не вирішує, голова — так; звіт оновлюється одразу.
+    await assert.rejects(bud.actions.visibility(...A, { showApartments: true }), /голова/);
+    await bud.actions.visibility('10', 'chair', { showApartments: true });
+    const shown = (await db.doc('finance/current').get()).data();
+    assert.equal(shown.showApartments, true);
+    assert.deepEqual(shown.debt.list, [{ apt: '45', label: "Під'їзд 3, Квартира 45", entrance: '3', kop: 125040 }]);
+    assert.equal((await ops('inc-rent'))[0].who, "Під'їзд 3, Квартира 45");
+    assert.equal((await ops('exp-salary'))[0].who, 'Працівник ОСББ');
+    assert.ok(!/Шевченко|ШЕВЧЕНКО|ПЕТРЕНКО/.test(JSON.stringify(shown)));
+    // Бухгалтер у кабінеті бачить усе, з призначенням.
+    const ctx = await bud.actions.context({ year: YEAR });
+    assert.equal(ctx.ops['exp-salary'][0].who, 'ПЕТРЕНКО ОЛЕГ');
+    assert.equal(ctx.ops['inc-rent'][0].what, 'Оренда комори, кв. 45');
 });

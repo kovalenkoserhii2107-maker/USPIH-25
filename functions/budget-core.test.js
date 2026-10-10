@@ -135,6 +135,26 @@ test('розшифровка статті: ті самі операції, що 
     assert.deepEqual([pub.esv[0].who, pub.esv[0].kind], ['ГУ ДПС В ОДЕСЬКІЙ ОБЛ.', 'company']);
     assert.equal(pub.lift[0].who, 'ТОВ «Ліфт»');
     assert.equal(b.payeeKind('ФОП Коваль І. І.', '3124567809'), 'fop');
-    assert.equal(b.payeeKind('СТРОЙСЕРВИСС УЖЕ ТОВ', ''), 'company');
-    assert.equal(b.payeeKind('ОСІПЕНКО ДМИТРО МИКОЛАЙОВИЧ', ''), 'person');
+    assert.equal(b.payeeKind('РЕМБУД ДЕМО ТОВ', ''), 'company');
+    assert.equal(b.payeeKind('КОВАЛЬЧУК ІВАН ПЕТРОВИЧ', ''), 'person');
+});
+
+test('надходження й боржники: приміщення — номером лише за рішенням правління', () => {
+    assert.equal(b.aptLabel('177', { entrance: '2' }, true), "Під'їзд 2, Квартира 177");
+    assert.equal(b.aptLabel('302', { entrance: '1', nonres: true }, true), "Під'їзд 1, Нежитлове приміщення 302");
+    assert.equal(b.aptLabel('177', { entrance: '2' }, false), 'Співвласник');
+    const bankIn = [
+        { direction: 'in', kind: 'income', category: 'rent', status: 'done', period: '2027-01', at: new Date('2027-01-05T10:00:00Z'), amountKop: 36000, relatedApt: '59', counterparty: { name: 'ІВАНЕНКО' } },
+        { direction: 'in', kind: 'income', category: 'equipment', status: 'done', period: '2027-01', at: new Date('2027-01-06T10:00:00Z'), amountKop: 43235, counterparty: { name: 'ПрАТ "ЗВʼЯЗОК-ДЕМО"', code: '' } },
+        { direction: 'in', kind: 'income', category: 'refund', status: 'done', period: '2027-01', at: new Date('2027-01-07T10:00:00Z'), amountKop: 41500, counterparty: { name: 'ПЕТРЕНКО ОЛЕГ' } },
+        { direction: 'in', kind: 'payment', status: 'done', period: '2027-01', amountKop: 40000 }
+    ];
+    const pub = b.incomeOpsBySource({ bankIn, year: '2027', label: apt => b.aptLabel(apt, { entrance: '1' }, true), publicView: true });
+    assert.deepEqual(Object.keys(pub).sort(), ['equipment', 'refund', 'rent']);
+    assert.deepEqual([pub.rent[0].who, pub.equipment[0].who, pub.refund[0].who], ["Під'їзд 1, Квартира 59", 'ПрАТ "ЗВʼЯЗОК-ДЕМО"', 'Фізична особа']);
+    const apts = [{ apt: '7', entrance: '1', balance: -6229.67 }, { apt: '191', entrance: '3', balance: -37321.47 }, { apt: '3А', entrance: '1', balance: -742.21 }, { apt: '9', balance: 10 }];
+    assert.equal(b.houseDebt(apts).list, undefined);
+    const debt = b.houseDebt(apts, apt => `Квартира ${apt}`);
+    assert.deepEqual(debt.list.map(d => [d.apt, d.kop]), [['3А', 74221], ['7', 622967], ['191', 3732147]]);
+    assert.equal(debt.totalKop, 74221 + 622967 + 3732147);
 });

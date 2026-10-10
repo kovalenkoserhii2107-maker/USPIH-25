@@ -163,12 +163,13 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         const aptSnap = await db.collection('apartments').get();
         const apts = aptSnap.docs.filter(d => d.data().isAdmin !== true);
         if (apts.length < 10) fail('failed-precondition', 'У довіднику менше 10 квартир — спершу імпортуйте квартири');
-        const [bankSettings, financeCurrent, chargeSettings] = await Promise.all([db.doc('bank/settings').get(), db.doc('finance/current').get(), db.doc('charges/settings').get()]);
+        const [bankSettings, financeCurrent, chargeSettings, publicity] = await Promise.all([db.doc('bank/settings').get(), db.doc('finance/current').get(), db.doc('charges/settings').get(),
+            db.doc('finance_settings/public').get()]);
         const backup = {};
         apts.forEach(d => { const a = d.data(); backup[d.id] = { balance: a.balance ?? null, area: a.area ?? null, residents: a.residents ?? null, balanceSource: a.balanceSource ?? null }; });
         await stateRef.set({ status: 'running', by: actor, at: FieldValue.serverTimestamp(), backup,
             bankSettings: bankSettings.exists ? bankSettings.data() : null, financeCurrent: financeCurrent.exists ? financeCurrent.data() : null,
-            chargeSettings: chargeSettings.exists ? chargeSettings.data() : null, created, steps: [] });
+            chargeSettings: chargeSettings.exists ? chargeSettings.data() : null, publicity: publicity.exists ? publicity.data() : null, created, steps: [] });
 
         const rnd = random(apts.length * 7919);
 
@@ -414,10 +415,12 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         await budget.actions.approve(...C, { year: '2026', decision: DECISION, files: [] });
         step(`Кошторис 2026 затверджено (демо): витрати ${fromKop(lines.reduce((s, l) => s + l.planKop, 0)).toLocaleString('uk-UA')} грн, надходження ${fromKop(income.reduce((s, l) => s + l.planKop, 0)).toLocaleString('uk-UA')} грн`);
 
-        // 9. Звіт для мешканців.
+        // 9. Звіт для мешканців — як у сервісі: надходження й боржники з номерами квартир
+        // (рішення правління; у справжньому обліку вмикає голова в «Кошторисі»).
+        await db.doc('finance_settings/public').set({ showApartments: true, by: actor, at: FieldValue.serverTimestamp(), demo: true });
         await budget.actions.publish(...A, { year: '2026' });
         const pub = (await db.doc('finance/current').get()).data();
-        step(`«Фінанси будинку» для мешканців опубліковано: борг будинку ${fromKop(pub.debt.totalKop).toLocaleString('uk-UA')} грн (${pub.debt.count} кв.) — без прізвищ і номерів`);
+        step(`«Фінанси будинку» для мешканців опубліковано: борг будинку ${fromKop(pub.debt.totalKop).toLocaleString('uk-UA')} грн (${pub.debt.count} кв.) — без прізвищ; розшифровка статей: ${Object.keys(pub.opsIndex || {}).length}, з номерами квартир (як у сервісі)`);
 
         const summary = { apartments: apts.length, chargedKop: charged.totalKop, transactions: stored.added, matched: stored.matched, queue, debtKop: pub.debt.totalKop };
         await stateRef.set({ status: 'done', steps, summary, created, components: Object.values(ids), at: FieldValue.serverTimestamp() }, { merge: true });
@@ -469,9 +472,11 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         await db.doc('budgets/2026').delete();
         await db.doc('finance/2026').delete();
         if (s.financeCurrent) await db.doc('finance/current').set(s.financeCurrent); else await db.doc('finance/current').delete();
+        await deleteAll(db.collection('finance_ops'));
+        if (s.publicity) await db.doc('finance_settings/public').set(s.publicity); else await db.doc('finance_settings/public').delete();
         if (s.bankSettings) await db.doc('bank/settings').set(s.bankSettings); else await db.doc('bank/settings').delete();
         await stateRef.set({ status: 'removed', removedBy: actor, removedAt: FieldValue.serverTimestamp(), backup: FieldValue.delete(), financeCurrent: FieldValue.delete(),
-            bankSettings: FieldValue.delete(), chargeSettings: FieldValue.delete() }, { merge: true });
+            bankSettings: FieldValue.delete(), chargeSettings: FieldValue.delete(), publicity: FieldValue.delete() }, { merge: true });
         await audit(actor, 'chair', 'demo.remove', 'Демо-дані бухгалтерії прибрано, квартири повернуто до попереднього стану', { transactions: demoTx.size });
         return { ok: true };
     }

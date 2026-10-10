@@ -521,6 +521,18 @@ service cloud.firestore {
       allow write: if canAccount();
     }
 
+    // Розшифровка статей звіту (операції за статтею) — пише лише сервер
+    // при публікації (budgetAction): прізвищ немає, номери квартир — лише
+    // за рішенням правління (finance_settings/public, змінює голова).
+    match /finance_ops/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /finance_settings/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+
     // ---------- БАНК ----------
     // Виписки, рознесення оплат, запамʼятовані платники й налаштування
     // пише лише сервер (Cloud Functions, bankAction і синхронізація з
@@ -586,7 +598,7 @@ service cloud.firestore {
     // ---------- КОШТОРИС ----------
     // Чернетку, затвердження (рішення зборів) і зміни пише лише сервер
     // (budgetAction). Мешканці бачать не кошторис, а опублікований звіт
-    // finance/current — без прізвищ і номерів квартир.
+    // finance/current — без прізвищ (номери квартир — за рішенням правління).
     match /budgets/{year} {
       allow read: if canAccount();
       allow write: if false;

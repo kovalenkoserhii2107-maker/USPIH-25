@@ -220,3 +220,17 @@ test('історія за складовими: залишок 30.09 з квит
     assert.equal(c.checkOpening([{ apt: '1', amountKop: 586305, parts: opening.parts }], new Set(['1'])), null);
     assert.match(c.checkOpening([{ apt: '1', amountKop: 1, parts: { main: 2 } }], new Set(['1'])), /складові/);
 });
+
+test('оплати за складовими поквартирно: та сама сума, що й paidByComponent', () => {
+    const at = new Date('2026-10-08T09:00:00Z');
+    const ledgers = new Map([
+        ['298', [{ kind: 'opening', period: '2026-09', amount: 5863.05, parts: { main: 596239, light: -3072, lift: -4032, waste: -2830 } },
+            { kind: 'payment', period: '2026-10', at, amount: 400 }]],
+        ['5', [{ kind: 'payment', period: '2026-10', at, amount: 100 }, { kind: 'payment', period: '2025-12', at, amount: 50 }]]
+    ]);
+    const opts = { order: ['main', 'light', 'lift', 'waste'] };
+    const ops = c.paymentOps(ledgers, '2026', opts);
+    const paid = c.paidByComponent(ledgers, '2026', opts);
+    for (const [comp, kop] of Object.entries(paid)) assert.equal(ops.filter(o => o.component === comp).reduce((s, o) => s + o.kop, 0), kop, comp);
+    assert.deepEqual(ops.filter(o => o.apt === '298').map(o => [o.component, o.kop]).sort(), [['lift', 4032], ['light', 3072], ['main', 30066], ['waste', 2830]]);
+});

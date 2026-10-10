@@ -454,3 +454,8 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .bd-ops-row > td { padding: 4px 12px 14px; background: var(--surface-2); }
 .bd-ops .fo-chips { margin-top: 6px; }
 .bd-ops .fo-op { padding: 10px 0; }
+.bd-open span { color: var(--blue-ink, var(--blue)); }
+.bd-switch { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+.bd-switch input { width: 20px; height: 20px; margin-top: 2px; flex-shrink: 0; accent-color: var(--blue); }
+.bd-switch span { display: flex; flex-direction: column; gap: 3px; }
+.bd-switch small { font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
