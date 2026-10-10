@@ -52,7 +52,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function loadApartments() {
         const snap = await db.collection('apartments').get();
         return snap.docs.filter(d => d.data().isAdmin !== true)
-            .map(d => ({ apt: cleanApt(d.id), id: d.id, area: d.data().area ?? null, balance: d.data().balance ?? null, personalAccount: d.data().personalAccount || '' }));
+            .map(d => ({ apt: cleanApt(d.id), id: d.id, area: d.data().area ?? null, residents: d.data().residents ?? null, balance: d.data().balance ?? null, personalAccount: d.data().personalAccount || '' }));
     }
 
     // --------------------------------------------------------
@@ -137,7 +137,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         return {
             groups: settings.groups, components: settings.components, tariffs: settings.tariffs, premises: settings.premises,
             startPeriod: settings.startPeriod, opening: settings.opening ? { ...settings.opening, at: settings.opening.at?.toDate?.()?.toISOString() || null } : null,
-            apartments: apartments.map(a => ({ apt: a.apt, area: a.area, balance: a.balance, personalAccount: a.personalAccount })),
+            apartments: apartments.map(a => ({ apt: a.apt, area: a.area, residents: a.residents, balance: a.balance, personalAccount: a.personalAccount })),
             runs, due, current,
             preview: { period, done: done.has(period), ...preview }
         };
@@ -288,6 +288,40 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         return { ok: true, id: group.id };
     }
 
+    /** Перейменувати складову (напр. «Утримання будинку» → як у квитанції сервісу). */
+    async function renameComponent(actor, role, { id, name }) {
+        const settings = await loadSettings();
+        const c = settings.components.find(x => x.id === id);
+        if (!c) fail('not-found', 'Складову не знайдено');
+        const n = String(name || '').trim();
+        if (n.length < 2 || n.length > 60) fail('invalid-argument', 'Назва складової — від 2 до 60 символів');
+        if (settings.components.some(x => x.id !== id && x.name.toLowerCase() === n.toLowerCase())) fail('invalid-argument', 'Така складова вже є');
+        await settingsRef.set({ components: settings.components.map(x => (x.id === id ? { ...x, name: n } : x)), groups: settings.groups }, { merge: true });
+        await audit(actor, role, 'charges.component', 'charges/settings', `Складова «${c.name}» → «${n}»`, { id, name: n });
+        return { ok: true };
+    }
+
+    /**
+     * Кількість проживаючих — для складових «з проживаючого» (вивезення
+     * побутових відходів). rows: [{ apt, residents }]; порожнє — прибрати.
+     */
+    async function setResidents(actor, role, { rows }) {
+        const ids = new Map((await loadApartments()).map(a => [a.apt, a.id]));
+        const list = (Array.isArray(rows) ? rows : []).slice(0, 2000).map(r => ({ apt: cleanApt(r?.apt), residents: r?.residents === '' || r?.residents === null ? null : core.parseResidents(r?.residents) }));
+        if (!list.length) fail('invalid-argument', 'Немає жодного рядка');
+        const bad = list.find(r => !ids.has(r.apt));
+        if (bad) fail('invalid-argument', `Квартири ${bad.apt} немає в довіднику`);
+        if (list.some((r, i) => rows[i]?.residents !== '' && rows[i]?.residents !== null && r.residents === null)) fail('invalid-argument', 'Кількість проживаючих — ціле число від 0 до 30');
+        let batch = db.batch(), ops = 0;
+        for (const r of list) {
+            batch.set(db.doc(`apartments/${ids.get(r.apt)}`), { residents: r.residents === null ? FieldValue.delete() : r.residents }, { merge: true });
+            if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+        }
+        if (ops) await batch.commit();
+        await audit(actor, role, 'charges.residents', 'apartments', `Кількість проживаючих: ${list.length} кв.`, { count: list.length });
+        return { ok: true, count: list.length };
+    }
+
     async function setPremises(actor, role, { apts, group }) {
         const settings = await loadSettings();
         if (!settings.groups.some(g => g.id === group)) fail('invalid-argument', 'Невідома група приміщень');
@@ -362,6 +396,8 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             case 'removeTariff': return removeTariff(actor, role, data);
             case 'addGroup': return addGroup(actor, role, data);
             case 'addComponent': return addComponent(actor, role, data);
+            case 'setResidents': return setResidents(actor, role, data);
+            case 'renameComponent': return renameComponent(actor, role, data);
             case 'setPremises': return setPremises(actor, role, data);
             case 'setOpening': return setOpening(actor, role, data);
             case 'recompute': {
@@ -374,5 +410,5 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         }
     });
 
-    return { chargesAction, recompute: recomputeSafe, actions: { run, revert, addTariff, removeTariff, addGroup, addComponent, setPremises, setOpening, context, getStatement, recompute } };
+    return { chargesAction, recompute: recomputeSafe, actions: { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, context, getStatement, recompute } };
 };

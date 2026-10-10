@@ -30,9 +30,16 @@ const DECISION = 'Протокол загальних зборів № 1 від 
 const OWN = 'UA213052990000026001234567890';           // поточний рахунок ОСББ (демо)
 const RESERVE = 'UA563052990000026005000012345';       // резервний фонд (демо)
 
-// Річні суми з реального звіту ОСББ, копійки.
+// Суми з реального звіту ОСББ «за 2026 рік», копійки. Звіт зроблено в
+// жовтні, тож це фактично 9 місяців (січень–вересень): вивезення відходів
+// 77 002,74 = 9 × 8 555,86 (щомісячний рахунок перевізника). Місяць = сума / 9.
+const MONTHS_IN_REPORT = 9;
 const YEAR_INCOME = { main: 73244123, light: 12102494, lift: 9856841, waste: 8773868, rent: 4778774, equipment: 17328672 };
 const YEAR_SPENT = { upkeep: 53362118, reserve: 27825484, power: 12783088, lift: 9920928, waste: 7700274, salary: 5213151, esv: 1636227, bank: 287000 };
+const month = kop => Math.round(kop / MONTHS_IN_REPORT);
+const year = kop => month(kop) * 12;
+// Тарифи з реальної квитанції (вересень 2026), складові — як їх називає сервіс.
+const TARIFFS = { main: '4,57', light: '0,48', lift: '0,63', waste: '14,15' };
 const TOTAL_DEBT_KOP = 30981500;
 
 // ------------------------------------------------------------
@@ -75,9 +82,9 @@ function iban(account19) {
 }
 
 const SUPPLIERS = [
-    { key: 'lift', name: 'ТОВ «Ліфт-Сервіс» (демо)', kind: 'company', code: edrpou('3911101'), iban: iban('2600100000000001'), item: 'lift', monthlyKop: Math.round(YEAR_SPENT.lift / 12), subject: 'Технічне обслуговування ліфтів' },
-    { key: 'waste', name: 'ТОВ «Еко-Вивіз» (демо)', kind: 'company', code: edrpou('4022202'), iban: iban('2600100000000002'), item: 'waste', monthlyKop: Math.round(YEAR_SPENT.waste / 12), subject: 'Вивезення побутових відходів' },
-    { key: 'power', name: 'ТОВ «Енергозбут» (демо)', kind: 'company', code: edrpou('4133303'), iban: iban('2600100000000003'), item: 'power', monthlyKop: Math.round(YEAR_SPENT.power / 12), subject: 'Електроенергія місць загального користування' },
+    { key: 'lift', name: 'ТОВ «Ліфт-Сервіс» (демо)', kind: 'company', code: edrpou('3911101'), iban: iban('2600100000000001'), item: 'lift', monthlyKop: month(YEAR_SPENT.lift), subject: 'Технічне обслуговування ліфтів' },
+    { key: 'waste', name: 'ТОВ «Еко-Вивіз» (демо)', kind: 'company', code: edrpou('4022202'), iban: iban('2600100000000002'), item: 'waste', monthlyKop: month(YEAR_SPENT.waste), subject: 'Вивезення побутових відходів' },
+    { key: 'power', name: 'ТОВ «Енергозбут» (демо)', kind: 'company', code: edrpou('4133303'), iban: iban('2600100000000003'), item: 'power', monthlyKop: month(YEAR_SPENT.power), subject: 'Електроенергія місць загального користування' },
     { key: 'clean', name: 'ФОП Прибиральник І. І. (демо)', kind: 'fop', code: rnokpp('312456780'), iban: iban('2600100000000004'), item: 'cleaning', monthlyKop: 1500000, subject: 'Прибирання підʼїздів і прибудинкової території', fopChecked: true },
     { key: 'water', name: 'Водоканал (демо)', kind: 'company', code: edrpou('0300404'), iban: iban('2600100000000005'), item: 'water' },
     { key: 'roof', name: 'ТОВ «Дах-Сервіс» (демо)', kind: 'company', code: edrpou('4244405'), iban: iban('2600100000000006'), item: 'repair' }
@@ -134,29 +141,30 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (apts.length < 10) fail('failed-precondition', 'У довіднику менше 10 квартир — спершу імпортуйте квартири');
         const [bankSettings, financeCurrent, chargeSettings] = await Promise.all([db.doc('bank/settings').get(), db.doc('finance/current').get(), db.doc('charges/settings').get()]);
         const backup = {};
-        apts.forEach(d => { const a = d.data(); backup[d.id] = { balance: a.balance ?? null, area: a.area ?? null, balanceSource: a.balanceSource ?? null }; });
+        apts.forEach(d => { const a = d.data(); backup[d.id] = { balance: a.balance ?? null, area: a.area ?? null, residents: a.residents ?? null, balanceSource: a.balanceSource ?? null }; });
         await stateRef.set({ status: 'running', by: actor, at: FieldValue.serverTimestamp(), backup,
             bankSettings: bankSettings.exists ? bankSettings.data() : null, financeCurrent: financeCurrent.exists ? financeCurrent.data() : null,
             chargeSettings: chargeSettings.exists ? chargeSettings.data() : null, created, steps: [] });
 
         const rnd = random(apts.length * 7919);
-        // 1. Площі: де немає — умовні 38–95 м² (у тестовому довіднику їх часто нема).
-        let batch = db.batch(), ops = 0, filled = 0;
+        // 1. Площі й кількість проживаючих: де немає — умовні (38–95 м²,
+        //    1–4 особи); справжні дані довідника не чіпаємо.
+        let batch = db.batch(), ops = 0, filledArea = 0, filledRes = 0, people = 0;
         const areaCenti = new Map();
         for (const d of apts) {
             const a = String(d.data().area ?? '').replace(',', '.');
             let centi = Math.round(Number(a) * 100);
-            if (!(centi > 0)) {
-                centi = Math.round((38 + rnd() * 57) * 10) * 10;
-                batch.update(d.ref, { area: centi / 100 });
-                filled += 1;
-                if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
-            }
+            const patch = {};
+            if (!(centi > 0)) { centi = Math.round((38 + rnd() * 57) * 10) * 10; patch.area = centi / 100; filledArea += 1; }
+            let res = d.data().residents;
+            if (!Number.isInteger(res) || res < 0) { const r = rnd(); res = r < 0.25 ? 1 : r < 0.65 ? 2 : r < 0.9 ? 3 : 4; patch.residents = res; filledRes += 1; }
+            people += res;
+            if (Object.keys(patch).length) { batch.update(d.ref, patch); if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; } }
             areaCenti.set(d.id, centi);
         }
         if (ops) await batch.commit();
         const totalArea = [...areaCenti.values()].reduce((s, v) => s + v, 0) / 100;
-        step(`Квартир: ${apts.length}, загальна площа ${totalArea.toFixed(1)} м²${filled ? ` (умовну площу внесено ${filled} квартирам без площі)` : ''}`);
+        step(`Квартир: ${apts.length}, загальна площа ${totalArea.toFixed(1)} м², проживає ${people} осіб${filledArea || filledRes ? ` (умовні дані: площа — ${filledArea} кв., проживаючі — ${filledRes} кв.)` : ''}`);
 
         // 2. Рахунки ОСББ (демо): поточний і резервний фонд.
         await db.doc('bank/settings').set({ demo: true, startDate: '2026-10-01', tokenSet: false,
@@ -164,17 +172,16 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
                 [RESERVE]: { purpose: 'reserve', currency: 'UAH', balanceKop: 31520000, balanceAt: Timestamp.now(), name: 'ОСББ резервний фонд (демо)' } } }, { merge: true });
         step('Рахунки ОСББ (демо): поточний 128 450,00 грн, резервний фонд 315 200,00 грн');
 
-        // 3. Складові внеску й тарифи: річні надходження зі звіту / 12 / площа.
+        // 3. Складові внеску й тарифи — як у реальній квитанції ОСББ.
         const ids = {};
-        for (const [key, name, base, item] of [['light', 'Освітлення МЗК', 'area', 'power'], ['lift', 'Ліфти', 'area', 'lift'], ['waste', 'Вивезення ТПВ', 'fixed', 'waste']]) {
+        for (const [key, name, base, item] of [['light', 'Освітлення З. М', 'area', 'power'], ['lift', 'Внесок на обслуговування ліфтів', 'area', 'lift'],
+            ['waste', 'Вивезення побутових відходів', 'residents', 'waste']]) {
             ids[key] = (await charges.actions.addComponent(...A, { name, base, item })).id;
         }
-        const perM2 = kop => (Math.round(kop / 12 / totalArea) / 100).toFixed(2);
-        const rates = { main: perM2(YEAR_INCOME.main), light: perM2(YEAR_INCOME.light), lift: perM2(YEAR_INCOME.lift),
-            waste: (Math.round(YEAR_INCOME.waste / 12 / apts.length) / 100).toFixed(2) };
-        await charges.actions.addTariff(...A, { component: 'main', group: 'res', rate: rates.main, from: PERIOD, decision: DECISION });
-        for (const key of ['light', 'lift', 'waste']) await charges.actions.addTariff(...A, { component: ids[key], group: 'res', rate: rates[key], from: PERIOD, decision: DECISION });
-        step(`Тарифи з жовтня 2026: утримання ${rates.main} грн/м², освітлення МЗК ${rates.light} грн/м², ліфти ${rates.lift} грн/м², вивезення ТПВ ${rates.waste} грн з квартири`);
+        await charges.actions.renameComponent(...A, { id: 'main', name: 'Обслуговування будинку та прибудинкової території' });
+        await charges.actions.addTariff(...A, { component: 'main', group: 'res', rate: TARIFFS.main, from: PERIOD, decision: DECISION });
+        for (const key of ['light', 'lift', 'waste']) await charges.actions.addTariff(...A, { component: ids[key], group: 'res', rate: TARIFFS[key], from: PERIOD, decision: DECISION });
+        step(`Тарифи з жовтня 2026 (з квитанції): обслуговування будинку ${TARIFFS.main} грн/м², освітлення З. М ${TARIFFS.light} грн/м², ліфти ${TARIFFS.lift} грн/м², вивезення відходів ${TARIFFS.waste} грн з проживаючого`);
 
         // 4. Вхідні залишки на 30.09.2026. Де баланс уже внесено (напр. з акта
         //    звірки сервісу бухгалтера) — беремо його; решті — борги ~45 %
@@ -265,7 +272,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
             const d = apts[(i * 37 + 11) % apts.length];
             push(2 + i, 'in', kop, `Оренда нежитлового приміщення по договору, кв. ${d.id}`, { name: (owners.get(d.id) || 'ПЛАТНИК').toUpperCase(), account: '', code: '' });
         });
-        push(5, 'in', Math.round(YEAR_INCOME.equipment / 12), 'Плата за розміщення обладнання звʼязку за жовтень 2026 згідно з договором',
+        push(5, 'in', month(YEAR_INCOME.equipment), 'Плата за розміщення обладнання звʼязку за жовтень 2026 згідно з договором',
             { name: 'ТОВ «ТЕЛЕКОМ-СЕРВІС» (ДЕМО)', account: iban('2600100000000099'), code: edrpou('3655507') });
         // Списання: оплата актів за вересень (система сама закриє документи), водоканал, дах, банк, зарплата, ЄСВ, резервний фонд.
         for (const s of SUPPLIERS.filter(x => docs[x.key])) {
@@ -273,10 +280,10 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         }
         push(2, 'out', 114452, 'Оплата за рахунком № В-1002 від 29.09.2026, водопостачання МЗК', { name: 'ВОДОКАНАЛ (ДЕМО)', account: SUPPLIERS[4].iban, code: SUPPLIERS[4].code });
         push(1, 'out', 279400, 'Оплата за ремонт покрівлі', { name: 'ТОВ «ДАХ-СЕРВІС» (ДЕМО)', account: SUPPLIERS[5].iban, code: SUPPLIERS[5].code });
-        push(6, 'out', Math.round(YEAR_SPENT.bank / 9), 'Комісія за обслуговування рахунку за вересень 2026', { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' });
-        push(7, 'out', Math.round(YEAR_SPENT.salary / 12), 'Заробітна плата за вересень 2026', { name: 'ПРАЦІВНИК ОСББ (ДЕМО)', account: iban('2600100000000077'), code: '' });
-        push(7, 'out', Math.round(YEAR_SPENT.esv / 12), '*;101;ЄСВ за вересень 2026', { name: 'ГУ ДПС (ДЕМО)', account: iban('2600100000000078'), code: '' });
-        push(8, 'out', Math.round(YEAR_SPENT.reserve / 12), 'Переказ до резервного фонду за жовтень 2026', { name: 'ОСББ', account: RESERVE, code: '' });
+        push(6, 'out', month(YEAR_SPENT.bank), 'Комісія за обслуговування рахунку за вересень 2026', { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' });
+        push(7, 'out', month(YEAR_SPENT.salary), 'Заробітна плата за вересень 2026', { name: 'ПРАЦІВНИК ОСББ (ДЕМО)', account: iban('2600100000000077'), code: '' });
+        push(7, 'out', month(YEAR_SPENT.esv), '*;101;ЄСВ за вересень 2026', { name: 'ГУ ДПС (ДЕМО)', account: iban('2600100000000078'), code: '' });
+        push(8, 'out', month(YEAR_SPENT.reserve), 'Переказ до резервного фонду за жовтень 2026', { name: 'ОСББ', account: RESERVE, code: '' });
         const stored = await bank.storeTransactions(list, 'demo', await bank.loadContext());
         const queue = (await db.collection('bank_tx').where('source', '==', 'demo').where('status', '==', 'review').get()).size;
         step(`Виписка за жовтень: ${stored.added} операцій, оплат мешканців рознесено автоматично: ${stored.matched}; чекають рішення у «Вхідних»: ${queue}`);
@@ -284,21 +291,21 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         // 8. Кошторис 2026 за річним звітом і затвердження зборами.
         const k = (v, round = 100000) => Math.ceil(v / round) * round;
         const lines = [
-            { item: 'cleaning', title: 'Прибирання', planKop: k(YEAR_SPENT.upkeep * 0.35) },
-            { item: 'systems', title: 'Обслуговування інженерних систем', planKop: k(YEAR_SPENT.upkeep * 0.25) },
-            { item: 'repair', title: 'Поточний ремонт', planKop: k(YEAR_SPENT.upkeep * 0.25) },
-            { item: 'services', title: 'Бухгалтерські й юридичні послуги', planKop: k(YEAR_SPENT.upkeep * 0.15) },
-            { item: 'power', title: 'Освітлення МЗК', planKop: k(YEAR_SPENT.power) },
+            { item: 'cleaning', title: 'Прибирання', planKop: k(year(YEAR_SPENT.upkeep) * 0.35) },
+            { item: 'systems', title: 'Обслуговування інженерних систем', planKop: k(year(YEAR_SPENT.upkeep) * 0.25) },
+            { item: 'repair', title: 'Поточний ремонт', planKop: k(year(YEAR_SPENT.upkeep) * 0.25) },
+            { item: 'services', title: 'Бухгалтерські й юридичні послуги', planKop: k(year(YEAR_SPENT.upkeep) * 0.15) },
+            { item: 'power', title: 'Освітлення МЗК', planKop: k(year(YEAR_SPENT.power)) },
             { item: 'water', title: 'Вода МЗК', planKop: 1500000 },
-            { item: 'lift', title: 'Ліфти', planKop: k(YEAR_SPENT.lift) },
-            { item: 'waste', title: 'Вивезення побутових відходів', planKop: k(YEAR_SPENT.waste) },
-            { item: 'salary', title: 'Зарплата, податки й ЄСВ', planKop: k(YEAR_SPENT.salary + YEAR_SPENT.esv) },
-            { item: 'bank', title: 'Комісія банку', planKop: k(YEAR_SPENT.bank) },
-            { item: 'reserve', title: 'Резервний фонд', planKop: k(YEAR_SPENT.reserve) }
+            { item: 'lift', title: 'Ліфти', planKop: k(year(YEAR_SPENT.lift)) },
+            { item: 'waste', title: 'Вивезення побутових відходів', planKop: k(year(YEAR_SPENT.waste)) },
+            { item: 'salary', title: 'Зарплата, податки й ЄСВ', planKop: k(year(YEAR_SPENT.salary + YEAR_SPENT.esv)) },
+            { item: 'bank', title: 'Комісія банку', planKop: k(year(YEAR_SPENT.bank)) },
+            { item: 'reserve', title: 'Резервний фонд', planKop: k(year(YEAR_SPENT.reserve)) }
         ];
         const income = [
-            { source: 'contributions', planKop: k(YEAR_INCOME.main + YEAR_INCOME.light + YEAR_INCOME.lift + YEAR_INCOME.waste) },
-            { source: 'rent', planKop: k(YEAR_INCOME.rent) }, { source: 'equipment', planKop: k(YEAR_INCOME.equipment) }
+            { source: 'contributions', planKop: k(year(YEAR_INCOME.main + YEAR_INCOME.light + YEAR_INCOME.lift + YEAR_INCOME.waste)) },
+            { source: 'rent', planKop: k(year(YEAR_INCOME.rent)) }, { source: 'equipment', planKop: k(year(YEAR_INCOME.equipment)) }
         ];
         await budget.actions.save(...A, { year: '2026', lines, income, note: 'Демо: за річним звітом ОСББ' });
         await budget.actions.approve(...C, { year: '2026', decision: DECISION, files: [] });
@@ -347,7 +354,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
             batch.delete(db.doc(`apartments/${id}/ledger/charge-${PERIOD}`));
             batch.delete(db.doc(`apartments/${id}/ledger/opening`));
             const b = s.backup[id];
-            batch.set(db.doc(`apartments/${id}`), { balance: b.balance, area: b.area, balanceSource: b.balanceSource ?? FieldValue.delete() }, { merge: true });
+            batch.set(db.doc(`apartments/${id}`), { balance: b.balance, area: b.area, residents: b.residents ?? FieldValue.delete(), balanceSource: b.balanceSource ?? FieldValue.delete() }, { merge: true });
             if ((ops += 3) >= 390) await flush();
         }
         await flush();

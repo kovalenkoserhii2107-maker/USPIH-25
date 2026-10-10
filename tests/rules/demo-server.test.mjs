@@ -33,7 +33,7 @@ after(async () => { await wipe(); await deleteApp(app); });
 
 test('прогін лишає слід у всіх розділах, «Прибрати» повертає як було', async () => {
     for (let i = 1; i <= 40; i++) {
-        await db.doc(`apartments/${i}`).set({ area: i % 4 ? 50 + i : '', balance: i % 5 ? 0 : -100, personalAccount: `10${i}` });
+        await db.doc(`apartments/${i}`).set({ area: i % 4 ? 50 + i : '', balance: i % 5 ? 0 : -100, personalAccount: `10${i}`, ...(i === 2 ? { area: 64, residents: 2 } : {}) });
         if (i % 3 === 0) await db.doc(`apartments/${i}/owners/o1`).set({ name: `Власник Тестовий ${i}` });
     }
     await db.doc('apartments/900').set({ isAdmin: true });
@@ -46,10 +46,12 @@ test('прогін лишає слід у всіх розділах, «Приб�
 
     // Нарахування: 4 складові, сума ~ річні надходження / 12.
     const settings = (await db.doc('charges/settings').get()).data();
-    assert.deepEqual(settings.components.map(c => c.name), ['Утримання будинку', 'Освітлення МЗК', 'Ліфти', 'Вивезення ТПВ']);
+    assert.deepEqual(settings.components.map(c => c.name), ['Обслуговування будинку та прибудинкової території', 'Освітлення З. М',
+        'Внесок на обслуговування ліфтів', 'Вивезення побутових відходів']);
     const run = (await db.doc('charges_runs/2026-10').get()).data();
     assert.equal(run.count, 40);
-    assert.ok(Math.abs(run.totalKop - (73244123 + 12102494 + 9856841 + 8773868) / 12) < 2000, `нараховано ${run.totalKop}`);
+    // Квартира як у реальній квитанції (64 м², 2 проживають) — рівно 391,82 грн.
+    assert.equal(run.amounts['2'], 39182);
     // Уже внесений баланс став вхідним залишком.
     assert.equal((await db.doc('apartments/5/ledger/opening').get()).data().amountKop, -10000);
     // Оплати повним форматом сервісу («О/р 000…, кв. N, за комунальні послуги») рознесено за особовим рахунком.
@@ -89,7 +91,8 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal((await db.doc('charges/settings').get()).exists, false);
     const a4 = (await db.doc('apartments/4').get()).data();
     const a5 = (await db.doc('apartments/5').get()).data();
-    assert.deepEqual([a4.area, a5.balance, a5.balanceSource], ['', -100, undefined]);
+    assert.deepEqual([a4.area, a4.residents, a5.balance, a5.balanceSource], ['', undefined, -100, undefined]);
+    assert.equal((await db.doc('apartments/2').get()).data().residents, 2);
     assert.equal((await db.collection('apartments/1/ledger').get()).size, 0);
     assert.deepEqual((await demo.actions.status()).blockers, []);
 });

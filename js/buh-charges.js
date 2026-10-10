@@ -49,7 +49,7 @@ function groupsBreakdown(rows) {
     }
     return [...by.values()];
 }
-const unit = base => (base === 'fixed' ? 'грн з прим.' : 'грн/м²');
+const unit = base => (base === 'fixed' ? 'грн з прим.' : base === 'residents' ? 'грн/прож.' : 'грн/м²');
 const compName = id => (ctx.components || []).find(c => c.id === (id || 'main'))?.name || 'Утримання будинку';
 
 function monthHtml() {
@@ -180,7 +180,7 @@ function tariffsHtml() {
             <p class="ch-chips">${comps.map(c => `<span class="buh-tag">${escapeHtml(c.name)} · ${escapeHtml(unit(c.base))}</span>`).join(' ')}</p>
             <div class="buh-inline-form ch-form">
                 <input id="cpName" class="field-input" maxlength="60" placeholder="Нова складова, напр. «Освітлення МЗК», «Ліфти», «Вивезення ТПВ»" aria-label="Назва складової">
-                <select id="cpBase" class="field-input field-select" aria-label="Як рахувати"><option value="area">за м²</option><option value="fixed">з приміщення</option></select>
+                <select id="cpBase" class="field-input field-select" aria-label="Як рахувати"><option value="area">за м²</option><option value="fixed">з приміщення</option><option value="residents">з проживаючого</option></select>
                 <button type="button" class="btn-ghost-small" data-act="component-add">Додати складову</button>
             </div>
             <h3 class="ch-sub">Групи приміщень</h3>
@@ -202,8 +202,9 @@ function premisesRows() {
     const list = ctx.apartments.filter(a => !q || a.apt.startsWith(q))
         .sort((a, b) => a.apt.localeCompare(b.apt, 'uk', { numeric: true }));
     if (!list.length) return '<p class="list-empty">Нічого не знайдено</p>';
-    return `<table class="buh-table"><thead><tr><th>Прим.</th><th>Площа, м²</th><th>Група</th><th class="t-sum">Внесок за ${escapeHtml(periodName(ctx.preview.period))}</th></tr></thead>
+    return `<table class="buh-table"><thead><tr><th>Прим.</th><th>Площа, м²</th><th>Проживає</th><th>Група</th><th class="t-sum">Внесок за ${escapeHtml(periodName(ctx.preview.period))}</th></tr></thead>
         <tbody>${list.map(a => `<tr data-apt="${escapeHtml(a.apt)}"><td><b>${escapeHtml(a.apt)}</b></td><td>${a.area ? escapeHtml(area(a.area)) : '<span class="buh-tag is-review">немає</span>'}</td>
+            <td><input class="field-input pr-res" inputmode="numeric" maxlength="2" value="${a.residents ?? ''}" placeholder="—" aria-label="Проживає"></td>
             <td><select class="field-input field-select pr-group" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}"${(ctx.premises[a.apt] || 'res') === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></td>
             ${charge.has(a.apt) ? kopCell(charge.get(a.apt)) : `<td class="t-sum t-muted">${escapeHtml(problem.get(a.apt) || '—')}</td>`}</tr>`).join('')}</tbody></table>`;
 }
@@ -216,6 +217,10 @@ function premisesHtml() {
                 <input id="prBulk" class="field-input" placeholder="Кілька приміщень через кому: н1, н2, 101" aria-label="Приміщення">
                 <select id="prBulkGroup" class="field-input field-select" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('')}</select>
                 <button type="button" class="btn-soft btn-compact" data-act="premises-bulk">Призначити групу</button>
+            </div>
+            <div class="buh-inline-form ch-form">
+                <input id="resBulk" class="field-input" placeholder="Проживаючі списком: «298;2» або «298 2», кожна квартира з нового рядка чи через кому" aria-label="Проживаючі">
+                <button type="button" class="btn-soft btn-compact" data-act="residents-bulk">Внести проживаючих</button>
             </div>
             <div class="buh-toolbar"><input type="search" id="prQuery" class="field-input buh-search" placeholder="Номер приміщення"></div>
             <div id="prTable">${premisesRows()}</div>
@@ -290,7 +295,7 @@ async function receiptHtml(r, a, req, period, qrcode) {
                 <p class="rc-apt">Кв. ${escapeHtml(r.apt)}${a.personalAccount ? ` · о/р ${escapeHtml(a.personalAccount)}` : ''}${a.area ? ` · ${escapeHtml(area(a.area))} м²` : ''}</p>
                 <table><tbody>
                     <tr><td>${r.opening < 0 ? 'Борг' : r.opening > 0 ? 'Переплата' : 'Залишок'} на ${escapeHtml(periodStart(period))}</td><td>${fmtKop(Math.abs(r.opening))}</td></tr>
-                    ${charge?.parts?.length > 1 ? charge.parts.map(p => `<tr><td>${escapeHtml(p.name)} (${p.base === 'fixed' ? 'з приміщення' : `${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(p.rate4)}`})</td><td>${fmtKop(p.amountKop)}</td></tr>`).join('')
+                    ${charge?.parts?.length > 1 ? charge.parts.map(p => `<tr><td>${escapeHtml(p.name)} (${p.base === 'fixed' ? 'з приміщення' : p.base === 'residents' ? `${p.residents} прож. × ${rate(p.rate4)}` : `${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(p.rate4)}`})</td><td>${fmtKop(p.amountKop)}</td></tr>`).join('')
                         : `<tr><td>Нараховано${charge ? ` (${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(charge.rate4)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>`}
                     <tr><td>Сплачено за місяць</td><td>${fmtKop(r.paid)}</td></tr>
                     <tr class="rc-total"><td>${due ? 'До сплати' : r.closing > 0 ? 'Переплата' : 'Розраховано'}</td><td>${fmtKop(due || r.closing)} грн</td></tr>
@@ -375,6 +380,15 @@ async function onAction(btn) {
             setBusy(btn, true);
             await chargeAct({ action: 'revert', period });
             toast('Нарахування скасовано', 'success');
+        } else if (a === 'residents-bulk') {
+            const rows = val('resBulk').split(/[\n,]+/).map(x => x.trim()).filter(Boolean).map(x => {
+                const [apt, residents] = x.split(/[;\t\s]+/);
+                return { apt: String(apt || '').toLowerCase(), residents: residents ?? '' };
+            });
+            if (!rows.length) { toast('Вкажіть квартири й кількість', 'error'); return; }
+            setBusy(btn, true);
+            const r = await chargeAct({ action: 'setResidents', rows });
+            toast(`Збережено: ${r.count} кв.`, 'success');
         } else if (a === 'component-add') {
             await chargeAct({ action: 'addComponent', name: val('cpName'), base: val('cpBase') });
             toast('Складову додано — внесіть для неї тарифи', 'success');
@@ -457,6 +471,14 @@ export function initChargesView(isActive) {
     });
     host.addEventListener('change', async e => {
         if (e.target.id === 'stPeriod') { stPeriod = e.target.value; loadChargesView().catch(err => toast(err.message, 'error')); return; }
+        const res = e.target.closest('.pr-res');
+        if (res) {
+            try {
+                await chargeAct({ action: 'setResidents', rows: [{ apt: res.closest('[data-apt]').dataset.apt, residents: res.value.trim() }] });
+                toast('Збережено', 'success');
+            } catch (err) { toast(err.message, 'error'); }
+            return;
+        }
         const select = e.target.closest('.pr-group');
         if (!select) return;
         try {

@@ -158,3 +158,30 @@ test('складові внеску: за м² і з приміщення, бе�
     assert.equal(c.checkTariff({ group: 'res', component: 'waste', base: 'fixed', rate4: 450000, from: '2026-11', decision: 'Протокол № 3' }, c.DEFAULT_GROUPS, tariffs), null);
     assert.match(c.checkTariff({ group: 'res', component: 'waste', base: 'fixed', rate4: 450000, from: '2026-10', decision: 'Протокол № 3' }, c.DEFAULT_GROUPS, tariffs), /вже є/);
 });
+
+test('як у реальній квитанції: 64 м², 2 проживають — 391,82 грн', () => {
+    const components = [
+        { id: 'main', name: 'Обслуговування будинку та прибудинкової території', base: 'area' },
+        { id: 'light', name: 'Освітлення З. М', base: 'area' },
+        { id: 'lift', name: 'Внесок на обслуговування ліфтів', base: 'area' },
+        { id: 'waste', name: 'Вивезення побутових відходів', base: 'residents' }
+    ];
+    const tariffs = [
+        { id: 'm', group: 'res', rate4: c.parseRate('4,57'), from: '2026-09' },
+        { id: 'l', component: 'light', group: 'res', rate4: c.parseRate('0,48'), from: '2026-09' },
+        { id: 'lf', component: 'lift', group: 'res', rate4: c.parseRate('0,63'), from: '2026-09' },
+        { id: 'w', component: 'waste', group: 'res', rate4: c.parseRate('14,15'), from: '2026-09' }
+    ];
+    const r = c.computeCharges({ apartments: [{ apt: '1', area: 64, residents: 2 }, { apt: '2', area: 50, residents: 0 }, { apt: '3', area: 50 }],
+        tariffs, components, period: '2026-09' });
+    const flat = r.rows.find(x => x.apt === '1');
+    assert.deepEqual(flat.parts.map(p => p.amountKop), [29248, 3072, 4032, 2830]);
+    assert.equal(flat.amountKop, 39182);
+    // Ніхто не проживає — за вивезення 0; кількість не внесено — проблема, а не мовчазний нуль.
+    assert.equal(r.rows.find(x => x.apt === '2').parts.find(p => p.component === 'waste').amountKop, 0);
+    assert.deepEqual(r.problems, [{ apt: '3', reason: 'не внесено кількість проживаючих' }]);
+    assert.match(c.chargeNote(flat, '2026-09'), /вивезення побутових відходів 2 прож\. × 14,15 грн$/);
+    assert.equal(c.parseResidents('3'), 3);
+    assert.equal(c.parseResidents(-1), null);
+    assert.equal(c.parseResidents(''), null);
+});
