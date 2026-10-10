@@ -51,13 +51,14 @@ test('проводки з операцій: Дт = Кт, 377 = баланс сп
     assert.equal(acc('685').closeCr, 5000);
     assert.equal(acc('631').byA.find(x => x.a === 'ТОВ АВАНС').closeDr, 100000);
     // Внески за складовими — Кт 48.
-    assert.deepEqual(acc('48').byA.filter(x => x.cr).map(x => x.a).sort(), ['lift', 'light', 'main', 'waste']);
+    assert.deepEqual(acc('48').byA.filter(x => x.cr).map(x => x.a).sort(), ['lift', 'light', 'main', 'rent', 'waste']);
     // Документ: акт вересня — у вхідному сальдо 92→ закрито; ремонт жовтня — Дт 92 Кт 631, затверджений, ще не сплачений.
     assert.equal(acc('631').byA.find(x => x.a === 'ТОВ ДАХ').closeCr, 279400);
-    // Кінець місяця: 92 і 79 закрито, витрати покрито з 48, оренда — результат на 44.
+    // Кінець місяця: 92 і 79 закрито, витрати покрито з 48; оренда — теж цільове (Кт 48), результат 0 — як у звітності ОСББ.
     assert.equal(acc('92').closeDr + acc('92').closeCr, 0);
     assert.equal(acc('79').closeDr + acc('79').closeCr, 0);
-    assert.equal(acc('44').closeCr, 36000);
+    assert.equal(acc('44'), undefined);
+    assert.equal(acc('48').byA.find(x => x.a === 'rent').cr, 36000);
     assert.ok(!entries.some(e => e.ref === 'old' || e.ref === 'i2' || e.ref === 'e3'));
 });
 
