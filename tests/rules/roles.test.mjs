@@ -71,12 +71,16 @@ test('облік лише поповнюється: суму минулої оп
     await seed();
     const accountant = as('900').firestore();
     const entry = doc(accountant, 'apartments/45/ledger/20261001-charge-120000');
-    await assertSucceeds(setDoc(doc(accountant, 'apartments/45/ledger/20261002-payment-50000'),
+    await assertFails(setDoc(doc(accountant, 'apartments/45/ledger/20261002-payment-50000'),
         { at: new Date('2026-10-02'), period: '2026-10', kind: 'payment', amount: 500, note: '' }));
+    const legacy = doc(accountant, 'apartments/45/ledger/20260902-payment-50000');
+    await assertSucceeds(setDoc(legacy, { at: new Date('2026-09-02'), period: '2026-09', kind: 'payment', amount: 500, note: '' }));
+    await assertFails(setDoc(doc(accountant, 'apartments/45/ledger/opening'), { at: new Date('2026-09-30'), period: '2026-09', kind: 'opening', amount: 500, note: '' }));
     await assertSucceeds(updateDoc(entry, { note: 'уточнення', updatedAt: serverTimestamp() }));
     await assertFails(updateDoc(entry, { amount: 1 }));
     await assertFails(deleteDoc(entry));
-    await assertSucceeds(deleteDoc(doc(as('10').firestore(), 'apartments/45/ledger/20261001-charge-120000')));
+    await assertFails(deleteDoc(doc(as('10').firestore(), 'apartments/45/ledger/20261001-charge-120000')));
+    await assertSucceeds(deleteDoc(doc(as('10').firestore(), 'apartments/45/ledger/20260902-payment-50000')));
 });
 
 test('позначку службового запису змінює лише голова', async () => {

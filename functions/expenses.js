@@ -134,17 +134,10 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     // --------------------------------------------------------
     // ДОКУМЕНТИ ВИТРАТ
     // --------------------------------------------------------
-    /** Уже затверджене за договором: для разового — усе, для щомісячного — за той самий місяць. */
-    async function spentUnder(contract, period, exceptId) {
-        const snap = await db.collection('expenses').where('contractId', '==', contract.id).get();
-        return snap.docs.filter(d => d.id !== exceptId && ['approved', 'paid'].includes(d.data().status)
-            && (contract.type !== 'monthly' || d.data().period === period)).reduce((s, d) => s + d.data().amountKop, 0);
-    }
-
     async function saveExpense(actor, role, data) {
         const e = {
             supplierId: id(data.supplierId), contractId: data.contractId ? id(data.contractId) : null, docType: String(data.docType || ''),
-            number: text(data.number, 60), date: String(data.date || ''), amountKop: kop(data.amountKop), vatKop: kop(data.vatKop) || 0,
+            number: text(data.number, 60), date: String(data.date || ''), amountKop: kop(data.amountKop), vatKop: data.vatKop === undefined || data.vatKop === null || data.vatKop === '' ? 0 : kop(data.vatKop),
             period: String(data.period || ''), item: String(data.item || ''), description: text(data.description, 300), files: cleanFiles(data.files)
         };
         const error = core.checkExpense(e);
@@ -165,22 +158,37 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             const dup = await db.collection('expenses').where('supplierId', '==', e.supplierId).where('number', '==', e.number).get();
             if (dup.docs.some(d => d.data().date === e.date && d.data().status !== 'canceled')) fail('already-exists', `Документ № ${e.number} від ${core.humanDate(e.date)} цього постачальника вже внесено`);
         }
-        const settings = (await settingsRef.get()).data() || {};
-        let need = core.approvalLevel(e, contract, contract ? await spentUnder(contract, e.period, ref.id) : 0, settings);
-        // Навіть за договором: вихід за затверджений кошторис статті — рішення голови.
-        if (need.level === 'accountant' && budget) {
-            const over = await budget.guard(e, ref.id);
-            if (over) need = { level: 'chair', reason: over };
-        }
-        // Голова затверджує будь-що; бухгалтер — лише свій рівень.
-        const approved = role === 'chair' || need.level === 'accountant';
-        await ref.set({
-            ...e, supplierName: supplier.name, contractNumber: contract?.number || null,
-            status: approved ? 'approved' : 'pending',
-            approval: { level: need.level, reason: need.reason, by: approved ? actor : null, at: approved ? FieldValue.serverTimestamp() : null },
-            paidKop: 0, txIds: [], updatedBy: actor, updatedAt: FieldValue.serverTimestamp(),
-            ...(data.id ? {} : { createdBy: actor, createdAt: FieldValue.serverTimestamp() })
-        }, { merge: true });
+        const result = await db.runTransaction(async t => {
+            const [settingsSnap, previous, currentContract] = await Promise.all([
+                t.get(settingsRef), t.get(ref), e.contractId ? t.get(db.doc(`contracts/${e.contractId}`)) : null
+            ]);
+            await lock?.assertOpen(e.period, 'Документ витрат', t);
+            if (previous.exists) {
+                await lock?.assertOpen(previous.data().period, 'Документ витрат', t);
+                if (!data.id || !['pending', 'rejected'].includes(previous.data().status)) fail('aborted', 'Документ змінився. Оновіть сторінку.');
+            }
+            const actualContract = currentContract?.exists ? { id: currentContract.id, ...currentContract.data() } : null;
+            if (e.contractId && (!actualContract || actualContract.supplierId !== e.supplierId)) fail('failed-precondition', 'Договір змінився. Оновіть сторінку.');
+            const used = actualContract ? await t.get(db.collection('expenses').where('contractId', '==', actualContract.id)) : null;
+            const spent = used ? used.docs.filter(d => d.id !== ref.id && ['approved', 'paid'].includes(d.data().status) && (actualContract.type !== 'monthly' || d.data().period === e.period)).reduce((sum, d) => sum + d.data().amountKop, 0) : 0;
+            const duplicates = await t.get(db.collection('expenses').where('supplierId', '==', e.supplierId).where('number', '==', e.number));
+            if (duplicates.docs.some(d => d.id !== ref.id && d.data().date === e.date && d.data().status !== 'canceled')) fail('already-exists', 'Цей документ постачальника вже внесено');
+            let need = core.approvalLevel(e, actualContract, spent, settingsSnap.data() || {});
+            if (need.level === 'accountant' && budget) {
+                const over = await budget.guard(e, ref.id, t);
+                if (over) need = { level: 'chair', reason: over };
+            }
+            const approved = role === 'chair' || need.level === 'accountant';
+            // Serialize automatic approvals, including initially empty queries.
+            t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
+            t.set(ref, { ...e, supplierName: supplier.name, contractNumber: actualContract?.number || null,
+                status: approved ? 'approved' : 'pending',
+                approval: { level: need.level, reason: need.reason, by: approved ? actor : null, at: approved ? FieldValue.serverTimestamp() : null },
+                paidKop: 0, txIds: [], updatedBy: actor, updatedAt: FieldValue.serverTimestamp(),
+                ...(data.id ? {} : { createdBy: actor, createdAt: FieldValue.serverTimestamp() }) }, { merge: true });
+            return { approved, need };
+        });
+        const { approved, need } = result;
         await audit(actor, role, 'expenses.save', `expenses/${ref.id}`,
             `${core.DOC_TYPES[e.docType]} № ${e.number} ${supplier.name}: ${fromKop(e.amountKop)} грн — ${approved ? 'затверджено' : 'на затвердження голові'} (${need.reason})`,
             { ...e, files: e.files.length, level: need.level });
@@ -194,7 +202,14 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         if (e.status !== 'pending') fail('failed-precondition', 'Документ уже розглянуто');
         await lock?.assertOpen(e.period, 'Документ витрат');
         if (!approve && text(comment, 300).length < 3) fail('invalid-argument', 'Напишіть, чому відхиляєте — бухгалтер побачить причину');
-        await db.doc(`expenses/${e.id}`).update({ status: approve ? 'approved' : 'rejected', 'approval.by': actor, 'approval.at': FieldValue.serverTimestamp(), comment: text(comment, 300) });
+        await db.runTransaction(async t => {
+            const ref = db.doc(`expenses/${e.id}`);
+            const [fresh] = await Promise.all([t.get(ref), t.get(settingsRef)]);
+            await lock?.assertOpen(fresh.data()?.period, 'Документ витрат', t);
+            if (fresh.data()?.status !== 'pending') fail('aborted', 'Документ уже розглянуто');
+            t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
+            t.update(ref, { status: approve ? 'approved' : 'rejected', 'approval.by': actor, 'approval.at': FieldValue.serverTimestamp(), comment: text(comment, 300) });
+        });
         await audit(actor, role, approve ? 'expenses.approve' : 'expenses.reject', `expenses/${e.id}`,
             `${e.supplierName}: ${fromKop(e.amountKop)} грн — ${approve ? 'затверджено' : 'відхилено'}`, { comment: text(comment, 300) });
         return { ok: true };
@@ -204,9 +219,15 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         const e = await get(`expenses/${id(eid)}`, 'Документ');
         if (e.paidKop > 0 || e.status === 'paid') fail('failed-precondition', 'Документ уже оплачено. Спершу поверніть списання у «Вхідні».');
         await lock?.assertOpen(e.period, 'Документ витрат');
-        const sent = await db.collection('payments').where('expenseId', '==', e.id).where('status', '==', 'sent').limit(1).get();
-        if (!sent.empty) fail('failed-precondition', 'По документу є платіж на підписі — спершу скасуйте його в «Платежах»');
-        await db.doc(`expenses/${e.id}`).update({ status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp() });
+        await db.runTransaction(async t => {
+            const ref = db.doc(`expenses/${e.id}`);
+            const [fresh, sent] = await Promise.all([t.get(ref), t.get(db.collection('payments').where('expenseId', '==', e.id).where('status', 'in', ['sending', 'unknown', 'sent']).limit(1)), t.get(settingsRef)]);
+            await lock?.assertOpen(fresh.data()?.period, 'Документ витрат', t);
+            if (fresh.data()?.paidKop > 0 || fresh.data()?.status === 'paid') fail('failed-precondition', 'Документ уже оплачено. Спершу поверніть списання у «Вхідні».');
+            if (!sent.empty) fail('failed-precondition', 'По документу є платіж на підписі — спершу скасуйте його в «Платежах»');
+            t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
+            t.update(ref, { status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp() });
+        });
         await audit(actor, role, 'expenses.cancel', `expenses/${e.id}`, `${e.supplierName}: № ${e.number} скасовано`);
         return { ok: true };
     }
@@ -243,6 +264,9 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             const [txSnap, exSnap] = await Promise.all([t.get(txRef), t.get(exRef)]);
             if (!txSnap.exists || !exSnap.exists) fail('not-found', 'Операцію або документ не знайдено');
             const tx = txSnap.data(), e = exSnap.data();
+            await lock?.assertOpen(tx.period, 'Списання банку', t);
+            const payment = tx.paymentId ? await t.get(db.doc(`payments/${tx.paymentId}`)) : null;
+            if (payment?.data()?.payroll) fail('failed-precondition', 'Зарплатний платіж не привʼязується до документа постачальника');
             if (tx.direction !== 'out') fail('invalid-argument', 'Привʼязати можна лише списання');
             if (tx.expenseId) fail('failed-precondition', 'Списання вже привʼязане до документа');
             if (tx.status === 'done' && tx.kind !== 'expense') fail('failed-precondition', 'Спершу поверніть операцію у «Вхідні»');

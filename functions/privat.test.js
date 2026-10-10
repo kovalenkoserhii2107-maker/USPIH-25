@@ -78,3 +78,23 @@ test('створення й видалення платежу: запити й �
         await assert.rejects(privat.createPayment('t', { docNumber: '1', account: 'UA1', recipient: { name: 'X', iban: 'UA2', code: '1' }, amountKop: 1, purpose: 'x' }), /invalid document number \(PMTSRV0112\)/);
     } finally { global.fetch = real; }
 });
+
+test('некоректні календарні дати й суми не перетворюються на банківські операції', () => {
+    for (const date of ['31.02.2026', '00.10.2026', '10.13.2026', '10.10.2026 24:01']) {
+        assert.equal(privat.normalizeTransaction({ ...sample, DATE_TIME_DAT_OD_TIM_P: date }), null);
+    }
+    assert.equal(privat.normalizeBalance({ acc: sample.AUT_MY_ACC, balanceOut: '100abc' }), null);
+});
+
+test('виписка з повторним або відсутнім курсором сторінки завершується помилкою, а не частковим результатом', async () => {
+    const real = global.fetch;
+    const args = { iban: sample.AUT_MY_ACC, from: new Date('2026-10-01'), to: new Date('2026-10-10') };
+    try {
+        let calls = 0;
+        global.fetch = async () => { calls++; return new Response(JSON.stringify({ transactions: [sample], exist_next_page: true, next_page_id: 'same' }), { status: 200 }); };
+        await assert.rejects(privat.fetchTransactions('mock', args), /неповну виписку/);
+        assert.equal(calls, 2);
+        global.fetch = async () => new Response(JSON.stringify({ transactions: [sample], exist_next_page: true }), { status: 200 });
+        await assert.rejects(privat.fetchTransactions('mock', args), /неповну виписку/);
+    } finally { global.fetch = real; }
+});

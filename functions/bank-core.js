@@ -22,10 +22,13 @@ const crypto = require('crypto');
 
 /** Гривні → копійки цілим числом: суми не можна рахувати в float. */
 function toKop(value) {
-    if (typeof value === 'number') return Math.round(value * 100);
-    const text = String(value ?? '').replace(/\s+/g, '').replace(/[^\d,.\-]/g, '').replace(',', '.');
-    const number = Number.parseFloat(text);
-    return Number.isFinite(number) ? Math.round(number * 100) : NaN;
+    const text = String(value ?? '').trim().replace(/\s+/g, '').replace(/[−–]/g, '-').replace(/(?:грн\.?|UAH)$/i, '');
+    if (!/^[+-]?\d+(?:[.,]\d+)?$/.test(text)) return NaN;
+    const [whole, fraction = ''] = text.replace(/^[+-]/, '').split(/[.,]/);
+    // Decimal arithmetic, including negative amounts: 1.005 грн = 101 коп.
+    const absolute = BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2)) + (Number(fraction[2] || 0) >= 5 ? 1n : 0n);
+    if (absolute > BigInt(Number.MAX_SAFE_INTEGER)) return NaN;
+    return Number(absolute) * (text.startsWith('-') ? -1 : 1);
 }
 
 const fromKop = kop => Math.round(kop) / 100;

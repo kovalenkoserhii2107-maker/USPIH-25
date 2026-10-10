@@ -12,7 +12,7 @@ import {
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
-import { periodName, fmtKop } from './charges-core.js';
+import { periodName, fmtKop, toKop } from './charges-core.js';
 import { session } from './firebase.js';
 import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
 import { openBudget, publishFinance } from './buh-budget.js';
@@ -345,7 +345,7 @@ export function payrollItems(p, chair) {
 export function expenseItems(ex, payments, chair) {
     if (!ex) return [];
     const out = [];
-    const onTheWay = new Set(payments.filter(p => ['sending', 'sent'].includes(p.status) && p.expenseId).map(p => p.expenseId));
+    const onTheWay = new Set(payments.filter(p => ['sending', 'unknown', 'sent'].includes(p.status) && p.expenseId).map(p => p.expenseId));
     if (chair) {
         ex.contracts.filter(c => c.status === 'pending').forEach(c => out.push({ tx: { id: `con:${c.id}` }, proposal: { type: 'approve-con', contract: c } }));
         ex.expenses.filter(e => e.status === 'pending').forEach(e => out.push({ tx: { id: `exp:${e.id}` }, proposal: { type: 'approve-exp', expense: e } }));
@@ -489,7 +489,7 @@ function saveForm(card, item) {
     const split = rows.length > 1;
     const allocations = rows.map(row => ({
         apt: row.querySelector('.inbox-apt').value.trim().toLowerCase(),
-        amountKop: split ? Math.round(parseFloat(row.querySelector('.inbox-sum').value.replace(/\s/g, '').replace(',', '.')) * 100) : item.tx.amountKop
+        amountKop: split ? toKop(row.querySelector('.inbox-sum').value) : item.tx.amountKop
     })).filter(a => a.apt);
     if (!allocations.length) { toast('Вкажіть квартиру', 'error'); return; }
     const remember = !split && card.querySelector('.inbox-remember input')?.checked === true;

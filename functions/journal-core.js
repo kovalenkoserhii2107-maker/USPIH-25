@@ -29,6 +29,7 @@
 // ============================================================
 
 const START_PERIOD = '2026-10';
+const { toKop } = require('./bank-core');
 
 const ACCOUNTS = {
     '00': 'Введення залишків (технічний)',
@@ -70,7 +71,7 @@ const shift = (period, n) => {
 };
 const MONTHS = ['січень', 'лютий', 'березень', 'квітень', 'травень', 'червень', 'липень', 'серпень', 'вересень', 'жовтень', 'листопад', 'грудень'];
 const monthName = p => `${MONTHS[Number(String(p).slice(5, 7)) - 1] || p} ${String(p).slice(0, 4)}`;
-const kopOf = e => (Number.isInteger(e.amountKop) ? e.amountKop : Math.round(Number(e.amount || 0) * 100));
+const kopOf = e => (Number.isInteger(e.amountKop) ? e.amountKop : toKop(e.amount || 0));
 
 /** Місяці від початку обліку до period включно. */
 function periodsUpTo(period, start = START_PERIOD) {
@@ -246,9 +247,15 @@ function trialBalance(entries, period) {
         return { openDr: Math.max(0, r.open), openCr: Math.max(0, -r.open), dr: r.dr, cr: r.cr, closeDr: Math.max(0, close), closeCr: Math.max(0, -close) };
     };
     const list = [...rows.values()]
-        .map(r => ({ acc: r.acc, name: r.name, ...split(r),
+        .map(r => {
+            const balances = split(r);
+            if (['377', '631', '685'].includes(r.acc)) {
+                for (const key of ['openDr', 'openCr', 'closeDr', 'closeCr']) balances[key] = sum([...r.byA.values()], a => split(a)[key]);
+            }
+            return { acc: r.acc, name: r.name, ...balances,
             byA: [...r.byA.values()].map(x => ({ a: x.a, ...split(x) })).filter(x => x.openDr || x.openCr || x.dr || x.cr)
-                .sort((x, y) => String(x.a).localeCompare(String(y.a), 'uk', { numeric: true })) }))
+                .sort((x, y) => String(x.a).localeCompare(String(y.a), 'uk', { numeric: true })) };
+        })
         .filter(r => r.openDr || r.openCr || r.dr || r.cr || r.closeDr || r.closeCr)
         .sort((a, b) => ORDER.indexOf(a.acc) - ORDER.indexOf(b.acc));
     const totals = ['openDr', 'openCr', 'dr', 'cr', 'closeDr', 'closeCr'].reduce((t, k) => ({ ...t, [k]: sum(list, r => r[k]) }), {});
@@ -281,7 +288,7 @@ function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods
 
 /** Відбиток проводок місяця: зміни після закриття видно одразу. */
 function entriesKey(entries, period) {
-    return entries.filter(e => e.period === period)
+    return entries.filter(e => e.period <= period)
         .map(e => `${e.date}|${e.dr}|${e.dA ?? ''}|${e.cr}|${e.cA ?? ''}|${e.kop}|${e.ref}`).sort().join('\n');
 }
 

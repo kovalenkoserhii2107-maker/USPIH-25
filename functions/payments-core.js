@@ -52,10 +52,11 @@ function checkPayment(p, ownAccounts) {
  * 45 днів.
  */
 function matchesPayment(tx, payment) {
-    if (tx.direction !== 'out' || payment.status !== 'sent') return false;
-    if (payment.bankRef && tx.dlr && String(tx.dlr) === String(payment.bankRef)) return true;
+    if (tx.direction !== 'out' || !['sent', 'unknown'].includes(payment.status)) return false;
     if (tx.amountKop !== payment.amountKop) return false;
+    if (payment.account && normIban(tx.account) !== normIban(payment.account)) return false;
     if (normIban(tx.counterparty?.account) !== normIban(payment.recipient?.iban)) return false;
+    if (payment.bankRef && tx.dlr) return String(tx.dlr) === String(payment.bankRef);
     const sent = payment.sentAt instanceof Date ? payment.sentAt : new Date(payment.sentAt);
     const at = tx.at instanceof Date ? tx.at : new Date(tx.at);
     const days = (at - sent) / 86400000;
@@ -133,7 +134,7 @@ function purposeForMonth(purpose, date) {
 /** Чи вже є платіж цьому отримувачу в цьому місяці (відправлений чи проведений). */
 function alreadyPaidThisMonth(rec, payments, history, date) {
     const same = d => { const x = d instanceof Date ? d : new Date(d); return x.getFullYear() === date.getFullYear() && x.getMonth() === date.getMonth(); };
-    return payments.some(p => normIban(p.recipient?.iban) === rec.key && ['proposed', 'sent', 'paid'].includes(p.status) && same(p.createdAt || p.sentAt))
+    return payments.some(p => normIban(p.recipient?.iban) === rec.key && ['proposed', 'sending', 'unknown', 'sent', 'paid'].includes(p.status) && same(p.createdAt || p.sentAt))
         || history.some(t => normIban(t.counterparty?.account) === rec.key && same(t.at));
 }
 

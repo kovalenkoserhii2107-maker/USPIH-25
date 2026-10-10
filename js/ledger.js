@@ -183,42 +183,17 @@ function ledgerId(row, seen) {
     return n === 1 ? base : `${base}-${n}`;
 }
 
-/**
- * З дати підключення банку оплати приходять із виписки самі (Фінанси →
- * Банк). Ті самі оплати у вивантаженні сервісу бухгалтера стали б
- * дублікатами — їх пропускаємо, нарахування вносимо як завжди.
- */
-async function bankStart() {
-    try {
-        const settings = await getDoc(doc(db, 'bank', 'settings'));
-        const data = settings.exists() ? settings.data() : null;
-        return data?.tokenSet && data.startDate ? new Date(`${data.startDate}T00:00:00`) : null;
-    } catch { return null; }
-}
-
-/**
- * Після вхідних залишків нарахування з жовтня 2026 робить система
- * (кабінет бухгалтера → «Нарахування»). Ті самі нарахування з
- * вивантаження сервісу стали б дублікатами.
- */
-async function chargesStart() {
-    try {
-        const settings = await getDoc(doc(db, 'charges', 'settings'));
-        const data = settings.exists() ? settings.data() : null;
-        return data?.opening?.set ? (data.startPeriod || '2026-10') : null;
-    } catch { return null; }
-}
-
+/** Історичний імпорт — лише до початку серверного обліку (01.10.2026). */
 export async function saveLedger(rows) {
     const known = await loadKnownApts();
-    const [fromBank, fromCharges] = await Promise.all([bankStart(), chargesStart()]);
+    const systemStart = '2026-10';
 
     const skipped = new Set();
     let bankPayments = 0, systemCharges = 0;
     const usable = rows.filter(r => {
         if (known.size && !known.has(r.apt)) { skipped.add(r.apt); return false; }
-        if (fromBank && r.kind === 'payment' && r.at >= fromBank) { bankPayments += 1; return false; }
-        if (fromCharges && r.kind === 'charge' && r.period >= fromCharges) { systemCharges += 1; return false; }
+        if (r.period >= systemStart && r.kind === 'payment') { bankPayments += 1; return false; }
+        if (r.period >= systemStart && r.kind === 'charge') { systemCharges += 1; return false; }
         return true;
     });
 
@@ -453,7 +428,7 @@ export async function applyLedger(btn) {
         const { written, skipped, bankPayments, systemCharges } = await saveLedger(pending.rows);
         if (bankPayments) toast(`Оплати з виписки банку пропущено: ${bankPayments} — вони вже рознесені автоматично`, 'info');
         if (systemCharges) toast(`Нарахування з жовтня 2026 пропущено: ${systemCharges} — їх робить система`, 'info');
-        if (!written) {
+        if (!written && !bankPayments && !systemCharges) {
             toast('Жодна квартира з файлу не знайдена в базі', 'error');
         } else {
             await audit('ledger.import', { target: 'ledger', summary: `Історія нарахувань і оплат: ${written} записів`,

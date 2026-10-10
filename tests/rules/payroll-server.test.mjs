@@ -11,7 +11,8 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const payrollFunctions = require('./payroll.js');
 const periodLock = require('./period-lock.js');
 
-const OWN = 'UA213052990000026001234567890';
+const testIban = bban => `UA${String(98 - Number(BigInt(bban + '301000') % 97n)).padStart(2, '0')}${bban}`;
+const OWN = 'UA223052990000026001234567890';
 let app, db, payroll, sent = [];
 before(() => {
     app = initializeApp({ projectId: 'uspih-25-rules-test' }, 'payroll-server-test');
@@ -36,8 +37,8 @@ const a = () => payroll.actions;
 test('відомість: працівник і ЦПД, затвердження головою, аванс і остаточний розрахунок', async () => {
     await assert.rejects(a().savePerson(...A, { name: 'Іван', kind: 'employee', salaryKop: 864700 }), /повністю/);
     const { id: e } = await a().savePerson(...A, { name: 'Працівник Тестовий', kind: 'employee', position: 'двірник', salaryKop: 864700, fte: 1,
-        rnokpp: '3124567809', iban: 'UA213052990000026001234567891', taxNotified: true, from: '2026-01-01' });
-    const { id: g } = await a().savePerson(...A, { name: 'Виконавець Тестовий', kind: 'gph', rnokpp: '3124567809', iban: 'UA213052990000026001234567892', contract: '№ 5 від 01.10.2026' });
+        rnokpp: '3124567809', iban: 'UA923052990000026001234567891', taxNotified: true, from: '2026-01-01' });
+    const { id: g } = await a().savePerson(...A, { name: 'Виконавець Тестовий', kind: 'gph', rnokpp: '3124567809', iban: 'UA653052990000026001234567892', contract: '№ 5 від 01.10.2026' });
     // Журнал дій — без прізвищ і сум окладу.
     assert.ok(!JSON.stringify((await db.collection('audit_log').get()).docs.map(d => d.data())).includes('Тестовий'));
 
@@ -55,11 +56,11 @@ test('відомість: працівник і ЦПД, затвердження
     await assert.rejects(a().pay(...A, { period: '2026-10', stage: 'advance' }), /Підключіть банк/);
     await db.doc('bank/settings').set({ accounts: { [OWN]: { purpose: 'current' } } });
     await assert.rejects(a().pay(...A, { period: '2026-10', stage: 'advance' }), /PDFO/);
-    const tax = n => ({ name: 'ГУК в Од. обл.', iban: `UA21305299000002600123456789${n}`, code: '37607526' });
+    const tax = n => ({ name: 'ГУК в Од. обл.', iban: testIban(`305299000002600123456789${n}`), code: '37607526' });
     await a().saveSettings(...A, { advancePct: 50, taxes: { pdfo: tax(3), vz: tax(4), esv: tax(5) } });
 
     await a().pay(...A, { period: '2026-10', stage: 'advance' });
-    assert.deepEqual(sent.map(p => [p.payroll.key, p.amountKop]), [['e1'.replace('e1', e), 332909], ['pdfo', 77823], ['vz', 21618]]);
+    assert.deepEqual(sent.map(p => [p.payroll.key, p.amountKop]), [['e1'.replace('e1', e), 332909], ['pdfo', 77823], ['vz', 21618], ['esv', 95117]]);
     assert.ok(sent.every(p => p.account === OWN && p.proposalKey.startsWith('payroll:2026-10:advance:')));
     await assert.rejects(a().pay(...A, { period: '2026-10', stage: 'advance' }), /уже відправлено/);
 
@@ -88,9 +89,9 @@ test('закритий місяць: відомість не змінюєтьс�
 test('зарплата без авансу: остаточний розрахунок платить усе, аванс після нього — ні', async () => {
     await db.doc('osbb_settings/finance').set({ edrpou: '40562894' });
     await db.doc('bank/settings').set({ accounts: { [OWN]: { purpose: 'current' } } });
-    const tax = n => ({ name: 'ГУК', iban: `UA21305299000002600123456789${n}`, code: '37607526' });
+    const tax = n => ({ name: 'ГУК', iban: testIban(`305299000002600123456789${n}`), code: '37607526' });
     await a().saveSettings(...A, { advancePct: 50, taxes: { pdfo: tax(3), vz: tax(4), esv: tax(5) } });
-    const { id } = await a().savePerson(...A, { name: 'Працівник Тестовий', kind: 'employee', salaryKop: 864700, fte: 1, iban: 'UA213052990000026001234567891', rnokpp: '3124567809', taxNotified: true });
+    const { id } = await a().savePerson(...A, { name: 'Працівник Тестовий', kind: 'employee', salaryKop: 864700, fte: 1, iban: 'UA923052990000026001234567891', rnokpp: '3124567809', taxNotified: true });
     await a().saveRun(...A, { period: '2026-10', inputs: {} });
     await a().approve(...C, { period: '2026-10' });
     await a().pay(...A, { period: '2026-10', stage: 'final' });

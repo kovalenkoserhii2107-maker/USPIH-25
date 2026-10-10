@@ -51,7 +51,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         ]);
         // Платежі за відомістю зарплати: { paymentId → { key, name } } для погашення 661/641/651.
         const payrollPayments = new Map(payrollPaySnap.docs.filter(d => d.data().payroll?.period)
-            .map(d => [d.id, { key: d.data().payroll.key, name: d.data().recipient?.name || '' }]));
+            .map(d => [d.id, { key: d.data().payroll.key, name: d.data().recipient?.name || '', period: d.data().payroll.period }]));
         const ledgers = new Map();
         ledgerSnap.forEach(d => {
             if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
@@ -116,6 +116,11 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         if (!isClosed && data.payrollActive && data.input.payrollRuns.find(r => r.period === p)?.status !== 'approved') {
             const ok = checks.findIndex(c => c.level === 'ok');
             checks.splice(ok >= 0 ? ok : checks.length, 0, { level: 'warn', text: 'Відомість зарплати за місяць не затверджено — нарахування зарплати не потрапить у проводки місяця' });
+        }
+        const payroll = data.input.payrollRuns.find(r => r.period === p);
+        const payrollSent = [...data.input.payrollPayments.values()].some(payment => payment.period === p);
+        if (!isClosed && ((payrollSent && payroll?.status !== 'approved') || Object.values(payroll?.stages || {}).some(stage => stage.complete === false))) {
+            checks.push({ level: 'block', text: 'Виплату зарплати розпочато, але відомість не затверджена або відправку платежів не завершено' });
         }
         // Порівняння з балансами квартир має сенс для останнього місяця обліку.
         if (p === now.slice(0, 7) || p === core.shift(now.slice(0, 7), -1)) {

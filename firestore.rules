@@ -206,10 +206,18 @@ service cloud.firestore {
       // операція. Видалити помилково завантажений запис може лише голова.
       match /ledger/{entryId} {
         allow read: if isSignedIn() && (apt == myApt() || isStaff());
-        allow create: if canAccount();
+        function legacyEntry(d) {
+          return d.keys().hasOnly(['at', 'period', 'kind', 'amount', 'note', 'updatedAt'])
+            && d.kind in ['charge', 'payment']
+            && d.period is string && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])') && d.period < '2026-10'
+            && d.at is timestamp && d.at < timestamp.date(2026, 10, 1)
+            && d.amount is number && d.amount > 0 && d.amount <= 1000000000;
+        }
+        // From October 2026, only server operations may change money.
+        allow create: if canAccount() && legacyEntry(request.resource.data);
         allow update: if canAccount()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'updatedAt']);
-        allow delete: if isChair();
+        allow delete: if isChair() && legacyEntry(resource.data);
       }
 
       // Версія особистих показників: захищає від паралельного перезапису.

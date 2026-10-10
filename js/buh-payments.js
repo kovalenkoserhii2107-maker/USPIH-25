@@ -9,11 +9,12 @@ import {
     PAYMENT_KINDS, PAYMENT_STATUS, ACCOUNT_PURPOSES
 } from './buh-data.js';
 import { validIban } from './nbu-qr.js';
+import { toKop as kop } from './charges-core.js';
 
-const kop = text => Math.round(parseFloat(String(text).replace(/\s+/g, '').replace(',', '.')) * 100);
 let ctx = { proposals: [], recipients: [], accounts: [] };
 let formOpen = false;
 let pendingFill = null;
+let formMetadata = {};
 
 /** Рахунок для списання за замовчуванням — поточний. */
 export const defaultAccount = accounts => (accounts.find(a => a.purpose === 'current') || accounts[0])?.iban || '';
@@ -22,7 +23,7 @@ export const defaultAccount = accounts => (accounts.find(a => a.purpose === 'cur
 export async function activeProposals() {
     const [context, payments] = await Promise.all([loadPaymentContext(), loadPayments()]);
     const skipped = skippedProposals();
-    const sentKeys = new Set(payments.filter(p => ['sending', 'sent', 'paid'].includes(p.status)).map(p => p.proposalKey).filter(Boolean));
+    const sentKeys = new Set(payments.filter(p => ['sending', 'unknown', 'sent', 'paid'].includes(p.status)).map(p => p.proposalKey).filter(Boolean));
     return { context, list: context.proposals.filter(p => !skipped.has(p.proposalKey) && !sentKeys.has(p.proposalKey)) };
 }
 
@@ -63,7 +64,7 @@ function readForm() {
     return {
         action: 'create', kind: value('pfKind'),
         recipient: { name: value('pfName'), iban: value('pfIban').replace(/\s+/g, '').toUpperCase(), code: value('pfCode') },
-        amountKop: kop(value('pfAmount')), purpose: value('pfPurpose'), account: value('pfAccount')
+        amountKop: kop(value('pfAmount')), purpose: value('pfPurpose'), account: value('pfAccount'), ...formMetadata
     };
 }
 
@@ -81,7 +82,7 @@ function formError(p) {
 export async function loadPaymentsView() {
     const [{ context, list }, payments] = await Promise.all([activeProposals(), loadPayments()]);
     ctx = context;
-    const waiting = payments.filter(p => p.status === 'sent' || p.status === 'sending');
+    const waiting = payments.filter(p => ['sent', 'sending', 'unknown'].includes(p.status));
     const failed = payments.filter(p => p.status === 'failed');
     const history = payments.filter(p => ['paid', 'canceled'].includes(p.status)).slice(0, 40);
     const total = waiting.reduce((s, p) => s + p.amountKop, 0);
@@ -90,7 +91,7 @@ export async function loadPaymentsView() {
     document.getElementById('viewPayments').innerHTML = `
         <div class="pay-top">
             <button type="button" class="btn-primary btn-compact" data-act="open-form">+ Новий платіж</button>
-            ${waiting.length ? `<span class="pay-waiting">На підписі в голови: <b>${waiting.length}</b> · ${money(total)}</span>` : ''}
+            ${waiting.length ? `<span class="pay-waiting">Незавершені платежі: <b>${waiting.length}</b> · ${money(total)}</span>` : ''}
         </div>
         ${formOpen ? formHtml() : ''}
         ${failed.length ? `<section class="buh-card is-alert"><div class="buh-card-head"><h2>Банк не прийняв</h2></div>
@@ -110,8 +111,8 @@ export async function loadPaymentsView() {
             : '<p class="list-empty">Регулярні платежі цього місяця вже відправлено або їх ще немає в історії</p>'}
         </section>
         <section class="buh-card">
-            <div class="buh-card-head"><h2>Чекають підпису голови в Приват24</h2></div>
-            ${waiting.length ? waiting.map(p => rowHtml(p, `<button type="button" class="btn-ghost-small" data-act="cancel" data-id="${escapeHtml(p.id)}">Скасувати</button>`)).join('')
+            <div class="buh-card-head"><h2>Відправляються, перевіряються або чекають підпису</h2></div>
+            ${waiting.length ? waiting.map(p => rowHtml(p, p.status === 'sent' ? `<button type="button" class="btn-ghost-small" data-act="cancel" data-id="${escapeHtml(p.id)}">Скасувати</button>` : '')).join('')
             : '<p class="list-empty">Нічого не чекає підпису</p>'}
         </section>
         <section class="buh-card">
@@ -141,7 +142,9 @@ function fill(p) {
 
 /** Відкрити форму (з «Вхідних» теж) — заповнену пропозицією чи невдалим платежем. */
 export async function openForm(prefill) {
+    if (prefill?.payroll) { location.hash = 'payroll'; toast('Повторіть відправку з відомості зарплати — суми залишаться затвердженими', 'info'); return; }
     formOpen = true;
+    formMetadata = { proposalKey: prefill?.proposalKey || `manual:${crypto.randomUUID()}`, ...(prefill?.expenseId ? { expenseId: prefill.expenseId } : {}) };
     pendingFill = prefill || null;
     await loadPaymentsView();
 }

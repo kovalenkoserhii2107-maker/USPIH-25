@@ -76,7 +76,7 @@ export const loadQueue = () => once('queue', async () => {
 /** Операції від дати (для підсумків місяця). */
 export function loadSince(date) {
     return once(`since:${date.toISOString()}`, async () => {
-        const snap = await getDocs(query(collection(db, 'bank_tx'), where('at', '>=', Timestamp.fromDate(date)), orderBy('at', 'desc'), limit(1000)));
+        const snap = await getDocs(query(collection(db, 'bank_tx'), where('at', '>=', Timestamp.fromDate(date)), orderBy('at', 'desc')));
         return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     });
 }
@@ -117,7 +117,7 @@ export async function act(payload, timeoutMs) {
 export const PAYMENT_KINDS = { supplier: 'Постачальнику', tax: 'Податок, ЄСВ', salary: 'Зарплата', other: 'Інше' };
 export const PAYMENT_STATUS = {
     sending: ['Відправляється', 'is-review'], sent: ['Чекає підпису голови', 'is-review'], paid: ['Проведено', 'is-payment'],
-    failed: ['Банк не прийняв', 'is-error'], canceled: ['Скасовано', '']
+    failed: ['Банк не прийняв', 'is-error'], unknown: ['Перевірте у Приват24', 'is-error'], canceled: ['Скасовано', '']
 };
 
 /** Платежі, найновіші вгорі. */

@@ -84,43 +84,33 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function recompute(apts) {
         const settings = await loadSettings();
         if (!settings.opening?.set) return { skipped: true, updated: 0 };
-        let targets, ledgers;
-        if (apts) {
-            targets = [...new Set(apts.map(String))];
-            ledgers = new Map(await Promise.all(targets.map(async a => [a, await ledgerOf(a)])));
-        } else {
-            targets = (await loadApartments()).map(a => a.id);
-            ledgers = await allLedgers();
-        }
-        const refs = targets.map(a => db.doc(`apartments/${a}`));
-        const snaps = refs.length ? await db.getAll(...refs) : [];
-        let batch = db.batch(), ops = 0, updated = 0;
-        const order = settings.components.map(c => c.id);
-        const names = new Map(settings.components.map(c => [c.id, c.name]));
-        // З назвами: мешканець довідника складових не читає, а розбивку бачить.
-        const named = parts => Object.entries(parts).filter(([, v]) => v).map(([c, v]) => ({ component: c, name: names.get(c) || 'Інше', amountKop: v }));
+        const targets = apts ? [...new Set(apts.map(String))] : (await loadApartments()).map(a => a.id);
+        let updated = 0;
         const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
-        const flush = async () => { if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; } };
-        for (const snap of snaps) {
-            if (!snap.exists || snap.data().isAdmin === true) continue;
-            const entries = ledgers.get(snap.id) || [];
-            // Баланс за складовими (як у сервісі бухгалтера) і розподіл кожної оплати.
-            const { balances, steps } = core.replay(entries, { startPeriod: settings.startPeriod, order });
-            for (const { entry, parts } of steps) {
-                if (entry.kind !== 'payment' || !entry._id || same(entry.alloc, named(parts))) continue;
-                batch.update(db.doc(`apartments/${snap.id}/ledger/${entry._id}`), { alloc: named(parts) });
-                ops += 1;
-                await flush();
-            }
-            const kop = core.balanceFromLedger(entries, settings.startPeriod);
-            const balance = fromKop(kop);
-            if (snap.data().balance === balance && snap.data().balanceSource === 'ledger' && same(snap.data().balanceParts, named(balances))) continue;
-            batch.set(snap.ref, { balance, balanceParts: named(balances), balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
-            ops += 1;
-            updated += 1;
-            await flush();
+        // Each balance uses a transactional ledger snapshot: concurrent payments
+        // cannot overwrite a newer balance with an older calculation.
+        for (const apt of targets) {
+            const changed = await db.runTransaction(async t => {
+                const ref = db.doc(`apartments/${apt}`);
+                const [snap, ledger, freshSettings] = await Promise.all([t.get(ref), t.get(db.collection(`apartments/${apt}/ledger`)), t.get(settingsRef)]);
+                if (!freshSettings.data()?.opening?.set || !snap.exists || snap.data().isAdmin === true) return false;
+                const current = freshSettings.data();
+                const currentComponents = current.components?.length ? current.components : core.DEFAULT_COMPONENTS;
+                const currentNames = new Map(currentComponents.map(c => [c.id, c.name]));
+                const currentNamed = parts => Object.entries(parts).filter(([, v]) => v).map(([component, amountKop]) => ({ component, name: currentNames.get(component) || 'Інше', amountKop }));
+                const entries = ledger.docs.map(d => ({ _id: d.id, ...d.data() }));
+                const { balances, steps } = core.replay(entries, { startPeriod: current.startPeriod || core.START_PERIOD, order: currentComponents.map(c => c.id) });
+                for (const { entry, parts } of steps) {
+                    if (entry.kind !== 'payment' || !entry._id || same(entry.alloc, currentNamed(parts))) continue;
+                    t.update(db.doc(`apartments/${apt}/ledger/${entry._id}`), { alloc: currentNamed(parts) });
+                }
+                const balance = fromKop(core.balanceFromLedger(entries, current.startPeriod || core.START_PERIOD));
+                if (snap.data().balance === balance && snap.data().balanceSource === 'ledger' && same(snap.data().balanceParts, currentNamed(balances))) return false;
+                t.set(ref, { balance, balanceParts: currentNamed(balances), balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
+                return true;
+            });
+            if (changed) updated++;
         }
-        if (ops) await batch.commit();
         return { updated };
     }
 

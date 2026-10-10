@@ -18,6 +18,7 @@
 // списання. Тут немає ні мережі, ні бази: тести — budget-core.test.js.
 // ============================================================
 const { ITEMS } = require('./expenses-core');
+const { toKop } = require('./bank-core');
 
 /** Кошториси за п. 4.12.4: основний і окремі для фондів. */
 const SECTIONS = { main: 'Кошторис утримання будинку', repair: 'Ремонтний фонд', reserve: 'Резервний фонд' };
@@ -99,7 +100,7 @@ const inYear = (period, year) => String(period || '').slice(0, 4) === String(yea
  * за місяцем послуги + списання без документа за місяцем списання.
  * Повертає Map<item, kop>.
  */
-function factByItem({ expenses = [], bankOut = [], year }) {
+function factByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPayments = new Map(), year }) {
     const fact = new Map();
     const add = (item, kop) => fact.set(item, (fact.get(item) || 0) + kop);
     for (const e of expenses) {
@@ -107,7 +108,13 @@ function factByItem({ expenses = [], bankOut = [], year }) {
     }
     for (const t of bankOut) {
         if (t.direction !== 'out' || t.kind !== 'expense' || t.status !== 'done' || t.expenseId || !inYear(t.period, year)) continue;
+        if (t.category === 'supplier' || payrollPayments.has(t.paymentId)) continue;
         add(BANK_ITEM[t.category] || 'other', t.amountKop);
+    }
+    for (const p of payrollRuns) {
+        if (p.status !== 'approved' || !inYear(p.period, year)) continue;
+        add('salary', p.run?.totals?.grossKop || 0);
+        add('esv', p.run?.totals?.esvKop || 0);
     }
     return fact;
 }
@@ -143,7 +150,7 @@ const kyivDate = v => {
  * виконавець за договором ЦПД) і не показуємо призначення платежу, лише
  * опис документа. Юрособи й ФОП — назвою (п. 5.1.1 статуту).
  */
-function operationsByItem({ expenses = [], bankOut = [], year, suppliers = new Map(), docTypes = {}, publicView = false, limit = 400 }) {
+function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPayments = new Map(), year, suppliers = new Map(), docTypes = {}, publicView = false, limit = Infinity }) {
     const out = {};
     const add = (item, op) => (out[item] ||= []).push(op);
     const hide = (item, kind) => publicView && kind === 'person' ? (['salary', 'esv'].includes(item) ? 'Працівник ОСББ' : 'Фізична особа') : null;
@@ -156,12 +163,22 @@ function operationsByItem({ expenses = [], bankOut = [], year, suppliers = new M
     }
     for (const t of bankOut) {
         if (t.direction !== 'out' || t.kind !== 'expense' || t.status !== 'done' || t.expenseId || !inYear(t.period, year)) continue;
+        if (t.category === 'supplier' || payrollPayments.has(t.paymentId)) continue;
         const item = BANK_ITEM[t.category] || 'other';
         const cp = t.counterparty || {};
         // Зарплату отримує людина, хоч би як банк назвав отримувача («ПРАЦІВНИК ОСББ …»).
         const kind = t.category === 'bank_fee' ? 'fee' : t.category === 'salary' && !/^\d{8}$/.test(String(cp.code || '')) ? 'person' : payeeKind(cp.name, cp.code);
         add(item, { date: kyivDate(t.at), who: hide(item, kind) || cp.name || '', kind, amountKop: t.amountKop,
             ...(publicView ? {} : { what: t.purpose || '' }) });
+    }
+    for (const p of payrollRuns) {
+        if (p.status !== 'approved' || !inYear(p.period, year)) continue;
+        const date = `${p.period}-${new Date(Date.UTC(Number(p.period.slice(0, 4)), Number(p.period.slice(5, 7)), 0)).getUTCDate()}`;
+        for (const r of p.run?.rows || []) {
+            for (const [item, amountKop] of [['salary', r.grossKop], ['esv', r.esvKop]]) {
+                if (amountKop) add(item, { date, who: publicView ? 'Працівник ОСББ' : r.name, kind: 'person', amountKop, what: 'Нараховано за відомістю', paid: false });
+            }
+        }
     }
     for (const item of Object.keys(out)) {
         out[item].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.amountKop - a.amountKop));
@@ -184,7 +201,7 @@ function aptLabel(apt, { entrance, nonres } = {}, show = false) {
  * самі, що дають факт (incomeFact). Платник-мешканець (оренда комори) —
  * приміщенням, юрособа й ФОП — назвою, інша фізособа — без імені.
  */
-function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвласник', publicView = false, limit = 2000 }) {
+function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвласник', publicView = false, limit = Infinity }) {
     const out = {};
     for (const t of bankIn) {
         if (t.direction !== 'in' || t.status !== 'done' || t.kind !== 'income' || !inYear(t.period, year)) continue;
@@ -237,14 +254,22 @@ function execution({ budget, fact, income, months, incomeParts = [] }) {
         .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group) || a.i - b.i);
     const planByItem = new Map();
     lines.forEach(l => planByItem.set(l.item, (planByItem.get(l.item) || 0) + l.planKop));
+    const allocations = new Map();
+    for (const [item, plan] of planByItem) {
+        const siblings = lines.filter(l => l.item === item);
+        const actual = fact.get(item) || 0;
+        const denominator = BigInt(plan || siblings.length);
+        const portions = siblings.map(l => {
+            const numerator = BigInt(actual) * BigInt(plan ? l.planKop : 1);
+            return { l, kop: Number(numerator / denominator), remainder: numerator % denominator };
+        });
+        let left = actual - portions.reduce((sum, p) => sum + p.kop, 0);
+        const ranked = portions.slice().sort((a, b) => a.remainder > b.remainder ? -1 : a.remainder < b.remainder ? 1 : a.l.i - b.l.i);
+        for (let i = 0; i < left; i++) ranked[i].kop++;
+        portions.forEach(p => allocations.set(p.l, p.kop));
+    }
     const out = lines.map(l => {
-        const itemPlan = planByItem.get(l.item);
-        const itemFact = fact.get(l.item) || 0;
-        const sameItem = lines.filter(x => x.item === l.item);
-        const share = itemPlan ? l.planKop / itemPlan : 1 / sameItem.length;
-        // Останній рядок статті забирає залишок округлення — сума частин дорівнює факту.
-        const isLast = sameItem[sameItem.length - 1] === l;
-        const factKop = isLast ? itemFact - sameItem.slice(0, -1).reduce((s, x) => s + Math.round(itemFact * (itemPlan ? x.planKop / itemPlan : 1 / sameItem.length)), 0) : Math.round(itemFact * share);
+        const factKop = allocations.get(l);
         return { item: l.item, title: l.title || ITEMS[l.item], section: l.section, group: l.group, planKop: l.planKop,
             toDateKop: Math.round(l.planKop * months / 12), factKop };
     });
@@ -292,9 +317,9 @@ function itemOverrun(budget, item, spentKop, amountKop) {
  */
 function houseDebt(apartments, label = null) {
     const debtors = apartments.filter(a => !a.isAdmin && Number(a.balance) < 0);
-    const out = { totalKop: debtors.reduce((s, a) => s + Math.round(-Number(a.balance) * 100), 0), count: debtors.length };
+    const out = { totalKop: debtors.reduce((s, a) => s - toKop(a.balance), 0), count: debtors.length };
     if (label) {
-        out.list = debtors.map(a => ({ apt: String(a.apt), label: label(a.apt), entrance: String(a.entrance || ''), kop: Math.round(-Number(a.balance) * 100) }))
+        out.list = debtors.map(a => ({ apt: String(a.apt), label: label(a.apt), entrance: String(a.entrance || ''), kop: -toKop(a.balance) }))
             .sort((x, y) => x.entrance.localeCompare(y.entrance, 'uk', { numeric: true }) || x.apt.localeCompare(y.apt, 'uk', { numeric: true }));
     }
     return out;

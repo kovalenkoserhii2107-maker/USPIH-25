@@ -24,8 +24,6 @@ const { fromKop, cleanApt } = require('./bank-core');
 const REGION = 'europe-central2';
 const FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
 const PUBLIC_EXPENSES = 80;
-// Операцій у документі розшифровки (finance_ops/{ключ}): ~90 байт кожна, документ — до 1 МБ.
-const OPS_LIMIT = 8000;
 
 module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffRole }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -57,30 +55,41 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // КОНТРОЛЬ ДОКУМЕНТІВ ВИТРАТ (для expenses.js)
     // --------------------------------------------------------
     /** Причина, з якої документ має затвердити голова (вихід за кошторис), або null. */
-    async function guard(e, exceptId) {
+    async function guard(e, exceptId, transaction = null) {
+        const read = ref => transaction ? transaction.get(ref) : ref.get();
         const year = String(e.period).slice(0, 4);
-        const budget = core.effectiveBudget(await allBudgets(), year);
+        const [budgets, ex, bank, payroll, payments] = await Promise.all([
+            read(db.collection('budgets')),
+            read(db.collection('expenses').where('item', '==', e.item)),
+            read(db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`)),
+            read(db.collection('payroll_runs')),
+            read(db.collection('payments').where('kind', 'in', ['salary', 'tax']))
+        ]);
+        const budget = core.effectiveBudget(budgets.docs.map(d => ({ id: d.id, ...d.data() })), year);
         if (!budget) return null;
-        const snap = await db.collection('expenses').where('item', '==', e.item).get();
-        const spent = snap.docs.filter(d => d.id !== exceptId && ['approved', 'paid'].includes(d.data().status) && String(d.data().period).startsWith(year))
-            .reduce((s, d) => s + d.data().amountKop, 0);
-        return core.itemOverrun(budget, e.item, spent, e.amountKop);
+        const payrollRuns = payroll.docs.map(d => ({ period: d.id, ...d.data() }));
+        const approved = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
+        const payrollPayments = new Map(payments.docs.filter(d => approved.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
+        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut: bank.docs.map(d => d.data()), payrollRuns, payrollPayments });
+        return core.itemOverrun(budget, e.item, fact.get(e.item) || 0, e.amountKop);
     }
 
     // --------------------------------------------------------
     // ВИКОНАННЯ Й ДАНІ ДЛЯ МЕШКАНЦІВ
     // --------------------------------------------------------
     async function gather(year) {
-        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity] = await Promise.all([
+        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity, payrollSnap, payrollPaySnap] = await Promise.all([
             allBudgets(),
-            db.collection('expenses').limit(3000).get(),
+            db.collection('expenses').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
             db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
             db.doc('bank/settings').get(),
             db.collection('apartments').get(),
             db.doc('charges/settings').get(),
-            db.collectionGroup('ledger').where('period', '>=', `${year}-01`).get(),
+            db.collectionGroup('ledger').where('period', '>=', charges.START_PERIOD).where('period', '<=', `${year}-12`).get(),
             db.collection('suppliers').get(),
-            publicityRef.get()
+            publicityRef.get(),
+            db.collection('payroll_runs').get(),
+            db.collection('payments').where('kind', 'in', ['salary', 'tax']).get()
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
         const tx = bank.docs.map(d => d.data());
@@ -97,8 +106,9 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             ledgers.get(apt).push(d.data());
         });
         // Вхідний залишок (вересень 2026) теж потрібен для розподілу першої оплати.
-        if (cs.opening?.set && String(year) === '2026') {
+        if (cs.opening?.set) {
             (await db.collectionGroup('ledger').where('kind', '==', 'opening').get()).forEach(d => {
+                if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
                 const apt = d.ref.parent.parent.id;
                 if (!ledgers.has(apt)) ledgers.set(apt, []);
                 ledgers.get(apt).push(d.data());
@@ -106,14 +116,16 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         }
         const paid = charges.paidByComponent(ledgers, year, { order: components.map(c => c.id) });
         const incomeParts = components.filter(c => paid[c.id]).map(c => ({ component: c.id, title: c.name, factKop: paid[c.id] }));
-        const result = core.execution({ budget, fact: core.factByItem({ expenses: ex, bankOut: tx, year }), income: core.incomeFact({ bankIn: tx, year }), months, incomeParts });
+        const payrollRuns = payrollSnap.docs.map(d => ({ period: d.id, ...d.data() }));
+        const approvedPeriods = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
+        const payrollPayments = new Map(payrollPaySnap.docs.filter(d => approvedPeriods.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
+        const factInput = { expenses: ex, bankOut: tx, payrollRuns, payrollPayments, year };
+        const result = core.execution({ budget, fact: core.factByItem(factInput), income: core.incomeFact({ bankIn: tx, year }), months, incomeParts });
         const accounts = Object.values(settings.exists ? settings.data().accounts || {} : {});
         const fundsKop = accounts.reduce((s, a) => s + (!a.currency || a.currency === 'UAH' ? a.balanceKop || 0 : 0), 0);
         const fundsAt = accounts.map(a => a.balanceAt?.toDate?.()).filter(Boolean).sort((a, b) => b - a)[0] || null;
         const apts = apartments.docs.map(d => ({ apt: cleanApt(d.id), ...d.data() }));
         // Скільки дадуть внески за рік за чинними тарифами — підказка для плану надходжень.
-        const month = charges.computeCharges({ apartments: apts.filter(a => !a.isAdmin), premises: cs.premises || {}, tariffs: cs.tariffs || [],
-            groups: cs.groups?.length ? cs.groups : charges.DEFAULT_GROUPS, components, period: `${year}-${today().slice(0, 4) === String(year) ? today().slice(5, 7) : '01'}` });
         // Розшифровка статей (як «Внесок на обслуговування ліфтів → платежі» в сервісі):
         // { 'exp-lift': [...], 'inc-rent': [...], 'inc-c-main': [...] }.
         // Номери квартир мешканцям — лише за рішенням правління (finance_settings/public).
@@ -125,16 +137,17 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const ops = publicView => {
             const label = labeler(!publicView || showApartments);
             const out = {};
-            for (const [item, list] of Object.entries(core.operationsByItem({ expenses: ex, bankOut: tx, year, suppliers, docTypes: DOC_TYPES, publicView }))) out[`exp-${item}`] = list;
+            for (const [item, list] of Object.entries(core.operationsByItem({ ...factInput, suppliers, docTypes: DOC_TYPES, publicView }))) out[`exp-${item}`] = list;
             for (const [source, list] of Object.entries(core.incomeOpsBySource({ bankIn: tx, year, label, publicView }))) out[`inc-${source}`] = list;
             for (const o of payOps) (out[`inc-c-${o.component}`] ||= []).push({ date: core.kyivDate(o.at), who: label(o.apt), kind: 'apt', amountKop: o.kop });
             for (const k of Object.keys(out).filter(k => k.startsWith('inc-c-'))) {
                 out[k].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-                if (out[k].length > OPS_LIMIT) out[k] = out[k].slice(0, OPS_LIMIT);
             }
             return out;
         };
-        return { budgets, budget, expenses: ex, result, ops, showApartments, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts, showApartments ? labeler(true) : null), contributionsYearKop: month.totalKop * 12 };
+        const contributionsYearKop = Array.from({ length: 12 }, (_, i) => charges.computeCharges({ apartments: apts.filter(a => !a.isAdmin), premises: cs.premises || {}, tariffs: cs.tariffs || [],
+            groups: cs.groups?.length ? cs.groups : charges.DEFAULT_GROUPS, components, period: `${year}-${String(i + 1).padStart(2, '0')}` }).totalKop).reduce((sum, kop) => sum + kop, 0);
+        return { budgets, budget, expenses: ex, factInput, result, ops, showApartments, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts, showApartments ? labeler(true) : null), contributionsYearKop };
     }
 
     const human = d => String(d || '').split('-').reverse().join('.');
@@ -149,9 +162,12 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const ops = g.ops(true);
         const spentByItem = new Map();
         const itemOf = new Map();
-        r.sections.forEach(s => s.lines.forEach(l => spentByItem.set(l.title, (spentByItem.get(l.title) || 0) + l.factKop)));
-        r.sections.forEach(s => s.lines.forEach(l => itemOf.set(l.title, l.item)));
-        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([label, kop]) => ({ label, item: itemOf.get(label), amount: fromKop(kop) }));
+        r.sections.forEach(s => s.lines.forEach(l => {
+            const key = `${l.item}|${l.title}`;
+            spentByItem.set(key, (spentByItem.get(key) || 0) + l.factKop);
+            itemOf.set(key, l);
+        }));
+        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([key, kop]) => ({ label: itemOf.get(key).title, item: itemOf.get(key).item, amount: fromKop(kop) }));
         const start = `${year}-01` > '2026-10' ? `01.01.${year}` : '01.10.2026';
         const expenses = g.expenses.filter(e => ['approved', 'paid'].includes(e.status) && String(e.period).startsWith(year))
             .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, PUBLIC_EXPENSES)
@@ -291,6 +307,9 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     async function publish(actor, role, { year }) {
         const y = core.validYear(year) ? String(year) : today().slice(0, 4);
         const { _ops: ops, ...snap } = snapshot(y, await gather(y));
+        for (const [key, list] of Object.entries(ops)) {
+            if (Buffer.byteLength(JSON.stringify(list), 'utf8') > 850000) fail('failed-precondition', `Розшифровка «${key}» завелика для одного документа. Звіт не опубліковано; потрібне розбиття на сторінки.`);
+        }
         const doc = { ...snap, hash: hashOf(snap), budgetHash: budgetHash(snap), publishedBy: actor, updatedAt: FieldValue.serverTimestamp() };
         // Спершу розшифровка, потім звіт: мешканець не відкриє статтю без операцій.
         const stale = (await db.collection('finance_ops').get()).docs.filter(d => !ops[d.id]);

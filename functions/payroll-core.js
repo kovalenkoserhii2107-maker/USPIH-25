@@ -5,15 +5,15 @@
 // Працівник за трудовим договором: оклад × відпрацьовані дні / норма +
 // премія. Утримання — ПДФО 18 % і військовий збір 5 %; ЄСВ 22 % —
 // нарахування ОСББ (не утримання). Для основного місця роботи база ЄСВ
-// не нижча за мінімальну зарплату (пропорційно ставці й відпрацьованому).
+// за повний місяць не нижча за мінімальну зарплату, незалежно від ставки.
 // Виконавець за договором ЦПД: сума акта, ті самі ПДФО, ВЗ і ЄСВ, без
 // мінімальної бази (ознака доходу 102).
 //
 // Двічі на місяць (ст. 115 КЗпП): аванс — частина нарахування за першу
 // половину; ПДФО й ВЗ утримуються в день кожної виплати. Решта й ЄСВ —
-// при остаточному розрахунку.
+// при остаточному розрахунку. ЄСВ сплачується також під час авансу.
 //
-// Ставки — довідник з датою дії, не «зашиті» числа (LEGAL.md, розділ 7).
+// Ставки — довідник у коді з датою дії (LEGAL.md, розділ 7).
 // Тут немає ні мережі, ні бази: тести — payroll-core.test.js.
 // ============================================================
 
@@ -23,6 +23,8 @@ const DEFAULT_RATES = [
 ];
 
 const KINDS = { employee: 'Трудовий договір', gph: 'Договір ЦПД' };
+const { validIban } = require('./payments-core');
+const { validDate } = require('./expenses-core');
 
 const pct = (kop, bp) => Math.round(kop * bp / 10000);
 /** «4 323,50» — як суми в застосунку. */
@@ -56,7 +58,16 @@ const validRnokpp = code => {
     const sum = [-1, 5, 7, 9, 4, 6, 10, 5, 7].reduce((s, w, i) => s + w * Number(d[i]), 0);
     return ((sum % 11) + 11) % 11 % 10 === Number(d[9]);
 };
-const validIban = iban => /^UA\d{27}$/.test(String(iban || '').replace(/\s+/g, '').toUpperCase());
+/** Робочі дні в межах трудових відносин (для прийому/звільнення посеред місяця). */
+function employmentDays(person, period) {
+    const [y, m] = period.split('-').map(Number);
+    const dates = [];
+    for (let d = 1; d <= workingDaysEnd(period); d++) {
+        const at = new Date(Date.UTC(y, m - 1, d));
+        if (![0, 6].includes(at.getUTCDay())) dates.push(at.toISOString().slice(0, 10));
+    }
+    return dates.filter(d => (!person.from || d >= person.from) && (!person.to || d <= person.to)).length;
+}
 
 /** Перевірка картки людини. */
 function checkPerson(p) {
@@ -69,7 +80,8 @@ function checkPerson(p) {
         if (!Number.isInteger(p.salaryKop) || p.salaryKop <= 0) return 'Вкажіть оклад';
         if (!(p.fte > 0 && p.fte <= 1)) return 'Ставка — від 0,1 до 1';
     }
-    if (p.from && !/^\d{4}-\d{2}-\d{2}$/.test(p.from)) return 'Дата прийому — у форматі дати';
+    if ((p.from && !validDate(p.from)) || (p.to && !validDate(p.to))) return 'Вкажіть правильну дату прийому / звільнення';
+    if (p.from && p.to && p.to < p.from) return 'Дата звільнення раніше за прийом';
     return null;
 }
 
@@ -87,7 +99,8 @@ function calcRow(person, input, period, rate, { advancePct = 50 } = {}) {
         esvBaseKop = grossKop;
         if (!grossKop) warnings.push('немає суми акта виконаних робіт');
     } else {
-        const worked = Math.min(norm, Math.max(0, Number(input.workedDays ?? norm)));
+        const available = employmentDays(person, period);
+        const worked = Math.min(available, Math.max(0, Number(input.workedDays ?? available)));
         const bonus = Math.max(0, Math.round(Number(input.bonusKop) || 0));
         grossKop = Math.round(person.salaryKop * worked / norm) + bonus;
         esvBaseKop = grossKop;
@@ -95,8 +108,8 @@ function calcRow(person, input, period, rate, { advancePct = 50 } = {}) {
         if (person.salaryKop < Math.round(rate.minWageKop * fte)) {
             warnings.push(`оклад менший за мінімальну зарплату${fte < 1 ? ` для ставки ${fte}` : ''} (${uah(rate.minWageKop * fte)} грн) — потрібна доплата до МЗП`);
         }
-        if (person.mainJob !== false) {
-            const minBase = Math.round(rate.minWageKop * fte * worked / norm);
+        if (person.mainJob !== false && grossKop > 0 && available === norm) {
+            const minBase = rate.minWageKop;
             if (esvBaseKop < minBase) {
                 esvBaseKop = minBase;
                 warnings.push('ЄСВ — з мінімальної бази (основне місце роботи): різницю сплачує ОСББ');
@@ -112,8 +125,10 @@ function calcRow(person, input, period, rate, { advancePct = 50 } = {}) {
     const advGross = person.kind === 'employee' ? Math.round(grossKop * advancePct / 100) : 0;
     const advance = { grossKop: advGross, pdfoKop: pct(advGross, rate.pdfo), vzKop: pct(advGross, rate.vz) };
     advance.netKop = advance.grossKop - advance.pdfoKop - advance.vzKop;
+    advance.esvKop = pct(Math.min(advance.grossKop, esvBaseKop), rate.esv);
     const final = { grossKop: grossKop - advance.grossKop, pdfoKop: pdfoKop - advance.pdfoKop, vzKop: vzKop - advance.vzKop };
     final.netKop = final.grossKop - final.pdfoKop - final.vzKop;
+    final.esvKop = esvKop - advance.esvKop;
     return { grossKop, pdfoKop, vzKop, netKop: grossKop - pdfoKop - vzKop, esvBaseKop, esvKop, advance, final, normDays: norm, warnings };
 }
 
@@ -145,7 +160,8 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
         if (!p.rnokpp) problems.push('немає РНОКПП (потрібен для звіту ДПС)');
         if (p.kind === 'employee' && !p.taxNotified) problems.push('не позначено повідомлення ДПС про прийняття працівника');
         return { personId: p.id, name: p.name, kind: p.kind, position: p.position || '', fte: p.fte || null, salaryKop: p.salaryKop || 0,
-            workedDays: p.kind === 'employee' ? Math.min(r.normDays, Number(input.workedDays ?? r.normDays)) : null,
+            workedDays: p.kind === 'employee' ? Math.min(employmentDays(p, period), Number(input.workedDays ?? employmentDays(p, period))) : null,
+            payee: { iban: p.iban || '', rnokpp: p.rnokpp || '', contract: p.contract || '' },
             bonusKop: Math.round(Number(input.bonusKop) || 0), actKop: p.kind === 'gph' ? Math.round(Number(input.actKop) || 0) : null,
             ...r, problems };
     });
@@ -154,8 +170,8 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
     return {
         period, rate, rows,
         totals: { grossKop: sum('grossKop'), pdfoKop: sum('pdfoKop'), vzKop: sum('vzKop'), netKop: sum('netKop'), esvKop: sum('esvKop'),
-            advance: { grossKop: sumIn('advance', 'grossKop'), pdfoKop: sumIn('advance', 'pdfoKop'), vzKop: sumIn('advance', 'vzKop'), netKop: sumIn('advance', 'netKop') },
-            final: { grossKop: sumIn('final', 'grossKop'), pdfoKop: sumIn('final', 'pdfoKop'), vzKop: sumIn('final', 'vzKop'), netKop: sumIn('final', 'netKop') },
+            advance: { grossKop: sumIn('advance', 'grossKop'), pdfoKop: sumIn('advance', 'pdfoKop'), vzKop: sumIn('advance', 'vzKop'), netKop: sumIn('advance', 'netKop'), esvKop: sumIn('advance', 'esvKop') },
+            final: { grossKop: sumIn('final', 'grossKop'), pdfoKop: sumIn('final', 'pdfoKop'), vzKop: sumIn('final', 'vzKop'), netKop: sumIn('final', 'netKop'), esvKop: sumIn('final', 'esvKop') },
             costKop: sum('grossKop') + sum('esvKop') }
     };
 }
@@ -175,7 +191,7 @@ function stagePayments(run, stage, { code, taxes = {}, people = new Map() }) {
     for (const r of run.rows) {
         const part = r[stage];
         if (!part || part.netKop <= 0) continue;
-        const p = people.get(r.personId) || {};
+        const p = r.payee || people.get(r.personId) || {};
         out.push({ kind: 'salary', key: `${stage}:${r.personId}`, personId: r.personId, amountKop: part.netKop,
             recipient: { name: r.name, iban: p.iban || '', code: p.rnokpp || '' },
             purpose: r.kind === 'gph' ? `Оплата за договором ЦПД${p.contract ? ` ${p.contract}` : ''} за ${monthName(run.period)}, без ПДВ` : `${what}, без ПДВ` });
@@ -189,7 +205,7 @@ function stagePayments(run, stage, { code, taxes = {}, people = new Map() }) {
     };
     tax('pdfo', sum('pdfoKop'), 'ПДФО із заробітної плати');
     tax('vz', sum('vzKop'), 'Військовий збір із заробітної плати');
-    if (stage === 'final') tax('esv', run.totals.esvKop, 'ЄСВ');
+    tax('esv', sum('esvKop'), 'ЄСВ');
     return out;
 }
 
@@ -202,5 +218,5 @@ function paymentProblems(payments) {
 
 module.exports = {
     DEFAULT_RATES, KINDS, rateFor, workingDays, validRnokpp, validIban, checkPerson, calcRow, activeIn, buildRun,
-    stagePayments, paymentProblems, monthName
+    stagePayments, paymentProblems, monthName, employmentDays
 };

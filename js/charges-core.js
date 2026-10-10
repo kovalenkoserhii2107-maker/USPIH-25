@@ -42,7 +42,7 @@ export function toKop(text) {
     const negative = t.startsWith('-');
     const [whole, frac = ''] = t.replace(/^[-+]/, '').split(/[.,]/);
     const kop = Number(whole) * 100 + Number((frac + '00').slice(0, 2));
-    return negative ? -kop : kop;
+    return Number.isSafeInteger(kop) ? (negative ? -kop : kop) : null;
 }
 
 /** Копійки → «−1 250,40» (без «грн»), нуль — «0,00». */

@@ -154,7 +154,7 @@ function checkExpense(e) {
     if (!String(e.number || '').trim()) return 'Вкажіть номер документа';
     if (!validDate(e.date)) return 'Вкажіть дату документа';
     if (!Number.isInteger(e.amountKop) || e.amountKop <= 0 || e.amountKop > MAX_KOP) return 'Вкажіть суму документа';
-    if (e.vatKop && (!Number.isInteger(e.vatKop) || e.vatKop < 0 || e.vatKop >= e.amountKop)) return 'ПДВ має бути меншим за суму';
+    if (e.vatKop !== undefined && (!Number.isInteger(e.vatKop) || e.vatKop < 0 || e.vatKop >= e.amountKop)) return 'ПДВ має бути меншим за суму';
     if (!validPeriod(e.period)) return 'Вкажіть, за який місяць послуга';
     if (!ITEMS[e.item]) return 'Оберіть статтю витрат';
     const d = String(e.description || '').trim();

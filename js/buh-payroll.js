@@ -34,7 +34,7 @@ function runHtml() {
     if (!run.rows.length) {
         return `<section class="buh-card"><p class="list-empty">${ctx.people.length ? 'У цьому місяці немає діючих працівників і договорів ЦПД' : 'Додайте працівників і виконавців за договорами ЦПД нижче — відомість складеться сама'}</p></section>`;
     }
-    const locked = ctx.closed || Boolean(ctx.stages.final);
+    const locked = ctx.closed || Boolean(ctx.stages.final) || ctx.stages.advance?.complete === false;
     const rows = run.rows.map(r => {
         const input = r.kind === 'gph'
             ? `<input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="actKop" inputmode="decimal" value="${money2(r.actKop)}" aria-label="Сума акта"${locked ? ' disabled' : ''}><small>акт, грн</small>`
@@ -54,13 +54,13 @@ function runHtml() {
         <div class="jr-scroll"><table class="buh-table pr-table"><thead><tr><th>Людина</th><th>Табель / акт</th><th>Премія</th><th class="t-sum">Нараховано</th><th class="t-sum">ПДФО+ВЗ</th><th class="t-sum">На руки</th><th class="t-sum">ЄСВ</th><th class="t-sum">Аванс</th><th class="t-sum">Решта</th></tr></thead>
             <tbody>${rows}</tbody>
             <tfoot><tr><td>Разом</td><td></td><td></td><td class="t-sum">${fmtKop(t.grossKop)}</td><td class="t-sum">${fmtKop(t.pdfoKop + t.vzKop)}</td><td class="t-sum">${fmtKop(t.netKop)}</td><td class="t-sum">${fmtKop(t.esvKop)}</td><td class="t-sum">${fmtKop(t.advance.netKop)}</td><td class="t-sum">${fmtKop(t.final.netKop)}</td></tr></tfoot></table></div>
-        <p class="buh-note">Аванс — ${ctx.settings.advancePct} % нарахування, з утриманнями в день виплати; решта й ЄСВ — при остаточному розрахунку. Свята під час воєнного стану — робочі дні: норма — пн–пт.${ctx.stages.advance ? ' Аванс уже виплачено — його суми не змінюються.' : ''}</p>
+        <p class="buh-note">ПДФО, військовий збір та ЄСВ сплачуються з кожною виплатою. З остаточним розрахунком — решта й доплата ЄСВ до мінімальної бази. Свята під час воєнного стану — робочі дні: норма — пн–пт.${ctx.stages.advance ? ' Аванс уже підготовлено — його суми не змінюються.' : ''}</p>
     </section>`;
 }
 
 function paymentsHtml() {
     if (!ctx.payments.length) return '';
-    const STAT = { sending: 'надсилається', sent: 'на підписі в Приват24', paid: 'проведено', failed: 'банк не прийняв', canceled: 'скасовано' };
+    const STAT = { sending: 'надсилається', sent: 'на підписі в Приват24', paid: 'проведено', failed: 'банк не прийняв', unknown: 'перевірте у Приват24', canceled: 'скасовано' };
     return `<section class="buh-card"><div class="buh-card-head"><h2>Платежі за відомістю</h2></div>
         <table class="buh-table is-compact"><tbody>${ctx.payments.map(p => `<tr><td>${p.stage === 'advance' ? 'Аванс' : 'Зарплата'}</td><td class="t-main">${escapeHtml(p.recipient)}${p.error ? `<small class="is-out">${escapeHtml(p.error)}</small>` : ''}</td>
             <td class="t-sum">${fmtKop(p.amountKop)}</td><td><span class="buh-tag ${p.status === 'paid' ? 'is-payment' : p.status === 'failed' ? 'is-error' : 'is-review'}">${STAT[p.status] || p.status}</span></td></tr>`).join('')}</tbody></table></section>`;
@@ -70,12 +70,12 @@ function peopleHtml() {
     const list = ctx.people.slice().sort((a, b) => Number(b.active !== false) - Number(a.active !== false) || a.name.localeCompare(b.name, 'uk'));
     return `<section class="buh-card">
         <div class="buh-card-head"><h2>Працівники й виконавці</h2><button type="button" class="btn-soft btn-compact" data-act="person-new">Додати</button></div>
-        ${list.length ? `<table class="buh-table is-compact"><tbody>${list.map(p => `<tr${p.active === false ? ' class="t-muted"' : ''}>
+        ${list.length ? `<div class="jr-scroll"><table class="buh-table is-compact"><tbody>${list.map(p => `<tr${p.active === false ? ' class="t-muted"' : ''}>
             <td class="t-main"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(ctx.kinds[p.kind])}${p.position ? ` · ${escapeHtml(p.position)}` : ''}${p.active === false ? ' · не діє' : ''}</small></td>
             <td>${p.kind === 'employee' ? `${fmtKop(p.salaryKop)}${p.fte < 1 ? ` · ${p.fte} ст.` : ''}` : 'за актами'}</td>
             <td class="t-muted">${p.iban ? escapeHtml(maskIban(p.iban)) : '<span class="is-out">немає IBAN</span>'}</td>
             <td>${p.kind === 'employee' && !p.taxNotified ? '<span class="buh-tag is-review">повідомити ДПС</span>' : ''}</td>
-            <td class="t-act"><button type="button" class="btn-ghost-small" data-act="person-edit" data-id="${escapeHtml(p.id)}">Змінити</button></td></tr>`).join('')}</tbody></table>` : '<p class="list-empty">Ще нікого немає</p>'}
+            <td class="t-act"><button type="button" class="btn-ghost-small" data-act="person-edit" data-id="${escapeHtml(p.id)}">Змінити</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="list-empty">Ще нікого немає</p>'}
         ${editing ? personFormHtml(editing) : ''}
     </section>`;
 }
@@ -112,7 +112,7 @@ function taxesHtml() {
     return `<section class="buh-card">
         <div class="buh-card-head"><h2>Податки й аванс</h2></div>
         <p class="buh-note">Рахунки для сплати — з Електронного кабінету ДПС («Бюджетні рахунки» для вашої громади). ПДФО й військовий збір — у день кожної виплати, ЄСВ — до 20 числа наступного місяця.</p>
-        <table class="buh-table is-compact pr-taxes"><tbody>${row('pdfo', 'ПДФО')}${row('vz', 'Військовий збір')}${row('esv', 'ЄСВ')}</tbody></table>
+        <div class="jr-scroll"><table class="buh-table is-compact pr-taxes"><tbody>${row('pdfo', 'ПДФО')}${row('vz', 'Військовий збір')}${row('esv', 'ЄСВ')}</tbody></table></div>
         <div class="buh-inline-form"><span>Аванс</span><input id="prAdvance" class="field-input ch-narrow" inputmode="numeric" value="${ctx.settings.advancePct}" aria-label="Аванс, %"><span>% нарахування</span>
             <button type="button" class="btn-soft btn-compact" data-act="taxes-save">Зберегти</button></div>
     </section>`;
@@ -125,15 +125,15 @@ export async function loadPayrollView() {
     const [label, cls] = STATUS[ctx.status] || STATUS.none;
     const months = [...new Set([shift(ctx.today.slice(0, 7), 1), ctx.today.slice(0, 7), shift(ctx.today.slice(0, 7), -1), ...ctx.runs.map(r => r.period), ctx.period])].sort().reverse();
     const t = ctx.run.totals;
-    const canPayAdvance = ctx.status === 'approved' && !ctx.stages.advance && !ctx.stages.final && t.advance.netKop > 0 && !ctx.closed;
-    const canPayFinal = ctx.status === 'approved' && !ctx.stages.final && !ctx.closed;
+    const canPayAdvance = ctx.status === 'approved' && (!ctx.stages.advance || ctx.stages.advance.complete === false) && !ctx.stages.final && t.advance.netKop > 0 && !ctx.closed;
+    const canPayFinal = ctx.status === 'approved' && (!ctx.stages.final || ctx.stages.final.complete === false) && ctx.stages.advance?.complete !== false && !ctx.closed;
     document.getElementById('viewPayroll').innerHTML = `
         <div class="buh-toolbar">
             <select id="prPeriod" class="field-input field-select ch-period" aria-label="Місяць">${months.map(m => `<option value="${m}"${m === ctx.period ? ' selected' : ''}>${monthTitle(m)}</option>`).join('')}</select>
             <span class="buh-tag ${cls}">${ctx.closed ? 'місяць закрито' : label}</span>
             <span class="buh-note">${ctx.approvedAt ? `Затверджено ${escapeHtml(new Date(ctx.approvedAt).toLocaleDateString('uk-UA'))}` : ctx.status === 'draft' ? 'Відомість затверджує голова' : 'Табель — у полях відомості; збережіть, і відомість піде голові'}</span>
             <span class="ch-tools">
-                ${ctx.run.rows.length && !ctx.closed && !ctx.stages.final ? '<button type="button" class="btn-soft btn-compact" data-act="save" title="Збережена відомість чекає затвердження голови">Зберегти відомість</button>' : ''}
+                ${ctx.run.rows.length && !ctx.closed && !ctx.stages.final && ctx.stages.advance?.complete !== false ? '<button type="button" class="btn-soft btn-compact" data-act="save" title="Збережена відомість чекає затвердження голови">Зберегти відомість</button>' : ''}
                 ${chair && ctx.status === 'draft' && !ctx.closed ? '<button type="button" class="btn-primary btn-compact" data-act="approve">Затвердити</button>' : ''}
                 ${canPayAdvance ? '<button type="button" class="btn-primary btn-compact" data-act="pay-advance">Виплатити аванс</button>' : ''}
                 ${canPayFinal ? '<button type="button" class="btn-primary btn-compact" data-act="pay-final">Виплатити зарплату</button>' : ''}
@@ -142,7 +142,7 @@ export async function loadPayrollView() {
         <div class="kpi-grid">
             <div class="kpi"><span>Нараховано</span><b>${fmtKop(t.grossKop)}</b><small>${ctx.run.rows.length} особ.</small></div>
             <div class="kpi"><span>Утримано ПДФО + ВЗ</span><b>${fmtKop(t.pdfoKop + t.vzKop)}</b><small>ПДФО ${fmtKop(t.pdfoKop)} · ВЗ ${fmtKop(t.vzKop)}</small></div>
-            <div class="kpi"><span>На руки</span><b>${fmtKop(t.netKop)}</b><small>аванс ${fmtKop(t.advance.netKop)}${ctx.stages.advance ? ' ✓' : ''} · решта ${fmtKop(t.final.netKop)}${ctx.stages.final ? ' ✓' : ''}</small></div>
+            <div class="kpi"><span>На руки</span><b>${fmtKop(t.netKop)}</b><small>аванс ${fmtKop(t.advance.netKop)}${ctx.stages.advance ? ctx.stages.advance.complete === false ? ' · не завершено' : ' ✓' : ''} · решта ${fmtKop(t.final.netKop)}${ctx.stages.final ? ctx.stages.final.complete === false ? ' · не завершено' : ' ✓' : ''}</small></div>
             <div class="kpi"><span>Витрати ОСББ</span><b>${fmtKop(t.costKop)}</b><small>з ЄСВ ${fmtKop(t.esvKop)}</small></div>
         </div>
         ${runHtml()}
@@ -208,7 +208,7 @@ async function onAction(btn) {
             // Без авансу остаточний розрахунок платить усе нараховане.
             const sum = stage === 'final' && !ctx.stages.advance ? ctx.run.totals : ctx.run.totals[stage];
             if (!await confirmDialog(stage === 'advance' ? 'Виплатити аванс?' : 'Виплатити зарплату?',
-                `На руки ${fmtKop(sum.netKop)} грн, ПДФО й ВЗ ${fmtKop(sum.pdfoKop + sum.vzKop)} грн${stage === 'final' ? `, ЄСВ ${fmtKop(ctx.run.totals.esvKop)} грн` : ''}. Платежі підуть у Приват24 на підпис голови.`, 'Створити платежі')) return;
+                `На руки ${fmtKop(sum.netKop)} грн, ПДФО й ВЗ ${fmtKop(sum.pdfoKop + sum.vzKop)} грн, ЄСВ ${fmtKop(sum.esvKop || 0)} грн. Платежі підуть у Приват24 на підпис голови.`, 'Створити платежі')) return;
             setBusy(btn, true, 'Створюю платежі…');
             const r = await payrollAct({ action: 'pay', period: ctx.period, stage });
             toast(r.errors?.length ? `Створено ${r.created}; не вдалося: ${r.errors.join('; ')}` : `Платежів у Приват24: ${r.created}. Голова підписує пачку`, r.errors?.length ? 'error' : 'success');

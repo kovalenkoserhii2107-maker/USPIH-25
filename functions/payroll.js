@@ -16,6 +16,7 @@
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const core = require('./payroll-core');
+const { randomUUID } = require('crypto');
 const { fromKop } = require('./bank-core');
 
 const REGION = 'europe-central2';
@@ -45,15 +46,19 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const run = core.buildRun({ people, inputs: stored?.inputs || {}, period, advancePct: settings.advancePct });
         if (run.error) fail('failed-precondition', run.error);
         const paid = stored?.paidAdvance || {};
+        if (Object.keys(paid).some(id => !run.rows.some(r => r.personId === id))) {
+            fail('failed-precondition', 'У відомості зникла людина, якій відправлено аванс. Відновіть її картку для цього місяця.');
+        }
         for (const r of run.rows) {
             const a = paid[r.personId];
             if (!a) continue;
             r.advance = a;
-            r.final = { grossKop: r.grossKop - a.grossKop, pdfoKop: r.pdfoKop - a.pdfoKop, vzKop: r.vzKop - a.vzKop };
+            r.final = { grossKop: r.grossKop - a.grossKop, pdfoKop: r.pdfoKop - a.pdfoKop, vzKop: r.vzKop - a.vzKop, esvKop: r.esvKop - (a.esvKop || 0) };
             r.final.netKop = r.final.grossKop - r.final.pdfoKop - r.final.vzKop;
+            if (Object.values(r.final).some(kop => kop < 0)) fail('failed-precondition', 'Нарахування менше вже відправленого авансу. Потрібне окреме коригування, відʼємну виплату не створено.');
         }
-        const sumIn = (stage, key) => run.rows.reduce((s, r) => s + r[stage][key], 0);
-        for (const stage of ['advance', 'final']) run.totals[stage] = Object.fromEntries(['grossKop', 'pdfoKop', 'vzKop', 'netKop'].map(k => [k, sumIn(stage, k)]));
+        const sumIn = (stage, key) => run.rows.reduce((s, r) => s + (r[stage][key] || 0), 0);
+        for (const stage of ['advance', 'final']) run.totals[stage] = Object.fromEntries(['grossKop', 'pdfoKop', 'vzKop', 'netKop', 'esvKop'].map(k => [k, sumIn(stage, k)]));
         return run;
     }
 
@@ -65,7 +70,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             db.collection('payments').where('payroll.period', '==', p).get()
         ]);
         const stored = runSnap.exists ? runSnap.data() : null;
-        const run = compute(people, stored, p, settings);
+        const run = stored?.run || compute(people, stored, p, settings);
         const paymentsList = sent.docs.map(d => ({ id: d.id, stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status,
             amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null }));
         const closed = lock ? await lock.closed() : [];
@@ -85,7 +90,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const p = {
             name: text(data.name, 120), kind: data.kind === 'gph' ? 'gph' : 'employee', position: text(data.position, 80),
             rnokpp: String(data.rnokpp || '').replace(/\D/g, '').slice(0, 10), iban: String(data.iban || '').replace(/\s+/g, '').toUpperCase(),
-            salaryKop: data.kind === 'gph' ? 0 : Math.round(Number(data.salaryKop) || 0), fte: data.kind === 'gph' ? null : Number(data.fte) || 1,
+            salaryKop: data.kind === 'gph' ? 0 : Number(data.salaryKop), fte: data.kind === 'gph' ? null : Number(data.fte ?? 1),
             mainJob: data.mainJob !== false, from: String(data.from || ''), to: String(data.to || ''), taxNotified: Boolean(data.taxNotified),
             contract: text(data.contract, 80), active: data.active !== false
         };
@@ -100,7 +105,9 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
 
     async function saveSettings(actor, role, { advancePct, taxes }) {
         const clean = t => ({ name: text(t?.name, 140), iban: String(t?.iban || '').replace(/\s+/g, '').toUpperCase(), code: String(t?.code || '').replace(/\D/g, '').slice(0, 10) });
-        const out = { advancePct: Math.min(80, Math.max(0, Math.round(Number(advancePct) || 0))), taxes: { pdfo: clean(taxes?.pdfo), vz: clean(taxes?.vz), esv: clean(taxes?.esv) } };
+        const percentage = Number(advancePct);
+        if (!Number.isInteger(percentage) || percentage < 0 || percentage > 80) fail('invalid-argument', 'Відсоток авансу — ціле число від 0 до 80');
+        const out = { advancePct: percentage, taxes: { pdfo: clean(taxes?.pdfo), vz: clean(taxes?.vz), esv: clean(taxes?.esv) } };
         for (const [k, t] of Object.entries(out.taxes)) if (t.iban && !core.validIban(t.iban)) fail('invalid-argument', `${k.toUpperCase()}: IBAN має вигляд UA та 27 цифр`);
         await settingsRef.set({ ...out, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         await audit(actor, role, 'payroll.settings', 'payroll_settings/main', `Зарплата: аванс ${out.advancePct} %, рахунки податків`, out);
@@ -112,20 +119,37 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (!validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         await lock?.assertOpen(period, 'Відомість зарплати');
         const ref = db.doc(`payroll_runs/${period}`);
-        const prev = (await ref.get()).data() || null;
+        const prevSnap = await ref.get();
+        const prev = prevSnap.data() || null;
         if (prev?.stages?.final) fail('failed-precondition', 'Остаточний розрахунок уже відправлено в банк — відомість не змінюється');
+        if (prev?.stages?.advance?.complete === false) fail('failed-precondition', 'Спершу завершіть відправку авансу: частина платежів ще не створена');
+        const people = await loadPeople();
         const clean = {};
         for (const [id, v] of Object.entries(inputs || {})) {
+            const person = people.find(p => p.id === id);
+            if (!person) fail('invalid-argument', 'У табелі невідома людина');
+            for (const key of ['workedDays', 'bonusKop', 'actKop']) {
+                if (v?.[key] === undefined || v[key] === '') continue;
+                const value = Number(v[key]);
+                const max = key === 'workedDays' ? core.employmentDays(person, period) : 100000000000;
+                if (!Number.isSafeInteger(value) || value < 0 || value > max) fail('invalid-argument', key === 'workedDays' ? 'Табель: кількість днів більша за норму трудових відносин або некоректна' : 'У табелі некоректна сума');
+            }
             clean[String(id).replace(/[^\w-]/g, '')] = {
                 ...(v?.workedDays !== undefined && v.workedDays !== '' ? { workedDays: Math.max(0, Math.min(31, Math.round(Number(v.workedDays) || 0))) } : {}),
                 ...(v?.bonusKop ? { bonusKop: Math.max(0, Math.round(Number(v.bonusKop))) } : {}),
                 ...(v?.actKop ? { actKop: Math.max(0, Math.round(Number(v.actKop))) } : {})
             };
         }
-        const people = await loadPeople();
         const run = compute(people, { ...prev, inputs: clean }, period, await loadSettings());
-        await ref.set({ period, status: 'draft', inputs: clean, run: JSON.parse(JSON.stringify(run)), savedBy: actor, savedAt: FieldValue.serverTimestamp(),
-            approvedBy: null, approvedAt: null }, { merge: true });
+        await db.runTransaction(async t => {
+            const fresh = await t.get(ref);
+            await lock?.assertOpen(period, 'Відомість зарплати', t);
+            if (fresh.exists !== prevSnap.exists || (fresh.exists && !fresh.updateTime.isEqual(prevSnap.updateTime))) fail('aborted', 'Відомість змінилась. Оновіть сторінку.');
+            if (fresh.data()?.stages?.final || fresh.data()?.stages?.advance?.complete === false || fresh.data()?.sending) fail('aborted', 'Почалась виплата відомості. Оновіть сторінку.');
+            if (JSON.stringify(fresh.data()?.stages || {}) !== JSON.stringify(prev?.stages || {})) fail('aborted', 'Дані виплат змінилися. Оновіть сторінку.');
+            t.set(ref, { period, status: 'draft', inputs: clean, run: JSON.parse(JSON.stringify(run)), savedBy: actor, savedAt: FieldValue.serverTimestamp(),
+                approvedBy: null, approvedAt: null }, { merge: true });
+        });
         await audit(actor, role, 'payroll.save', `payroll_runs/${period}`, `Відомість зарплати за ${core.monthName(period)}: нараховано ${fromKop(run.totals.grossKop)} грн, ${run.rows.length} особ.`,
             { totals: run.totals });
         return { ok: true, totals: run.totals };
@@ -133,14 +157,20 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
 
     async function approve(actor, role, { period }) {
         if (role !== 'chair') fail('permission-denied', 'Відомість зарплати затверджує голова');
+        if (!validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         await lock?.assertOpen(period, 'Відомість зарплати');
         const ref = db.doc(`payroll_runs/${period}`);
         const snap = await ref.get();
         if (!snap.exists) fail('not-found', 'Спершу збережіть відомість');
         if (snap.data().status === 'approved') fail('failed-precondition', 'Відомість уже затверджено');
-        // Затверджуємо саме те, що зараз у довіднику й табелі: перераховуємо.
-        const run = compute(await loadPeople(), snap.data(), period, await loadSettings());
-        await ref.update({ status: 'approved', run: JSON.parse(JSON.stringify(run)), approvedBy: actor, approvedAt: FieldValue.serverTimestamp() });
+        // Затверджується збережений розрахунок, який бачить голова.
+        const run = snap.data().run || compute(await loadPeople(), snap.data(), period, await loadSettings());
+        await db.runTransaction(async t => {
+            const fresh = await t.get(ref);
+            await lock?.assertOpen(period, 'Відомість зарплати', t);
+            if (!fresh.updateTime.isEqual(snap.updateTime)) fail('aborted', 'Відомість змінилась. Перегляньте її знову.');
+            t.update(ref, { status: 'approved', run: JSON.parse(JSON.stringify(run)), approvedBy: actor, approvedAt: FieldValue.serverTimestamp() });
+        });
         await audit(actor, role, 'payroll.approve', `payroll_runs/${period}`, `Відомість зарплати за ${core.monthName(period)} затверджено: ${fromKop(run.totals.grossKop)} грн`, { totals: run.totals });
         return { ok: true };
     }
@@ -151,22 +181,30 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
      * (ключ пропозиції).
      */
     async function pay(actor, role, { period, stage }) {
+        if (!validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         if (!['advance', 'final'].includes(stage)) fail('invalid-argument', 'Невідомий етап');
         await lock?.assertOpen(period, 'Виплата зарплати');
         const ref = db.doc(`payroll_runs/${period}`);
         const snap = await ref.get();
         if (!snap.exists || snap.data().status !== 'approved') fail('failed-precondition', 'Спершу голова має затвердити відомість');
         const stored = snap.data();
-        if (stored.stages?.[stage]) fail('failed-precondition', stage === 'advance' ? 'Аванс уже відправлено' : 'Зарплату вже відправлено');
+        if (stored.stages?.[stage] && stored.stages[stage].complete !== false) fail('failed-precondition', stage === 'advance' ? 'Аванс уже відправлено' : 'Зарплату вже відправлено');
+        if (stage === 'final' && stored.stages?.advance?.complete === false) fail('failed-precondition', 'Спершу завершіть відправку авансу');
         if (stage === 'advance' && stored.stages?.final) fail('failed-precondition', 'Зарплату за місяць уже виплачено повністю');
         const people = await loadPeople();
         const settings = await loadSettings();
-        const run = compute(people, stored, period, settings);
+        const run = JSON.parse(JSON.stringify(stored.run || compute(people, stored, period, settings)));
+        for (const r of run.rows) {
+            r.advance.esvKop ||= 0;
+            r.final.esvKop ??= r.esvKop - r.advance.esvKop;
+        }
+        const incomplete = run.rows.filter(r => r.netKop > 0 && r.problems?.length);
+        if (incomplete.length) fail('failed-precondition', incomplete.map(r => `${r.name}: ${r.problems.join('; ')}`).join('; '));
         // Аванс не платили — остаточний розрахунок платить усе (інакше половина «зависла б»).
         if (stage === 'final' && !stored.stages?.advance) {
             for (const r of run.rows) {
-                r.final = { grossKop: r.grossKop, pdfoKop: r.pdfoKop, vzKop: r.vzKop, netKop: r.netKop };
-                r.advance = { grossKop: 0, pdfoKop: 0, vzKop: 0, netKop: 0 };
+                r.final = { grossKop: r.grossKop, pdfoKop: r.pdfoKop, vzKop: r.vzKop, netKop: r.netKop, esvKop: r.esvKop };
+                r.advance = { grossKop: 0, pdfoKop: 0, vzKop: 0, netKop: 0, esvKop: 0 };
             }
         }
         const code = String((await db.doc('osbb_settings/finance').get()).data()?.edrpou || '');
@@ -175,28 +213,43 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const accounts = Object.entries((await db.doc('bank/settings').get()).data()?.accounts || {});
         const account = (accounts.find(([, a]) => (a.purpose || 'current') === 'current') || [])[0] || '';
         if (!account) fail('failed-precondition', 'Підключіть банк: немає поточного рахунку ОСББ, з якого платити');
-        const list = core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
+        const list = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
         if (!list.length) fail('failed-precondition', 'Немає що виплачувати');
         const problems = core.paymentProblems(list);
         if (problems.length) fail('failed-precondition', problems.join('; '));
-        const created = [];
+        const attempt = randomUUID();
+        await db.runTransaction(async t => {
+            const fresh = await t.get(ref);
+            await lock?.assertOpen(period, 'Виплата зарплати', t);
+            if (!fresh.updateTime.isEqual(snap.updateTime)) fail('aborted', 'Відомість змінилась. Оновіть сторінку.');
+            if (fresh.data().sending && Date.now() - Date.parse(fresh.data().sending.at) < 600000) fail('aborted', 'Платежі вже відправляються. Зачекайте завершення.');
+            t.update(ref, { sending: { attempt, at: new Date().toISOString() },
+                [`stages.${stage}`]: { ...(stored.stages?.[stage] || {}), complete: false, plan: list, account: stored.stages?.[stage]?.account || account },
+                ...(stage === 'advance' ? { paidAdvance: Object.fromEntries(run.rows.map(r => [r.personId, r.advance])) } : {}) });
+        });
+        const created = [...(stored.stages?.[stage]?.payments || [])];
+        const completed = { ...(stored.stages?.[stage]?.completed || {}) };
         const errors = [];
         for (const p of list) {
+            if (completed[p.key]) continue;
             try {
                 const r = await payments.actions.create(actor, role, { kind: p.kind, recipient: p.recipient, amountKop: p.amountKop, purpose: p.purpose,
-                    account, proposalKey: `payroll:${period}:${p.key}`, payroll: { period, stage, key: p.key.split(':')[1] } });
-                created.push(r.id);
+                    account: stored.stages?.[stage]?.account || account, proposalKey: `payroll:${period}:${p.key}`, reuseExisting: true, payroll: { period, stage, key: p.key.split(':')[1] } });
+                if (!created.includes(r.id)) created.push(r.id);
+                completed[p.key] = r.id;
+                await ref.update({ [`stages.${stage}.payments`]: created, [`stages.${stage}.completed`]: completed });
             } catch (e) {
                 errors.push(`${p.recipient.name || p.key}: ${e.message}`);
-                if (!created.length) throw e;          // перший же відмовив (банк не підключено) — нічого не створено
+                break;
             }
         }
-        const update = { [`stages.${stage}`]: { at: new Date().toISOString(), by: actor, payments: created, errors } };
-        if (stage === 'advance') update.paidAdvance = Object.fromEntries(run.rows.map(r => [r.personId, r.advance]));
+        const complete = list.every(p => completed[p.key]);
+        const update = { [`stages.${stage}`]: { at: new Date().toISOString(), by: actor, payments: created, errors, completed, complete, plan: list,
+            account: stored.stages?.[stage]?.account || account }, sending: FieldValue.delete() };
         await ref.update(update);
         await audit(actor, role, 'payroll.pay', `payroll_runs/${period}`, `${stage === 'advance' ? 'Аванс' : 'Зарплата'} за ${core.monthName(period)}: ${created.length} платеж(ів) у Приват24 на підпис`,
             { created: created.length, errors });
-        return { ok: true, created: created.length, errors };
+        return { ok: complete, created: created.length, errors };
     }
 
     const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, async request => {

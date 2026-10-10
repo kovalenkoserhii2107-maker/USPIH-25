@@ -21,6 +21,7 @@
 const START_PERIOD = '2026-10';
 const OPENING_PERIOD = '2026-09';
 const OPENING_ID = 'opening';
+const { toKop } = require('./bank-core');
 
 const DEFAULT_GROUPS = [
     { id: 'res', name: 'Квартири' },
@@ -39,7 +40,7 @@ const BASES = { area: 'за м²', fixed: 'з приміщення', residents: 
 
 /** Кількість проживаючих: ціле від 0 (порожня квартира) до 30; null — не внесено. */
 function parseResidents(value) {
-    if (value === null || value === undefined || value === '') return null;
+    if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') return null;
     const n = Number(value);
     return Number.isInteger(n) && n >= 0 && n <= 30 ? n : null;
 }
@@ -69,7 +70,7 @@ function parseArea(value) {
 /** Тариф «8,50» грн/м² → 85000 (десятитисячних гривні). */
 function parseRate(value) {
     const v = scaled(value, 4);
-    return v && v > 0 && v < 10_000_000 ? v : null;
+    return v && v > 0 && v <= 100_000_000 ? v : null;
 }
 
 /** 85000 → «8,50», 83750 → «8,375». */
@@ -87,8 +88,8 @@ const chargeKop = (areaCenti, rate4) => Math.round(areaCenti * rate4 / 10000);
 /** Сума запису історії в копійках: нові записи мають amountKop, старі — лише amount у гривнях. */
 function entryKop(e) {
     if (Number.isInteger(e?.amountKop)) return e.amountKop;
-    const n = Number(e?.amount);
-    return Number.isFinite(n) ? Math.round(n * 100) : 0;
+    const kop = toKop(e?.amount);
+    return Number.isSafeInteger(kop) ? kop : 0;
 }
 
 // ------------------------------------------------------------
@@ -167,7 +168,7 @@ function tariffFor(tariffs, group, period, component = 'main') {
 function checkTariff(t, groups, tariffs = []) {
     if (!(groups || []).some(g => g.id === t.group)) return 'Невідома група приміщень';
     if (!Number.isInteger(t.rate4) || t.rate4 <= 0) return 'Вкажіть тариф більший за нуль, до 4 знаків після коми';
-    if (t.base !== 'fixed' && t.rate4 > 1_000_000) return 'Тариф понад 100 грн за м² — перевірте число';
+    if ((!t.base || t.base === 'area') && t.rate4 > 1_000_000) return 'Тариф понад 100 грн за м² — перевірте число';
     if (t.base === 'fixed' && t.rate4 > 100_000_000) return 'Понад 10 000 грн з приміщення — перевірте число';
     if (t.base === 'residents' && t.rate4 > 10_000_000) return 'Понад 1 000 грн з проживаючого — перевірте число';
     if (!validPeriod(t.from)) return 'Вкажіть місяць, з якого діє тариф';

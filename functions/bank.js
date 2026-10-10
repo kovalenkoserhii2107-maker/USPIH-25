@@ -55,7 +55,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             db.collectionGroup('owners').get(),
             db.collection('bank_links').get(),
             settingsRef.get(),
-            db.collection('payments').where('status', '==', 'sent').get()
+            db.collection('payments').where('status', 'in', ['sent', 'unknown']).get()
         ]);
         const known = { apts: new Set(), accounts: new Map() };
         apts.forEach(d => {
@@ -79,7 +79,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             startDate: data.startDate || DEFAULT_START,
             settings: data,
             // Платежі, що чекають підпису: їх закриваємо, коли списання зʼявиться у виписці.
-            sentPayments: sent.docs.map(d => ({ id: d.id, ...d.data(), sentAt: d.data().sentAt?.toDate?.() || new Date(0) }))
+            sentPayments: sent.docs.map(d => ({ id: d.id, ...d.data(), sentAt: d.data().sentAt?.toDate?.() || d.data().createdAt?.toDate?.() || new Date(0) }))
         };
     }
 
@@ -93,7 +93,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 at: tx.at, period: tx.period, kind: 'payment', amount: core.fromKop(a.amountKop),
                 // Розділений платіж: призначення чужого платника іншим квартирам не показуємо.
                 note: allocations.length > 1 ? 'Частина спільного платежу' : String(tx.purpose || '').slice(0, 200),
-                source: 'bank', txId,
+                source: 'bank', txId, amountKop: a.amountKop,
                 createdAt: FieldValue.serverTimestamp()
             });
             return { apt: a.apt, amountKop: a.amountKop, ledgerId: ref.id };
@@ -122,88 +122,85 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         const existing = new Set();
         for (let i = 0; i < ids.length; i += 300) {
             const refs = ids.slice(i, i + 300).map(id => db.doc(`bank_tx/${id}`));
-            (await db.getAll(...refs)).forEach(s => { if (s.exists) existing.add(s.id); });
+            (await db.getAll(...refs)).forEach(s => {
+                if (s.exists && !(s.data().reason === 'closed-period' && s.data().status === 'review' && !s.data().resolvedBy)) existing.add(s.id);
+            });
         }
         let added = 0, matched = 0;
         const touched = new Set();
-        let batch = db.batch(), ops = 0;
-        const flush = async () => { if (ops) await batch.commit(); batch = db.batch(); ops = 0; };
         for (let i = 0; i < fresh.length; i++) {
             const id = ids[i];
             if (existing.has(id)) continue;
-            existing.add(id);
-            const t = fresh[i];
-            const at = Timestamp.fromDate(t.at);
-            const decision = core.classify(t, ctx);
-            const paid = t.direction === 'out' ? (ctx.sentPayments || []).find(p => matchesPayment(t, p)) : null;
-            const byDoc = t.direction === 'out' && !paid ? matchExpense(t, ctx.openExpenses || [], ctx.suppliers || []) : null;
-            /** Привʼязати списання до документа витрат тим самим батчем. */
-            const settle = expenseId => {
-                const e = (ctx.openExpenses || []).find(x => x.id === expenseId);
-                if (!e || !expenses) return false;
-                batch.update(db.doc(`expenses/${e.id}`), expenses.linkUpdate(e, id, t.amountKop));
-                e.paidKop = (e.paidKop || 0) + t.amountKop;
-                if (e.paidKop >= e.amountKop) ctx.openExpenses = ctx.openExpenses.filter(x => x.id !== e.id);
-                ops += 1;
-                return true;
-            };
-            const doc = {
-                bankId: String(t.bankId), account: t.account, at, period: core.periodOf(t.at),
-                direction: t.direction, amountKop: t.amountKop, currency: t.currency || 'UAH',
-                purpose: String(t.purpose || '').slice(0, 500),
-                counterparty: {
-                    name: String(t.counterparty?.name || '').slice(0, 200),
-                    account: core.normIban(t.counterparty?.account).slice(0, 40),
-                    code: String(t.counterparty?.code || '').slice(0, 20)
-                },
-                payerKey: core.payerKey(t.counterparty?.name, t.counterparty?.account),
-                suggestions: decision.suggestions || [], allocations: [], source, auto: true,
-                importedAt: FieldValue.serverTimestamp()
-            };
-            const beforeStart = core.periodOf(t.at) < ctx.startDate.slice(0, 7)
-                || t.at < new Date(`${ctx.startDate}T00:00:00+03:00`);
-            if (decision.status === 'matched') {
-                doc.kind = 'payment';
-                doc.method = decision.method;
-                if (beforeStart) {
-                    // До початку обліку — лише показуємо, історію квартири не чіпаємо.
-                    doc.status = 'done';
-                    doc.allocations = [{ apt: decision.apt, amountKop: t.amountKop, ledgerId: null }];
-                } else {
-                    doc.status = 'done';
-                    doc.allocations = writeAllocations(batch, id, doc, [{ apt: decision.apt, amountKop: t.amountKop }]);
-                    touched.add(decision.apt);
-                    ops += 1;
-                    matched += 1;
+            const raw = fresh[i];
+            if ((raw.currency && raw.currency !== 'UAH') || !['in', 'out'].includes(raw.direction)) continue;
+            const ref = db.doc(`bank_tx/${id}`);
+            const saved = await db.runTransaction(async t => {
+                const previous = await t.get(ref);
+                if (previous.exists && !(previous.data().reason === 'closed-period' && previous.data().status === 'review' && !previous.data().resolvedBy)) return null;
+                const at = Timestamp.fromDate(raw.at);
+                const period = core.periodOf(raw.at);
+                const closed = (await t.get(db.doc(`journal_periods/${period}`))).data()?.status === 'closed';
+                if (previous.exists && closed) return null;
+                const decision = core.classify(raw, ctx);
+                const candidates = raw.direction === 'out' ? (ctx.sentPayments || []).filter(p => matchesPayment(raw, p)) : [];
+                let paid = candidates.length === 1 ? candidates[0] : null;
+                if (paid) {
+                    const p = await t.get(db.doc(`payments/${paid.id}`));
+                    if (!p.exists || !matchesPayment(raw, { ...p.data(), sentAt: p.data().sentAt?.toDate?.() || p.data().createdAt?.toDate?.() })) paid = null;
                 }
-            } else if (decision.status === 'internal') {
-                Object.assign(doc, { kind: 'internal', status: 'done' });
-            } else if (paid) {
-                // Наш платіж через API: голова підписав, банк провів.
-                Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(t.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : 'supplier',
-                    status: 'done', paymentId: paid.id });
-                batch.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
-                if (paid.expenseId && settle(paid.expenseId)) doc.expenseId = paid.expenseId;
-                ctx.sentPayments = ctx.sentPayments.filter(p => p.id !== paid.id);
-                ops += 1;
-            } else if (byDoc?.auto && settle(byDoc.auto)) {
-                // Постачальник і сума збіглися з затвердженим документом.
-                Object.assign(doc, { kind: 'expense', category: 'supplier', status: 'done', expenseId: byDoc.auto, method: 'document' });
-            } else if (decision.status === 'expense') {
-                Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category ? 'done' : 'review' });
-            } else if (decision.status === 'other') {
-                Object.assign(doc, { kind: 'income', category: decision.category || null, status: decision.category ? 'done' : 'review',
-                    ...(decision.relatedApt ? { relatedApt: decision.relatedApt } : {}) });
-            } else {
-                Object.assign(doc, { kind: 'payment', status: beforeStart ? 'done' : 'review', reason: decision.reason || null });
+                const byDoc = raw.direction === 'out' && !paid ? matchExpense(raw, ctx.openExpenses || [], ctx.suppliers || []) : null;
+                const expenseId = paid?.expenseId || byDoc?.auto;
+                const expenseSnap = expenseId ? await t.get(db.doc(`expenses/${expenseId}`)) : null;
+                const expense = expenseSnap?.exists ? { id: expenseSnap.id, ...expenseSnap.data() } : null;
+                const canSettle = !closed && expenses && expense?.status === 'approved' && raw.amountKop <= expense.amountKop - (expense.paidKop || 0);
+                const doc = {
+                    bankId: String(raw.bankId), account: raw.account, at, period,
+                    direction: raw.direction, amountKop: raw.amountKop, currency: 'UAH',
+                    purpose: String(raw.purpose || '').slice(0, 500),
+                    counterparty: { name: String(raw.counterparty?.name || '').slice(0, 200), account: core.normIban(raw.counterparty?.account).slice(0, 40), code: String(raw.counterparty?.code || '').slice(0, 20) },
+                    payerKey: core.payerKey(raw.counterparty?.name, raw.counterparty?.account),
+                    suggestions: decision.suggestions || [], allocations: [], source, auto: true, importedAt: FieldValue.serverTimestamp()
+                };
+                const beforeStart = period < ctx.startDate.slice(0, 7) || raw.at < new Date(`${ctx.startDate}T00:00:00+03:00`);
+                if (closed) {
+                    Object.assign(doc, { kind: raw.direction === 'in' ? 'payment' : 'expense', status: 'review', reason: 'closed-period' });
+                    if (decision.apt) doc.suggestions = [{ apt: decision.apt, reason: 'призначення' }];
+                } else if (decision.status === 'matched') {
+                    Object.assign(doc, { kind: 'payment', status: 'done', method: decision.method });
+                    doc.allocations = beforeStart ? [{ apt: decision.apt, amountKop: raw.amountKop, ledgerId: null }]
+                        : writeAllocations(t, id, doc, [{ apt: decision.apt, amountKop: raw.amountKop }]);
+                } else if (decision.status === 'internal') {
+                    Object.assign(doc, { kind: 'internal', status: 'done' });
+                } else if (paid) {
+                    Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(raw.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : 'supplier', status: 'done', paymentId: paid.id });
+                    t.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
+                } else if (byDoc?.auto && canSettle) {
+                    Object.assign(doc, { kind: 'expense', category: 'supplier', status: 'done', method: 'document' });
+                } else if (decision.status === 'expense') {
+                    Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category ? 'done' : 'review' });
+                } else if (decision.status === 'other') {
+                    Object.assign(doc, { kind: 'income', category: decision.category || null, status: decision.category ? 'done' : 'review', ...(decision.relatedApt ? { relatedApt: decision.relatedApt } : {}) });
+                } else {
+                    Object.assign(doc, { kind: 'payment', status: beforeStart ? 'done' : 'review', reason: decision.reason || null });
+                }
+                if (canSettle && doc.kind === 'expense' && doc.status === 'done') {
+                    t.update(expenseSnap.ref, expenses.linkUpdate(expense, id, raw.amountKop));
+                    doc.expenseId = expense.id;
+                }
+                if (byDoc?.suggestions.length && !doc.expenseId) doc.expenseSuggestions = byDoc.suggestions;
+                if (previous.exists) t.set(ref, doc); else t.create(ref, doc);
+                return { ...doc, newDocument: !previous.exists };
+            });
+            if (!saved) continue;
+            existing.add(id);
+            if (saved.newDocument) added++;
+            if (saved.allocations.some(a => a.ledgerId)) { matched++; saved.allocations.forEach(a => touched.add(a.apt)); }
+            if (saved.paymentId) ctx.sentPayments = ctx.sentPayments.filter(p => p.id !== saved.paymentId);
+            if (saved.expenseId) {
+                const e = ctx.openExpenses.find(e => e.id === saved.expenseId);
+                if (e) { e.paidKop = (e.paidKop || 0) + raw.amountKop; if (e.paidKop >= e.amountKop) ctx.openExpenses = ctx.openExpenses.filter(x => x.id !== e.id); }
             }
-            if (byDoc?.suggestions.length && !doc.expenseId) doc.expenseSuggestions = byDoc.suggestions;
-            batch.set(db.doc(`bank_tx/${id}`), doc);
-            ops += 1;
-            added += 1;
-            if (ops >= 400) await flush();
         }
-        await flush();
         await recompute([...touched]);
         return { added, matched };
     }
@@ -274,6 +271,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const snap = await t.get(ref);
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
             const tx = snap.data();
+            await lock?.assertOpen(tx.period, 'Операція банку', t);
             if (tx.direction !== 'in') fail('failed-precondition', 'Рознести можна лише надходження');
             if (tx.status !== 'review') fail('failed-precondition', 'Операцію вже розібрано. Спершу поверніть її в «Розібрати».');
             const list = (allocations || []).map(a => ({ apt: core.cleanApt(a?.apt), amountKop: Number(a?.amountKop) }));
@@ -306,12 +304,15 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 if (other.data().direction !== 'in' || closed.has(other.data().period)) continue;
                 const decision = core.classify(other.data(), { ...ctx, links: new Map([[result.tx.payerKey, result.list[0].apt]]) });
                 if (decision.status !== 'matched') continue;
-                const batch = db.batch();
-                const written = writeAllocations(batch, other.id, other.data(), [{ apt: decision.apt, amountKop: other.data().amountKop }]);
-                batch.update(other.ref, { kind: 'payment', status: 'done', method: decision.method, allocations: written, auto: true });
-                await batch.commit();
-                touched.add(decision.apt);
-                alsoMatched += 1;
+                const assigned = await db.runTransaction(async t => {
+                    const snap = await t.get(other.ref);
+                    if (!snap.exists || snap.data().status !== 'review' || snap.data().direction !== 'in') return false;
+                    await lock?.assertOpen(snap.data().period, 'Операція банку', t);
+                    const written = writeAllocations(t, other.id, snap.data(), [{ apt: decision.apt, amountKop: snap.data().amountKop }]);
+                    t.update(other.ref, { kind: 'payment', status: 'done', method: decision.method, allocations: written, auto: true });
+                    return true;
+                });
+                if (assigned) { touched.add(decision.apt); alsoMatched++; }
             }
         }
         await recompute([...touched]);
@@ -328,6 +329,8 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const snap = await t.get(ref);
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
             const data = snap.data();
+            await lock?.assertOpen(data.period, 'Операція банку', t);
+            if (data.expenseId || data.paymentId) fail('failed-precondition', 'Операцію привʼязано до документа або платежу. Спершу поверніть її у «Вхідні».');
             if ((data.allocations || []).some(a => a.ledgerId)) fail('failed-precondition', 'Спершу поверніть оплату в «Розібрати»');
             if (kind === 'income' && data.direction !== 'in') fail('invalid-argument', 'Це списання, а не надходження');
             if (kind === 'expense' && data.direction !== 'out') fail('invalid-argument', 'Це надходження, а не витрата');
@@ -346,20 +349,27 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const snap = await t.get(ref);
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
             const data = snap.data();
+            await lock?.assertOpen(data.period, 'Операція банку', t);
+            const expenseRef = data.expenseId ? db.doc(`expenses/${data.expenseId}`) : null;
+            const expense = expenseRef ? await t.get(expenseRef) : null;
+            const payment = data.paymentId ? await t.get(db.doc(`payments/${data.paymentId}`)) : null;
+            if (payment?.data()?.payroll) fail('failed-precondition', 'Проведений платіж за відомістю зарплати не можна рознести як іншу витрату');
             if (data.status !== 'done' || data.kind === 'internal') fail('failed-precondition', 'Цю операцію не можна повернути');
+            if (expense?.exists && (expense.data().txIds || []).includes(ref.id)) {
+                t.update(expenseRef, { paidKop: Math.max(0, (expense.data().paidKop || 0) - data.amountKop), txIds: FieldValue.arrayRemove(ref.id), status: 'approved', paidAt: null });
+            }
             for (const a of data.allocations || []) {
                 if (a.ledgerId) t.delete(db.doc(`apartments/${a.apt}/ledger/${a.ledgerId}`));
             }
             t.update(ref, {
                 kind: data.direction === 'in' ? 'payment' : 'expense', status: 'review', allocations: [],
-                category: null, method: null, expenseId: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
+                category: null, method: null, expenseId: null, paymentId: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
             });
             return data;
         });
         await audit(actor, role, 'bank.unassign', `bank_tx/${ref.id}`,
             `${core.fromKop(tx.amountKop)} грн повернуто в «Розібрати»`, { was: tx.allocations || [], category: tx.category || null });
         await recompute((tx.allocations || []).filter(a => a.ledgerId).map(a => a.apt));
-        if (tx.expenseId) await expenses?.release(tx, ref.id);
         return { ok: true };
     }
 

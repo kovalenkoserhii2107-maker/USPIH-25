@@ -3,9 +3,8 @@
 // ПриватБанк, API «Автоклієнт» (acp.privatbank.ua): виписка й залишки.
 //
 // Токен створюється в Приват24 для бізнесу (Інтеграція (Автоклієнт) →
-// додаток типу API). Модуль лише читає: жодного виклику, що створює
-// платіж, тут немає й не буде. Навіть створений через API платіж банк
-// не проводить без підпису КЕП у кабінеті.
+// додаток типу API). Модуль читає виписку й створює чернетки платежів.
+// Банк не проводить їх без підпису КЕП у кабінеті.
 //
 // Опис API v3: https://api.privatbank.ua/ → «Опис API для взаємодії з
 // серверною частиною Автоклієнта». Ключові правила звідти:
@@ -38,6 +37,7 @@ function parseBankDate(dateTime, date, time) {
     const m = source.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
     if (!m) return null;
     const [, dd, mm, yyyy, hh = '0', mi = '0', ss = '0'] = m;
+    if (+hh > 23 || +mi > 59 || +ss > 59 || +mm < 1 || +mm > 12 || +dd < 1 || +dd > new Date(Date.UTC(+yyyy, +mm, 0)).getUTCDate()) return null;
     // Київ: +02:00 взимку, +03:00 влітку. Визначаємо зсув для цієї дати.
     const guess = new Date(Date.UTC(+yyyy, +mm - 1, +dd, +hh, +mi, +ss));
     const kyiv = new Date(guess.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
@@ -77,7 +77,7 @@ function normalizeTransaction(raw) {
 
 function normalizeBalance(raw) {
     const iban = normIban(raw.acc);
-    if (!iban) return null;
+    if (!iban || !Number.isSafeInteger(toKop(raw.balanceOut ?? raw.balanceIn))) return null;
     const balance = raw.balanceOut ?? raw.balanceIn;
     return {
         iban, currency: raw.currency || 'UAH', balanceKop: toKop(balance),
@@ -97,7 +97,7 @@ async function call(token, path, params, retry = true) {
         await new Promise(resolve => setTimeout(resolve, wait * 1000));
         return call(token, path, params, false);
     }
-    if (res.status === 401) throw new Error('Токен недійсний або відкликаний');
+    if (res.status === 401) throw Object.assign(new Error('Токен недійсний або відкликаний'), { bankRejected: true });
     const text = await res.text();
     let body;
     try { body = JSON.parse(text); } catch { throw new Error(`Банк повернув не JSON (HTTP ${res.status})`); }
@@ -117,11 +117,12 @@ async function pages(token, path, params, key) {
         const body = await call(token, path, { ...params, limit: PAGE, followId });
         out.push(...(body[key] || []));
         // exist_next_page буває і булевим, і рядком 'true'.
-        if (String(body.exist_next_page) !== 'true' || !body.next_page_id || seen.has(body.next_page_id)) break;
+        if (String(body.exist_next_page) !== 'true') return out;
+        if (!body.next_page_id || seen.has(body.next_page_id)) throw new Error('Банк повернув неповну виписку: сторінка повторюється або відсутня');
         seen.add(body.next_page_id);
         followId = body.next_page_id;
     }
-    return out;
+    throw new Error('Виписка перевищує ліміт сторінок: синхронізацію не завершено');
 }
 
 /**
@@ -166,14 +167,14 @@ async function post(token, path, body) {
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(30000)
     });
-    if (res.status === 401) throw new Error('Токен недійсний або відкликаний');
+    if (res.status === 401) throw Object.assign(new Error('Токен недійсний або відкликаний'), { bankRejected: true });
     if (res.status === 204) return {};
     const text = await res.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch { throw new Error(`Банк повернув не JSON (HTTP ${res.status})`); }
     if (!res.ok || data.status === 'ERROR') {
         const code = data.serviceCode ? ` (${data.serviceCode})` : '';
-        throw new Error(`${data.message || `HTTP ${res.status}`}${code}`);
+        throw Object.assign(new Error(`${data.message || `HTTP ${res.status}`}${code}`), { bankRejected: res.status < 500 && ![408, 429].includes(res.status) });
     }
     return data;
 }

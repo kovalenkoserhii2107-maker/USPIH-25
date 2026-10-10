@@ -31,13 +31,13 @@ test('перевірка платежу: зрозумілі помилки', () 
 
 test('списання у виписці закриває відправлений платіж', () => {
     const sent = { ...base, status: 'sent', sentAt: new Date('2026-10-10T09:00:00Z'), bankRef: 'PACK1' };
-    const tx = { direction: 'out', amountKop: 425000, counterparty: { account: SUPPLIER }, at: new Date('2026-10-11T08:00:00Z') };
+    const tx = { account: OWN_IBAN, direction: 'out', amountKop: 425000, counterparty: { account: SUPPLIER }, at: new Date('2026-10-11T08:00:00Z') };
     assert.equal(pay.matchesPayment(tx, sent), true);
     assert.equal(pay.matchesPayment({ ...tx, amountKop: 425001 }, sent), false);
     assert.equal(pay.matchesPayment({ ...tx, at: new Date('2026-12-30') }, sent), false);
     assert.equal(pay.matchesPayment({ ...tx, direction: 'in' }, sent), false);
-    // Референс пачки важливіший за суму (банк міг об'єднати).
-    assert.equal(pay.matchesPayment({ ...tx, amountKop: 1, dlr: 'PACK1' }, sent), true);
+    // Пачка не є унікальною операцією: сума й рахунки також мають збігтися.
+    assert.equal(pay.matchesPayment({ ...tx, amountKop: 1, dlr: 'PACK1' }, sent), false);
     assert.equal(pay.matchesPayment(tx, { ...sent, status: 'paid' }), false);
 });
 
