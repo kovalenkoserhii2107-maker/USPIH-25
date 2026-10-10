@@ -393,7 +393,7 @@ Database → Rules → Publish.** Файл містить також усі по
   прізвищ. Річний звіт про виконання кошторису — друком.
 
 Для роботи потрібні опубліковані функції `bankAction`, `syncBank`,
-`paymentAction`, `chargesAction`, `expenseAction`, `budgetAction`, `demoAction`, правила Firestore і
+`paymentAction`, `chargesAction`, `expenseAction`, `budgetAction`, `journalAction`, `demoAction`, правила Firestore і
 Storage (див. нижче), тариф
 Blaze (функції звертаються до банку). Токен Автоклієнта — з правом
 створювати платежі.
@@ -407,6 +407,27 @@ Blaze (функції звертаються до банку). Токен Авт
 npm ci --prefix functions
 firebase deploy --only firestore:rules,firestore:indexes,storage,functions
 ```
+
+**Автоматично (GitHub Actions, `deploy-firebase.yml`).** Після кожної
+успішної перевірки `main` — як і сайт — або вручну: Actions → «Deploy
+Firebase» → «Run workflow». Нічого не видаляє (без `--force`). Потрібен
+секрет `FIREBASE_SERVICE_ACCOUNT`, налаштовується один раз:
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → проєкт
+   `uspih-25` → IAM & Admin → Service Accounts → Create service account,
+   назва `github-deploy`.
+2. Ролі: Firebase Admin, Cloud Functions Admin, Service Account User,
+   Secret Manager Viewer, Artifact Registry Administrator, Cloud Scheduler
+   Admin, API Keys Viewer, Cloud Datastore Index Admin, Firebase Rules Admin.
+   Якщо журнал розгортання скаже «permission denied … roles/X» — додайте цю роль.
+3. Акаунт → Keys → Add key → Create new key → JSON — завантажиться файл.
+4. GitHub → репозиторій → Settings → Secrets and variables → Actions →
+   New repository secret: назва `FIREBASE_SERVICE_ACCOUNT`, значення — увесь
+   вміст файлу. Файл після цього видаліть з компʼютера.
+5. Actions → «Deploy Firebase» → «Run workflow» — перше розгортання.
+
+Ключ дає право розгортати проєкт: нікому не пересилайте; якщо витік —
+видаліть його в Keys і створіть новий.
 
 Завершення зборів і публікація протоколу працюють із панелі правління
 через Firebase Auth і наявні правила Firestore. Оновлення цих дій

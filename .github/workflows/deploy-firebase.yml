@@ -1,0 +1,56 @@
+name: Deploy Firebase
+
+# Серверна частина: Cloud Functions, правила й індекси Firestore, правила
+# Storage. Після кожної успішної перевірки main (як і сайт) або вручну:
+# Actions → Deploy Firebase → Run workflow.
+#
+# Потрібен секрет репозиторію FIREBASE_SERVICE_ACCOUNT — JSON-ключ
+# службового акаунта Google Cloud (як створити — README, «Розгортання»).
+# Без нього крок розгортання пропускається, а не падає.
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Quality checks"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - name: Ключ не додано — пропускаю
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::Секрет FIREBASE_SERVICE_ACCOUNT не додано — серверну частину не розгорнуто. Див. README, розділ «Розгортання»."
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - if: env.HAS_KEY == 'true'
+        run: npm ci
+      - if: env.HAS_KEY == 'true'
+        run: npm ci --prefix functions
+      - uses: google-github-actions/auth@v2
+        if: env.HAS_KEY == 'true'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      # Без --force: нічого не видаляє (ні функцій, ні індексів, створених вручну).
+      - name: Functions, Firestore, Storage
+        if: env.HAS_KEY == 'true'
+        run: npx firebase deploy --project uspih-25 --only firestore:rules,firestore:indexes,storage,functions --non-interactive
