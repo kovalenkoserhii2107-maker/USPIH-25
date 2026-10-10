@@ -402,3 +402,32 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .ex-small { margin-top: 12px; font-size: 13.5px; color: #334155; }
 .ex-small .field-input { flex: 0 0 120px !important; }
 .ex-small .btn-soft { width: auto; }
+
+/* ---------- Кошторис ---------- */
+.bd-top { align-items: center; margin-bottom: 14px; }
+.bd-top .buh-note { flex: 1 1 260px; margin: 0; }
+.bd-table td, .bd-table th { white-space: nowrap; }
+.bd-table td.t-main { white-space: normal; }
+.bd-table tfoot td { border-top: 1px solid #e3e8ef; font-weight: 700; }
+.bd-group td { padding-top: 14px; color: #64748b; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.bd-outside td { background: #fffaf2; }
+.bd-cell { display: flex; align-items: center; gap: 8px; min-width: 140px; }
+.bd-bar { position: relative; flex: 1; height: 6px; overflow: hidden; border-radius: 3px; background: #eef2f6; }
+.bd-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: #0f7a45; }
+.bd-bar.is-over i { background: #b42318; }
+.bd-cell small { width: 38px; color: #475569; font-size: 12px; text-align: right; }
+.bd-edit .field-input { min-height: 36px; }
+.bd-edit .bd-plan, .bd-edit .bd-income { max-width: 160px; text-align: right; }
+.bd-editor { border-color: #cfe3d7; }
+#viewBudget .btn-primary, #viewBudget .btn-soft { width: auto; }
+.bd-report h2 { margin: 12px 0 6px; font-size: 17px; }
+.bd-report h3 { margin: 14px 0 4px; font-size: 14px; }
+.bd-report th, .bd-report td { padding: 4px 6px; border-bottom: 1px dotted #cbd5e1; text-align: right; }
+.bd-report th:first-child, .bd-report td:first-child { text-align: left; }
+.bd-report tfoot td { font-weight: 700; }
+.bd-signs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin-top: 28px; }
+@media (max-width: 900px) {
+    .bd-table th:nth-child(3), .bd-table td:nth-child(3) { display: none; }
+    .bd-cell { min-width: 90px; }
+    .bd-edit .bd-title { display: none; }
+}

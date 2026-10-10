@@ -259,6 +259,12 @@ export async function saveExpenses(btn) {
 
     setBusy(btn, true, 'Збереження…');
     try {
+        // Звіт, який формує бухгалтерія (кабінет бухгалтера → «Кошторис»), руками не перезаписуємо.
+        const current = await getDoc(doc(db, 'finance', 'current')).catch(() => null);
+        if (current?.exists() && current.data().source === 'ledger') {
+            toast('Звіт тепер формує бухгалтерія: кабінет бухгалтера → «Кошторис» → «Для мешканців»', 'error');
+            return;
+        }
         await setDoc(doc(db, 'finance', 'current'), {
             period, items,
             // Порожнє поле — не нуль: у нуля й «не вказано» різний сенс

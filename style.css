@@ -3988,6 +3988,16 @@ select.field-input {
 .hf-items small { font-size: 12.5px; color: var(--ink-2); }
 .hf-footnote { margin: 4px 4px 18px; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
 .hf-footnote.is-inside { margin: 12px 0 0; }
+.hf-bar.is-over i { background: var(--red, #ff3b30); }
+.hf-idle { margin: 6px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.hf-sub { margin: 14px 0 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.hf-tag { padding: 1px 6px; border-radius: 6px; background: rgba(255, 149, 0, .14); color: #b25000; font-size: 11px; font-weight: 600; }
+.hf-docs { margin: 8px 0 0; padding: 0; list-style: none; }
+.hf-docs li { padding: 11px 0; }
+.hf-docs li + li { border-top: 0.5px solid var(--line); }
+.hf-docs small { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-2); }
+.hf-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.hf-files a { padding: 3px 8px; border-radius: 8px; background: var(--surface-3); color: var(--blue); font-size: 12.5px; font-weight: 600; text-decoration: none; }
 .hf-flip { transform: rotate(180deg); }
 .hf-stack { display: flex; gap: 2px; height: 10px; margin: 4px 0 6px; overflow: hidden; border-radius: 5px; }
 .hf-stack i { display: block; min-width: 4px; background: var(--am-color); }

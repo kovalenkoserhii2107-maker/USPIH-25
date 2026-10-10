@@ -210,3 +210,18 @@ export async function uploadExpenseFiles(files) {
     }
     return out;
 }
+
+// ------------------------------------------------------------
+// КОШТОРИС
+// ------------------------------------------------------------
+/** Кошторис року, план/факт, борг будинку й стан звіту для мешканців — із сервера. */
+export const loadBudget = year => once(`budget:${year}`, () => callBackend('budgetAction', { action: 'context', year }));
+
+/** Дія з кошторисом — на сервері, з журналом. */
+export async function budgetAct(payload, timeoutMs = 60000) {
+    try {
+        return await callBackend('budgetAction', payload, timeoutMs);
+    } finally {
+        invalidate();
+    }
+}

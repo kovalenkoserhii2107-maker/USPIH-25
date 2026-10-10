@@ -245,3 +245,18 @@ test('витрати й договори: читають голова й бух�
         await assertFails(getDocs(collection(as(login).firestore(), 'suppliers')));
     }
 });
+
+test('кошторис читають голова й бухгалтер, пише лише сервер; звіт для мешканців читають усі', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'budgets/2027'), { year: '2027', status: 'draft', lines: [] });
+        await setDoc(doc(context.firestore(), 'finance/current'), { source: 'ledger', items: [] });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'budgets/2027')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'budgets/2027'), { status: 'approved' }));
+    }
+    for (const login of ['11', '45']) await assertFails(getDoc(doc(as(login).firestore(), 'budgets/2027')));
+    await assertSucceeds(getDoc(doc(as('45').firestore(), 'finance/current')));
+    await assertFails(setDoc(doc(as('45').firestore(), 'finance/current'), { items: [] }));
+});

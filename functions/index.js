@@ -407,8 +407,12 @@ exports.chargesAction = charges.chargesAction;
 const payments = require('./payments')({ db, FieldValue, requireAdmin, staffRole, notify });
 exports.paymentAction = payments.paymentAction;
 
+// Кошторис і фінанси для мешканців (див. budget.js).
+const budget = require('./budget')({ db, FieldValue, requireAdmin, staffRole });
+exports.budgetAction = budget.budgetAction;
+
 // Витрати й договори: документи, затвердження, оплата (див. expenses.js).
-const expenses = require('./expenses')({ db, FieldValue, requireAdmin, staffRole, notify, payments });
+const expenses = require('./expenses')({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget });
 exports.expenseAction = expenses.expenseAction;
 
 // Банк — після витрат: виписка закриває документи, сплачені постачальникам.
