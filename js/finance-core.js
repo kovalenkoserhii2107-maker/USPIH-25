@@ -14,7 +14,7 @@ function money(value) {
 /** Звіт правління: залишок, надходження, витрати й статті від найбільшої. */
 export function financeSummary(report) {
     const items = (report.items || [])
-        .map(item => ({ label: String(item.label || '').trim(), amount: money(item.amount) ?? 0 }))
+        .map(item => ({ label: String(item.label || '').trim(), amount: money(item.amount) ?? 0, ...(item.item ? { item: String(item.item) } : {}) }))
         .filter(item => item.label && item.amount > 0)
         .sort((a, b) => b.amount - a.amount);
     const spent = round2(items.reduce((sum, item) => sum + item.amount, 0));

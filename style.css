@@ -3998,6 +3998,31 @@ select.field-input {
 .hf-docs small { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-2); }
 .hf-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
 .hf-files a { padding: 3px 8px; border-radius: 8px; background: var(--surface-3); color: var(--blue); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+/* Розшифровка статті витрат */
+.hf-open { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hf-open:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; border-radius: 8px; }
+.hf-line { display: block; flex: 1; min-width: 0; }
+.hf-line > .hf-item-head { display: flex; }
+.hf-line > .hf-bar, .hf-line > small { display: block; }
+.hf-chev { flex-shrink: 0; color: var(--ink-3, #8e8e93); }
+.hf-back { display: inline-flex; align-items: center; gap: 4px; margin: -4px 0 10px -6px; padding: 6px 8px; border: 0; border-radius: 10px; background: none; color: var(--blue-ink, var(--blue)); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.hf-back .hf-chev { transform: rotate(180deg); color: currentColor; }
+.fo-chips { display: flex; gap: 6px; margin: 14px -4px 0; padding: 0 4px 2px; overflow-x: auto; scrollbar-width: none; }
+.fo-chips::-webkit-scrollbar { display: none; }
+.fo-chip { flex-shrink: 0; padding: 7px 12px; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.fo-chip.is-active { background: var(--ink); color: var(--surface); }
+.fo-list { margin: 0; padding: 0; list-style: none; }
+.fo-op { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; }
+.fo-op + .fo-op { border-top: 0.5px solid var(--line); }
+.fo-icon { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: rgba(229, 57, 53, 0.12); color: #D32F2F; }
+.fo-op.is-person .fo-icon { background: rgba(0, 122, 255, 0.12); color: var(--blue); }
+.fo-op.is-fee .fo-icon { background: var(--surface-3); color: var(--ink-2); }
+.fo-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.fo-main time { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.fo-who { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.fo-amount { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fo-amount small { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.fo-note { font-size: 12.5px; line-height: 1.35; color: var(--ink-2); overflow-wrap: anywhere; }
 .hf-flip { transform: rotate(180deg); }
 .hf-stack { display: flex; gap: 2px; height: 10px; margin: 4px 0 6px; overflow: hidden; border-radius: 5px; }
 .hf-stack i { display: block; min-width: 4px; background: var(--am-color); }

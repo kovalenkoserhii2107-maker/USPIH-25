@@ -21,7 +21,7 @@ export const INCOME_CATEGORIES = {
     rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення коштів', other: 'Інше надходження'
 };
 export const EXPENSE_CATEGORIES = {
-    bank_fee: 'Комісія банку', salary: 'Зарплата', taxes: 'Податки й внески', other: 'Витрата'
+    bank_fee: 'Комісія банку', salary: 'Зарплата', taxes: 'Податки (ПДФО, військовий збір)', esv: 'ЄСВ', other: 'Витрата'
 };
 export const METHOD = {
     account: 'за особовим рахунком', marked: 'за номером квартири', link: 'за запамʼятованим платником', manual: 'вручну'

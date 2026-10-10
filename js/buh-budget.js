@@ -9,6 +9,7 @@
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { loadBudget, budgetAct } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
+import { opsListHtml, opsFilterHtml, opsInMonth, opsTotalKop } from './finance-ops.js';
 
 let year = String(new Date().getFullYear());
 let ctx = null;
@@ -44,7 +45,9 @@ function executionHtml() {
             const g = groupTitle(l.item);
             const head = s.id === 'main' && g !== lastGroup ? `<tr class="bd-group"><td colspan="5">${escapeHtml(g)}</td></tr>` : '';
             lastGroup = g;
-            return `${head}<tr${l.outside ? ' class="bd-outside"' : ''}><td class="t-main"><b>${escapeHtml(l.title)}</b>${l.outside ? '<small>поза кошторисом</small>' : ''}</td>
+            const n = ctx.ops?.[l.item]?.length || 0;
+            const title = n ? `<button type="button" class="bd-open" data-act="ops" data-item="${escapeHtml(l.item)}" aria-expanded="false"><b>${escapeHtml(l.title)}</b><small>операцій: ${n}</small></button>` : `<b>${escapeHtml(l.title)}</b>`;
+            return `${head}<tr${l.outside ? ' class="bd-outside"' : ''}><td class="t-main">${title}${l.outside ? '<small>поза кошторисом</small>' : ''}</td>
                 <td class="t-sum">${fmtKop(l.planKop)}</td><td class="t-sum t-muted">${fmtKop(l.toDateKop)}</td>
                 <td class="t-sum${l.factKop > l.toDateKop && l.toDateKop ? ' is-out' : ''}">${fmtKop(l.factKop)}</td><td class="bd-cell">${bar(l.factKop, l.toDateKop)}</td></tr>`;
         }).join('');
@@ -232,12 +235,32 @@ async function onAction(btn) {
     finally { if (btn.isConnected) setBusy(btn, false); }
 }
 
+/** Розшифровка статті під рядком таблиці: хто й коли отримав гроші, з призначенням платежу. */
+function opsRowHtml(item, month = '') {
+    const list = ctx.ops?.[item] || [];
+    const shown = opsInMonth(list, month);
+    return `<tr class="bd-ops-row" data-ops-for="${escapeHtml(item)}"><td colspan="5">
+        <div class="bd-ops"><p class="buh-note">Разом ${fmtKop(opsTotalKop(shown))} грн · операцій: ${shown.length}. Мешканці бачать те саме без імен фізичних осіб і без призначення платежу.</p>
+        ${opsFilterHtml(list, month)}${opsListHtml(shown, { withPurpose: true })}</div></td></tr>`;
+}
+
+function toggleOps(btn) {
+    const tr = btn.closest('tr');
+    const open = tr.nextElementSibling?.classList.contains('bd-ops-row');
+    if (open) tr.nextElementSibling.remove();
+    else tr.insertAdjacentHTML('afterend', opsRowHtml(btn.dataset.item));
+    btn.setAttribute('aria-expanded', String(!open));
+}
+
 function readEditorSafe() { try { readEditor(); } catch { /* незрозуміле число лишається як є */ } }
 
 export function initBudgetView() {
     const host = document.getElementById('viewBudget');
     host.addEventListener('click', e => {
+        const chip = e.target.closest('.bd-ops-row [data-fo-month]');
+        if (chip) { const row = chip.closest('.bd-ops-row'); row.outerHTML = opsRowHtml(row.dataset.opsFor, chip.dataset.foMonth); return; }
         const btn = e.target.closest('[data-act]');
+        if (btn?.dataset.act === 'ops') { toggleOps(btn); return; }
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('change', e => {

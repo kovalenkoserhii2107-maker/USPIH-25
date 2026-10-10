@@ -10,6 +10,7 @@ import { METER_RESOURCES } from './meter-core.js';
 import { financeSummary, houseResourceMonths, costChange } from './finance-core.js';
 import { escapeHtml, formatMoney, formatDateTime } from './ui.js';
 import { ICONS, monthTitle, monthGenitive, chartHtml } from './resident-ui.js';
+import { opsListHtml, opsFilterHtml, opsInMonth, opsTotalKop, opsMonthTitle } from './finance-ops.js';
 
 const el = id => document.getElementById(id);
 const num = (value, digits = 3) => Number(value).toLocaleString('uk-UA', { maximumFractionDigits: digits });
@@ -20,8 +21,17 @@ const ITEMS_SHOWN = 6;
 // undefined — ще вантажиться, null — правління нічого не опублікувало.
 let report, reportFailed = false, months, monthsFailed = false;
 let tab = 'money', period = null, allItems = false, allExpenses = false, loadRequest = 0;
+// Відкрита стаття витрат (розшифровка): { item, title } і вибраний місяць.
+let openItem = null, opsMonth = '';
 const EXPENSES_SHOWN = 8;
 const kop = value => formatMoney((Number(value) || 0) / 100);
+const CHEVRON = '<svg class="hf-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>';
+
+/** Рядок статті: якщо є операції — відкривається розшифровка. */
+const opensOps = item => Boolean(item && report?.ops?.[item]?.length);
+const itemLi = (item, title, inner) => (opensOps(item)
+    ? `<li><button type="button" class="hf-open" data-hf-item="${escapeHtml(item)}" data-hf-title="${escapeHtml(title)}">${inner}${CHEVRON}</button></li>`
+    : `<li>${inner}</li>`);
 
 /**
  * Виконання кошторису: план на рік, «план на сьогодні» й факт за кожною
@@ -32,9 +42,9 @@ function budgetHtml(b) {
     const share = (fact, plan) => (plan > 0 ? Math.round(fact / plan * 100) : null);
     const line = l => {
         const p = share(l.factKop, l.toDateKop);
-        return `<li><div class="hf-item-head"><span>${escapeHtml(l.title)}${l.outside ? ' <small class="hf-tag">поза кошторисом</small>' : ''}</span><b>${kop(l.factKop)} грн</b></div>
-            ${l.planKop ? `<div class="hf-bar${p > 100 ? ' is-over' : ''}"><i style="width:${Math.min(100, p || 0)}%"></i></div>
-            <small>${p === null ? '' : `${p}% від плану на сьогодні · `}план на рік ${kop(l.planKop)} грн</small>` : ''}</li>`;
+        return itemLi(l.item, l.title, `<span class="hf-line"><span class="hf-item-head"><span>${escapeHtml(l.title)}${l.outside ? ' <small class="hf-tag">поза кошторисом</small>' : ''}</span><b>${kop(l.factKop)} грн</b></span>
+            ${l.planKop ? `<span class="hf-bar${p > 100 ? ' is-over' : ''}"><i style="width:${Math.min(100, p || 0)}%"></i></span>
+            <small>${p === null ? '' : `${p}% від плану на сьогодні · `}план на рік ${kop(l.planKop)} грн</small>` : ''}</span>`);
     };
     return `<section class="card">
         <p class="am-heat-kicker">Кошторис ${escapeHtml(b.year)} року${b.carried ? ' (діє попередній)' : ''}</p>
@@ -70,6 +80,25 @@ function expensesHtml(list) {
 const skeleton = () => '<section class="card am-skeleton" aria-busy="true" aria-label="Завантаження"><i></i><i></i><i></i></section>';
 const notice = text => `<section class="card"><p class="am-empty">${text}</p></section>`;
 
+/**
+ * Розшифровка статті: хто й коли отримав гроші, з фільтром за місяцем.
+ * Фізособи (працівник, виконавець за ЦПД) — без імені: так публікує сервер.
+ */
+function itemHtml() {
+    const list = report.ops?.[openItem.item] || [];
+    const shown = opsInMonth(list, opsMonth);
+    return `<section class="card hf-op-head">
+        <button type="button" class="hf-back" data-hf-back>${CHEVRON}<span>Усі статті</span></button>
+        <p class="am-heat-kicker">Стаття витрат</p>
+        <h2 class="hf-period">${escapeHtml(openItem.title)}</h2>
+        <p class="am-heat-amount">${kop(opsTotalKop(shown))}<span> грн</span></p>
+        <p class="hf-asof">${opsMonth ? escapeHtml(opsMonthTitle(opsMonth)) : escapeHtml(report.period || '')} · операцій: ${shown.length}</p>
+        ${opsFilterHtml(list, opsMonth)}
+    </section>
+    <section class="card">${opsListHtml(shown)}</section>
+    <p class="hf-footnote">Документи (рахунки, акти) — за датою документа, списання без документа — за датою банку. Фізичних осіб не називаємо.</p>`;
+}
+
 // ------------------------------------------------------------
 // ФІНАНСИ
 // ------------------------------------------------------------
@@ -77,6 +106,7 @@ function moneyHtml() {
     if (reportFailed) return notice('Не вдалося завантажити звіт. Потягніть екран донизу, щоб оновити.');
     if (report === undefined) return skeleton();
     if (report === null) return notice('Правління ще не опублікувало фінансовий звіт.');
+    if (openItem && opensOps(openItem.item)) return itemHtml();
     const summary = financeSummary(report);
     const updated = report.updatedAt ? formatDateTime(report.updatedAt) : '';
     const parts = [];
@@ -110,10 +140,10 @@ function moneyHtml() {
         const max = summary.items[0].amount;
         parts.push(`<section class="card">
             <h3 class="am-card-title">Куди пішли гроші</h3>
-            <ul class="hf-items">${shown.map(item => `<li>
-                <div class="hf-item-head"><span>${escapeHtml(item.label)}</span><b>${formatMoney(item.amount)} грн</b></div>
-                <div class="hf-bar"><i style="width:${item.amount / max * 100}%"></i></div>
-                <small>${num(item.share, 1)}% усіх витрат</small></li>`).join('')}</ul>
+            <ul class="hf-items">${shown.map(item => itemLi(item.item, item.label, `<span class="hf-line">
+                <span class="hf-item-head"><span>${escapeHtml(item.label)}</span><b>${formatMoney(item.amount)} грн</b></span>
+                <span class="hf-bar"><i style="width:${item.amount / max * 100}%"></i></span>
+                <small>${num(item.share, 1)}% усіх витрат</small></span>`)).join('')}</ul>
             ${summary.items.length > shown.length ? `<button type="button" class="btn-ghost am-more-btn" data-hf-all>Показати всі статті (${summary.items.length})</button>` : ''}
         </section>`);
     }
@@ -205,6 +235,15 @@ function init() {
     panel.addEventListener('click', event => {
         if (event.target.closest('[data-hf-all]')) { allItems = true; render(); return; }
         if (event.target.closest('[data-hf-allexp]')) { allExpenses = true; render(); return; }
+        const open = event.target.closest('[data-hf-item]');
+        if (open) { openItem = { item: open.dataset.hfItem, title: open.dataset.hfTitle }; opsMonth = ''; render(); window.scrollTo({ top: 0 }); return; }
+        if (event.target.closest('[data-hf-back]')) {
+            const back = openItem?.item; openItem = null; render();
+            panel.querySelector(`[data-hf-item="${CSS.escape(back || '')}"]`)?.focus();
+            return;
+        }
+        const chip = event.target.closest('[data-fo-month]');
+        if (chip) { opsMonth = chip.dataset.foMonth; render(); return; }
         const step = event.target.closest('[data-hf-step]');
         if (step && months?.length) {
             const index = months.findIndex(month => month.period === period) + Number(step.dataset.hfStep);

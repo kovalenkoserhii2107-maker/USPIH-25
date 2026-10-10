@@ -31,7 +31,7 @@ const GROUPS = {
     upkeep: { title: 'Утримання й ремонт спільного майна', items: ['lift', 'cleaning', 'waste', 'systems', 'repair'] },
     utilities: { title: 'Комунальні та інші послуги', items: ['power', 'water'] },
     funds: { title: 'Витрати фондів', items: ['capital', 'reserve'] },
-    other: { title: 'Інші витрати', items: ['services', 'bank', 'office', 'salary', 'other'] }
+    other: { title: 'Інші витрати', items: ['services', 'bank', 'office', 'salary', 'esv', 'other'] }
 };
 const groupOf = item => Object.keys(GROUPS).find(g => GROUPS[g].items.includes(item)) || 'other';
 
@@ -41,7 +41,7 @@ const INCOME_SOURCES = {
 };
 
 /** Списання без документа → стаття (категорії банку, bank.js). */
-const BANK_ITEM = { bank_fee: 'bank', salary: 'salary', taxes: 'salary', supplier: 'other', other: 'other' };
+const BANK_ITEM = { bank_fee: 'bank', salary: 'salary', taxes: 'salary', esv: 'esv', supplier: 'other', other: 'other' };
 
 const MAX_KOP = 100_000_000_000;
 
@@ -110,6 +110,64 @@ function factByItem({ expenses = [], bankOut = [], year }) {
         add(BANK_ITEM[t.category] || 'other', t.amountKop);
     }
     return fact;
+}
+
+// ------------------------------------------------------------
+// РОЗШИФРОВКА СТАТТІ
+// ------------------------------------------------------------
+const LEGAL = /(^|[\s«"'(])(тов|тзов|пп|прат|пат|ат|кп|дп|комунальн[а-яіїєґ]*|державн[а-яіїєґ]*|гу|дпс|казначейств[а-яіїєґ]*|управлінн[а-яіїєґ]*|банк|осбб|фонд)([\s»"'.,)]|$)/i;
+const FOP = /(^|[\s«"'(])(фоп|спд|фізична особа[-\s]підприємець)([\s»"'.,)]|$)/i;
+
+/**
+ * Хто отримав гроші: юрособа, ФОП чи фізособа без ФОП. За кодом
+ * (8 цифр — ЄДРПОУ) і назвою; для документа — за видом постачальника.
+ */
+function payeeKind(name, code, supplierKind) {
+    if (['company', 'fop', 'person'].includes(supplierKind)) return supplierKind;
+    if (FOP.test(name || '')) return 'fop';
+    if (/^\d{8}$/.test(String(code || '')) || LEGAL.test(name || '')) return 'company';
+    return 'person';
+}
+
+const kyivDate = v => {
+    const d = v?.toDate ? v.toDate() : v instanceof Date ? v : v ? new Date(v) : null;
+    return d && !Number.isNaN(d.getTime()) ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d) : '';
+};
+
+/**
+ * Операції за статтями — ті самі, що дають факт (factByItem), тож сума
+ * списку дорівнює факту статті. { item: [{ date, who, kind, amountKop, … }] },
+ * новіші вгорі.
+ *
+ * publicView — для мешканців: фізособу без ФОП не називаємо (працівник,
+ * виконавець за договором ЦПД) і не показуємо призначення платежу, лише
+ * опис документа. Юрособи й ФОП — назвою (п. 5.1.1 статуту).
+ */
+function operationsByItem({ expenses = [], bankOut = [], year, suppliers = new Map(), docTypes = {}, publicView = false, limit = 400 }) {
+    const out = {};
+    const add = (item, op) => (out[item] ||= []).push(op);
+    const hide = (item, kind) => publicView && kind === 'person' ? (['salary', 'esv'].includes(item) ? 'Працівник ОСББ' : 'Фізична особа') : null;
+    for (const e of expenses) {
+        if (!['approved', 'paid'].includes(e.status) || !inYear(e.period, year)) continue;
+        const kind = payeeKind(e.supplierName, '', suppliers.get(e.supplierId)?.kind);
+        add(e.item, { date: e.date || '', who: hide(e.item, kind) || e.supplierName || '', kind, amountKop: e.amountKop,
+            what: e.description || '', doc: `${docTypes[e.docType] || 'Документ'} № ${e.number}`, paid: e.status === 'paid',
+            ...((e.files || []).length ? { files: e.files.map(f => ({ name: f.name, url: f.url })) } : {}) });
+    }
+    for (const t of bankOut) {
+        if (t.direction !== 'out' || t.kind !== 'expense' || t.status !== 'done' || t.expenseId || !inYear(t.period, year)) continue;
+        const item = BANK_ITEM[t.category] || 'other';
+        const cp = t.counterparty || {};
+        // Зарплату отримує людина, хоч би як банк назвав отримувача («ПРАЦІВНИК ОСББ …»).
+        const kind = t.category === 'bank_fee' ? 'fee' : t.category === 'salary' && !/^\d{8}$/.test(String(cp.code || '')) ? 'person' : payeeKind(cp.name, cp.code);
+        add(item, { date: kyivDate(t.at), who: hide(item, kind) || cp.name || '', kind, amountKop: t.amountKop,
+            ...(publicView ? {} : { what: t.purpose || '' }) });
+    }
+    for (const item of Object.keys(out)) {
+        out[item].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.amountKop - a.amountKop));
+        if (out[item].length > limit) out[item] = out[item].slice(0, limit);
+    }
+    return out;
 }
 
 /** Факт надходжень за джерелами: внески (оплати мешканців) та інше з виписки. */
@@ -204,5 +262,5 @@ function houseDebt(apartments) {
 
 module.exports = {
     SECTIONS, GROUPS, INCOME_SOURCES, BANK_ITEM, sectionOf, groupOf, validYear,
-    checkBudget, checkDecision, effectiveBudget, factByItem, incomeFact, monthsElapsed, execution, itemOverrun, houseDebt
+    checkBudget, checkDecision, effectiveBudget, factByItem, operationsByItem, payeeKind, incomeFact, monthsElapsed, execution, itemOverrun, houseDebt
 };

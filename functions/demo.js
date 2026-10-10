@@ -36,6 +36,9 @@ const RESERVE = 'UA563052990000026005000012345';       // резервний ф�
 const MONTHS_IN_REPORT = 9;
 const YEAR_INCOME = { main: 73244123, light: 12102494, lift: 9856841, waste: 8773868, rent: 4778774, equipment: 17328672 };
 const YEAR_SPENT = { upkeep: 53362118, reserve: 27825484, power: 12783088, lift: 9920928, waste: 7700274, salary: 5213151, esv: 1636227, bank: 287000 };
+// Останній місяць зі звіту сервісу (вересень 2026) — платежі за статтями:
+// ліфти, освітлення МЗК, вивезення, зарплата (друга половина й утримання), ЄСВ.
+const LAST = { lift: 1082237, power: 1085616, waste: 855586, salary: 206920, salaryTaxes: 66588, esv: 96677, feeKop: 500, rkoKop: 22500 };
 const month = kop => Math.round(kop / MONTHS_IN_REPORT);
 const year = kop => month(kop) * 12;
 // Тарифи з реальної квитанції (вересень 2026), складові — як їх називає сервіс.
@@ -82,12 +85,13 @@ function iban(account19) {
 }
 
 const SUPPLIERS = [
-    { key: 'lift', name: 'ТОВ «Ліфт-Сервіс» (демо)', kind: 'company', code: edrpou('3911101'), iban: iban('2600100000000001'), item: 'lift', monthlyKop: month(YEAR_SPENT.lift), subject: 'Технічне обслуговування ліфтів' },
-    { key: 'waste', name: 'ТОВ «Еко-Вивіз» (демо)', kind: 'company', code: edrpou('4022202'), iban: iban('2600100000000002'), item: 'waste', monthlyKop: month(YEAR_SPENT.waste), subject: 'Вивезення побутових відходів' },
-    { key: 'power', name: 'ТОВ «Енергозбут» (демо)', kind: 'company', code: edrpou('4133303'), iban: iban('2600100000000003'), item: 'power', monthlyKop: month(YEAR_SPENT.power), subject: 'Електроенергія місць загального користування' },
+    { key: 'lift', name: 'ТОВ «Ліфт-Сервіс» (демо)', kind: 'company', code: edrpou('3911101'), iban: iban('2600100000000001'), item: 'lift', monthlyKop: LAST.lift, subject: 'Технічне обслуговування ліфтів' },
+    { key: 'waste', name: 'ТОВ «Еко-Вивіз» (демо)', kind: 'company', code: edrpou('4022202'), iban: iban('2600100000000002'), item: 'waste', monthlyKop: LAST.waste, subject: 'Вивезення побутових відходів' },
+    { key: 'power', name: 'ТОВ «Енергозбут» (демо)', kind: 'company', code: edrpou('4133303'), iban: iban('2600100000000003'), item: 'power', monthlyKop: LAST.power, subject: 'Електроенергія місць загального користування' },
     { key: 'clean', name: 'ФОП Прибиральник І. І. (демо)', kind: 'fop', code: rnokpp('312456780'), iban: iban('2600100000000004'), item: 'cleaning', monthlyKop: 1500000, subject: 'Прибирання підʼїздів і прибудинкової території', fopChecked: true },
     { key: 'water', name: 'Водоканал (демо)', kind: 'company', code: edrpou('0300404'), iban: iban('2600100000000005'), item: 'water' },
-    { key: 'roof', name: 'ТОВ «Дах-Сервіс» (демо)', kind: 'company', code: edrpou('4244405'), iban: iban('2600100000000006'), item: 'repair' }
+    { key: 'roof', name: 'ТОВ «Дах-Сервіс» (демо)', kind: 'company', code: edrpou('4244405'), iban: iban('2600100000000006'), item: 'repair' },
+    { key: 'build', name: 'ТОВ «Буд-Ремонт» (демо)', kind: 'company', code: edrpou('4355506'), iban: iban('2600100000000007'), item: 'reserve' }
 ];
 
 /**
@@ -291,6 +295,11 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         const roof = await expenses.actions.saveExpense(...A, { supplierId: sid.roof, docType: 'act', number: 'Д-17', date: '2026-09-30', amountKop: 279400,
             period: '2026-09', item: 'repair', description: 'Ремонт покрівлі над підʼїздом 2', files: [] });
         created.expenses.push(roof.id);
+        // Резервний фонд: ремонт вхідної групи (як «Резервний фонд → підрядники» у звіті сервісу), голова затверджує.
+        const entrance = await expenses.actions.saveExpense(...A, { supplierId: sid.build, docType: 'act', number: 'БР-31', date: '2026-09-30', amountKop: 1480000,
+            period: '2026-09', item: 'reserve', description: 'Ремонт вхідної групи підʼїзду 1 (резервний фонд)', files: [] });
+        created.expenses.push(entrance.id);
+        if (entrance.status === 'pending') await expenses.actions.decideExpense(...C, { id: entrance.id, approve: true });
         await stateRef.set({ created }, { merge: true });
         step(`Постачальники: ${SUPPLIERS.length}; договори: ${created.contracts.length} (понад 50 000 грн — з протоколом зборів); акти й рахунки: ${created.expenses.length}, один чекає голову`);
 
@@ -354,9 +363,16 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         }
         push(2, 'out', 114452, 'Оплата за рахунком № В-1002 від 29.09.2026, водопостачання МЗК', { name: 'ВОДОКАНАЛ (ДЕМО)', account: SUPPLIERS[4].iban, code: SUPPLIERS[4].code });
         push(1, 'out', 279400, 'Оплата за ремонт покрівлі', { name: 'ТОВ «ДАХ-СЕРВІС» (ДЕМО)', account: SUPPLIERS[5].iban, code: SUPPLIERS[5].code });
-        push(6, 'out', month(YEAR_SPENT.bank), 'Комісія за обслуговування рахунку за вересень 2026', { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' });
-        push(7, 'out', month(YEAR_SPENT.salary), 'Заробітна плата за вересень 2026', { name: 'ПРАЦІВНИК ОСББ (ДЕМО)', account: iban('2600100000000077'), code: '' });
-        push(7, 'out', month(YEAR_SPENT.esv), '*;101;ЄСВ за вересень 2026', { name: 'ГУ ДПС (ДЕМО)', account: iban('2600100000000078'), code: '' });
+        push(4, 'out', 1480000, 'Оплата за актом № БР-31 від 30.09.2026, ремонт вхідної групи підʼїзду 1', { name: 'ТОВ «БУД-РЕМОНТ» (ДЕМО)', account: SUPPLIERS[6].iban, code: SUPPLIERS[6].code }, RESERVE);
+        // Зарплата за другу половину вересня, ПДФО з військовим збором і ЄСВ — окремими платежами, як у виписці.
+        const dps = { name: 'ГУ ДПС (ДЕМО)', account: iban('2600100000000078'), code: edrpou('4300001') };
+        push(1, 'out', LAST.salary, 'Заробітна плата за другу половину вересня 2026', { name: 'ПРАЦІВНИК ОСББ (ДЕМО)', account: iban('2600100000000077'), code: '' });
+        push(1, 'out', LAST.salaryTaxes, '*;101;ПДФО та військовий збір із заробітної плати за вересень 2026', dps);
+        push(1, 'out', LAST.esv, '*;101;ЄСВ за вересень 2026', dps);
+        // Банк: 5 грн за кожен платіж і плата за РКО за місяць.
+        const paid = list.filter(t => t.direction === 'out');
+        paid.forEach(t => push(Math.min(9, t.at.getUTCDate()), 'out', LAST.feeKop, `Комісія за платіж на ${fromKop(t.amountKop).toLocaleString('uk-UA', { minimumFractionDigits: 2 })} грн`, { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' }, t.account));
+        push(2, 'out', LAST.rkoKop, 'Комісія за обслуговування рахунку (РКО) за вересень 2026', { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' });
         push(8, 'out', month(YEAR_SPENT.reserve), 'Переказ до резервного фонду за жовтень 2026', { name: 'ОСББ', account: RESERVE, code: '' });
         const stored = await bank.storeTransactions(list, 'demo', await bank.loadContext());
         if (showcaseIds) {
@@ -385,7 +401,8 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
             { item: 'water', title: 'Вода МЗК', planKop: 1500000 },
             { item: 'lift', title: 'Ліфти', planKop: k(year(YEAR_SPENT.lift)) },
             { item: 'waste', title: 'Вивезення побутових відходів', planKop: k(year(YEAR_SPENT.waste)) },
-            { item: 'salary', title: 'Зарплата, податки й ЄСВ', planKop: k(year(YEAR_SPENT.salary + YEAR_SPENT.esv)) },
+            { item: 'salary', title: 'Зарплата та податки', planKop: k(year(YEAR_SPENT.salary)) },
+            { item: 'esv', title: 'ЄСВ', planKop: k(year(YEAR_SPENT.esv)) },
             { item: 'bank', title: 'Комісія банку', planKop: k(year(YEAR_SPENT.bank)) },
             { item: 'reserve', title: 'Резервний фонд', planKop: k(year(YEAR_SPENT.reserve)) }
         ];

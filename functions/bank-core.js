@@ -167,11 +167,16 @@ const INCOME_HINTS = [
     ['rent', /оренд|аренд|найм[а-яіїєґ]* приміщ/i],
     ['grant', /грант|субвенц|співфінанс|енергодім|дотац|бюджет|благодійн/i]
 ];
+// ЄСВ — окрема стаття (як у звіті сервісу), раніше за зарплату: «ЄСВ із заробітної плати».
+const ESV = /єсв|єдин[а-яіїєґ]* (соціальн[а-яіїєґ]* )?внес/i;
 const EXPENSE_HINTS = [
     ['bank_fee', /коміс|обслуговування рахунку|за ведення рахунку|рко\b/i],
-    ['salary', /заробітн|зарплат|аванс|з\/п|винагород/i],
-    ['taxes', /єсв|пдфо|військов[а-яіїєґ]* збір|податок|\*;101;/i]
+    ['esv', ESV],
+    ['taxes', /пдфо|військов[а-яіїєґ]* збір|податок|\*;101;/i],
+    ['salary', /заробітн|зарплат|аванс|з\/п|винагород/i]
 ];
+/** Платіж ЄСВ (для платежів через API з видом «податок»). */
+const isEsv = text => ESV.test(String(text || ''));
 const guess = (hints, text) => (hints.find(([, re]) => re.test(text)) || [null])[0];
 
 /**
@@ -266,5 +271,5 @@ function checkAllocations(allocations, amountKop, knownApts) {
 
 module.exports = {
     toKop, fromKop, normText, normIban, isLegalEntityCode, aptCandidates, payerKey, nameScore,
-    classify, periodOf, safeId, checkAllocations, cleanApt, accountKey
+    classify, periodOf, safeId, checkAllocations, cleanApt, accountKey, isEsv
 };

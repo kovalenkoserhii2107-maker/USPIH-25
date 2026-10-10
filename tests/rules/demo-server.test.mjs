@@ -70,15 +70,28 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.ok(tx.every(t => t.category !== 'rent' || t.relatedApt));
     assert.equal(tx.filter(t => t.category === 'equipment').length, 1);
     assert.equal(tx.filter(t => t.kind === 'internal').length, 1);
-    // Акти за вересень закриті списаннями, дах — чекає голову.
+    // Акти за вересень і ремонт з резервного фонду закриті списаннями, дах — чекає голову.
     const ex = (await db.collection('expenses').get()).docs.map(d => d.data());
-    assert.equal(ex.filter(e => e.status === 'paid').length, 4);
+    assert.equal(ex.filter(e => e.status === 'paid').length, 5);
+    // ЄСВ — окремою статтею; за кожен платіж — комісія банку.
+    assert.equal(tx.filter(t => t.category === 'esv').length, 1);
+    assert.equal(tx.filter(t => t.category === 'taxes').length, 1);
+    assert.ok(tx.filter(t => t.category === 'bank_fee').length >= 8);
     assert.equal(ex.filter(e => e.status === 'pending').length, 1);
     // Кошторис затверджено, звіт для мешканців — без прізвищ.
     assert.equal((await db.doc('budgets/2026').get()).data().status, 'approved');
     const pub = (await db.doc('finance/current').get()).data();
     assert.ok(pub.debt.totalKop > 0);
     assert.ok(!JSON.stringify(pub).includes('Власник Тестовий'));
+    // Розшифровка статей: сума операцій = факт рядка; працівника мешканцям не називаємо.
+    const lines = pub.budget.sections.flatMap(s => s.lines);
+    for (const item of ['lift', 'power', 'esv', 'bank', 'reserve']) {
+        const line = lines.find(l => l.item === item);
+        assert.equal(pub.ops[item].reduce((s, o) => s + o.amountKop, 0), line.factKop, item);
+    }
+    assert.equal(pub.ops.lift[0].who, 'ТОВ «Ліфт-Сервіс» (демо)');
+    assert.ok(pub.ops.salary.every(o => o.who !== 'ПРАЦІВНИК ОСББ (ДЕМО)' && !o.what));
+    assert.ok(!JSON.stringify(pub.ops).includes('ПРАЦІВНИК ОСББ (ДЕМО)'));
     assert.ok((await db.collection('audit_log').where('action', '==', 'demo.run').get()).size === 1);
     // Повторно — не можна.
     await assert.rejects(demo.actions.run('10'), /вже прогнано/);

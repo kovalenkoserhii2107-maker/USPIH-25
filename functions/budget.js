@@ -67,14 +67,15 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // ВИКОНАННЯ Й ДАНІ ДЛЯ МЕШКАНЦІВ
     // --------------------------------------------------------
     async function gather(year) {
-        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap] = await Promise.all([
+        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap] = await Promise.all([
             allBudgets(),
             db.collection('expenses').limit(3000).get(),
             db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
             db.doc('bank/settings').get(),
             db.collection('apartments').get(),
             db.doc('charges/settings').get(),
-            db.collectionGroup('ledger').where('period', '>=', `${year}-01`).get()
+            db.collectionGroup('ledger').where('period', '>=', `${year}-01`).get(),
+            db.collection('suppliers').get()
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
         const tx = bank.docs.map(d => d.data());
@@ -108,7 +109,10 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         // Скільки дадуть внески за рік за чинними тарифами — підказка для плану надходжень.
         const month = charges.computeCharges({ apartments: apts.filter(a => !a.isAdmin), premises: cs.premises || {}, tariffs: cs.tariffs || [],
             groups: cs.groups?.length ? cs.groups : charges.DEFAULT_GROUPS, components, period: `${year}-${today().slice(0, 4) === String(year) ? today().slice(5, 7) : '01'}` });
-        return { budgets, budget, expenses: ex, result, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts), contributionsYearKop: month.totalKop * 12 };
+        // Розшифровка статей (як «Внесок на обслуговування ліфтів → платежі» в сервісі).
+        const suppliers = new Map(supplierSnap.docs.map(d => [d.id, d.data()]));
+        const ops = publicView => core.operationsByItem({ expenses: ex, bankOut: tx, year, suppliers, docTypes: DOC_TYPES, publicView });
+        return { budgets, budget, expenses: ex, result, ops, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts), contributionsYearKop: month.totalKop * 12 };
     }
 
     const human = d => String(d || '').split('-').reverse().join('.');
@@ -117,8 +121,10 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     function snapshot(year, g) {
         const r = g.result;
         const spentByItem = new Map();
+        const itemOf = new Map();
         r.sections.forEach(s => s.lines.forEach(l => spentByItem.set(l.title, (spentByItem.get(l.title) || 0) + l.factKop)));
-        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([label, kop]) => ({ label, amount: fromKop(kop) }));
+        r.sections.forEach(s => s.lines.forEach(l => itemOf.set(l.title, l.item)));
+        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([label, kop]) => ({ label, item: itemOf.get(label), amount: fromKop(kop) }));
         const start = `${year}-01` > '2026-10' ? `01.01.${year}` : '01.10.2026';
         const expenses = g.expenses.filter(e => ['approved', 'paid'].includes(e.status) && String(e.period).startsWith(year))
             .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, PUBLIC_EXPENSES)
@@ -134,18 +140,19 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             budget: g.budget ? {
                 year: String(g.budget.year), carried: g.budget.carried, decision: g.budget.decision || '', months: r.months,
                 sections: r.sections.map(s => ({ title: s.title, planKop: s.planKop, toDateKop: s.toDateKop, factKop: s.factKop,
-                    lines: s.lines.map(l => ({ title: l.title, planKop: l.planKop, toDateKop: l.toDateKop, factKop: l.factKop, outside: Boolean(l.outside) })) })),
+                    lines: s.lines.map(l => ({ item: l.item, title: l.title, planKop: l.planKop, toDateKop: l.toDateKop, factKop: l.factKop, outside: Boolean(l.outside) })) })),
                 income: r.income.map(i => ({ title: i.title, planKop: i.planKop, toDateKop: i.toDateKop, factKop: i.factKop, ...(i.parts ? { parts: i.parts } : {}) })),
                 totals: r.totals
             } : null,
             debt: g.debt,
-            expenses
+            expenses,
+            ops: g.ops(true)
         };
     }
 
     const sha = obj => crypto.createHash('sha1').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
     /** Зміст звіту без дати й залишків на рахунках: вони змінюються щогодини й не є «новиною». */
-    const hashOf = s => sha({ items: s.items, income: s.income, budget: s.budget, debt: s.debt, expenses: s.expenses });
+    const hashOf = s => sha({ items: s.items, income: s.income, budget: s.budget, debt: s.debt, expenses: s.expenses, ops: s.ops });
     const budgetHash = s => sha(s.budget ? { year: s.budget.year, decision: s.budget.decision, plan: s.budget.totals.planKop, lines: s.budget.sections.map(x => x.lines.map(l => l.planKop)) } : null);
 
     /**
@@ -170,7 +177,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         return {
             year: y, today: today(), years: g.budgets.map(b => ({ year: String(b.year), status: b.status })).sort((a, b) => b.year.localeCompare(a.year)),
             budget: plain(own), effective: g.budget ? { year: String(g.budget.year), carried: g.budget.carried, decision: g.budget.decision || '' } : null,
-            execution: g.result, debt: g.debt, fundsKop: g.accounts ? g.fundsKop : null, contributionsYearKop: g.contributionsYearKop,
+            execution: g.result, ops: g.ops(false), debt: g.debt, fundsKop: g.accounts ? g.fundsKop : null, contributionsYearKop: g.contributionsYearKop,
             items: ITEMS, sections: core.SECTIONS, groups: core.GROUPS, incomeSources: core.INCOME_SOURCES,
             publish: { stale: isStale(pub, snap, y),
                 at: pub?.updatedAt?.toDate?.()?.toISOString() || null, legacy: Boolean(pub && pub.source !== 'ledger') }

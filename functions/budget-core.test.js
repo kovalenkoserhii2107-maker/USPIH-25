@@ -103,3 +103,38 @@ test('борг будинку — без прізвищ і номерів', () =
     assert.deepEqual(b.houseDebt([{ balance: -1250.4 }, { balance: 210 }, { balance: -0.6 }, { balance: null }, { isAdmin: true, balance: -5 }]),
         { totalKop: 125100, count: 2 });
 });
+
+test('розшифровка статті: ті самі операції, що й факт; фізособу мешканцям не називаємо', () => {
+    const expenses = [
+        { item: 'lift', status: 'paid', period: '2027-02', date: '2027-02-28', amountKop: 1_082_237, supplierId: 's1', supplierName: 'ТОВ «Ліфт»', docType: 'act', number: 'Л-2', description: 'ТО ліфтів за лютий' },
+        { item: 'lift', status: 'pending', period: '2027-02', date: '2027-02-28', amountKop: 1, supplierId: 's1', supplierName: 'ТОВ «Ліфт»', docType: 'act', number: 'Л-3' },
+        { item: 'cleaning', status: 'approved', period: '2027-01', date: '2027-01-31', amountKop: 800_000, supplierId: 's2', supplierName: 'Петренко Ганна Іванівна', docType: 'act', number: '1', description: 'Прибирання (ЦПД)' }
+    ];
+    const bankOut = [
+        { direction: 'out', kind: 'expense', status: 'done', category: 'esv', period: '2027-01', at: new Date('2027-01-20T10:00:00Z'), amountKop: 96_677,
+            purpose: '*;101;ЄСВ за грудень', counterparty: { name: 'ГУ ДПС В ОДЕСЬКІЙ ОБЛ.', code: '44069166' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'salary', period: '2027-01', at: new Date('2027-01-31T10:00:00Z'), amountKop: 206_920,
+            purpose: 'Заробітна плата Савченку О. за січень', counterparty: { name: 'САВЧЕНКО ОЛЕГ', code: '' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'salary', period: '2027-01', at: new Date('2027-01-15T10:00:00Z'), amountKop: 182_195,
+            purpose: 'Аванс', counterparty: { name: 'ПРАЦІВНИК ОСББ', code: '' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'bank_fee', period: '2027-01', at: new Date('2027-01-31T22:30:00Z'), amountKop: 500,
+            purpose: 'Комісія за платіж', counterparty: { name: 'АТ КБ ПРИВАТБАНК', code: '14360570' } },
+        { direction: 'out', kind: 'expense', status: 'done', category: 'supplier', period: '2027-01', amountKop: 1_082_237, expenseId: 'e1', counterparty: {} }
+    ];
+    const suppliers = new Map([['s1', { kind: 'company' }], ['s2', { kind: 'person' }]]);
+    const full = b.operationsByItem({ expenses, bankOut, year: '2027', suppliers, docTypes: { act: 'Акт' } });
+    const fact = b.factByItem({ expenses, bankOut, year: '2027' });
+    for (const [item, kop] of fact) assert.equal(full[item].reduce((s, o) => s + o.amountKop, 0), kop, item);
+    assert.equal(full.salary[0].who, 'САВЧЕНКО ОЛЕГ');
+    assert.equal(full.bank[0].date, '2027-02-01');                 // дата — київська
+    assert.equal(full.lift[0].doc, 'Акт № Л-2');
+    const pub = b.operationsByItem({ expenses, bankOut, year: '2027', suppliers, docTypes: { act: 'Акт' }, publicView: true });
+    assert.deepEqual([pub.salary[0].who, pub.salary[0].what], ['Працівник ОСББ', undefined]);
+    assert.ok(pub.salary.every(o => o.who === 'Працівник ОСББ'));
+    assert.deepEqual([pub.cleaning[0].who, pub.cleaning[0].kind], ['Фізична особа', 'person']);
+    assert.deepEqual([pub.esv[0].who, pub.esv[0].kind], ['ГУ ДПС В ОДЕСЬКІЙ ОБЛ.', 'company']);
+    assert.equal(pub.lift[0].who, 'ТОВ «Ліфт»');
+    assert.equal(b.payeeKind('ФОП Коваль І. І.', '3124567809'), 'fop');
+    assert.equal(b.payeeKind('СТРОЙСЕРВИСС УЖЕ ТОВ', ''), 'company');
+    assert.equal(b.payeeKind('ОСІПЕНКО ДМИТРО МИКОЛАЙОВИЧ', ''), 'person');
+});

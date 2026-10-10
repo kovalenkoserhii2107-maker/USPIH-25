@@ -445,3 +445,12 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
 .bd-sub td:first-child { padding-left: 22px; }
 .demo-showcase .ch-narrow { flex: 1 1 140px !important; }
 .demo-file { display: inline-flex; margin-top: 6px; cursor: pointer; }
+
+/* Кошторис: розшифровка статті */
+.bd-open { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.bd-open b { color: var(--blue-ink, var(--blue)); }
+.bd-open small { font-size: 12px; color: var(--ink-2); }
+.bd-open[aria-expanded="true"] b { text-decoration: underline; text-underline-offset: 3px; }
+.bd-ops-row > td { padding: 4px 12px 14px; background: var(--surface-2); }
+.bd-ops .fo-chips { margin-top: 6px; }
+.bd-ops .fo-op { padding: 10px 0; }
