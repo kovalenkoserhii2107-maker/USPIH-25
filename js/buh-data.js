@@ -18,7 +18,7 @@ export const ACCOUNT_PURPOSES = {
     current: 'Поточний', repair: 'Ремонтний фонд', reserve: 'Резервний фонд', deposit: 'Депозит', grant: 'Грантовий'
 };
 export const INCOME_CATEGORIES = {
-    rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення без привʼязки до списання', other: 'Інше надходження'
+    rent: 'Оренда приміщень', equipment: 'Розміщення обладнання й реклами', interest: 'Відсотки банку', grant: 'Грант, співфінансування', refund: 'Повернення без привʼязки до списання', sick_fund: 'Кошти ПФУ на лікарняні', other: 'Інше надходження'
 };
 export const EXPENSE_CATEGORIES = {
     bank_fee: 'Комісія банку', salary: 'Зарплата', taxes: 'Податки (ПДФО, військовий збір)', esv: 'ЄСВ', other: 'Витрата'

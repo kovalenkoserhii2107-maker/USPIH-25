@@ -83,7 +83,9 @@ function payrollReport({ period, stored, people = new Map(), payments = [] }) {
             personId: r.personId, name: r.name, rnokpp, kind: r.kind, sign: INCOME_SIGN[r.kind] || '101',
             grossKop: r.grossKop, paidKop: got('advance') + got('final'),
             pdfoKop: r.pdfoKop, pdfoPaidKop: taxPaid('pdfo'),
-            vzKop: r.vzKop, vzPaidKop: taxPaid('vz')
+            vzKop: r.vzKop, vzPaidKop: taxPaid('vz'),
+            // Ознака ПСП (ст. 169.1 ПКУ) і сума пільги; відпускні й лікарняні — у складі доходу з ознакою 101.
+            pspCode: r.pspCode || '', pspKop: r.pspKop || 0, vacationKop: r.vacationKop || 0, sickKop: (r.sickKop || 0) + (r.fundSickKop || 0)
         };
     });
     const esv = rows.map(r => {
@@ -93,7 +95,9 @@ function payrollReport({ period, stored, people = new Map(), payments = [] }) {
             personId: r.personId, name: r.name, rnokpp: r.payee ? r.payee.rnokpp || '' : person.rnokpp || '', kind: r.kind,
             days: r.kind === 'gph' && !person.from ? null : payroll.calendarDays(person, period),
             normDays: new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).getUTCDate(),
-            grossKop: r.grossKop, baseKop: r.esvBaseKop, topUpKop: Math.max(0, r.esvBaseKop - r.grossKop), esvKop: r.esvKop
+            grossKop: r.grossKop, baseKop: r.esvBaseKop, topUpKop: Math.max(0, r.esvBaseKop - r.grossKop), esvKop: r.esvKop,
+            // У Д1 лікарняні й відпускні — окремими рядками з власними кодами типу нарахувань (перевіряє бухгалтер).
+            vacationKop: r.vacationKop || 0, vacationDays: r.vacationDays || 0, sickKop: (r.sickKop || 0) + (r.fundSickKop || 0), sickDays: r.sickDays || 0
         };
     });
     // Д5: початок і кінець трудових відносин і договорів ЦПД у цьому місяці.

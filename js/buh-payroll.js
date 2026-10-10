@@ -38,7 +38,7 @@ function runHtml() {
     const rows = run.rows.map(r => {
         const input = r.kind === 'gph'
             ? `<input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="actKop" inputmode="decimal" value="${money2(r.actKop)}" aria-label="Сума акта"${locked ? ' disabled' : ''}><small>акт, грн</small>`
-            : `<input class="field-input pr-in pr-days" data-id="${escapeHtml(r.personId)}" data-k="workedDays" inputmode="numeric" value="${r.workedDays}" aria-label="Відпрацьовано днів"${locked ? ' disabled' : ''}><small>з ${r.normDays} дн.</small>`;
+            : `<input class="field-input pr-in pr-days" data-id="${escapeHtml(r.personId)}" data-k="workedDays" inputmode="numeric" value="${r.workedDays ?? ''}" aria-label="Відпрацьовано днів"${locked ? ' disabled' : ''}><small>з ${r.normDays} дн.</small>${absencesHtml(r, locked)}`;
         const notes = [...r.problems.map(t => `<span class="is-out">${escapeHtml(t)}</span>`), ...r.warnings.map(t => escapeHtml(t))];
         return `<tr><td class="t-main"><b>${escapeHtml(r.name)}</b><small>${escapeHtml(r.kind === 'gph' ? 'договір ЦПД' : `${r.position || 'працівник'}${r.fte && r.fte < 1 ? ` · ставка ${r.fte}` : ''} · оклад ${fmtKop(r.salaryKop)}`)}</small>
                 ${notes.length ? `<small class="pr-notes">${notes.join(' · ')}</small>` : ''}</td>
@@ -61,6 +61,25 @@ function runHtml() {
             <tfoot><tr><td>Разом</td><td></td><td></td><td class="t-sum">${fmtKop(t.grossKop)}</td><td class="t-sum">${fmtKop(t.pdfoKop + t.vzKop)}</td><td class="t-sum">${fmtKop(t.netKop)}</td><td class="t-sum">${fmtKop(t.esvKop)}</td><td class="t-sum">${fmtKop(t.advance.netKop)}</td><td class="t-sum">${fmtKop(t.final.netKop)}</td></tr></tfoot></table></div>
         <p class="buh-note">ПДФО, військовий збір та ЄСВ сплачуються з кожною виплатою. З остаточним розрахунком — решта й доплата ЄСВ до мінімальної бази. Свята під час воєнного стану — робочі дні: норма — пн–пт.${ctx.stages.advance ? ' Аванс уже підготовлено — його суми не змінюються.' : ''}</p>
     </section>`;
+}
+
+/** Відпустки й лікарняні працівника за місяць і кошти ПФУ за лікарняний. */
+function absencesHtml(r, locked) {
+    const input = ctx.inputs?.[r.personId] || {};
+    const list = [...(input.absences || []), { type: 'vacation', from: '', to: '' }];
+    const dis = locked ? ' disabled' : '';
+    const id = escapeHtml(r.personId);
+    const first = `${ctx.period}-01`, last = new Date(Date.UTC(Number(ctx.period.slice(0, 4)), Number(ctx.period.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    return `<details class="pr-corr pr-abs"${input.absences?.length || input.fundSickKop ? ' open' : ''}><summary>відпустка / лікарняний${input.absences?.length ? ` (${input.absences.length})` : ''}</summary>
+        ${list.map(a => `<div class="pr-abs-row" data-id="${id}">
+            <select class="field-input field-select" data-f="type" aria-label="Вид"${dis}><option value="vacation"${a.type === 'vacation' ? ' selected' : ''}>відпустка</option><option value="sick"${a.type === 'sick' ? ' selected' : ''}>лікарняний</option></select>
+            <input class="field-input" type="date" data-f="from" value="${escapeHtml(a.from || '')}" min="${first}" max="${last}" aria-label="З"${dis}>
+            <input class="field-input" type="date" data-f="to" value="${escapeHtml(a.to || '')}" min="${first}" max="${last}" aria-label="По"${dis}>
+            <input class="field-input" type="date" data-f="caseStart" value="${escapeHtml(a.caseStart || '')}" title="Лікарняний почався раніше (у минулому місяці) — дата початку" aria-label="Початок випадку"${dis}>
+            <input class="field-input" data-f="avg" inputmode="decimal" value="${a.avgDailyKop ? money2(a.avgDailyKop) : ''}" placeholder="середньоденна" title="Лише якщо немає заробітку за 12 місяців" aria-label="Середньоденна вручну"${dis}>
+        </div>`).join('')}
+        <input class="field-input pr-in" data-id="${id}" data-k="fundSickKop" inputmode="decimal" value="${money2(input.fundSickKop)}" placeholder="кошти ПФУ за лікарняний, грн" aria-label="Кошти ПФУ за лікарняний"${dis}>
+    </details>`;
 }
 
 function paymentsHtml() {
@@ -104,7 +123,15 @@ function personFormHtml(p) {
             ${f('pfFrom', gph ? 'Початок договору' : 'Прийнято', p.from, 'type="date"')}
             ${f('pfTo', gph ? 'Кінець договору' : 'Звільнено', p.to, 'type="date"')}
         </div>
-        ${gph ? '' : `<label class="pr-check"><input id="pfMain" type="checkbox"${p.mainJob !== false ? ' checked' : ''}> Основне місце роботи (ЄСВ не менше ніж з мінімальної зарплати)</label>
+        ${gph ? '' : `<div class="rg-grid">
+            ${f('pfInsurance', 'Страховий стаж, років (для лікарняних)', p.insuranceYears ?? '', 'inputmode="decimal"')}
+            <label class="field"><span class="field-label">Податкова соціальна пільга (за заявою)</span><select id="pfPsp" class="field-input field-select"><option value="">Немає</option>${Object.entries(ctx.pspKinds || {}).map(([k, v]) => `<option value="${k}"${k === p.psp?.kind ? ' selected' : ''}>${escapeHtml(`${k} — ${v}`)}</option>`).join('')}</select></label>
+            ${f('pfPspChildren', 'Дітей до 18 (для пільги на дітей)', p.psp?.children || '', 'inputmode="numeric"')}
+            ${f('pfPspFrom', 'Заява про ПСП від', p.psp?.from || '', 'type="date"')}
+        </div>
+        <label class="field"><span class="field-label">Заробіток до застосунку — для середньої (рядок: місяць сума [календарних днів])</span>
+            <textarea id="pfPrior" class="field-input" rows="3" placeholder="2026-09 8647,00&#10;2026-08 8647,00 31">${escapeHtml(Object.entries(p.priorEarnings || {}).sort().map(([m, e]) => `${m} ${money2(e.kop) || '0,00'}${e.days !== undefined ? ` ${e.days}` : ''}`).join('\n'))}</textarea></label>
+        <label class="pr-check"><input id="pfMain" type="checkbox"${p.mainJob !== false ? ' checked' : ''}> Основне місце роботи (ЄСВ не менше ніж з мінімальної зарплати)</label>
         <label class="pr-check"><input id="pfNotified" type="checkbox"${p.taxNotified ? ' checked' : ''}> Повідомлення ДПС про прийняття подано (до початку роботи)</label>`}
         <label class="pr-check"><input id="pfActive" type="checkbox"${p.active !== false ? ' checked' : ''}> Діє (у відомості)</label>
         <div class="pay-form-actions"><button type="button" class="btn-primary btn-compact" data-act="person-save">Зберегти</button><button type="button" class="btn-ghost-small" data-act="person-cancel">Скасувати</button></div>
@@ -163,9 +190,20 @@ export async function loadPayrollView() {
 function readInputs() {
     const inputs = {};
     document.querySelectorAll('#viewPayroll .pr-in').forEach(i => {
+        // Дні, які система порахувала сама (з відпустками й лікарняними), не фіксуємо: зміниться відсутність — зміняться й дні.
+        if (i.dataset.k === 'workedDays' && i.value === i.defaultValue && ctx.inputs?.[i.dataset.id]?.workedDays === undefined) return;
         const v = i.dataset.k === 'workedDays' ? i.value.trim() : toKop(i.value);
         if (i.dataset.k !== 'workedDays' && i.value.trim() && v === null) throw new Error('Суму вказуйте в гривнях, напр. 8 000,00');
         (inputs[i.dataset.id] ||= {})[i.dataset.k] = v ?? '';
+    });
+    // Відпустки й лікарняні: рядки з датами.
+    document.querySelectorAll('#viewPayroll .pr-abs-row').forEach(row => {
+        const f = name => row.querySelector(`[data-f="${name}"]`)?.value.trim() || '';
+        if (!f('from') && !f('to')) return;
+        const avg = f('avg') ? toKop(f('avg')) : null;
+        if (f('avg') && avg === null) throw new Error('Середньоденну вказуйте в гривнях, напр. 412,35');
+        ((inputs[row.dataset.id] ||= {}).absences ||= []).push({ type: f('type'), from: f('from'), to: f('to'),
+            ...(f('type') === 'sick' && f('caseStart') ? { caseStart: f('caseStart') } : {}), ...(avg ? { avgDailyKop: avg } : {}) });
     });
     // Місяць і причина перерахунку — лише разом із сумою.
     document.querySelectorAll('#viewPayroll .pr-txt').forEach(i => {
@@ -184,6 +222,16 @@ function readPerson() {
         p.fte = Number(v('pfFte').replace(',', '.')) || 1;
         p.mainJob = document.getElementById('pfMain')?.checked ?? true;
         p.taxNotified = document.getElementById('pfNotified')?.checked ?? false;
+        p.insuranceYears = Number(v('pfInsurance').replace(',', '.')) || 0;
+        p.psp = v('pfPsp') ? { kind: v('pfPsp'), children: Number(v('pfPspChildren')) || 0, from: v('pfPspFrom') } : null;
+        // «2026-09 8647,00 30» → { '2026-09': { kop, days } }
+        p.priorEarnings = {};
+        for (const line of v('pfPrior').split('\n').map(l => l.trim()).filter(Boolean)) {
+            const m = /^(\d{4}-\d{2})\s+([-\d\s.,]+?)(?:\s+(\d{1,2}))?$/.exec(line);
+            const kopValue = m ? toKop(m[2]) : null;
+            if (!m || kopValue === null) throw new Error(`Заробіток до застосунку: «${line}» — формат «2026-09 8647,00» або «2026-09 8647,00 30»`);
+            p.priorEarnings[m[1]] = { kop: kopValue, ...(m[3] ? { days: Number(m[3]) } : {}) };
+        }
     }
     return p;
 }

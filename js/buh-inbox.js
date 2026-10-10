@@ -11,7 +11,7 @@ import {
     loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, loadReports, expAct, act, bankQuery, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
-import { openCharges, runCharges } from './buh-charges.js';
+import { openCharges, runCharges, resumeCharges } from './buh-charges.js';
 import { periodName, fmtKop, toKop } from './charges-core.js';
 import { session } from './firebase.js';
 import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
@@ -292,6 +292,8 @@ export function chargeItems(c) {
         text: 'Ставка за м² для квартир і окремо для нежитлових приміщень — з посиланням на рішення загальних зборів.' } });
     if (!c.opening?.set) out.push({ tx: { id: 'setup:opening' }, proposal: { type: 'setup', seg: 'opening', title: 'Внесіть вхідні залишки на 30.09.2026',
         text: 'Борги й переплати квартир на початок обліку. З ними баланс мешканців рахуватиме система.' } });
+    if (c.unfinished?.length) out.push({ tx: { id: 'charges:resume' }, proposal: { type: 'setup', resumeCharges: true, yes: 'Завершити',
+        title: 'Масову операцію нарахувань перервано посередині', text: 'Частину записів історії квартир зроблено, частину ні. Система допише решту за збереженим планом — повтор нічого не подвоїть. Доти місяць не закривається.' } });
     const v = c.preview;
     if (v && c.due?.includes(v.period) && !v.done && v.rows.length) {
         out.push({ tx: { id: `charge:${v.period}` }, proposal: { type: 'charge', preview: v, opening: Boolean(c.opening?.set) } });
@@ -520,6 +522,7 @@ const confirmProposal = item => {
     }
     if (item.proposal.type === 'setup' && item.proposal.payrollPeriod) { openPayroll(item.proposal.payrollPeriod); return; }
     if (item.proposal.type === 'setup' && item.proposal.reportKey) { openReports(item.proposal.reportKey); return; }
+    if (item.proposal.type === 'setup' && item.proposal.resumeCharges) { runTask(item, resumeCharges); return; }
     if (item.proposal.type === 'setup' && item.proposal.closePeriod) {
         runTask(item, async () => { await journalAct({ action: 'close', period: item.proposal.closePeriod }); toast('Місяць закрито', 'success'); });
         return;

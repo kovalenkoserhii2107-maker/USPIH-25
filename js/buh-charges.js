@@ -387,8 +387,24 @@ export async function loadChargesView() {
         : segment === 'tariffs' ? tariffsHtml() : segment === 'premises' ? premisesHtml() : openingHtml();
     host.innerHTML = `<div class="buh-seg ch-segs" role="tablist">${Object.entries(SEGMENTS).map(([k, v]) =>
             `<button type="button" class="buh-seg-item${k === segment ? ' active' : ''}" data-seg="${k}">${v}</button>`).join('')}</div>
-        ${body}`;
-    return ctx.due.length;
+        ${unfinishedHtml()}${body}`;
+    return ctx.due.length + (ctx.unfinished?.length || 0);
+}
+
+const UNFINISHED = { run: 'нарахування', revert: 'скасування нарахування', opening: 'внесення вхідних залишків' };
+/** Перервана масова операція: дописати решту тим самим планом. */
+function unfinishedHtml() {
+    if (!ctx.unfinished?.length) return '';
+    return `<section class="buh-card ch-unfinished"><div class="buh-card-head"><h2>Операцію перервано посередині</h2></div>
+        <p>${ctx.unfinished.map(u => `${UNFINISHED[u.kind]}${u.kind === 'opening' ? '' : ` за ${escapeHtml(periodName(u.period))}`}`).join(', ')} — частину записів зроблено, частину ні. Система збереже план і допише решту: повтор нічого не подвоїть. Доти місяць не закривається.</p>
+        <button type="button" class="btn-primary btn-compact" data-act="resume">Завершити операцію</button></section>`;
+}
+
+/** «Завершити операцію» — з розділу чи з «Вхідних». */
+export async function resumeCharges() {
+    const r = await chargeAct({ action: 'resume' });
+    toast(r.resumed ? `Операцію завершено. Баланси перераховано: ${r.balances}` : 'Незавершених операцій немає', 'success');
+    return r;
 }
 
 /** Нарахувати місяць: сума, яку бачила людина, звіряється на сервері. */
@@ -406,7 +422,10 @@ async function onAction(btn) {
     const a = btn.dataset.act;
     const period = btn.dataset.period;
     try {
-        if (a === 'run') {
+        if (a === 'resume') {
+            setBusy(btn, true, 'Дописую…');
+            await resumeCharges();
+        } else if (a === 'run') {
             setBusy(btn, true, 'Нараховую…');
             await runCharges(period, ctx.preview.period === period ? ctx.preview.totalKop : undefined);
         } else if (a === 'recalc') {

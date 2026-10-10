@@ -45,7 +45,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     /** Усе, з чого будуються проводки. */
     async function load(transaction = null) {
         const get = ref => transaction ? transaction.get(ref) : ref.get();
-        const [ledgerSnap, txSnap, exSnap, supSnap, runSnap, periodSnap, aptSnap, chargeSettings, payrollSnap, payrollPaySnap, payrollPeople, openingSnap, bankSnap] = await Promise.all([
+        const [ledgerSnap, txSnap, exSnap, supSnap, runSnap, periodSnap, aptSnap, chargeSettings, payrollSnap, payrollPaySnap, payrollPeople, openingSnap, bankSnap, openingPlanSnap] = await Promise.all([
             get(db.collectionGroup('ledger').where('kind', 'in', ['charge', 'opening', 'payment', 'refund'])),
             get(db.collection('bank_tx').where('period', '>=', core.START_PERIOD)),
             get(db.collection('expenses')),
@@ -58,7 +58,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             get(db.collection('payments')),
             get(db.collection('payroll_people').select('active', 'from', 'to', 'kind', 'name')),
             get(db.doc('journal_opening/main')),
-            get(db.doc('bank/settings'))
+            get(db.doc('bank/settings')),
+            get(db.doc('charges/opening_plan'))
         ]);
         const opening = openingSnap.exists ? openingSnap.data() : null;
         // Платежі за відомістю зарплати: { paymentId → { key, name } } для погашення 661/641/651.
@@ -89,6 +90,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             charged: new Set(runSnap.docs.map(d => d.id)),
             runs: runSnap.docs.map(d => ({ period: d.id, ...d.data() })),
             openingSet: Boolean(chargeSettings.data()?.opening?.set),
+            openingPending: openingPlanSnap.exists,
             periods,
             closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
             apartments: aptSnap.docs.map(d => ({ apt: cleanApt(d.id), ...d.data() })).filter(a => !a.isAdmin),
@@ -132,7 +134,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 : { level: 'warn', text: 'Після закриття змінились операції цього місяця (наприклад, пізня виписка банку). Голова може відкрити місяць, щоб розібратися' }]
             : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb, openingStatus: data.opening?.status || 'none' });
         checks.push(...reconcile({ period: p, runs: data.runs, bankTx: data.input.bankTx, ledgers: data.input.ledgers,
-            apartments: data.apartments, openingSet: data.openingSet, expenses: data.input.expenses, payments: data.payments, payrollRuns: data.input.payrollRuns }));
+            apartments: data.apartments, openingSet: data.openingSet, openingPending: data.openingPending, expenses: data.input.expenses, payments: data.payments, payrollRuns: data.input.payrollRuns }));
         // Є працівники, а відомість місяця не затверджено — зарплата не потрапить у проводки місяця.
         if (!isClosed && activeIn(data.people, p).length && data.input.payrollRuns.find(r => r.period === p)?.status !== 'approved') {
             const ok = checks.findIndex(c => c.level === 'ok');
