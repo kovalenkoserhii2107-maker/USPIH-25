@@ -16,7 +16,7 @@ before(() => {
     reports = require('./reports.js')({ db, FieldValue, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
 });
 const wipe = async () => {
-    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings']) {
+    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -74,4 +74,53 @@ test('позначки: подано, прийнято з квитанцією, 
     assert.equal((await db.doc(`reports/${key}`).get()).exists, false);
     const log = (await db.collection('audit_log').get()).docs.map(x => x.data().action).sort();
     assert.deepEqual(log, ['reports.mark', 'reports.mark', 'reports.reopen']);
+});
+
+test('XML для Електронного кабінету: реквізити, перелік відсутнього, пакет у windows-1251', async () => {
+    const person = { name: 'Працівник Тестовий Іванович', kind: 'employee', position: 'двірник', salaryKop: 864700, fte: 1, mainJob: true, rnokpp: '3124567809',
+        iban: 'UA213052990000026001234567891', taxNotified: true, from: '2026-10-16', active: true };
+    await db.doc('payroll_people/e1').set(person);
+    await db.doc('osbb_settings/finance').set({ edrpou: '40562894', registry: { legalName: 'ОСББ «ТЕСТ»', code: '40562894', kved: '81.10 Комплексне обслуговування',
+        legalAddress: 'Україна, 65101, Одеська обл., місто Одеса, вулиця Тестова, будинок 1' } });
+    const run = payroll.buildRun({ people: [{ id: 'e1', ...person }], period: '2026-10' });
+    await db.doc('payroll_runs/2026-10').set({ period: '2026-10', status: 'approved', run: JSON.parse(JSON.stringify(run)) });
+
+    // Підказки з ЄДР і типова податкова.
+    const s0 = await a().xmlSettings();
+    assert.equal(s0.saved, false);
+    assert.deepEqual([s0.settings.sti, s0.settings.zip, s0.settings.address], [1553, '65101', 'Одеська обл., місто Одеса, вулиця Тестова, будинок 1']);
+    assert.equal(s0.org.edrpou, '40562894');
+    assert.ok(s0.offices.some(o => o.code === 1553));
+
+    // Немає реквізитів і даних картки — лише перелік, файлів немає.
+    let out = await a().xml(...A, { period: '2026-10' });
+    assert.deepEqual(out.files, []);
+    assert.ok(out.problems.some(p => /КАТОТТГ/.test(p)));
+    assert.ok(out.problems.some(p => /стать/.test(p)));
+    assert.ok(out.problems.some(p => /код класифікатора професій/.test(p)));
+
+    await assert.rejects(a().saveXmlSettings(...A, { sti: 1 }), /податкову/);
+    await assert.rejects(a().saveXmlSettings(...A, { sti: 1553, katottg: 'UA123' }), /КАТОТТГ/);
+    await assert.rejects(a().saveXmlSettings(...A, { sti: 1553, headTin: '12' }), /РНОКПП/);
+    await a().saveXmlSettings(...A, { sti: 1553, katottg: 'ua51100270010069184', zip: '65101', address: 'м. Одеса, вул. Тестова, 1', headName: 'Голова Тестовий', headTin: '3124567809' });
+    await db.doc('payroll_people/e1').update({ gender: 'Ч', kpCode: '9141', hireDoc: 'Наказ № 1-к від 15.10.2026' });
+
+    out = await a().xml(...A, { period: '2026-10', stan: 1, num: 1 });
+    assert.deepEqual(out.problems, []);
+    assert.deepEqual(out.files.map(f => f.name.slice(14, 23)), ['J05001111', 'J05101111', 'J05104111', 'J05105111']);
+    const main = Buffer.from(out.files[0].data, 'base64');
+    assert.match(main.toString('latin1'), /^<\?xml version="1.0" encoding="windows-1251"\?>/);
+    // «Ч» у Д1 — байт 0xD7 у windows-1251, не UTF-8.
+    assert.ok(Buffer.from(out.files[1].data, 'base64').includes(Buffer.from('<T1RXXXXG6 ROWNUM="1">\xD7<', 'latin1')));
+    assert.match(main.toString('latin1'), /<HKATOTTG>UA51100270010069184<\/HKATOTTG>/);
+    assert.equal(out.totals.esv, run.totals.esvKop);
+
+    // Не затверджена відомість — XML немає.
+    await db.doc('payroll_runs/2026-10').update({ status: 'draft' });
+    out = await a().xml(...A, { period: '2026-10' });
+    assert.ok(out.problems.some(p => /не затверджено/.test(p)));
+    await assert.rejects(a().xml(...A, { period: '2026-09' }), /сервіс бухгалтера/);
+    const log = (await db.collection('audit_log').get()).docs.map(x => x.data());
+    assert.deepEqual(log.map(x => x.action).sort(), ['reports.settings', 'reports.xml']);
+    assert.ok(!JSON.stringify(log).includes('3124567809'));
 });

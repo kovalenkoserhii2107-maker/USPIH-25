@@ -250,6 +250,9 @@ export async function payrollAct(payload) {
 export const loadReports = () => once('reports', () => callBackend('reportsAction', { action: 'context' }, 60000));
 export const loadPayrollReport = period => once(`report:${period}`, () => callBackend('reportsAction', { action: 'payroll', period }, 60000));
 
+/** Читання без скидання кешу: реквізити для XML і сам пакет XML. */
+export const reportsQuery = payload => callBackend('reportsAction', payload, 60000);
+
 export async function reportsAct(payload) {
     try {
         return await callBackend('reportsAction', payload, 60000);

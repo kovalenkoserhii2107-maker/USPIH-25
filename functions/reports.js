@@ -15,9 +15,14 @@ const callGuard = require('./call-guard');
 const core = require('./reports-core');
 const { START_PERIOD } = require('./journal-core');
 const { validDate } = require('./expenses-core');
+const dps = require('./dps-xml');
+const STI = require('./dps/sti.json');
 
 const REGION = 'europe-central2';
 const FILE_KINDS = { report: 'звіт', receipt1: 'квитанція № 1', receipt2: 'квитанція № 2', other: 'інше' };
+// Одеська ДПІ ГУ ДПС в Одеській області — типова податкова ОСББ (код 1553).
+const DEFAULT_STI = 1553;
+const XML_FIELDS = { katottg: 19, zip: 5, address: 250, phone: 40, email: 80, headName: 120, headTin: 10, accName: 120, accTin: 10 };
 
 module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffRole }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -81,6 +86,69 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         return { ...report, key: core.keyFor('j0500111', period), edrpou: settings.edrpou || '', saved: saved.exists ? plain(saved) : null };
     }
 
+    // ------------------------------------------------------------
+    // XML ДЛЯ ЕЛЕКТРОННОГО КАБІНЕТУ
+    // report_settings/main — реквізити звіту, яких немає в публічних
+    // osbb_settings: РНОКПП керівника й бухгалтера, КАТОТТГ, податкова.
+    // Пише лише сервер; читає бухгалтер і голова (правило Firestore).
+    // ------------------------------------------------------------
+    async function xmlSettings() {
+        const [own, fin] = await Promise.all([db.doc('report_settings/main').get(), db.doc('osbb_settings/finance').get()]);
+        const reg = fin.data()?.registry || {};
+        const saved = own.data() || {};
+        // Підказки з витягу ЄДР: індекс і адреса без «Україна, 65101,».
+        const legal = String(reg.legalAddress || '');
+        const zip = (legal.match(/\b(\d{5})\b/) || [])[1] || '';
+        const address = legal.replace(/^Україна,\s*/i, '').replace(/^\d{5},\s*/, '');
+        const value = { sti: DEFAULT_STI, zip, address, ...Object.fromEntries(Object.keys(XML_FIELDS).map(k => [k, saved[k] ?? ''])) };
+        if (!saved.zip) value.zip = zip;
+        if (!saved.address) value.address = address;
+        if (saved.sti) value.sti = saved.sti;
+        return { settings: value, saved: own.exists, offices: STI.map(x => ({ code: x.sti, name: x.name })),
+            org: { name: reg.legalName || '', edrpou: fin.data()?.edrpou || reg.code || '', kved: reg.kved || '' } };
+    }
+
+    async function saveXmlSettings(actor, role, data) {
+        const v = Object.fromEntries(Object.entries(XML_FIELDS).map(([k, max]) => [k, text(data?.[k], max)]));
+        v.katottg = v.katottg.toUpperCase();
+        v.sti = Number(data?.sti);
+        if (!STI.some(x => x.sti === v.sti)) fail('invalid-argument', 'Оберіть податкову зі списку');
+        if (v.katottg && !/^UA\d{17}$/.test(v.katottg)) fail('invalid-argument', 'КАТОТТГ — UA і 17 цифр');
+        if (v.zip && !/^\d{5}$/.test(v.zip)) fail('invalid-argument', 'Поштовий індекс — 5 цифр');
+        for (const k of ['headTin', 'accTin']) if (v[k] && !/^\d{10}$/.test(v[k])) fail('invalid-argument', 'РНОКПП — 10 цифр');
+        await db.doc('report_settings/main').set({ ...v, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() });
+        // РНОКПП і імена в журнал не пишемо — лише факт зміни.
+        await audit(actor, role, 'reports.settings', 'report_settings/main', 'Реквізити звітів для ДПС збережено', { sti: v.sti, katottg: v.katottg });
+        return { ok: true };
+    }
+
+    /** Пакет XML (розрахунок + Д1, 4ДФ, Д5) з затвердженої відомості; файли — base64 у windows-1251. */
+    async function xml(actor, role, { period, stan, num }) {
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) fail('invalid-argument', 'Невідомий місяць');
+        if (period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
+        const kind = [1, 2, 3].includes(Number(stan)) ? Number(stan) : 1;
+        const number = Math.max(1, Math.min(9999, Math.round(Number(num) || 1)));
+        const [run, people, pays, cfg] = await Promise.all([
+            db.doc(`payroll_runs/${period}`).get(),
+            db.collection('payroll_people').get(),
+            db.collection('payments').where('payroll.period', '==', period).get(),
+            xmlSettings()
+        ]);
+        const stored = run.exists ? run.data() : null;
+        const cards = new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+        const report = core.payrollReport({
+            period, stored, people: cards,
+            payments: pays.docs.map(d => ({ stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status, amountKop: d.data().amountKop - (d.data().returnedKop || 0) }))
+        });
+        const s = cfg.settings;
+        const office = STI.find(x => x.sti === Number(s.sti));
+        const org = { ...cfg.org, ...s, sti: office ? { reg: office.reg, raj: office.raj, code: office.sti, name: office.name } : null };
+        const out = dps.buildPackage({ period, org, report, run: stored?.run, people: cards, fillDate: today(), num: number, stan: kind });
+        if (out.problems.length) return { files: [], problems: out.problems };
+        await audit(actor, role, 'reports.xml', `reports/${core.keyFor('j0500111', period)}`, `XML розрахунку за ${period}: ${out.files.length} файл.`, { stan: kind, num: number });
+        return { problems: [], totals: out.totals, files: out.files.map(f => ({ name: f.name, data: dps.encode1251(f.xml).toString('base64') })) };
+    }
+
     /** Позначка звіту: подано, прийнято (квитанція № 2), відхилено, не потрібно; «open» — зняти позначку. */
     async function mark(actor, role, { key, status, regNumber, date, note, files }) {
         if (!core.validKey(key)) fail('invalid-argument', 'Невідомий звіт');
@@ -133,9 +201,12 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             case 'context': return context();
             case 'payroll': return payrollData(data);
             case 'mark': return mark(actor, role, data);
+            case 'xmlSettings': return xmlSettings();
+            case 'saveXmlSettings': return saveXmlSettings(actor, role, data);
+            case 'xml': return xml(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { reportsAction, actions: { context, payrollData, mark } };
+    return { reportsAction, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml } };
 };
