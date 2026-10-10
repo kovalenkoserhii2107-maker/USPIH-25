@@ -70,7 +70,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const payrollRuns = payroll.docs.map(d => ({ period: d.id, ...d.data() }));
         const approved = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
         const payrollPayments = new Map(payments.docs.filter(d => approved.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
-        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut: bank.docs.map(d => d.data()), payrollRuns, payrollPayments });
+        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut: bank.docs.map(d => ({ id: d.id, ...d.data() })), payrollRuns, payrollPayments });
         return core.itemOverrun(budget, e.item, fact.get(e.item) || 0, e.amountKop);
     }
 
@@ -92,7 +92,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             db.collection('payments').where('kind', 'in', ['salary', 'tax']).get()
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
-        const tx = bank.docs.map(d => d.data());
+        const tx = bank.docs.map(d => ({ id: d.id, ...d.data() }));
         const budget = core.effectiveBudget(budgets, year);
         const months = core.monthsElapsed(year, today());
         // Оплати мешканців за складовими: розподіл тим самим правилом, що й баланс квартири.
@@ -169,7 +169,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         }));
         const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([key, kop]) => ({ label: itemOf.get(key).title, item: itemOf.get(key).item, amount: fromKop(kop) }));
         const start = `${year}-01` > '2026-10' ? `01.01.${year}` : '01.10.2026';
-        const expenses = g.expenses.filter(e => ['approved', 'paid'].includes(e.status) && String(e.period).startsWith(year))
+        const expenses = g.expenses.filter(e => ['approved', 'paid', 'storno'].includes(e.status) && String(e.period).startsWith(year))
             .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, PUBLIC_EXPENSES)
             .map(e => ({ date: e.date, supplier: e.supplierName || '', description: e.description || '', doc: `${DOC_TYPES[e.docType] || 'Документ'} № ${e.number}`,
                 item: ITEMS[e.item] || '', amountKop: e.amountKop, paid: e.status === 'paid', files: (e.files || []).map(f => ({ name: f.name, url: f.url })) }));

@@ -281,6 +281,18 @@ test('зарплату (персональні дані) читають лише
     }
 });
 
+test('вхідну ОСВ читають голова й бухгалтер, пише лише сервер', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'journal_opening/main'), { status: 'draft', lines: [] });
+    });
+    for (const login of ['10', '900']) {
+        await assertSucceeds(getDoc(doc(as(login).firestore(), 'journal_opening/main')));
+        await assertFails(setDoc(doc(as(login).firestore(), 'journal_opening/main'), { status: 'approved', lines: [] }));
+    }
+    for (const login of ['11', '45']) await assertFails(getDoc(doc(as(login).firestore(), 'journal_opening/main')));
+});
+
 test('позначки звітів ДПС читають голова й бухгалтер, пише лише сервер', async () => {
     await seed();
     await env.withSecurityRulesDisabled(async context => {

@@ -43,7 +43,12 @@ function runHtml() {
         return `<tr><td class="t-main"><b>${escapeHtml(r.name)}</b><small>${escapeHtml(r.kind === 'gph' ? 'договір ЦПД' : `${r.position || 'працівник'}${r.fte && r.fte < 1 ? ` · ставка ${r.fte}` : ''} · оклад ${fmtKop(r.salaryKop)}`)}</small>
                 ${notes.length ? `<small class="pr-notes">${notes.join(' · ')}</small>` : ''}</td>
             <td class="pr-input">${input}</td>
-            <td>${r.kind === 'employee' ? `<input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="bonusKop" inputmode="decimal" value="${money2(r.bonusKop)}" placeholder="0,00" aria-label="Премія"${locked ? ' disabled' : ''}>` : ''}</td>
+            <td>${r.kind === 'employee' ? `<input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="bonusKop" inputmode="decimal" value="${money2(r.bonusKop)}" placeholder="0,00" aria-label="Премія"${locked ? ' disabled' : ''}>
+                <details class="pr-corr"${r.correctionKop ? ' open' : ''}><summary>перерахунок</summary>
+                    <input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="correctionKop" inputmode="decimal" value="${r.correctionKop ? (r.correctionKop / 100).toFixed(2).replace('.', ',') : ''}" placeholder="±0,00" aria-label="Перерахунок за минулий місяць, плюс чи мінус"${locked ? ' disabled' : ''}>
+                    <input class="field-input pr-txt" type="month" data-id="${escapeHtml(r.personId)}" data-k="correctionFor" value="${escapeHtml(r.correctionFor || shift(ctx.period, -1))}" max="${shift(ctx.period, -1)}" aria-label="За який місяць"${locked ? ' disabled' : ''}>
+                    <input class="field-input pr-txt" data-id="${escapeHtml(r.personId)}" data-k="correctionNote" maxlength="120" value="${escapeHtml(r.correctionNote || '')}" placeholder="причина" aria-label="Причина перерахунку"${locked ? ' disabled' : ''}>
+                </details>` : ''}</td>
             <td class="t-sum">${fmtKop(r.grossKop)}</td><td class="t-sum t-muted">${fmtKop(r.pdfoKop + r.vzKop)}</td>
             <td class="t-sum"><b>${fmtKop(r.netKop)}</b></td><td class="t-sum t-muted">${fmtKop(r.esvKop)}</td>
             <td class="t-sum">${r.advance.netKop ? fmtKop(r.advance.netKop) : '—'}</td><td class="t-sum">${fmtKop(r.final.netKop)}</td></tr>`;
@@ -63,7 +68,10 @@ function paymentsHtml() {
     const STAT = { sending: 'надсилається', sent: 'на підписі в Приват24', paid: 'проведено', failed: 'банк не прийняв', unknown: 'перевірте у Приват24', canceled: 'скасовано' };
     return `<section class="buh-card"><div class="buh-card-head"><h2>Платежі за відомістю</h2></div>
         <table class="buh-table is-compact"><tbody>${ctx.payments.map(p => `<tr><td>${p.stage === 'advance' ? 'Аванс' : 'Зарплата'}</td><td class="t-main">${escapeHtml(p.recipient)}${p.error ? `<small class="is-out">${escapeHtml(p.error)}</small>` : ''}</td>
-            <td class="t-sum">${fmtKop(p.amountKop)}</td><td><span class="buh-tag ${p.status === 'paid' ? 'is-payment' : p.status === 'failed' ? 'is-error' : 'is-review'}">${STAT[p.status] || p.status}</span></td></tr>`).join('')}</tbody></table></section>`;
+            <td class="t-sum">${fmtKop(p.amountKop)}</td><td>${p.returnedKop ? `<span class="buh-tag is-error">повернено банком${p.repaid ? ' · відправлено знову' : ''}</span>`
+                : `<span class="buh-tag ${p.status === 'paid' ? 'is-payment' : p.status === 'failed' ? 'is-error' : 'is-review'}">${STAT[p.status] || p.status}${p.retry ? ' · повторно' : ''}</span>`}</td>
+            <td class="t-act">${p.status === 'paid' && p.returnedKop >= p.amountKop && !p.repaid ? `<button type="button" class="btn-ghost-small" data-act="repay" data-id="${escapeHtml(p.id)}" title="Спершу виправте IBAN у картці людини чи рахунок податку">Відправити знову</button>` : ''}</td></tr>`).join('')}</tbody></table>
+        ${ctx.payments.some(p => p.returnedKop) ? '<p class="buh-note">Повернений банком платіж: виправте IBAN у картці людини (або рахунок податку) і натисніть «Відправити знову» — новий платіж піде голові на підпис.</p>' : ''}</section>`;
 }
 
 function peopleHtml() {
@@ -159,6 +167,10 @@ function readInputs() {
         if (i.dataset.k !== 'workedDays' && i.value.trim() && v === null) throw new Error('Суму вказуйте в гривнях, напр. 8 000,00');
         (inputs[i.dataset.id] ||= {})[i.dataset.k] = v ?? '';
     });
+    // Місяць і причина перерахунку — лише разом із сумою.
+    document.querySelectorAll('#viewPayroll .pr-txt').forEach(i => {
+        if (inputs[i.dataset.id]?.correctionKop) inputs[i.dataset.id][i.dataset.k] = i.value.trim();
+    });
     return inputs;
 }
 
@@ -203,6 +215,11 @@ async function onAction(btn) {
                 `Нараховано ${fmtKop(ctx.run.totals.grossKop)} грн, на руки ${fmtKop(ctx.run.totals.netKop)} грн, ЄСВ ${fmtKop(ctx.run.totals.esvKop)} грн. Після цього бухгалтер створить платежі, а ви підпишете їх у Приват24.`, 'Затвердити')) return;
             await payrollAct({ action: 'approve', period: ctx.period });
             toast('Відомість затверджено', 'success');
+        } else if (a === 'repay') {
+            if (!await confirmDialog('Відправити виплату знову?', 'Новий платіж на ту саму суму піде на рахунок з картки людини (чи податку) — голова підпише його в Приват24.', 'Відправити')) return;
+            setBusy(btn, true, 'Створюю платіж…');
+            await payrollAct({ action: 'repay', paymentId: btn.dataset.id });
+            toast('Платіж створено — голова підписує його в Приват24', 'success');
         } else if (a === 'pay-advance' || a === 'pay-final') {
             const stage = a === 'pay-advance' ? 'advance' : 'final';
             // Без авансу остаточний розрахунок платить усе нараховане.

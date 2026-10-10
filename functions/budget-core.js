@@ -104,12 +104,17 @@ function factByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPaym
     const fact = new Map();
     const add = (item, kop) => fact.set(item, (fact.get(item) || 0) + kop);
     for (const e of expenses) {
-        if (['approved', 'paid'].includes(e.status) && inYear(e.period, year)) add(e.item, e.amountKop);
+        if (['approved', 'paid', 'storno'].includes(e.status) && inYear(e.period, year)) add(e.item, e.amountKop);
     }
+    const byId = new Map(bankOut.filter(t => t.id).map(t => [t.id, t]));
+    const direct = t => t.direction === 'out' && t.kind === 'expense' && t.status === 'done' && !t.expenseId
+        && !['supplier', 'resident_refund'].includes(t.category) && !payrollPayments.has(t.paymentId);
     for (const t of bankOut) {
-        if (t.direction !== 'out' || t.kind !== 'expense' || t.status !== 'done' || t.expenseId || !inYear(t.period, year)) continue;
-        if (t.category === 'supplier' || payrollPayments.has(t.paymentId)) continue;
-        add(BANK_ITEM[t.category] || 'other', t.amountKop);
+        if (!inYear(t.period, year)) continue;
+        if (direct(t)) add(BANK_ITEM[t.category] || 'other', t.amountKop);
+        // Повернення прямої витрати банку (комісії, іншої) зменшує її статтю; документи — через сторно.
+        const o = t.kind === 'refund' && t.status === 'done' ? byId.get(t.refundOf) : null;
+        if (o && direct(o)) add(BANK_ITEM[o.category] || 'other', -t.amountKop);
     }
     for (const p of payrollRuns) {
         if (p.status !== 'approved' || !inYear(p.period, year)) continue;
@@ -155,7 +160,7 @@ function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payro
     const add = (item, op) => (out[item] ||= []).push(op);
     const hide = (item, kind) => publicView && kind === 'person' ? (['salary', 'esv'].includes(item) ? 'Працівник ОСББ' : 'Фізична особа') : null;
     for (const e of expenses) {
-        if (!['approved', 'paid'].includes(e.status) || !inYear(e.period, year)) continue;
+        if (!['approved', 'paid', 'storno'].includes(e.status) || !inYear(e.period, year)) continue;
         const kind = payeeKind(e.supplierName, '', suppliers.get(e.supplierId)?.kind);
         add(e.item, { date: e.date || '', who: hide(e.item, kind) || e.supplierName || '', kind, amountKop: e.amountKop,
             what: e.description || '', doc: `${docTypes[e.docType] || 'Документ'} № ${e.number}`, paid: e.status === 'paid',
@@ -163,7 +168,7 @@ function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payro
     }
     for (const t of bankOut) {
         if (t.direction !== 'out' || t.kind !== 'expense' || t.status !== 'done' || t.expenseId || !inYear(t.period, year)) continue;
-        if (t.category === 'supplier' || payrollPayments.has(t.paymentId)) continue;
+        if (['supplier', 'resident_refund'].includes(t.category) || payrollPayments.has(t.paymentId)) continue;
         const item = BANK_ITEM[t.category] || 'other';
         const cp = t.counterparty || {};
         // Зарплату отримує людина, хоч би як банк назвав отримувача («ПРАЦІВНИК ОСББ …»).
@@ -222,7 +227,10 @@ function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвлас�
 function incomeFact({ bankIn = [], year }) {
     const fact = new Map();
     for (const t of bankIn) {
-        if (t.direction !== 'in' || t.status !== 'done' || !inYear(t.period, year)) continue;
+        if (t.status !== 'done' || !inYear(t.period, year)) continue;
+        // Повернена співвласнику переплата зменшує надходження внесків.
+        if (t.direction === 'out' && t.category === 'resident_refund') { fact.set('contributions', (fact.get('contributions') || 0) - t.amountKop); continue; }
+        if (t.direction !== 'in') continue;
         const source = t.kind === 'payment' ? 'contributions' : t.kind === 'income' ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
         if (source) fact.set(source, (fact.get(source) || 0) + t.amountKop);
     }

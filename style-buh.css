@@ -593,3 +593,25 @@ body.is-printing #buhPrint { position: fixed; inset: 0; z-index: 400; display: b
     .rp-detail { padding-left: 0; }
     .rp-form { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Вхідна ОСВ */
+.ob-table { min-width: 900px; }
+.ob-table td { vertical-align: middle; }
+.ob-table select.field-input { min-width: 220px; }
+.ob-table .ob-sum { width: 130px; text-align: right; }
+.ob-table tfoot td { font-weight: 700; border-top: 1px solid #e3e8ef; }
+.ob-banks { margin: 0 0 12px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.ob-banks li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 12px; border-radius: 10px; background: #f8fafc; font-size: 13.5px; }
+.ob-banks small { display: block; color: #64748b; font-size: 12.5px; }
+
+/* Звʼязки документів витрат: підтвердні, сторно */
+.ex-rel { flex-basis: 100%; color: #475569; font-size: 12.5px; }
+.ex-inline { flex-basis: 100%; margin-top: 8px; padding: 12px; border-radius: 12px; background: #f8fafc; }
+.ex-inline .pay-form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ex-inline .btn-primary { width: auto; }
+.pr-corr { margin-top: 4px; font-size: 12px; }
+.pr-corr summary { cursor: pointer; color: #64748b; }
+.pr-corr .field-input { margin-top: 4px; }
+.inbox-refund { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e3e8ef; }
+.inbox-refund .inbox-ref-apt { width: 90px; }
+.inbox-refund-list { flex-basis: 100%; }

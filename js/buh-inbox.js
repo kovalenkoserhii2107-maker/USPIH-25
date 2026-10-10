@@ -8,7 +8,7 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, loadReports, expAct, act, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
+    loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, loadReports, expAct, act, bankQuery, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
 import { activeProposals, sendProposal, defaultAccount, openForm as openPaymentForm } from './buh-payments.js';
 import { openCharges, runCharges } from './buh-charges.js';
@@ -51,7 +51,7 @@ const ownerName = (dir, apt) => dir.find(a => a.apt === apt)?.owners?.[0]?.name 
 let exCache = { expenses: [], contracts: [], suppliers: [] };
 const expenseLabel = id => {
     const e = exCache.expenses.find(x => x.id === id);
-    return e ? `${exCache.docTypes?.[e.docType] || 'Документ'} № ${e.number} від ${e.date.split('-').reverse().join('.')}, ${e.supplierName} — до сплати ${fmtKop(e.amountKop - (e.paidKop || 0))} грн` : 'документ';
+    return e ? `${exCache.docTypes?.[e.docType] || 'Документ'} № ${e.number} від ${e.date.split('-').reverse().join('.')}, ${e.supplierName} — до сплати ${fmtKop(e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0))} грн` : 'документ';
 };
 
 /** Наскільки списання схоже на документ: та сама сума — висока впевненість, менша — часткова оплата. */
@@ -59,7 +59,7 @@ function linkLevel(item) {
     const ids = item.proposal.ids;
     if (ids.length > 1) return `<span class="inbox-level is-medium">ще ${ids.length - 1} схожих</span>`;
     const e = exCache.expenses.find(x => x.id === ids[0]);
-    const left = e ? e.amountKop - (e.paidKop || 0) : 0;
+    const left = e ? e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0) : 0;
     return left === item.tx.amountKop ? '<span class="inbox-level is-high">постачальник і сума збіглися</span>'
         : `<span class="inbox-level is-medium">часткова оплата: ${fmtKop(item.tx.amountKop)} з ${fmtKop(left)}</span>`;
 }
@@ -81,7 +81,32 @@ function proposalHtml(item, dir) {
     return `<p class="inbox-proposal is-ask">Квартиру не розпізнано${p.apts.length ? ` — схоже на кв. ${p.apts.map(escapeHtml).join(', ')}` : ''}</p>`;
 }
 
+/** Повернення: надходження — повернені списані кошти; списання — повернення переплати співвласнику. */
+function refundHtml(item) {
+    if (item.tx.direction === 'in') {
+        return `<div class="inbox-refund"><button type="button" class="btn-ghost-small" data-act="refund-find">Це повернення списаних коштів…</button><div class="inbox-refund-list"></div></div>`;
+    }
+    return `<div class="inbox-refund"><input class="field-input inbox-ref-apt" inputmode="numeric" maxlength="6" placeholder="Кв." aria-label="Квартира, якій повертаємо переплату">
+        <button type="button" class="btn-ghost-small" data-act="refund-resident">Повернення переплати співвласнику</button></div>`;
+}
+
+const refundCandidates = txId => bankQuery({ action: 'refundCandidates', txId });
+
+function refundListHtml(list) {
+    if (!list.length) return '<p class="buh-note">Схожих списань за пів року не знайдено: перевірте контрагента й суму або рознесіть як інше надходження.</p>';
+    return `<label class="field"><span class="field-label">Що сталося</span><select class="field-input field-select inbox-ref-reason">
+            <option value="bounce">Банк повернув платіж — документ знову до сплати</option>
+            <option value="supplier">Постачальник повернув кошти (сторно, знижка, переплата)</option>
+            <option value="other">Інше повернення списаного</option></select></label>
+        <div class="inbox-chips">${list.map(o => `<button type="button" class="inbox-chip" data-refund-of="${escapeHtml(o.id)}">${escapeHtml(o.at ? new Date(o.at).toLocaleDateString('uk-UA') : '')} · ${money(o.amountKop / 100)}${o.refundedKop ? ` (повернено ${money(o.refundedKop / 100)})` : ''}
+            <small>${escapeHtml(o.name)}${o.payroll ? ' · зарплата' : o.expense ? ' · за документом' : ''} — ${escapeHtml(o.purpose)}</small></button>`).join('')}</div>`;
+}
+
 function formHtml(item, dir) {
+    return `${decisionHtml(item, dir)}${refundHtml(item)}`;
+}
+
+function decisionHtml(item, dir) {
     const p = item.proposal;
     if (p.type === 'link') {
         return `<div class="inbox-chips">${p.ids.map(id => `<button type="button" class="inbox-chip" data-link="${escapeHtml(id)}">${escapeHtml(expenseLabel(id))}</button>`).join('')}</div>
@@ -183,7 +208,7 @@ function taskCardHtml(item, index) {
         'approve-con': () => [`${fmtKop(c.totalKop || c.amountKop || 0)} ₴`, `договір${c.type === 'monthly' ? ` · ${fmtKop(c.monthlyKop)} на місяць` : ''}`, c.supplierName,
             `№ ${escapeHtml(c.number)} від ${date(c.date)} · ${escapeHtml(c.subject)} · ${date(c.validFrom)} — ${c.validTo ? date(c.validTo) : 'безстроково'}${c.meetingDecision ? ` · збори: ${escapeHtml(c.meetingDecision)}` : ''} ${files(c.files)}`,
             'Затвердити договір', 'Так', 'Відхилити'],
-        'pay-exp': () => [`−${fmtKop(e.amountKop - (e.paidKop || 0))} ₴`, `до оплати · ${escapeHtml(e.approval?.reason || '')}`, e.supplierName,
+        'pay-exp': () => [`−${fmtKop(e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0))} ₴`, `до оплати · ${escapeHtml(e.approval?.reason || '')}`, e.supplierName,
             `${escapeHtml(exCache.docTypes?.[e.docType] || '')} № ${escapeHtml(e.number)} від ${date(e.date)} · ${escapeHtml(e.description)}`,
             'Відправити в Приват24 на підпис голови', 'Так', null],
         'missing-doc': () => [`${fmtKop(c.monthlyKop)} ₴`, 'бракує документа', c.supplierName,
@@ -297,6 +322,21 @@ export function budgetItems(b) {
  * Місяць скінчився — закрити його: Enter, якщо перевірки пройдено;
  * інакше — що заважає (відкриває «Проводки»).
  */
+/** Вхідна ОСВ: бухгалтеру — заповнити, голові — затвердити. */
+export function openingItems(j, chair) {
+    const o = j?.opening;
+    if (!o || o.status === 'approved') return [];
+    if (o.status === 'draft' && chair) {
+        return [{ tx: { id: 'opening:approve' }, proposal: { type: 'setup', meta: 'проводки', journalPeriod: j.period, openingTask: true, yes: 'Відкрити',
+            title: 'Затвердіть вхідну оборотно-сальдову на 30.09.2026', text: 'Бухгалтер вніс залишки банку, каси, фондів і розрахунків на початок обліку. Перевірте й затвердьте — після цього рахунок 00 закриється.' } }];
+    }
+    if (o.status === 'none' && !chair) {
+        return [{ tx: { id: 'opening:fill' }, proposal: { type: 'setup', meta: 'проводки', journalPeriod: j.period, openingTask: true, yes: 'Відкрити',
+            title: 'Внесіть вхідну оборотно-сальдову на 30.09.2026', text: 'Залишки банку, каси, фондів (48) і розрахунків — з балансу сервісу бухгалтера. Квартири й документи постачальників уже внесено; залишки банку система підкаже з виписки.' } }];
+    }
+    return [];
+}
+
 export function journalItems(j) {
     if (!j || j.status === 'closed') return [];
     const end = new Date(Date.UTC(Number(j.period.slice(0, 4)), Number(j.period.slice(5, 7)), 0)).toISOString().slice(0, 10);
@@ -364,7 +404,7 @@ export function expenseItems(ex, payments, chair) {
         ex.contracts.filter(c => c.status === 'pending').forEach(c => out.push({ tx: { id: `con:${c.id}` }, proposal: { type: 'approve-con', contract: c } }));
         ex.expenses.filter(e => e.status === 'pending').forEach(e => out.push({ tx: { id: `exp:${e.id}` }, proposal: { type: 'approve-exp', expense: e } }));
     }
-    ex.expenses.filter(e => e.status === 'approved' && e.amountKop > (e.paidKop || 0) && !onTheWay.has(e.id))
+    ex.expenses.filter(e => e.status === 'approved' && e.amountKop - (e.stornoKop || 0) > (e.paidKop || 0) && !onTheWay.has(e.id))
         .forEach(e => out.push({ tx: { id: `payexp:${e.id}` }, proposal: { type: 'pay-exp', expense: e } }));
     (ex.missing || []).forEach(m => {
         const c = ex.contracts.find(x => x.id === m.contractId);
@@ -388,6 +428,7 @@ export async function loadInbox() {
         .map(c => ex.suppliers.find(s => s.id === c.supplierId)?.iban).filter(Boolean));
     items = chargeItems(charges)
         .concat(budgetItems(budget))
+        .concat(openingItems(journal, session.role === 'chair'))
         .concat(journalItems(journal))
         .concat(payrollItems(payroll, session.role === 'chair'))
         .concat(reportItems(reports))
@@ -557,6 +598,25 @@ export function initInbox(isActive) {
         if (act === 'no') { confirmTask(item, false); return; }
         const link = e.target.closest('[data-link]')?.dataset.link;
         if (link) { linkTx(item, link); return; }
+        const refundOf = e.target.closest('[data-refund-of]')?.dataset.refundOf;
+        if (refundOf) {
+            const reason = card.querySelector('.inbox-ref-reason')?.value || 'other';
+            run(item, { action: 'refund', refundOf, reason }, reason === 'bounce' ? 'Повернення проведено: документ чи виплата знову до сплати' : 'Повернення проведено');
+            return;
+        }
+        if (act === 'refund-find') {
+            const host = card.querySelector('.inbox-refund-list');
+            host.innerHTML = '<p class="buh-note">Шукаю списання…</p>';
+            refundCandidates(item.tx.id).then(list => { host.innerHTML = refundListHtml(list); })
+                .catch(err => { host.innerHTML = ''; toast(err.message, 'error'); });
+            return;
+        }
+        if (act === 'refund-resident') {
+            const apt = card.querySelector('.inbox-ref-apt')?.value.trim();
+            if (!apt) { toast('Вкажіть квартиру', 'error'); card.querySelector('.inbox-ref-apt')?.focus(); return; }
+            run(item, { action: 'refundResident', apt }, `Повернення переплати, кв. ${apt}`);
+            return;
+        }
         if (act === 'yes') confirmProposal(item);
         else if (act === 'edit') openForm(item);
         else if (act === 'save') saveForm(card, item);

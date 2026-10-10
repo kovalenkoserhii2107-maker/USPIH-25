@@ -48,7 +48,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         const esv = new Map();
         for (const d of esvPaid.docs) {
             const p = d.data();
-            if (p.status === 'paid' && Number.isSafeInteger(p.amountKop) && p.amountKop > 0) esv.set(p.payroll.period, (esv.get(p.payroll.period) || 0) + p.amountKop);
+            if (p.status === 'paid' && Number.isSafeInteger(p.amountKop) && p.amountKop > 0) esv.set(p.payroll.period, (esv.get(p.payroll.period) || 0) + p.amountKop - (p.returnedKop || 0));
         }
         for (const run of runs.docs) {
             const period = run.id, expected = run.data().run?.totals?.esvKop || 0;
@@ -75,7 +75,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         const report = core.payrollReport({
             period, stored: run.exists ? run.data() : null,
             people: new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }])),
-            payments: pays.docs.map(d => ({ stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status, amountKop: d.data().amountKop }))
+            payments: pays.docs.map(d => ({ stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status, amountKop: d.data().amountKop - (d.data().returnedKop || 0) }))
         });
         const settings = (await db.doc('osbb_settings/finance').get()).data() || {};
         return { ...report, key: core.keyFor('j0500111', period), edrpou: settings.edrpou || '', saved: saved.exists ? plain(saved) : null };

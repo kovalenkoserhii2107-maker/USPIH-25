@@ -16,7 +16,9 @@
 //                       files, status: pending|approved|rejected, … }
 //   expenses/{id}   — { supplierId, contractId, docType, number, date, amountKop, vatKop,
 //                       period, item, description, files, status: pending|approved|paid|
-//                       rejected|canceled, approval: { level, reason, by, at }, paidKop, txIds }
+//                       rejected|canceled|linked|storno, approval: { level, reason, by, at }, paidKop, txIds,
+//                       linkedTo (основний документ тієї самої операції), linkedIds,
+//                       stornoOf / stornoKop, stornoIds (коригування), refundTxIds (повернені банком оплати) }
 //   expense_settings/main — { smallKop } (поріг дрібних витрат, задає голова)
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -142,6 +144,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         };
         const error = core.checkExpense(e);
         if (error) fail('invalid-argument', error);
+        if (data.linkedTo && !data.id) return saveLinked(actor, role, e, id(data.linkedTo));
         await lock?.assertOpen(e.period, 'Документ витрат');
         if (data.id) {
             const prev = await db.doc(`expenses/${id(data.id)}`).get();
@@ -157,6 +160,15 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         } else {
             const dup = await db.collection('expenses').where('supplierId', '==', e.supplierId).where('number', '==', e.number).get();
             if (dup.docs.some(d => d.data().date === e.date && d.data().status !== 'canceled')) fail('already-exists', `Документ № ${e.number} від ${core.humanDate(e.date)} цього постачальника вже внесено`);
+            // Рахунок і акт на ту саму суму — ймовірно, одна послуга: друга витрата подвоїла б і витрати, і борг.
+            if (!data.distinct) {
+                const same = await db.collection('expenses').where('supplierId', '==', e.supplierId).get();
+                const similar = core.similarDocument(e, same.docs.map(d => ({ id: d.id, ...d.data() })));
+                if (similar) {
+                    throw new HttpsError('already-exists', `Схоже, це та сама послуга, що й ${core.DOC_TYPES[similar.docType].toLowerCase()} № ${similar.number} від ${core.humanDate(similar.date)} на ту саму суму. Привʼяжіть документ до нього або підтвердьте, що це окрема послуга.`,
+                        { similar: { id: similar.id, docType: similar.docType, number: similar.number, date: similar.date } });
+                }
+            }
         }
         const result = await db.runTransaction(async t => {
             const [settingsSnap, previous, currentContract] = await Promise.all([
@@ -196,6 +208,87 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         return { id: ref.id, status: approved ? 'approved' : 'pending', approval: need, warnings: core.supplierWarnings(supplier) };
     }
 
+    /** Підтвердний документ (акт до рахунку тощо): та сама операція — без другої витрати й боргу. */
+    async function saveLinked(actor, role, e, mainId) {
+        const ref = db.collection('expenses').doc();
+        const mainRef = db.doc(`expenses/${mainId}`);
+        const main = await db.runTransaction(async t => {
+            const [snap, dups] = await Promise.all([t.get(mainRef), t.get(db.collection('expenses').where('supplierId', '==', e.supplierId).where('number', '==', e.number))]);
+            const m = snap.exists ? { id: snap.id, ...snap.data() } : null;
+            const why = core.checkLink(e, m);
+            if (why) fail('failed-precondition', why);
+            if (dups.docs.some(d => d.data().date === e.date && d.data().status !== 'canceled')) fail('already-exists', 'Цей документ постачальника вже внесено');
+            t.set(ref, { ...e, supplierName: m.supplierName, contractId: m.contractId || null, contractNumber: m.contractNumber || null,
+                period: m.period, item: m.item, status: 'linked', linkedTo: m.id,
+                approval: { level: 'none', reason: `підтверджує ${core.DOC_TYPES[m.docType].toLowerCase()} № ${m.number}`, by: actor, at: FieldValue.serverTimestamp() },
+                paidKop: 0, txIds: [], createdBy: actor, createdAt: FieldValue.serverTimestamp(), updatedBy: actor, updatedAt: FieldValue.serverTimestamp() });
+            t.update(mainRef, { linkedIds: FieldValue.arrayUnion(ref.id) });
+            return m;
+        });
+        await audit(actor, role, 'expenses.attach', `expenses/${ref.id}`, `${core.DOC_TYPES[e.docType]} № ${e.number} привʼязано до № ${main.number} (${main.supplierName}) — одна операція, без другої витрати`, { linkedTo: main.id });
+        return { id: ref.id, status: 'linked', approval: { level: 'none', reason: 'підтвердний документ' }, warnings: [] };
+    }
+
+    /**
+     * Уже внесений другим документом рахунок чи акт тієї самої послуги
+     * стає підтвердним: витрата й борг лишаються лише за основним.
+     */
+    async function linkExisting(actor, role, { id: did, to }) {
+        const ref = db.doc(`expenses/${id(did)}`), mainRef = db.doc(`expenses/${id(to)}`);
+        if (ref.id === mainRef.id) fail('invalid-argument', 'Документ не привʼязують до самого себе');
+        const result = await db.runTransaction(async t => {
+            const [snap, mainSnap, sent] = await Promise.all([t.get(ref), t.get(mainRef),
+                t.get(db.collection('payments').where('expenseId', '==', ref.id).where('status', 'in', ['sending', 'unknown', 'sent']).limit(1)), t.get(settingsRef)]);
+            if (!snap.exists) fail('not-found', 'Документ не знайдено');
+            const doc = { id: snap.id, ...snap.data() };
+            if (!['pending', 'approved', 'rejected'].includes(doc.status) || doc.linkedTo) fail('failed-precondition', 'Привʼязати можна лише неоплачений основний документ');
+            const why = core.checkLink(doc, mainSnap.exists ? { id: mainSnap.id, ...mainSnap.data() } : null);
+            if (why) fail('failed-precondition', why);
+            if (!sent.empty) fail('failed-precondition', 'По документу є платіж на підписі — спершу скасуйте його в «Платежах»');
+            await lock?.assertOpen(doc.period, 'Документ витрат', t);
+            t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
+            t.update(ref, { status: 'linked', linkedTo: mainRef.id, statusBefore: doc.status, period: mainSnap.data().period, item: mainSnap.data().item,
+                updatedBy: actor, updatedAt: FieldValue.serverTimestamp() });
+            t.update(mainRef, { linkedIds: FieldValue.arrayUnion(ref.id) });
+            return { doc, main: mainSnap.data() };
+        });
+        await audit(actor, role, 'expenses.attach', `expenses/${ref.id}`,
+            `№ ${result.doc.number} став підтвердним до № ${result.main.number} (${result.main.supplierName}): витрата ${fromKop(result.doc.amountKop)} грн більше не дублюється`, { linkedTo: mainRef.id, was: result.doc.status });
+        return { ok: true };
+    }
+
+    /** Сторно документа датою коригування: витрата й борг постачальнику зменшуються в поточному місяці. */
+    async function storno(actor, role, { id: did, amountKop, date, number, reason, files }) {
+        const s = { amountKop: kop(amountKop), date: String(date || ''), number: text(number, 60), reason: text(reason, 300) };
+        const origRef = db.doc(`expenses/${id(did)}`);
+        const ref = db.collection('expenses').doc();
+        const period = s.date.slice(0, 7);
+        await lock?.assertOpen(period, 'Сторно документа');
+        const original = await db.runTransaction(async t => {
+            const [snap] = await Promise.all([t.get(origRef), t.get(settingsRef)]);
+            const o = snap.exists ? { id: snap.id, ...snap.data() } : null;
+            const why = core.checkStorno(o, s);
+            if (why) fail('invalid-argument', why);
+            await lock?.assertOpen(period, 'Сторно документа', t);
+            const total = (o.stornoKop || 0) + s.amountKop;
+            t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
+            t.set(ref, { supplierId: o.supplierId, supplierName: o.supplierName, contractId: o.contractId || null, contractNumber: o.contractNumber || null,
+                docType: o.docType, number: s.number, date: s.date, amountKop: -s.amountKop, vatKop: 0, period, item: o.item,
+                description: `Сторно № ${o.number} від ${core.humanDate(o.date)}: ${s.reason}`, files: cleanFiles(files), status: 'storno', stornoOf: o.id,
+                approval: { level: role, reason: s.reason, by: actor, at: FieldValue.serverTimestamp() }, paidKop: 0, txIds: [],
+                createdBy: actor, createdAt: FieldValue.serverTimestamp(), updatedBy: actor, updatedAt: FieldValue.serverTimestamp() });
+            const fullyPaid = (o.paidKop || 0) >= o.amountKop - total;
+            t.update(origRef, { stornoKop: total, stornoIds: FieldValue.arrayUnion(ref.id),
+                ...(o.status === 'approved' && fullyPaid ? { status: 'paid', paidAt: FieldValue.serverTimestamp() } : {}) });
+            return o;
+        });
+        const overpaid = (original.paidKop || 0) - (original.amountKop - (original.stornoKop || 0) - s.amountKop);
+        await audit(actor, role, 'expenses.storno', `expenses/${ref.id}`,
+            `Сторно ${fromKop(s.amountKop)} грн до № ${original.number} (${original.supplierName}): ${s.reason}`, { stornoOf: original.id, amountKop: s.amountKop, date: s.date });
+        if (role !== 'chair') await tellChair('Сторно документа витрат', `${original.supplierName}: −${fromKop(s.amountKop).toLocaleString('uk-UA')} грн — ${s.reason}`);
+        return { id: ref.id, overpaidKop: Math.max(0, overpaid) };
+    }
+
     async function decideExpense(actor, role, { id: eid, approve, comment }) {
         if (role !== 'chair') fail('permission-denied', 'Цей документ затверджує голова');
         const e = await get(`expenses/${id(eid)}`, 'Документ');
@@ -225,8 +318,12 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             await lock?.assertOpen(fresh.data()?.period, 'Документ витрат', t);
             if (fresh.data()?.paidKop > 0 || fresh.data()?.status === 'paid') fail('failed-precondition', 'Документ уже оплачено. Спершу поверніть списання у «Вхідні».');
             if (!sent.empty) fail('failed-precondition', 'По документу є платіж на підписі — спершу скасуйте його в «Платежах»');
+            if (fresh.data()?.status === 'storno' || (fresh.data()?.stornoIds || []).length) fail('failed-precondition', 'Сторно й сторнований документ не скасовують — внесіть нове коригування');
             t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
             t.update(ref, { status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp() });
+            // Підтвердний документ відвʼязуємо від основного; скасований основний скасовує й підтвердні.
+            if (fresh.data()?.linkedTo) t.update(db.doc(`expenses/${fresh.data().linkedTo}`), { linkedIds: FieldValue.arrayRemove(ref.id) });
+            for (const lid of fresh.data()?.linkedIds || []) t.update(db.doc(`expenses/${lid}`), { status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp() });
         });
         await audit(actor, role, 'expenses.cancel', `expenses/${e.id}`, `${e.supplierName}: № ${e.number} скасовано`);
         return { ok: true };
@@ -252,8 +349,9 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     /** Оновлення документа, коли до нього привʼязали списання (для батчу чи транзакції). */
     function linkUpdate(expense, txId, amountKop) {
         const paid = (expense.paidKop || 0) + amountKop;
-        return { paidKop: paid, txIds: FieldValue.arrayUnion(txId), status: paid >= expense.amountKop ? 'paid' : 'approved',
-            ...(paid >= expense.amountKop ? { paidAt: FieldValue.serverTimestamp() } : {}) };
+        const due = expense.amountKop - (expense.stornoKop || 0);
+        return { paidKop: paid, txIds: FieldValue.arrayUnion(txId), status: paid >= due ? 'paid' : 'approved',
+            ...(paid >= due ? { paidAt: FieldValue.serverTimestamp() } : {}) };
     }
 
     async function linkTx(actor, role, { txId, expenseId }) {
@@ -350,6 +448,8 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             case 'saveExpense': return saveExpense(actor, role, data);
             case 'decideExpense': return decideExpense(actor, role, data);
             case 'cancelExpense': return cancelExpense(actor, role, data);
+            case 'linkExisting': return linkExisting(actor, role, data);
+            case 'storno': return storno(actor, role, data);
             case 'pay': return pay(actor, role, data);
             case 'linkTx': return linkTx(actor, role, data);
             case 'settings': return setSettings(actor, role, data);
@@ -358,5 +458,5 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     }));
 
     return { expenseAction, linkUpdate, release, openForMatching,
-        actions: { saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, pay, linkTx, setSettings, context } };
+        actions: { saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, context } };
 };

@@ -71,6 +71,32 @@ test('вхідні залишки — на технічному 00, вересн
     assert.deepEqual([lift.openCr, lift.dr, lift.closeDr, lift.closeCr], [1082237, 1082237, 0, 0]);
 });
 
+test('вхідна ОСВ: рядки проти 00, баланс з автоматичними залишками, 00 закривається в нуль', () => {
+    const data = input();
+    const auto = j.buildEntries(data).filter(e => e.src === 'opening');
+    const lines = [{ acc: '311', a: OWN, side: 'dr', kop: 2000000 }, { acc: '48', a: 'main', side: 'cr', kop: 456498, memo: 'Залишок цільового фінансування' }];
+    assert.equal(j.checkOpening(lines), null);
+    assert.deepEqual(j.openingTotals(auto, lines), { autoDr: 125040, autoCr: 586305 + 1082237, dr: 2125040, cr: 2125040, diff: 0 });
+    assert.match(j.checkOpening([{ acc: '377', side: 'dr', kop: 1 }]), /автоматично/);
+    assert.match(j.checkOpening([{ acc: '311', a: 'каса', side: 'dr', kop: 1 }]), /IBAN/);
+    assert.match(j.checkOpening([{ acc: '631', side: 'cr', kop: 1 }]), /постачальника/);
+    assert.match(j.checkOpening([{ acc: '48', side: 'cr', kop: 1 }, { acc: '48', side: 'dr', kop: 2 }]), /обʼєднайте/);
+
+    // Чернетка не потрапляє в проводки; затверджена — закриває 00 і дає залишок 311 на 01.10.
+    const draft = j.trialBalance(j.journal({ ...data, opening: { status: 'draft', lines } }, '2026-10'), '2026-10');
+    assert.ok(draft.rows.find(r => r.acc === '00'));
+    const tb = j.trialBalance(j.journal({ ...data, opening: { status: 'approved', lines } }, '2026-10'), '2026-10');
+    assert.equal(tb.rows.find(r => r.acc === '00'), undefined);
+    assert.equal(tb.rows.find(r => r.acc === '311').byA.find(x => x.a === OWN).openDr, 2000000);
+    assert.ok(tb.balanced);
+    const checks = j.closeChecks({ period: '2026-10', today: '2026-11-02', chargedPeriods: new Set(['2026-10']), tb, openingStatus: 'approved' });
+    assert.ok(!checks.some(c => /оборотно-сальдову|рахунку 00/.test(c.text)));
+    // Затверджена ОСВ, але 00 не в нулі (змінились залишки квартир) — закрити не можна.
+    const off = j.trialBalance(j.journal({ ...data, opening: { status: 'approved', lines: lines.slice(0, 1) } }, '2026-10'), '2026-10');
+    assert.ok(j.closeChecks({ period: '2026-10', today: '2026-11-02', chargedPeriods: new Set(['2026-10']), tb: off, openingStatus: 'approved' })
+        .some(c => c.level === 'block' && /лишилось 4564\.98 грн за кредитом/.test(c.text)));
+});
+
 test('перевірки перед закриттям', () => {
     const data = input();
     const tb = j.trialBalance(j.journal(data, '2026-10'), '2026-10');

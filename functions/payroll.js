@@ -73,7 +73,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const stored = runSnap.exists ? runSnap.data() : null;
         const run = stored?.run || compute(people, stored, p, settings);
         const paymentsList = sent.docs.map(d => ({ id: d.id, stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status,
-            amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null }));
+            amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null,
+            returnedKop: d.data().returnedKop || 0, repaid: Boolean(d.data().repaidBy?.length), retry: d.data().payroll?.retry || 0 }));
         const closed = lock ? await lock.closed() : [];
         return {
             period: p, today: now, kinds: core.KINDS, people, settings, run,
@@ -135,13 +136,21 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
                 const max = key === 'workedDays' ? core.employmentDays(person, period) : 100000000000;
                 if (!Number.isSafeInteger(value) || value < 0 || value > max) fail('invalid-argument', key === 'workedDays' ? 'Табель: кількість днів більша за норму трудових відносин або некоректна' : 'У табелі некоректна сума');
             }
+            // Перерахунок за минулий місяць: може бути й мінусом (надміру нараховане), з поясненням.
+            const correction = v?.correctionKop === undefined || v.correctionKop === '' ? 0 : Number(v.correctionKop);
+            if (!Number.isSafeInteger(correction) || Math.abs(correction) > 100000000000) fail('invalid-argument', 'Перерахунок — сума в копійках');
+            if (correction && (!validPeriod(v.correctionFor) || v.correctionFor >= period)) fail('invalid-argument', 'Перерахунок: вкажіть минулий місяць, за який він');
+            if (correction && text(v.correctionNote, 120).length < 3) fail('invalid-argument', 'Перерахунок: коротко поясніть причину');
             clean[String(id).replace(/[^\w-]/g, '')] = {
                 ...(v?.workedDays !== undefined && v.workedDays !== '' ? { workedDays: Math.max(0, Math.min(31, Math.round(Number(v.workedDays) || 0))) } : {}),
                 ...(v?.bonusKop ? { bonusKop: Math.max(0, Math.round(Number(v.bonusKop))) } : {}),
-                ...(v?.actKop ? { actKop: Math.max(0, Math.round(Number(v.actKop))) } : {})
+                ...(v?.actKop ? { actKop: Math.max(0, Math.round(Number(v.actKop))) } : {}),
+                ...(correction ? { correctionKop: correction, correctionFor: v.correctionFor, correctionNote: text(v.correctionNote, 120) } : {})
             };
         }
         const run = compute(people, { ...prev, inputs: clean }, period, await loadSettings());
+        const negative = run.rows.filter(r => r.grossKop < 0 || r.final.netKop < 0);
+        if (negative.length) fail('failed-precondition', `${negative.map(r => r.name).join(', ')}: перерахунок у мінус більший за нарахування місяця. Надміру виплачене людина повертає на рахунок ОСББ — рознесіть це як повернення до виплати`);
         await db.runTransaction(async t => {
             const fresh = await t.get(ref);
             await lock?.assertOpen(period, 'Відомість зарплати', t);
@@ -253,6 +262,39 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         return { ok: complete, created: created.length, errors };
     }
 
+    /**
+     * Повторна виплата, яку банк повернув (неправильний IBAN, закритий
+     * рахунок): новий платіж на ту саму суму за поточною карткою людини
+     * чи рахунком податку. Голова підписує його в Приват24, як і перший.
+     */
+    async function repay(actor, role, { paymentId }) {
+        const oldRef = db.doc(`payments/${String(paymentId || '').replace(/[^\w-]/g, '')}`);
+        const snap = await oldRef.get();
+        const old = snap.exists ? snap.data() : null;
+        if (!old?.payroll) fail('not-found', 'Платіж за відомістю не знайдено');
+        if (old.status !== 'paid' || (old.returnedKop || 0) < old.amountKop) fail('failed-precondition', 'Банк ще не повернув цей платіж повністю: рознесіть повернення у «Вхідних» до цього списання');
+        if ((old.repaidBy || []).length) fail('failed-precondition', 'Цей платіж уже відправлено знову');
+        const { period, stage, key } = old.payroll;
+        const settings = await loadSettings();
+        let recipient = old.recipient;
+        if (['pdfo', 'vz', 'esv'].includes(key)) {
+            const t = settings.taxes?.[key];
+            if (!t?.iban) fail('failed-precondition', `Немає рахунку для «${key.toUpperCase()}» — внесіть у «Зарплата → Податки й аванс»`);
+            recipient = { name: t.name, iban: t.iban, code: t.code };
+        } else {
+            const person = (await db.doc(`payroll_people/${key}`).get()).data();
+            if (!person?.iban || !core.validIban(person.iban)) fail('failed-precondition', 'У картці людини немає правильного IBAN — виправте його й повторіть');
+            recipient = { ...old.recipient, iban: person.iban, name: person.name };
+        }
+        if (recipient.iban === old.recipient?.iban) fail('failed-precondition', 'Рахунок отримувача той самий, що й у поверненому платежі. Спершу виправте IBAN');
+        const tries = (old.payroll.retry || 0) + 1;
+        const r = await payments.actions.create(actor, role, { kind: old.kind, recipient, amountKop: old.amountKop, purpose: old.purpose, account: old.account,
+            proposalKey: `payroll:${period}:${stage}:${key}:r${tries}`, payroll: { period, stage, key, retry: tries, repayOf: oldRef.id } });
+        await oldRef.update({ repaidBy: FieldValue.arrayUnion(r.id) });
+        await audit(actor, role, 'payroll.repay', `payments/${oldRef.id}`, `Повторна виплата за ${core.monthName(period)} після повернення банком`, { key: ['pdfo', 'vz', 'esv'].includes(key) ? key : 'person', newPayment: r.id });
+        return { id: r.id };
+    }
+
     const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('payrollAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
@@ -264,9 +306,10 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             case 'save': return saveRun(actor, role, data);
             case 'approve': return approve(actor, role, data);
             case 'pay': return pay(actor, role, data);
+            case 'repay': return repay(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay } };
+    return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay, repay } };
 };

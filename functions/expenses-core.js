@@ -180,7 +180,57 @@ function approvalLevel(e, contract, spentKop, settings = {}) {
     return { level: 'chair', reason: 'без договору' };
 }
 
-const remaining = e => e.amountKop - (e.paidKop || 0);
+/** До сплати: сума документа мінус сторно й уже сплачене. */
+const remaining = e => e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0);
+
+// ------------------------------------------------------------
+// ОДНА ГОСПОДАРСЬКА ОПЕРАЦІЯ — КІЛЬКА ДОКУМЕНТІВ
+// ------------------------------------------------------------
+// Рахунок і акт (накладна) на ту саму послугу — одна витрата: перший
+// документ — основний, інші привʼязані (status 'linked'): вони лише
+// підтверджують операцію й не дають другої витрати чи боргу.
+const SERVICE_DOCS = ['invoice', 'act', 'waybill'];
+const LIVE = ['pending', 'approved', 'paid'];
+const daysApart = (a, b) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86400000;
+
+/**
+ * Схожий основний документ того самого постачальника: та сама сума, інший
+ * вид (рахунок ↔ акт ↔ накладна), дати в межах 62 днів. Ймовірно, це
+ * документи однієї послуги — система пропонує привʼязати новий до нього.
+ */
+function similarDocument(e, list) {
+    if (!SERVICE_DOCS.includes(e.docType)) return null;
+    return list.find(x => x.id !== e.id && x.supplierId === e.supplierId && LIVE.includes(x.status) && !x.linkedTo
+        && x.amountKop === e.amountKop && x.docType !== e.docType && SERVICE_DOCS.includes(x.docType) && daysApart(x.date, e.date) <= 62) || null;
+}
+
+/** Чи можна привʼязати документ doc до основного main. null — можна. */
+function checkLink(doc, main) {
+    if (!main || !LIVE.includes(main.status)) return 'Основний документ не знайдено або його скасовано';
+    if (main.linkedTo) return 'Привʼязати можна лише до основного документа';
+    if (main.status === 'storno' || main.amountKop < 0) return 'До сторно документи не привʼязують';
+    if (doc.supplierId !== main.supplierId) return 'Документи різних постачальників — це різні операції';
+    if (doc.amountKop > main.amountKop) return 'Сума підтвердного документа більша за основний — це окрема витрата або доплата';
+    if ((doc.paidKop || 0) > 0 || (doc.txIds || []).length) return 'Документ уже оплачено — спершу поверніть списання у «Вхідні»';
+    if ((doc.linkedIds || []).length) return 'До цього документа вже привʼязано інші — він сам основний';
+    return null;
+}
+
+/**
+ * Сторно (коригування) документа: зменшення витрати й боргу постачальнику
+ * датою коригування — минулі закриті місяці не змінюються. null — можна.
+ */
+function checkStorno(original, s) {
+    if (!original || !['approved', 'paid'].includes(original.status)) return 'Сторнувати можна лише затверджений чи оплачений документ';
+    if (original.amountKop <= 0 || original.stornoOf) return 'Сторно не сторнують — внесіть новий документ';
+    if (!Number.isInteger(s.amountKop) || s.amountKop <= 0) return 'Вкажіть суму сторно';
+    const left = original.amountKop - (original.stornoKop || 0);
+    if (s.amountKop > left) return `Сторно більше за суму документа: можна до ${fromKop(left)} грн`;
+    if (!validDate(s.date) || s.date < original.date) return 'Дата сторно — не раніше дати документа';
+    if (!String(s.number || '').trim()) return 'Вкажіть номер документа коригування (акт, накладна на повернення)';
+    if (String(s.reason || '').trim().length < 5) return 'Опишіть причину сторно';
+    return null;
+}
 
 /**
  * Списання → документ витрат. Постачальника шукаємо за кодом або
@@ -226,5 +276,6 @@ module.exports = {
     CONTRACT_LIMIT_KOP, ITEMS, DOC_TYPES, SUPPLIER_KINDS,
     validEdrpou, validRnokpp, validDate, validPeriod, humanDate, monthsBetween,
     checkSupplier, supplierWarnings, contractTotal, checkContract, contractActive,
-    checkExpense, approvalLevel, remaining, matchExpense, purposeFor, missingDocs
+    checkExpense, approvalLevel, remaining, matchExpense, purposeFor, missingDocs,
+    SERVICE_DOCS, similarDocument, checkLink, checkStorno
 };

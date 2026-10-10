@@ -33,6 +33,8 @@ const REGION = 'europe-central2';
 const PURPOSES = ['current', 'repair', 'reserve', 'deposit', 'grant'];
 const INCOME = ['rent', 'equipment', 'interest', 'grant', 'refund', 'other'];
 const EXPENSE = ['bank_fee', 'supplier', 'salary', 'taxes', 'esv', 'other'];
+// Повернення на рахунок ОСББ, привʼязане до списання: проводка — назад на рахунок, з якого платили.
+const REFUND_REASONS = { bounce: 'банк повернув платіж (документ знову до сплати)', supplier: 'постачальник повернув кошти (сторно, знижка, переплата)', other: 'інше повернення списаного' };
 // Облік у застосунку починається з початку IV кварталу 2026 року:
 // раніші операції лишаються в сервісі бухгалтера.
 const DEFAULT_START = '2026-10-01';
@@ -365,6 +367,91 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         return { ok: true };
     }
 
+    /**
+     * Надходження — повернення раніше списаних коштів. Залишок, який ще
+     * можна повернути, — сума списання мінус уже повернене. Якщо банк
+     * повернув оплату документа, документ знову чекає оплати; зарплатний
+     * платіж позначаємо поверненим — його можна відправити знову.
+     */
+    async function refund(actor, role, { txId, refundOf, reason }) {
+        if (!REFUND_REASONS[reason]) fail('invalid-argument', 'Оберіть, що це за повернення');
+        const ref = db.doc(`bank_tx/${core.safeId(txId)}`), origRef = db.doc(`bank_tx/${core.safeId(refundOf)}`);
+        await lock?.assertOpen((await ref.get()).data()?.period, 'Операція банку');
+        const result = await db.runTransaction(async t => {
+            const [snap, osnap] = await Promise.all([t.get(ref), t.get(origRef)]);
+            if (!snap.exists || !osnap.exists) fail('not-found', 'Операцію не знайдено');
+            const tx = snap.data(), o = osnap.data();
+            await lock?.assertOpen(tx.period, 'Операція банку', t);
+            if (tx.direction !== 'in') fail('invalid-argument', 'Повернення — це надходження');
+            if (tx.status !== 'review' || (tx.allocations || []).some(a => a.ledgerId)) fail('failed-precondition', 'Операцію вже розібрано. Спершу поверніть її у «Вхідні».');
+            if (o.direction !== 'out' || o.status !== 'done' || o.kind === 'internal') fail('failed-precondition', 'Повернути можна лише розібране списання ОСББ');
+            const left = o.amountKop - (o.refundedKop || 0);
+            if (tx.amountKop > left) fail('invalid-argument', `Повернення ${core.fromKop(tx.amountKop)} грн більше за неповернений залишок списання ${core.fromKop(left)} грн`);
+            const exRef = o.expenseId ? db.doc(`expenses/${o.expenseId}`) : null;
+            const payRef = o.paymentId ? db.doc(`payments/${o.paymentId}`) : null;
+            const [ex, pay] = await Promise.all([exRef ? t.get(exRef) : null, payRef ? t.get(payRef) : null]);
+            t.update(ref, { kind: 'refund', category: 'refund', status: 'done', refundOf: origRef.id, refundReason: reason, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
+            t.update(origRef, { refundedKop: (o.refundedKop || 0) + tx.amountKop, refundTxIds: FieldValue.arrayUnion(ref.id) });
+            if (reason === 'bounce' && ex?.exists) {
+                t.update(exRef, { paidKop: Math.max(0, (ex.data().paidKop || 0) - tx.amountKop), status: 'approved', paidAt: null, refundTxIds: FieldValue.arrayUnion(ref.id) });
+            }
+            if (reason === 'bounce' && pay?.exists) t.update(payRef, { returnedKop: (pay.data().returnedKop || 0) + tx.amountKop, returnTxIds: FieldValue.arrayUnion(ref.id) });
+            return { tx, o, payroll: pay?.data()?.payroll || null };
+        });
+        await audit(actor, role, 'bank.refund', `bank_tx/${ref.id}`,
+            `${core.fromKop(result.tx.amountKop)} грн — повернення списання ${core.fromKop(result.o.amountKop)} грн (${result.o.counterparty?.name || ''}): ${REFUND_REASONS[reason]}`,
+            { refundOf: origRef.id, reason, payroll: result.payroll });
+        return { ok: true, payroll: result.payroll };
+    }
+
+    /** Списання, які могло повернути це надходження: той самий контрагент і сума, за пів року. */
+    async function refundCandidates({ txId }) {
+        const snap = await db.doc(`bank_tx/${core.safeId(txId)}`).get();
+        if (!snap.exists) fail('not-found', 'Операцію не знайдено');
+        const tx = snap.data();
+        const since = new Date(Date.parse(`${tx.period}-01T00:00:00Z`) - 183 * 86400000).toISOString().slice(0, 7);
+        const list = (await db.collection('bank_tx').where('period', '>=', since).get()).docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(o => o.direction === 'out' && o.status === 'done' && o.kind !== 'internal' && o.amountKop - (o.refundedKop || 0) >= tx.amountKop);
+        const iban = core.normIban(tx.counterparty?.account), code = String(tx.counterparty?.code || '');
+        const name = core.normText(tx.counterparty?.name || '');
+        const score = o => (iban && core.normIban(o.counterparty?.account) === iban ? 4 : 0) + (code && o.counterparty?.code === code ? 3 : 0)
+            + (name && core.normText(o.counterparty?.name || '') === name ? 2 : 0) + (o.amountKop === tx.amountKop ? 2 : 0);
+        return list.map(o => ({ id: o.id, at: o.at?.toDate?.()?.toISOString() || null, name: o.counterparty?.name || '', purpose: String(o.purpose || '').slice(0, 120),
+            amountKop: o.amountKop, refundedKop: o.refundedKop || 0, expense: Boolean(o.expenseId), payroll: Boolean(o.paymentId), score: score(o) }))
+            .filter(o => o.score > 0).sort((a, b) => b.score - a.score || String(b.at).localeCompare(String(a.at))).slice(0, 8);
+    }
+
+    /** Списання — повернення переплати співвласнику: запис «Повернення» в історії квартири (Дт 377 Кт 311). */
+    async function refundResident(actor, role, { txId, apt }) {
+        const ctx = await loadContext();
+        const clean = core.cleanApt(apt);
+        if (!ctx.known.apts.has(clean)) fail('invalid-argument', `Приміщення ${clean || '—'} немає в довіднику`);
+        const aptId = ctx.known.ids?.get(clean) || clean;
+        const ref = db.doc(`bank_tx/${core.safeId(txId)}`);
+        await lock?.assertOpen((await ref.get()).data()?.period, 'Операція банку');
+        const tx = await db.runTransaction(async t => {
+            const [snap, aptSnap] = await Promise.all([t.get(ref), t.get(db.doc(`apartments/${aptId}`))]);
+            if (!snap.exists) fail('not-found', 'Операцію не знайдено');
+            if (!aptSnap.exists) fail('failed-precondition', 'Приміщення видалено з довідника');
+            const data = snap.data();
+            await lock?.assertOpen(data.period, 'Операція банку', t);
+            if (data.direction !== 'out') fail('invalid-argument', 'Повернення співвласнику — це списання');
+            if (data.status !== 'review' || data.expenseId || data.paymentId) fail('failed-precondition', 'Операцію вже розібрано. Спершу поверніть її у «Вхідні».');
+            const overpaid = Math.round(Number(aptSnap.data().balance || 0) * 100);
+            if (data.amountKop > overpaid) fail('failed-precondition', `Переплата прим. ${clean} — ${core.fromKop(Math.max(0, overpaid))} грн: повернути більше не можна`);
+            const ledger = db.doc(`apartments/${aptId}/ledger/refund-${ref.id}`);
+            t.set(ledger, { at: data.at, period: data.period, kind: 'refund', amount: core.fromKop(data.amountKop), amountKop: data.amountKop,
+                note: 'Повернення переплати на рахунок співвласника', source: 'bank', txId: ref.id, createdAt: FieldValue.serverTimestamp() });
+            t.update(ref, { kind: 'expense', category: 'resident_refund', status: 'done', allocations: [{ apt: clean, aptId, amountKop: data.amountKop, ledgerId: ledger.id }],
+                auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
+            return data;
+        });
+        await audit(actor, role, 'bank.refundResident', `bank_tx/${ref.id}`, `${core.fromKop(tx.amountKop)} грн — повернення переплати, прим. ${clean}`, { apt: clean });
+        await recompute([aptId]);
+        return { ok: true };
+    }
+
     async function unassign(actor, role, { txId }) {
         const ref = db.doc(`bank_tx/${core.safeId(txId)}`);
         await lock?.assertOpen((await ref.get()).data()?.period, 'Операція банку');
@@ -377,6 +464,20 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const expense = expenseRef ? await t.get(expenseRef) : null;
             const payment = data.paymentId ? await t.get(db.doc(`payments/${data.paymentId}`)) : null;
             if (payment?.data()?.payroll) fail('failed-precondition', 'Проведений платіж за відомістю зарплати не можна рознести як іншу витрату');
+            if ((data.refundTxIds || []).length) fail('failed-precondition', 'До цього списання привʼязано повернення — спершу поверніть у «Вхідні» його');
+            // Повернення списаного: знімаємо привʼязку з оригіналу, документа й платежу.
+            const origRef = data.kind === 'refund' && data.refundOf ? db.doc(`bank_tx/${data.refundOf}`) : null;
+            const orig = origRef ? await t.get(origRef) : null;
+            const origEx = orig?.data()?.expenseId && data.refundReason === 'bounce' ? await t.get(db.doc(`expenses/${orig.data().expenseId}`)) : null;
+            const origPay = orig?.data()?.paymentId && data.refundReason === 'bounce' ? await t.get(db.doc(`payments/${orig.data().paymentId}`)) : null;
+            if (origPay?.data()?.payroll && (origPay.data().repaidBy || []).length) fail('failed-precondition', 'Повернену зарплату вже відправлено знову — це повернення не знімається');
+            if (orig?.exists) t.update(origRef, { refundedKop: Math.max(0, (orig.data().refundedKop || 0) - data.amountKop), refundTxIds: FieldValue.arrayRemove(ref.id) });
+            if (origEx?.exists) {
+                const paid = (origEx.data().paidKop || 0) + data.amountKop;
+                const due = origEx.data().amountKop - (origEx.data().stornoKop || 0);
+                t.update(origEx.ref, { paidKop: paid, status: paid >= due ? 'paid' : 'approved', refundTxIds: FieldValue.arrayRemove(ref.id) });
+            }
+            if (origPay?.exists) t.update(origPay.ref, { returnedKop: Math.max(0, (origPay.data().returnedKop || 0) - data.amountKop), returnTxIds: FieldValue.arrayRemove(ref.id) });
             if (data.status !== 'done' || data.kind === 'internal') fail('failed-precondition', 'Цю операцію не можна повернути');
             if (expense?.exists && (expense.data().txIds || []).includes(ref.id)) {
                 t.update(expenseRef, { paidKop: Math.max(0, (expense.data().paidKop || 0) - data.amountKop), txIds: FieldValue.arrayRemove(ref.id), status: 'approved', paidAt: null });
@@ -386,7 +487,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             }
             t.update(ref, {
                 kind: data.direction === 'in' ? 'payment' : 'expense', status: 'review', allocations: [],
-                category: null, method: null, expenseId: null, paymentId: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
+                category: null, method: null, expenseId: null, paymentId: null, refundOf: null, refundReason: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
             });
             return data;
         });
@@ -445,6 +546,9 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             case 'assign': return assign(actor, role, data);
             case 'classify': return classifyTx(actor, role, data);
             case 'unassign': return unassign(actor, role, data);
+            case 'refund': return refund(actor, role, data);
+            case 'refundCandidates': return refundCandidates(data);
+            case 'refundResident': return refundResident(actor, role, data);
             case 'saveToken': return saveToken(actor, role, data);
             case 'removeToken': return removeToken(actor, role);
             case 'setAccount': return setAccount(actor, role, data);
@@ -463,5 +567,5 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     );
 
     // Для інтеграційних тестів на емуляторі (tests/rules/bank-server.test.mjs).
-    return { bankAction, syncBank, storeTransactions, loadContext, actions: { assign, classifyTx, unassign } };
+    return { bankAction, syncBank, storeTransactions, loadContext, actions: { assign, classifyTx, unassign, refund, refundResident } };
 };
