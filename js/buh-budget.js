@@ -58,7 +58,8 @@ function executionHtml() {
             <div class="buh-card-head"><h2>Надходження</h2><span>${fmtKop(ex.totals.incomeFactKop)} з ${fmtKop(ex.totals.incomePlanKop)} грн</span></div>
             <table class="buh-table bd-table"><thead><tr><th>Джерело</th><th class="t-sum">План на рік</th><th class="t-sum">План на сьогодні</th><th class="t-sum">Факт</th><th>Виконання</th></tr></thead>
                 <tbody>${ex.income.map(i => `<tr><td><b>${escapeHtml(i.title)}</b></td><td class="t-sum">${fmtKop(i.planKop)}</td><td class="t-sum t-muted">${fmtKop(i.toDateKop)}</td>
-                    <td class="t-sum is-in">${fmtKop(i.factKop)}</td><td class="bd-cell">${bar(i.factKop, i.toDateKop)}</td></tr>`).join('')}</tbody></table>
+                    <td class="t-sum is-in">${fmtKop(i.factKop)}</td><td class="bd-cell">${bar(i.factKop, i.toDateKop)}</td></tr>
+                    ${(i.parts || []).map(p => `<tr class="bd-sub"><td>${escapeHtml(p.title)}</td><td></td><td></td><td class="t-sum">${fmtKop(p.factKop)}</td><td></td></tr>`).join('')}`).join('')}</tbody></table>
             <p class="buh-note">Внески — оплати мешканців з виписки; «план на сьогодні» — частка річного плану за ${ex.months} міс. обліку в застосунку.</p>
         </section>` : '');
 }
@@ -126,7 +127,8 @@ function readEditor() {
 function printReport() {
     const ex = ctx.execution;
     const t = ex.totals;
-    const rows = list => list.map(l => `<tr><td>${escapeHtml(l.title)}${l.outside ? ' (поза кошторисом)' : ''}</td><td>${fmtKop(l.planKop)}</td><td>${fmtKop(l.factKop)}</td><td>${fmtKop(l.factKop - l.planKop)}</td></tr>`).join('');
+    const rows = list => list.map(l => `<tr><td>${escapeHtml(l.title)}${l.outside ? ' (поза кошторисом)' : ''}</td><td>${fmtKop(l.planKop)}</td><td>${fmtKop(l.factKop)}</td><td>${fmtKop(l.factKop - l.planKop)}</td></tr>`
+        + (l.parts || []).map(p => `<tr class="bd-sub"><td>у т.ч. ${escapeHtml(p.title)}</td><td></td><td>${fmtKop(p.factKop)}</td><td></td></tr>`).join('')).join('');
     let host = document.getElementById('buhPrint');
     if (!host) { host = document.createElement('div'); host.id = 'buhPrint'; document.body.appendChild(host); }
     host.innerHTML = `<div class="rc-bar"><b>Звіт про виконання кошторису за ${escapeHtml(year)} рік</b>

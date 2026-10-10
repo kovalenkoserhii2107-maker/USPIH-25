@@ -4031,3 +4031,10 @@ select.field-input {
     display: grid; place-items: center; width: 18%; aspect-ratio: 1; border-radius: 50%;
     background: #fff; box-shadow: 0 0 0 3px #fff; color: #111; font: 700 clamp(14px, 4.5vw, 22px) var(--font);
 }
+
+/* Баланс за статтями (як у квитанції сервісу) */
+.balance-parts { margin: 10px 0 0; padding: 0; list-style: none; font-size: 12.5px; }
+.balance-parts li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+.balance-parts span { opacity: .8; }
+.balance-parts b { font-weight: 600; white-space: nowrap; }
+.lg-note p { white-space: pre-line; }

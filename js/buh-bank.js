@@ -155,6 +155,16 @@ function demoHtml(d, chair) {
         <p class="buh-note">${done ? 'Облік заповнено демо-даними через справжні функції системи. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис», «Банк», а мешканцям — «Фінанси будинку».'
             : 'Проведе через справжні функції повний місяць: тарифи за складовими, вхідні залишки, нарахування за жовтень, виписку з оплатами мешканців, оренду й обладнання, постачальників і акти, кошторис 2026, звіт мешканцям. Цифри — у масштабі реального звіту ОСББ за 2026 рік. Уже внесені баланси квартир стануть вхідними залишками.'}</p>
         ${d.steps?.length ? `<ol class="buh-steps">${d.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol>` : ''}
+        ${chair && !done && d.status !== 'failed' ? `<h3 class="ch-sub">Квартира-зразок (необовʼязково)</h3>
+            <p class="buh-note">На ній демо прожене все: залишок за статтями, нарахування з розбивкою, оплату за особовим рахунком і її розподіл за статтями, ручне рознесення із запамʼятовуванням платника. Порожні поля — дані з довідника.</p>
+            <div class="buh-inline-form ch-form demo-showcase">
+                <input id="dmApt" class="field-input ch-narrow" placeholder="Квартира" aria-label="Квартира-зразок">
+                <input id="dmArea" class="field-input ch-narrow" inputmode="decimal" placeholder="Площа, м²" aria-label="Площа">
+                <input id="dmRes" class="field-input ch-narrow" inputmode="numeric" placeholder="Проживає" aria-label="Проживає">
+                <input id="dmOpening" class="field-input ch-narrow" inputmode="decimal" placeholder="Залишок 30.09 (+ переплата)" aria-label="Залишок на 30.09.2026">
+            </div>
+            <textarea id="dmHistory" class="field-input ch-textarea" rows="4" spellcheck="false" placeholder="Історія з сервісу бухгалтера (CSV «кв;дата;тип;сума;примітка») — необовʼязково"></textarea>
+            <label class="btn-ghost-small demo-file">Вибрати файл історії<input id="dmFile" type="file" accept=".csv,.txt" hidden></label>` : ''}
         ${chair ? `<div class="inbox-actions">${done || d.status === 'failed' ? '<button type="button" class="btn-ghost-small" data-act="demo-remove">Прибрати демо</button>'
             : '<button type="button" class="btn-primary btn-compact" data-act="demo-run">Прогнати демо</button>'}</div>` : '<p class="buh-note">Прогнати й прибрати демо може голова.</p>'}
     </section>`;
@@ -222,8 +232,12 @@ export function initSettingsView() {
         }
         if (btn.dataset.act === 'demo-run') {
             if (!await confirmDialog('Прогнати демо?', 'Система проведе через справжні функції повний місяць обліку: тарифи, залишки, нарахування, виписку, постачальників, акти, кошторис і звіт мешканцям. Лише для тестового акаунта; потім усе можна прибрати.', 'Прогнати')) return;
+            const v = id => document.getElementById(id)?.value?.trim() || '';
+            const opening = v('dmOpening') ? toKop(v('dmOpening')) : null;
+            if (v('dmOpening') && opening === null) { toast('Залишок — сума в гривнях, напр. 5863,05', 'error'); return; }
+            const showcase = v('dmApt') ? { apt: v('dmApt'), area: v('dmArea'), residents: v('dmRes'), openingKop: opening, history: v('dmHistory') } : null;
             setBusy(btn, true, 'Проганяю… до хвилини');
-            try { const r = await demoAct('run'); toast(`Готово: ${r.steps.length} кроків. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис»`, 'success'); }
+            try { const r = await demoAct('run', showcase ? { showcase } : {}); toast(`Готово: ${r.steps.length} кроків. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис»`, 'success'); }
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
         }
@@ -247,6 +261,11 @@ export function initSettingsView() {
         }
     });
     host.addEventListener('change', async e => {
+        if (e.target.id === 'dmFile') {
+            const f = e.target.files?.[0];
+            if (f) document.getElementById('dmHistory').value = await f.text();
+            return;
+        }
         const select = e.target.closest('.acc-purpose-select');
         if (!select) return;
         try { await act({ action: 'setAccount', iban: select.closest('[data-iban]').dataset.iban, purpose: select.value }); toast('Збережено', 'success'); }

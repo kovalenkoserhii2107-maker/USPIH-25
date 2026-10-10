@@ -141,7 +141,7 @@ function monthsElapsed(year, today, startPeriod = '2026-10') {
  * «Ремонт підʼїзду»). Факт за статтею, якої в кошторисі немає, — окремий
  * рядок «поза кошторисом».
  */
-function execution({ budget, fact, income, months }) {
+function execution({ budget, fact, income, months, incomeParts = [] }) {
     // Порядок — як у статуті: група п. 4.12.3, далі порядок рядків кошторису.
     const order = Object.keys(GROUPS);
     const lines = (budget?.lines || []).map((l, i) => ({ ...l, i, section: sectionOf(l.item), group: groupOf(l.item) }))
@@ -166,7 +166,10 @@ function execution({ budget, fact, income, months }) {
     out.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
     const incomeLines = Object.keys(INCOME_SOURCES).map(source => {
         const plan = (budget?.income || []).find(i => i.source === source)?.planKop || 0;
-        return { source, title: INCOME_SOURCES[source], planKop: plan, toDateKop: Math.round(plan * months / 12), factKop: income.get(source) || 0 };
+        const line = { source, title: INCOME_SOURCES[source], planKop: plan, toDateKop: Math.round(plan * months / 12), factKop: income.get(source) || 0 };
+        // Внески — за складовими (як «Надходження» в сервісі бухгалтера).
+        if (source === 'contributions' && incomeParts.length) line.parts = incomeParts;
+        return line;
     }).filter(l => l.planKop || l.factKop);
     const sum = (list, key) => list.reduce((s, l) => s + l[key], 0);
     const sections = Object.keys(SECTIONS).map(id => {

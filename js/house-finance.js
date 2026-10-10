@@ -46,6 +46,9 @@ function budgetHtml(b) {
             <ul class="hf-items">${spent.map(line).join('')}</ul>
             ${idle.length ? `<p class="hf-idle">Ще без витрат: ${idle.map(l => escapeHtml(l.title)).join(', ')}</p>` : ''}`;
         }).join('')}
+        ${(b.income || []).length ? `<p class="hf-sub">Надходження · ${kop(b.income.reduce((s, i) => s + i.factKop, 0))} грн</p>
+            <ul class="hf-items">${b.income.map(i => `<li><div class="hf-item-head"><span>${escapeHtml(i.title)}</span><b>${kop(i.factKop)} грн</b></div>
+                ${(i.parts || []).length ? `<small>${i.parts.map(p => `${escapeHtml(p.title)}: ${kop(p.factKop)}`).join(' · ')}</small>` : ''}</li>`).join('')}</ul>` : ''}
         <p class="hf-footnote is-inside">${b.decision ? `Затверджено: ${escapeHtml(b.decision)}. ` : ''}«План на сьогодні» — частка річного плану за ${b.months} міс. обліку.</p>
     </section>`;
 }

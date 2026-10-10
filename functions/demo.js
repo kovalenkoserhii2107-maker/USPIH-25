@@ -90,6 +90,26 @@ const SUPPLIERS = [
     { key: 'roof', name: 'ТОВ «Дах-Сервіс» (демо)', kind: 'company', code: edrpou('4244405'), iban: iban('2600100000000006'), item: 'repair' }
 ];
 
+/**
+ * Історія квартири з сервісу бухгалтера (той самий формат, що й завантаження
+ * «Історії нарахувань і оплат»): «кв;дд.мм.рррр;нарахування|оплата;сума;примітка».
+ * Лише записи до початку обліку (до жовтня 2026) — далі веде застосунок.
+ */
+function parseHistory(text) {
+    const rows = [];
+    for (const line of String(text || '').replace(/^\ufeff/, '').split(/\r?\n/)) {
+        const c = line.split(/[;\t]/).map(x => x.trim().replace(/^"|"$/g, ''));
+        const d = (c[1] || '').match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        const kind = /^нарах/i.test(c[2] || '') ? 'charge' : /^(оплат|сплач|надходж)/i.test(c[2] || '') ? 'payment' : null;
+        const kop = Math.round(Number(String(c[3] || '').replace(/\s/g, '').replace(',', '.')) * 100);
+        if (!c[0] || !d || !kind || !(kop > 0)) continue;
+        const period = `${d[3]}-${d[2].padStart(2, '0')}`;
+        if (period >= PERIOD) continue;
+        rows.push({ apt: cleanApt(c[0]), kind, amountKop: kop, period, at: new Date(Date.UTC(+d[3], +d[2] - 1, +d[1], 9)), note: String(c[4] || '').slice(0, 200) });
+    }
+    return rows;
+}
+
 module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget }) {
     const stateRef = db.doc('demo/state');
     const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -123,12 +143,12 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
     // --------------------------------------------------------
     // ПРОГІН
     // --------------------------------------------------------
-    async function run(actor) {
+    async function run(actor, data = {}) {
         const blocked = await blockers();
         if (blocked.length) fail('failed-precondition', `Демо лише для чистого тестового обліку: ${blocked.join('; ')}`);
         const steps = [];
         const step = text => { steps.push(text); logger.info('Демо:', text); };
-        const created = { suppliers: [], contracts: [], expenses: [] };
+        const created = { suppliers: [], contracts: [], expenses: [], history: [], links: [] };
 
         // Бухгалтер для дій бухгалтера — справжній, якщо є в команді.
         const acc = await db.collection('staff').where('role', '==', 'accountant').where('active', '==', true).limit(1).get();
@@ -147,6 +167,33 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
             chargeSettings: chargeSettings.exists ? chargeSettings.data() : null, created, steps: [] });
 
         const rnd = random(apts.length * 7919);
+
+        // Квартира-зразок (показовий особовий рахунок): площа, проживаючі,
+        // залишок на 30.09.2026 й історія з сервісу бухгалтера — на ній
+        // демо проганяє всі операції, які бачить мешканець і бухгалтер.
+        const sc = data.showcase || {};
+        const showcase = sc.apt ? apts.find(d => cleanApt(d.id) === cleanApt(sc.apt)) : null;
+        if (sc.apt && !showcase) fail('invalid-argument', `Квартири ${sc.apt} немає в довіднику`);
+        if (showcase) {
+            const patch = {};
+            const areaNum = Number(String(sc.area ?? '').replace(',', '.'));
+            if (areaNum > 0) patch.area = Math.round(areaNum * 100) / 100;
+            if (sc.residents !== '' && sc.residents !== undefined && Number.isInteger(Number(sc.residents))) patch.residents = Number(sc.residents);
+            if (sc.openingKop !== undefined && sc.openingKop !== null && Number.isInteger(sc.openingKop)) patch.balance = sc.openingKop / 100;
+            if (Object.keys(patch).length) await showcase.ref.update(patch);
+            const history = parseHistory(sc.history).filter(r => r.apt === cleanApt(showcase.id));
+            let hb = db.batch();
+            history.forEach((r, i) => {
+                const ref = db.doc(`apartments/${showcase.id}/ledger/demo-h-${i + 1}`);
+                hb.set(ref, { at: Timestamp.fromDate(r.at), period: r.period, kind: r.kind, amount: fromKop(r.amountKop), amountKop: r.amountKop, note: r.note, source: 'demo-import' });
+                created.history.push(ref.path);
+            });
+            if (history.length) await hb.commit();
+            // Довідник читаємо заново: площа, проживаючі й баланс зразка змінилися.
+            const fresh = await showcase.ref.get();
+            apts[apts.indexOf(showcase)] = fresh;
+            step(`Квартира-зразок ${showcase.id}: ${fresh.data().area ?? '—'} м², проживає ${fresh.data().residents ?? '—'}, залишок на 30.09.2026 ${fromKop(Math.round(Number(fresh.data().balance || 0) * 100)).toLocaleString('uk-UA')} грн${history.length ? `; історію з сервісу за січень–вересень 2026 завантажено, записів: ${history.length}` : ''}`);
+        }
         // 1. Площі й кількість проживаючих: де немає — умовні (38–95 м²,
         //    1–4 особи); справжні дані довідника не чіпаємо.
         let batch = db.batch(), ops = 0, filledArea = 0, filledRes = 0, people = 0;
@@ -197,6 +244,16 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         const openingDebt = Math.max(0, TOTAL_DEBT_KOP - 1000000 - knownDebt);   // після жовтня борг вийде близько 309 815 грн
         debtors.forEach((d, i) => opening.push({ apt: cleanApt(d.id), amountKop: -Math.round(openingDebt * weights[i] / wsum) }));
         rest.filter(d => !debtors.includes(d) && rnd() < 0.15).forEach(d => opening.push({ apt: cleanApt(d.id), amountKop: Math.round((50 + rnd() * 550) * 100) }));
+        // Залишок за складовими — як у сервісі: інші статті винні нарахування
+        // вересня (їх закриває наступна оплата), решта — на обслуговування будинку.
+        // Для показового рахунку це дає рівно квитанцію сервісу за вересень.
+        const sept = new Map(((await charges.actions.context()).preview.rows || []).map(r => [r.apt, r.parts || []]));
+        for (const r of opening) {
+            const others = (sept.get(r.apt) || []).filter(p => p.component !== 'main' && p.amountKop);
+            if (!others.length) continue;
+            r.parts = Object.fromEntries(others.map(p => [p.component, -p.amountKop]));
+            r.parts.main = r.amountKop + others.reduce((s, p) => s + p.amountKop, 0);
+        }
         await charges.actions.setOpening(...A, { rows: opening });
         step(`Вхідні залишки на 30.09.2026: борг ${fromKop(-opening.filter(r => r.amountKop < 0).reduce((s, r) => s + r.amountKop, 0)).toLocaleString('uk-UA')} грн у ${opening.filter(r => r.amountKop < 0).length} кв., переплата в ${opening.filter(r => r.amountKop > 0).length} кв.${known.length ? ` (з уже внесених балансів: ${known.length} кв.)` : ''}`);
 
@@ -246,7 +303,9 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         (await db.collectionGroup('owners').get()).forEach(o => { if (o.ref.parent.parent.parent.id === 'apartments' && !owners.has(o.ref.parent.parent.id)) owners.set(o.ref.parent.parent.id, o.data().name || ''); });
         const house = String((await db.doc('osbb_settings/finance').get()).data()?.houseAddress || 'вул. Інглезі, буд. 3, корп. 3').replace(/,?\s*м\.\s*Одеса,?/i, '').trim();
         const runRows = new Map(Object.entries((await db.doc(`charges_runs/${PERIOD}`).get()).data().amounts || {}));
-        const payers = apts.filter(() => rnd() < 0.3).slice(0, 90);
+        // Квартиру-зразок не змішуємо з випадковими оплатами — її історія показова.
+        const pool = apts.filter(d => d !== showcase);
+        const payers = apts.filter(() => rnd() < 0.3).filter(d => d !== showcase).slice(0, 90);
         payers.forEach((d, i) => {
             const apt = cleanApt(d.id);
             const pa = String(d.data().personalAccount || '').trim();
@@ -264,12 +323,27 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
                 : 'Поповнення';
             push(day, 'in', amount, purpose, { name: name.toUpperCase(), account: '', code: '' });
         });
-        const two = apts.slice(3, 5);
+        // Показовий рахунок: оплата у форматі сервісу (за особовим рахунком),
+        // незрозуміла оплата (бухгалтер розносить вручну й запамʼятовує
+        // платника) і ще одна від того самого платника — вже сама.
+        let showcaseIds = null;
+        if (showcase) {
+            const pa = String(showcase.data().personalAccount || '').trim();
+            const owner = owners.get(showcase.id) || 'Власник';
+            const cp = { name: owner.toUpperCase(), account: iban('2620100000000777'), code: '' };
+            const first = n + 1;
+            push(8, 'in', 40000, pa ? `О/р ${pa.padStart(11, '0')}, м. Одеса, ${house}, кв. ${showcase.id}, від ${owner}, за комунальні послуги`
+                : `м. Одеса, ${house}, кв. ${showcase.id}, від ${owner}, за комунальні послуги`, cp);
+            push(9, 'in', 5000, 'Оплата', cp);
+            push(9, 'in', 2500, 'Поповнення', cp);
+            showcaseIds = [first, first + 1, first + 2].map(i => `${OWN}_DEMO-${i}`);
+        }
+        const two = pool.slice(3, 5);
         if (two.length === 2) push(6, 'in', (runRows.get(cleanApt(two[0].id)) || 30000) + (runRows.get(cleanApt(two[1].id)) || 30000),
             `оплата кв ${two[0].id} та кв ${two[1].id} за жовтень`, { name: (owners.get(two[0].id) || 'ПЛАТНИК').toUpperCase(), account: '', code: '' });
         // Оренда комор мешканцями — дохід за договором, не внесок квартири.
         [7000, 80000, 50000, 36000, 120000].forEach((kop, i) => {
-            const d = apts[(i * 37 + 11) % apts.length];
+            const d = pool[(i * 37 + 11) % pool.length];
             push(2 + i, 'in', kop, `Оренда нежитлового приміщення по договору, кв. ${d.id}`, { name: (owners.get(d.id) || 'ПЛАТНИК').toUpperCase(), account: '', code: '' });
         });
         push(5, 'in', month(YEAR_INCOME.equipment), 'Плата за розміщення обладнання звʼязку за жовтень 2026 згідно з договором',
@@ -285,6 +359,18 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         push(7, 'out', month(YEAR_SPENT.esv), '*;101;ЄСВ за вересень 2026', { name: 'ГУ ДПС (ДЕМО)', account: iban('2600100000000078'), code: '' });
         push(8, 'out', month(YEAR_SPENT.reserve), 'Переказ до резервного фонду за жовтень 2026', { name: 'ОСББ', account: RESERVE, code: '' });
         const stored = await bank.storeTransactions(list, 'demo', await bank.loadContext());
+        if (showcaseIds) {
+            // Бухгалтер у «Вхідних»: «Оплата» 50 грн → у квартиру-зразок, «Запамʼятати платника».
+            const unclear = (await db.doc(`bank_tx/${showcaseIds[1]}`).get()).data();
+            if (unclear?.status === 'review') {
+                const r = await bank.actions.assign(...A, { txId: showcaseIds[1], allocations: [{ apt: cleanApt(showcase.id), amountKop: 5000 }], remember: true });
+                if (unclear.payerKey) created.links.push(unclear.payerKey);
+                const auto = (await db.doc(`bank_tx/${showcaseIds[2]}`).get()).data();
+                const pay = (await db.collection(`apartments/${showcase.id}/ledger`).doc(`bank-${showcaseIds[0]}`).get()).data();
+                const alloc = (pay?.alloc || []).map(a => `${a.name.toLowerCase()} ${fromKop(a.amountKop).toLocaleString('uk-UA', { minimumFractionDigits: 2 })}`).join('; ');
+                step(`Квартира-зразок ${showcase.id}: оплата 400 грн рознесена сама${pay ? '' : ' (не знайдено)'}${alloc ? ` і розподілена за статтями: ${alloc}` : ''}; «Оплата» 50 грн — бухгалтер розніс вручну й запамʼятав платника; «Поповнення» 25 грн від нього ж система рознесла сама${auto?.method === 'link' ? '' : ' (не вийшло)'} (${r.alsoMatched} шт.)`);
+            }
+        }
         const queue = (await db.collection('bank_tx').where('source', '==', 'demo').where('status', '==', 'review').get()).size;
         step(`Виписка за жовтень: ${stored.added} операцій, оплат мешканців рознесено автоматично: ${stored.matched}; чекають рішення у «Вхідних»: ${queue}`);
 
@@ -359,6 +445,8 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         }
         await flush();
         for (const col of ['suppliers', 'contracts', 'expenses']) for (const id of s.created?.[col] || []) await db.doc(`${col}/${id}`).delete();
+        for (const path of s.created?.history || []) await db.doc(path).delete();
+        for (const key of s.created?.links || []) await db.doc(`bank_links/${key}`).delete();
         await deleteAll(db.collection('charges_runs'));
         if (s.chargeSettings) await db.doc('charges/settings').set(s.chargeSettings); else await db.doc('charges/settings').delete();
         await db.doc('budgets/2026').delete();
@@ -379,7 +467,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         // Прогін і прибирання змінюють облік усього будинку — лише голова.
         if (role !== 'chair') fail('permission-denied', 'Демо прогонить і прибирає голова');
         if (data.action === 'run') {
-            try { return await run(actor); }
+            try { return await run(actor, data); }
             catch (e) {
                 await stateRef.set({ status: 'failed', error: String(e.message || e).slice(0, 300) }, { merge: true }).catch(() => {});
                 throw e;

@@ -60,7 +60,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     // --------------------------------------------------------
     async function ledgerOf(aptId) {
         const snap = await db.collection(`apartments/${aptId}/ledger`).get();
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
     }
 
     async function allLedgers() {
@@ -70,7 +70,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             const apt = d.ref.parent.parent?.id;
             if (!apt || d.ref.parent.parent.parent.id !== 'apartments') return;
             if (!map.has(apt)) map.set(apt, []);
-            map.get(apt).push(d.data());
+            map.get(apt).push({ _id: d.id, ...d.data() });
         });
         return map;
     }
@@ -94,15 +94,30 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const refs = targets.map(a => db.doc(`apartments/${a}`));
         const snaps = refs.length ? await db.getAll(...refs) : [];
         let batch = db.batch(), ops = 0, updated = 0;
+        const order = settings.components.map(c => c.id);
+        const names = new Map(settings.components.map(c => [c.id, c.name]));
+        // З назвами: мешканець довідника складових не читає, а розбивку бачить.
+        const named = parts => Object.entries(parts).filter(([, v]) => v).map(([c, v]) => ({ component: c, name: names.get(c) || 'Інше', amountKop: v }));
+        const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
+        const flush = async () => { if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; } };
         for (const snap of snaps) {
             if (!snap.exists || snap.data().isAdmin === true) continue;
-            const kop = core.balanceFromLedger(ledgers.get(snap.id) || [], settings.startPeriod);
+            const entries = ledgers.get(snap.id) || [];
+            // Баланс за складовими (як у сервісі бухгалтера) і розподіл кожної оплати.
+            const { balances, steps } = core.replay(entries, { startPeriod: settings.startPeriod, order });
+            for (const { entry, parts } of steps) {
+                if (entry.kind !== 'payment' || !entry._id || same(entry.alloc, named(parts))) continue;
+                batch.update(db.doc(`apartments/${snap.id}/ledger/${entry._id}`), { alloc: named(parts) });
+                ops += 1;
+                await flush();
+            }
+            const kop = core.balanceFromLedger(entries, settings.startPeriod);
             const balance = fromKop(kop);
-            if (snap.data().balance === balance && snap.data().balanceSource === 'ledger') continue;
-            batch.set(snap.ref, { balance, balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            if (snap.data().balance === balance && snap.data().balanceSource === 'ledger' && same(snap.data().balanceParts, named(balances))) continue;
+            batch.set(snap.ref, { balance, balanceParts: named(balances), balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
             ops += 1;
             updated += 1;
-            if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+            await flush();
         }
         if (ops) await batch.commit();
         return { updated };
@@ -349,16 +364,25 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function setOpening(actor, role, { rows }) {
         const apartments = await loadApartments();
         const ids = new Map(apartments.map(a => [a.apt, a.id]));
-        const list = (rows || []).map(r => ({ apt: cleanApt(r?.apt), amountKop: Number(r?.amountKop) }));
+        const settings = await loadSettings();
+        const known = new Set(settings.components.map(c => c.id));
+        const list = (rows || []).map(r => {
+            const row = { apt: cleanApt(r?.apt), amountKop: Number(r?.amountKop) };
+            // Залишок за складовими (необовʼязково): { складова: коп }, разом — рівно залишок.
+            if (r?.parts && typeof r.parts === 'object') row.parts = Object.fromEntries(Object.entries(r.parts).filter(([c]) => known.has(c)).map(([c, v]) => [c, Number(v)]));
+            return row;
+        });
         const error = core.checkOpening(list, new Set(ids.keys()));
         if (error) fail('invalid-argument', error);
         const amounts = new Map(list.map(r => [r.apt, r.amountKop]));
+        const partsOf = new Map(list.filter(r => r.parts).map(r => [r.apt, r.parts]));
         const at = Timestamp.fromDate(core.openingDate());
         let batch = db.batch(), ops = 0;
         for (const [apt, id] of ids) {
             const kop = amounts.get(apt) || 0;
             batch.set(db.doc(`apartments/${id}/ledger/${core.OPENING_ID}`), {
                 at, period: core.OPENING_PERIOD, kind: 'opening', amount: fromKop(kop), amountKop: kop,
+                ...(partsOf.has(apt) ? { parts: partsOf.get(apt) } : {}),
                 note: core.openingNote(kop), source: 'opening', createdAt: FieldValue.serverTimestamp(), createdBy: actor
             });
             if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
@@ -379,7 +403,8 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const settings = await loadSettings();
         const [apartments, ledgers] = await Promise.all([loadApartments(), allLedgers()]);
         const byApt = new Map(apartments.map(a => [a.apt, ledgers.get(a.id) || []]));
-        return { period, opening: Boolean(settings.opening?.set), ...core.statement(byApt, period, settings.startPeriod) };
+        return { period, opening: Boolean(settings.opening?.set), components: settings.components.map(c => ({ id: c.id, name: c.name })),
+            ...core.statement(byApt, period, settings.startPeriod, settings.components.map(c => c.id)) };
     }
 
     const chargesAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, async request => {

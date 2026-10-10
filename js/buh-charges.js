@@ -115,6 +115,15 @@ function statementTable(st) {
         <tfoot><tr><td>Разом</td>${kopCell(t.opening)}${kopCell(t.charged)}${kopCell(t.paid)}${kopCell(t.closing, ' t-strong')}</tr></tfoot></table>`;
 }
 
+/** Зведення за статтями: як «Надходження» й «Нарахування» по статтях у сервісі бухгалтера. */
+function componentsTable(st) {
+    const comps = (st.components || []).filter(c => st.byComponent?.[c.id]);
+    if (comps.length < 2) return '';
+    const b = st.byComponent;
+    return `<table class="buh-table is-compact ch-comps"><thead><tr><th>Стаття</th><th class="t-sum">На початок</th><th class="t-sum">Нараховано</th><th class="t-sum">Сплачено</th><th class="t-sum">На кінець</th></tr></thead>
+        <tbody>${comps.map(c => `<tr><td>${escapeHtml(c.name)}</td>${kopCell(b[c.id].opening)}${kopCell(b[c.id].charged)}${kopCell(b[c.id].paid)}${kopCell(b[c.id].closing, ' t-strong')}</tr>`).join('')}</tbody></table>`;
+}
+
 async function statementHtml() {
     const periods = periodsBetween(ctx.startPeriod, ctx.current);
     if (!stPeriod || !periods.includes(stPeriod)) stPeriod = ctx.runs[0]?.period || periods[0];
@@ -137,6 +146,7 @@ async function statementHtml() {
                 </span>
             </div>
             ${!st.opening ? '<p class="buh-note ch-warn">Вхідні залишки ще не внесено — колонка «на початок» неповна.</p>' : ''}
+            ${componentsTable(st)}
             <div id="stTable">${statementTable(st)}</div>
             <p class="buh-note">Мінус — борг, плюс — переплата. Оплати з виписки банку потрапляють сюди одразу після рознесення.</p>
         </section>`;
@@ -276,7 +286,28 @@ function openingHtml() {
 // ------------------------------------------------------------
 // КВИТАНЦІЇ
 // ------------------------------------------------------------
-async function receiptHtml(r, a, req, period, qrcode) {
+/**
+ * Розрахунок за статтями — як у квитанції сервісу бухгалтера: баланс до
+ * нарахування (плюс — борг, мінус — переплата), нараховано, сплачено за
+ * період, до сплати за кожною статтею.
+ */
+function receiptPartsHtml(r, comps, charge) {
+    const p = r.parts;
+    if (!p) return '';
+    const used = comps.filter(c => [p.opening, p.charged, p.paid].some(m => m[c.id]));
+    if (used.length < 2) return '';
+    const calc = c => {
+        const part = charge?.parts?.find(x => x.component === c.id);
+        if (!part) return '';
+        return part.base === 'fixed' ? 'з приміщення' : part.base === 'residents' ? `${part.residents} прож. × ${rate(part.rate4)}` : `${area(charge.areaCenti / 100)} м² × ${rate(part.rate4)}`;
+    };
+    return `<table class="rc-parts"><thead><tr><th>Стаття</th><th>Баланс до нарахування</th><th>Нараховано</th><th>Сплачено за період</th><th>До сплати</th></tr></thead>
+        <tbody>${used.map(c => `<tr><td>${escapeHtml(c.name)}${calc(c) ? `<small>${escapeHtml(calc(c))}</small>` : ''}</td>
+            <td>${fmtKop(-(p.opening[c.id] || 0))}</td><td>${fmtKop(p.charged[c.id] || 0)}</td><td>${fmtKop(p.paid[c.id] || 0)}</td>
+            <td>${fmtKop(Math.max(0, -(p.closing[c.id] || 0)))}</td></tr>`).join('')}</tbody></table>`;
+}
+
+async function receiptHtml(r, a, req, period, qrcode, comps = []) {
     const due = Math.max(0, -r.closing);
     const purpose = receiptPurpose(req.purposeTemplate, r.apt, a.personalAccount, period);
     let qr = '';
@@ -293,10 +324,10 @@ async function receiptHtml(r, a, req, period, qrcode) {
         <div class="rc-body">
             <div class="rc-main">
                 <p class="rc-apt">Кв. ${escapeHtml(r.apt)}${a.personalAccount ? ` · о/р ${escapeHtml(a.personalAccount)}` : ''}${a.area ? ` · ${escapeHtml(area(a.area))} м²` : ''}</p>
+                ${receiptPartsHtml(r, comps, charge)}
                 <table><tbody>
                     <tr><td>${r.opening < 0 ? 'Борг' : r.opening > 0 ? 'Переплата' : 'Залишок'} на ${escapeHtml(periodStart(period))}</td><td>${fmtKop(Math.abs(r.opening))}</td></tr>
-                    ${charge?.parts?.length > 1 ? charge.parts.map(p => `<tr><td>${escapeHtml(p.name)} (${p.base === 'fixed' ? 'з приміщення' : p.base === 'residents' ? `${p.residents} прож. × ${rate(p.rate4)}` : `${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(p.rate4)}`})</td><td>${fmtKop(p.amountKop)}</td></tr>`).join('')
-                        : `<tr><td>Нараховано${charge ? ` (${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(charge.rate4)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>`}
+                    <tr><td>Нараховано${charge && !(charge.parts?.length > 1) ? ` (${escapeHtml(area(charge.areaCenti / 100))} м² × ${rate(charge.rate4)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>
                     <tr><td>Сплачено за місяць</td><td>${fmtKop(r.paid)}</td></tr>
                     <tr class="rc-total"><td>${due ? 'До сплати' : r.closing > 0 ? 'Переплата' : 'Розраховано'}</td><td>${fmtKop(due || r.closing)} грн</td></tr>
                 </tbody></table>
@@ -315,7 +346,7 @@ async function showReceipts(btn) {
         const rows = statementRows(st);
         if (!rows.length) { toast('Немає квартир для квитанцій', 'error'); return; }
         const cards = [];
-        for (const r of rows) cards.push(await receiptHtml(r, extra.get(r.apt) || {}, req, st.period, qrcode));
+        for (const r of rows) cards.push(await receiptHtml(r, extra.get(r.apt) || {}, req, st.period, qrcode, st.components || []));
         let host = document.getElementById('buhPrint');
         if (!host) { host = document.createElement('div'); host.id = 'buhPrint'; document.body.appendChild(host); }
         host.innerHTML = `<div class="rc-bar"><b>Квитанції за ${escapeHtml(periodName(st.period))}: ${rows.length}</b>

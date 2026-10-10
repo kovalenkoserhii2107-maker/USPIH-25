@@ -96,3 +96,44 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal((await db.collection('apartments/1/ledger').get()).size, 0);
     assert.deepEqual((await demo.actions.status()).blockers, []);
 });
+
+test('квартира-зразок: залишок і оплата за статтями — як у квитанції сервісу', async () => {
+    await wipe();
+    for (let i = 1; i <= 30; i++) await db.doc(`apartments/${i}`).set({ area: 40 + i, balance: 0, personalAccount: `10${i}` });
+    await db.doc('apartments/45').set({ area: 50, personalAccount: '401230045' });
+    await db.doc('apartments/45/owners/o1').set({ name: 'Петренко Іван Іванович' });
+    const history = 'Квартира;Дата;Тип;Сума;Примітка\n45;31.08.2026;нарахування;392,46;Нарахування за серпень\n45;15.09.2026;оплата;400,00;О/р 00401230045\n45;30.09.2026;нарахування;391,82;Нарахування за вересень\n45;01.10.2026;оплата;1,00;вже в обліку застосунку';
+    const r = await demo.actions.run('10', { showcase: { apt: '45', area: '64', residents: '2', openingKop: 586305, history } });
+    assert.ok(r.steps.some(s => s.startsWith('Квартира-зразок 45: 64 м², проживає 2, залишок на 30.09.2026 5') && s.endsWith('записів: 3')));
+
+    // Історія з сервісу — лише до жовтня 2026.
+    const hist = (await db.collection('apartments/45/ledger').where('source', '==', 'demo-import').get()).docs.map(d => d.data().kind);
+    assert.deepEqual(hist.sort(), ['charge', 'charge', 'payment']);
+    // Залишок 30.09 за статтями: інші статті винні вересень, решта — обслуговування будинку.
+    const comps = (await db.doc('charges/settings').get()).data().components;
+    const id = name => comps.find(c => c.name.startsWith(name)).id;
+    const opening = (await db.doc('apartments/45/ledger/opening').get()).data();
+    assert.deepEqual(opening.parts, { [id('Освітлення')]: -3072, [id('Внесок')]: -4032, [id('Вивезення')]: -2830, main: 596239 });
+    assert.equal((await db.doc('apartments/45/ledger/charge-2026-10').get()).data().amountKop, 39182);
+    // Оплата 400 за особовим рахунком: спершу борги інших статей, решта — на обслуговування.
+    const tx = (await db.collection('bank_tx').where('source', '==', 'demo').get()).docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(t => (t.allocations || []).some(a => a.apt === '45'));
+    const main = tx.find(t => t.amountKop === 40000);
+    assert.equal(main.method, 'account');
+    const pay = (await db.doc(`apartments/45/ledger/bank-${main.id}`).get()).data();
+    assert.deepEqual(pay.alloc.map(a => [a.name, a.amountKop]), [['Освітлення З. М', 3072], ['Внесок на обслуговування ліфтів', 4032],
+        ['Вивезення побутових відходів', 2830], ['Обслуговування будинку та прибудинкової території', 30066]]);
+    // Ручне рознесення із запамʼятовуванням — наступна оплата того самого платника вже сама.
+    assert.deepEqual(tx.filter(t => t.amountKop !== 40000).map(t => [t.amountKop, t.method]).sort(), [[2500, 'link'], [5000, 'manual']]);
+    assert.equal((await db.collection('bank_links').get()).size, 1);
+    // Баланс за статтями в картці квартири; разом — як загальний баланс.
+    const apt = (await db.doc('apartments/45').get()).data();
+    assert.equal(Math.round(apt.balanceParts.reduce((s, p) => s + p.amountKop, 0)), Math.round(apt.balance * 100));
+    assert.equal(apt.balance, (586305 + 40000 + 5000 + 2500 - 39182) / 100);
+
+    await demo.actions.remove('10');
+    assert.equal((await db.collection('apartments/45/ledger').get()).size, 0);
+    assert.equal((await db.collection('bank_links').get()).size, 0);
+    const back = (await db.doc('apartments/45').get()).data();
+    assert.deepEqual([back.area, back.residents, back.balance], [50, undefined, null]);
+});
