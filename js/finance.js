@@ -35,7 +35,15 @@ const SLICE_COLORS = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30',
 // ------------------------------------------------------------
 // БАЛАНС КВАРТИРИ (мешканець)
 // ------------------------------------------------------------
-export function renderBalance(balance, updatedAt) {
+/** Баланс за статтями — як у квитанції сервісу: до сплати чи переплата за кожною. */
+function partsHtml(parts) {
+    const list = (Array.isArray(parts) ? parts : []).filter(p => p && Math.round(p.amountKop));
+    if (list.length < 2) return '';
+    return `<ul class="balance-parts">${list.map(p => `<li><span>${escapeHtml(p.name)}</span>
+        <b class="${p.amountKop < 0 ? 'is-debt' : 'is-credit'}">${p.amountKop < 0 ? 'до сплати' : 'переплата'} ${formatMoney(Math.abs(p.amountKop) / 100)}</b></li>`).join('')}</ul>`;
+}
+
+export function renderBalance(balance, updatedAt, parts) {
     const n = parseMoney(balance);
     const debt = n < -0.005;
     const credit = n > 0.005;
@@ -48,6 +56,7 @@ export function renderBalance(balance, updatedAt) {
                 <span class="balance-label">${label}</span>
                 <span class="balance-sum">${state === 'zero' ? '0,00' : formatMoney(n)}<small>грн</small></span>
                 ${updatedAt ? `<span class="balance-date">Оновлено ${escapeHtml(formatDateTime(updatedAt))}</span>` : ''}
+                ${partsHtml(parts)}
             </div>
             <button type="button" class="balance-history" id="openLedgerBtn"
                     aria-label="Історія нарахувань і оплат" title="Історія нарахувань і оплат">
@@ -92,7 +101,7 @@ export async function loadBalance(apt, apartment) {
         // Рахунок показуємо в картці квартири: його доводиться диктувати
         // в банку, і шукати його в реквізитах щоразу — зайвий шлях.
         renderPersonalAccount();
-        host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt);
+        host.innerHTML = renderBalance(d.balance, d.balanceUpdatedAt, d.balanceParts);
 
         document.getElementById('payBtn')?.addEventListener('click', openPaymentSheet);
     } catch (e) {

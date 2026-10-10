@@ -259,6 +259,8 @@ export async function fetchLedger(apt) {
         return {
             id: d.id, kind: e.kind, amount: Number(e.amount) || 0,
             note: e.note || '', period: e.period || '',
+            // Розподіл оплати за статтями (рахує сервер, як у сервісі бухгалтера).
+            alloc: Array.isArray(e.alloc) ? e.alloc : [],
             at: e.at?.toDate ? e.at.toDate() : null
         };
     }).filter(e => e.at);
@@ -292,7 +294,8 @@ function rowHtml(e) {
     const k = KIND[e.kind] || KIND.charge;
     const label = e.kind === 'opening' ? (e.amount < 0 ? 'Борг на початок' : e.amount > 0 ? 'Переплата на початок' : 'Вхідний залишок') : k.label;
     const isoDate = `${e.at.getFullYear()}-${String(e.at.getMonth() + 1).padStart(2, '0')}-${String(e.at.getDate()).padStart(2, '0')}`;
-    const note = String(e.note || '').trim();
+    const alloc = e.alloc?.length > 1 ? `Розподіл за статтями: ${e.alloc.map(a => `${a.name.toLowerCase()} ${formatMoney(a.amountKop / 100)}`).join('; ')}` : '';
+    const note = [String(e.note || '').trim(), alloc].filter(Boolean).join('\n');
     return `<article class="lg-row">
         <span class="lg-dot ${k.cls}" aria-hidden="true"></span>
         <span class="lg-main">
@@ -302,7 +305,7 @@ function rowHtml(e) {
             </span>
             <time class="lg-date" datetime="${isoDate}">${escapeHtml(dayLabel(e.at))}</time>
             ${note ? `<details class="lg-note">
-                <summary><span>${escapeHtml(readableNote(note))}</span><b>Деталі</b></summary>
+                <summary><span>${escapeHtml(readableNote(e.note || note))}</span><b>Деталі</b></summary>
                 <p>${escapeHtml(note)}</p>
             </details>` : ''}
         </span>

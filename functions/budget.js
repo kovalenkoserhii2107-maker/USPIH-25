@@ -67,27 +67,47 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // ВИКОНАННЯ Й ДАНІ ДЛЯ МЕШКАНЦІВ
     // --------------------------------------------------------
     async function gather(year) {
-        const [budgets, expenses, bank, settings, apartments, chargeSettings] = await Promise.all([
+        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap] = await Promise.all([
             allBudgets(),
             db.collection('expenses').limit(3000).get(),
             db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
             db.doc('bank/settings').get(),
             db.collection('apartments').get(),
-            db.doc('charges/settings').get()
+            db.doc('charges/settings').get(),
+            db.collectionGroup('ledger').where('period', '>=', `${year}-01`).get()
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
         const tx = bank.docs.map(d => d.data());
         const budget = core.effectiveBudget(budgets, year);
         const months = core.monthsElapsed(year, today());
-        const result = core.execution({ budget, fact: core.factByItem({ expenses: ex, bankOut: tx, year }), income: core.incomeFact({ bankIn: tx, year }), months });
+        // Оплати мешканців за складовими: розподіл тим самим правилом, що й баланс квартири.
+        const cs = chargeSettings.exists ? chargeSettings.data() : {};
+        const components = cs.components?.length ? cs.components : charges.DEFAULT_COMPONENTS;
+        const ledgers = new Map();
+        ledgerSnap.forEach(d => {
+            if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
+            const apt = d.ref.parent.parent.id;
+            if (!ledgers.has(apt)) ledgers.set(apt, []);
+            ledgers.get(apt).push(d.data());
+        });
+        // Вхідний залишок (вересень 2026) теж потрібен для розподілу першої оплати.
+        if (cs.opening?.set && String(year) === '2026') {
+            (await db.collectionGroup('ledger').where('kind', '==', 'opening').get()).forEach(d => {
+                const apt = d.ref.parent.parent.id;
+                if (!ledgers.has(apt)) ledgers.set(apt, []);
+                ledgers.get(apt).push(d.data());
+            });
+        }
+        const paid = charges.paidByComponent(ledgers, year, { order: components.map(c => c.id) });
+        const incomeParts = components.filter(c => paid[c.id]).map(c => ({ title: c.name, factKop: paid[c.id] }));
+        const result = core.execution({ budget, fact: core.factByItem({ expenses: ex, bankOut: tx, year }), income: core.incomeFact({ bankIn: tx, year }), months, incomeParts });
         const accounts = Object.values(settings.exists ? settings.data().accounts || {} : {});
         const fundsKop = accounts.reduce((s, a) => s + (!a.currency || a.currency === 'UAH' ? a.balanceKop || 0 : 0), 0);
         const fundsAt = accounts.map(a => a.balanceAt?.toDate?.()).filter(Boolean).sort((a, b) => b - a)[0] || null;
         const apts = apartments.docs.map(d => ({ apt: cleanApt(d.id), ...d.data() }));
         // Скільки дадуть внески за рік за чинними тарифами — підказка для плану надходжень.
-        const cs = chargeSettings.exists ? chargeSettings.data() : {};
         const month = charges.computeCharges({ apartments: apts.filter(a => !a.isAdmin), premises: cs.premises || {}, tariffs: cs.tariffs || [],
-            groups: cs.groups?.length ? cs.groups : charges.DEFAULT_GROUPS, period: `${year}-${today().slice(0, 4) === String(year) ? today().slice(5, 7) : '01'}` });
+            groups: cs.groups?.length ? cs.groups : charges.DEFAULT_GROUPS, components, period: `${year}-${today().slice(0, 4) === String(year) ? today().slice(5, 7) : '01'}` });
         return { budgets, budget, expenses: ex, result, fundsKop, fundsAt, accounts: accounts.length, debt: core.houseDebt(apts), contributionsYearKop: month.totalKop * 12 };
     }
 
@@ -115,7 +135,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
                 year: String(g.budget.year), carried: g.budget.carried, decision: g.budget.decision || '', months: r.months,
                 sections: r.sections.map(s => ({ title: s.title, planKop: s.planKop, toDateKop: s.toDateKop, factKop: s.factKop,
                     lines: s.lines.map(l => ({ title: l.title, planKop: l.planKop, toDateKop: l.toDateKop, factKop: l.factKop, outside: Boolean(l.outside) })) })),
-                income: r.income.map(i => ({ title: i.title, planKop: i.planKop, toDateKop: i.toDateKop, factKop: i.factKop })),
+                income: r.income.map(i => ({ title: i.title, planKop: i.planKop, toDateKop: i.toDateKop, factKop: i.factKop, ...(i.parts ? { parts: i.parts } : {}) })),
                 totals: r.totals
             } : null,
             debt: g.debt,

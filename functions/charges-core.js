@@ -262,6 +262,11 @@ function checkOpening(rows, knownApts) {
         if (!knownApts.has(r.apt)) return `Квартири ${r.apt} немає в довіднику`;
         if (seen.has(r.apt)) return `Квартира ${r.apt} вказана двічі`;
         if (!Number.isInteger(r.amountKop) || Math.abs(r.amountKop) > 100_000_000) return `Квартира ${r.apt}: незрозуміла сума`;
+        if (r.parts) {
+            const vals = Object.values(r.parts);
+            if (!vals.every(Number.isInteger)) return `Квартира ${r.apt}: незрозуміла сума за складовою`;
+            if (vals.reduce((s, v) => s + v, 0) !== r.amountKop) return `Квартира ${r.apt}: складові разом не дорівнюють залишку`;
+        }
         seen.add(r.apt);
     }
     return null;
@@ -285,25 +290,120 @@ function balanceFromLedger(entries, startPeriod = START_PERIOD) {
     return kop;
 }
 
+// ------------------------------------------------------------
+// БАЛАНС ЗА СКЛАДОВИМИ (як у сервісі бухгалтера)
+// ------------------------------------------------------------
+const msOf = at => (at?.toMillis ? at.toMillis() : at?.toDate ? at.toDate().getTime() : at instanceof Date ? at.getTime() : (Date.parse(at) || 0));
+const KIND_ORDER = { opening: 0, charge: 1, payment: 2 };
+
+/**
+ * Розподіл оплати між складовими — як у сервісі бухгалтера: спершу
+ * повністю закриваються борги інших складових (освітлення, ліфти,
+ * вивезення…), решта йде на основну («Обслуговування будинку»), навіть
+ * у переплату. Якщо оплати не вистачає на ці борги — ділимо пропорційно.
+ * Квитанція за вересень 2026: 400 = 28,30 + 31,36 + 40,32 + 300,02.
+ * balances — у знаку застосунку (мінус — борг). Повертає { складова: коп }.
+ */
+function allocatePayment(kop, balances, order) {
+    const alloc = {};
+    const others = order.filter(c => c !== 'main');
+    const debts = others.map(c => Math.max(0, -(balances[c] || 0)));
+    const totalDebt = debts.reduce((s, d) => s + d, 0);
+    if (totalDebt > 0 && kop < totalDebt) {
+        let given = 0;
+        others.forEach((c, i) => { if (debts[i]) { alloc[c] = Math.floor(kop * debts[i] / totalDebt); given += alloc[c]; } });
+        const biggest = others[debts.indexOf(Math.max(...debts))];
+        alloc[biggest] += kop - given;
+        return alloc;
+    }
+    let left = kop;
+    others.forEach((c, i) => { if (debts[i]) { alloc[c] = debts[i]; left -= debts[i]; } });
+    if (left) alloc.main = left;
+    return alloc;
+}
+
+/**
+ * Історія квартири по кроках: залишок кожної складової після кожного
+ * запису. Вхідний залишок — за його складовими (без них — на основну),
+ * нарахування — за частинами, оплата — розподілом allocatePayment.
+ * order — порядок складових (з налаштувань). Записи до початку обліку
+ * не беруться: вони вже у вхідному залишку.
+ */
+function replay(entries, { startPeriod = START_PERIOD, order = ['main'] } = {}) {
+    const list = entries.map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.kind === 'opening' || (['charge', 'payment'].includes(e.kind) && String(e.period || '') >= startPeriod))
+        .sort((a, b) => (msOf(a.e.at) - msOf(b.e.at)) || (KIND_ORDER[a.e.kind] - KIND_ORDER[b.e.kind]) || a.i - b.i);
+    const balances = {};
+    const add = (c, v) => { balances[c] = (balances[c] || 0) + v; };
+    const steps = [];
+    for (const { e } of list) {
+        let parts;
+        if (e.kind === 'opening') parts = e.parts && Object.keys(e.parts).length ? { ...e.parts } : { main: entryKop(e) };
+        else if (e.kind === 'charge') parts = Object.fromEntries((e.parts?.length ? e.parts : [{ component: 'main', amountKop: entryKop(e) }]).map(p => [p.component, -p.amountKop]));
+        else parts = allocatePayment(entryKop(e), balances, [...new Set([...order, ...Object.keys(balances)])]);
+        Object.entries(parts).forEach(([c, v]) => add(c, v));
+        steps.push({ entry: e, parts });
+    }
+    return { balances, steps };
+}
+
+/** Залишки за складовими на початок і кінець місяця, нараховано й сплачено за складовими. */
+function componentStatement(entries, period, opts = {}) {
+    const { steps } = replay(entries, opts);
+    const opening = {}, charged = {}, paid = {}, closing = {};
+    const add = (m, c, v) => { m[c] = (m[c] || 0) + v; };
+    for (const { entry, parts } of steps) {
+        const before = entry.kind === 'opening' || String(entry.period || '') < period;
+        const during = !before && entry.period === period;
+        for (const [c, v] of Object.entries(parts)) {
+            if (before) add(opening, c, v);
+            if (before || during) add(closing, c, v);
+            if (during && entry.kind === 'charge') add(charged, c, -v);
+            if (during && entry.kind === 'payment') add(paid, c, v);
+        }
+    }
+    return { opening, charged, paid, closing };
+}
+
+/** Надходження внесків за складовими за рік (розподіл оплат усіх квартир) — «Надходження по статтях». */
+function paidByComponent(ledgers, year, opts = {}) {
+    const out = {};
+    for (const entries of ledgers.values()) {
+        for (const { entry, parts } of replay(entries, opts).steps) {
+            if (entry.kind !== 'payment' || !String(entry.period || '').startsWith(String(year))) continue;
+            for (const [c, v] of Object.entries(parts)) out[c] = (out[c] || 0) + v;
+        }
+    }
+    return out;
+}
+
 /**
  * Відомість розрахунків з мешканцями за місяць: залишок на початок,
  * нараховано, сплачено, залишок на кінець — по кожній квартирі.
  * ledgers: Map<apt, entries[]>.
  */
-function statement(ledgers, period, startPeriod = START_PERIOD) {
+function statement(ledgers, period, startPeriod = START_PERIOD, order = ['main']) {
     const rows = [];
+    const byComponent = {};
     for (const [apt, entries] of ledgers) {
         const before = entries.filter(e => e.kind === 'opening' || String(e.period || '') < period);
         const during = entries.filter(e => e.kind !== 'opening' && e.period === period && period >= startPeriod);
         const opening = balanceFromLedger(before, startPeriod);
         const charged = during.filter(e => e.kind === 'charge').reduce((s, e) => s + entryKop(e), 0);
         const paid = during.filter(e => e.kind === 'payment').reduce((s, e) => s + entryKop(e), 0);
-        rows.push({ apt, opening, charged, paid, closing: opening - charged + paid });
+        const parts = componentStatement(entries, period, { startPeriod, order });
+        for (const key of ['opening', 'charged', 'paid', 'closing']) {
+            for (const [c, v] of Object.entries(parts[key])) {
+                byComponent[c] ||= { opening: 0, charged: 0, paid: 0, closing: 0 };
+                byComponent[c][key] += v;
+            }
+        }
+        rows.push({ apt, opening, charged, paid, closing: opening - charged + paid, parts });
     }
     rows.sort((a, b) => String(a.apt).localeCompare(String(b.apt), 'uk', { numeric: true }));
     const sum = key => rows.reduce((s, r) => s + r[key], 0);
     return {
-        rows,
+        rows, byComponent,
         totals: { opening: sum('opening'), charged: sum('charged'), paid: sum('paid'), closing: sum('closing'),
             debt: rows.reduce((s, r) => s + Math.min(0, r.closing), 0), debtors: rows.filter(r => r.closing < 0).length }
     };
@@ -314,5 +414,5 @@ module.exports = {
     parseArea, parseRate, formatRate, formatArea, chargeKop, entryKop,
     validPeriod, shiftPeriod, currentPeriod, periodName, kyivDate, lastDay, chargeDate, openingDate, duePeriods,
     tariffFor, checkTariff, checkGroupName, computeCharges, chargeNote,
-    checkOpening, openingNote, balanceFromLedger, statement
+    checkOpening, openingNote, balanceFromLedger, statement, allocatePayment, replay, componentStatement, paidByComponent
 };

@@ -185,3 +185,38 @@ test('як у реальній квитанції: 64 м², 2 проживают
     assert.equal(c.parseResidents(-1), null);
     assert.equal(c.parseResidents(''), null);
 });
+
+test('розподіл оплати за складовими — як у квитанції сервісу', () => {
+    const order = ['main', 'light', 'lift', 'waste'];
+    // Вересень 2026: на початок місяця обслуговування в переплаті, інші — борг за серпень.
+    const before = { main: 595485, light: -3136, lift: -4032, waste: -2830 };
+    assert.deepEqual(c.allocatePayment(40000, before, order), { light: 3136, lift: 4032, waste: 2830, main: 30002 });
+    // Оплати не вистачає на борги інших складових — пропорційно, без загублених копійок.
+    const small = c.allocatePayment(5000, before, order);
+    assert.equal(Object.values(small).reduce((s, v) => s + v, 0), 5000);
+    assert.equal(small.main, undefined);
+    // Боргів немає — усе на основну.
+    assert.deepEqual(c.allocatePayment(40000, { main: 100 }, order), { main: 40000 });
+});
+
+test('історія за складовими: залишок 30.09 з квитанції, жовтень — оплата й нарахування', () => {
+    const order = ['main', 'light', 'lift', 'waste'];
+    // Залишок на 30.09.2026 за складовими: разом +5 863,05, як в акті звірки.
+    const opening = { kind: 'opening', period: '2026-09', at: '2026-09-30T09:00:00Z', amountKop: 586305,
+        parts: { main: 596239, light: -3072, lift: -4032, waste: -2830 } };
+    const pay = { kind: 'payment', period: '2026-10', at: '2026-10-15T09:00:00Z', amountKop: 40000 };
+    const charge = { kind: 'charge', period: '2026-10', at: '2026-10-31T09:00:00Z', amountKop: 39182,
+        parts: [{ component: 'main', amountKop: 29248 }, { component: 'light', amountKop: 3072 }, { component: 'lift', amountKop: 4032 }, { component: 'waste', amountKop: 2830 }] };
+    const old = { kind: 'charge', period: '2026-08', at: '2026-08-31T09:00:00Z', amountKop: 39246 };
+    const r = c.replay([charge, pay, opening, old], { order });
+    assert.deepEqual(r.steps.map(s => s.entry.kind), ['opening', 'payment', 'charge']);
+    assert.deepEqual(r.steps[1].parts, { light: 3072, lift: 4032, waste: 2830, main: 30066 });
+    assert.deepEqual(r.balances, { main: 596239 + 30066 - 29248, light: -3072, lift: -4032, waste: -2830 });
+    assert.equal(Object.values(r.balances).reduce((s, v) => s + v, 0), c.balanceFromLedger([charge, pay, opening, old]));
+    const st = c.componentStatement([charge, pay, opening], '2026-10', { order });
+    assert.deepEqual(st.opening, opening.parts);
+    assert.deepEqual(st.charged, { main: 29248, light: 3072, lift: 4032, waste: 2830 });
+    assert.deepEqual(st.paid, { light: 3072, lift: 4032, waste: 2830, main: 30066 });
+    assert.equal(c.checkOpening([{ apt: '1', amountKop: 586305, parts: opening.parts }], new Set(['1'])), null);
+    assert.match(c.checkOpening([{ apt: '1', amountKop: 1, parts: { main: 2 } }], new Set(['1'])), /складові/);
+});

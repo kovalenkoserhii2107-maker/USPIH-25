@@ -230,9 +230,9 @@ export async function budgetAct(payload, timeoutMs = 60000) {
 // ДЕМО-ПРОГІН (тестовий акаунт)
 // ------------------------------------------------------------
 export const loadDemo = () => once('demo', () => callBackend('demoAction', { action: 'status' }).catch(() => null));
-export async function demoAct(action) {
+export async function demoAct(action, extra = {}) {
     try {
-        return await callBackend('demoAction', { action }, 540000);
+        return await callBackend('demoAction', { action, ...extra }, 540000);
     } finally {
         invalidateDirectory();
         invalidate();
