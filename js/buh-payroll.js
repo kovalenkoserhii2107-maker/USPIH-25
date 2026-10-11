@@ -1,5 +1,8 @@
 // ============================================================
-// «Зарплата»: картки людей, табель і акти місяця, відомість з
+// «Зарплата»: зверху — нараховано, людям і податки; ліворуч — люди,
+// праворуч — розрахунок обраної людини з табелем чи актом місяця.
+// Поля всіх людей лишаються на сторінці (приховані), тож «Зберегти
+// відомість» читає їх так само, як раніше. Відомість з
 // утриманнями (ПДФО, військовий збір) і ЄСВ, затвердження головою,
 // платежі авансу й остаточного розрахунку в Приват24 на підпис голови.
 //
@@ -10,6 +13,7 @@ import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { loadPayroll, payrollAct, maskIban } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
+import { initials, personState, payrollTotals } from './payroll-view-core.js';
 
 const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 const monthTitle = p => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
@@ -19,6 +23,7 @@ const money2 = k => (k ? (k / 100).toFixed(2).replace('.', ',') : '');
 let period = null;
 let ctx = null;
 let editing = null;          // картка людини у формі: null — закрито, {} — нова
+let selected = null;         // людина в правій картці
 
 /** Відкрити розділ на місяці (із «Вхідних»). */
 export function openPayroll(p) {
@@ -27,40 +32,75 @@ export function openPayroll(p) {
     else loadPayrollView();
 }
 
-const STATUS = { none: ['не складено', 'is-review'], draft: ['чекає голову', 'is-review'], approved: ['затверджено', 'is-payment'] };
+const STATUS = { none: ['Відомість не складено', ''], draft: ['Відомість чекає голову', 'is-work'], approved: ['Відомість затверджено', 'is-done'] };
+const grn = k => `${fmtKop(k)} грн`;
+const TAX_NAMES = { pdfo: 'ПДФО', vz: 'Військовий збір', esv: 'ЄСВ' };
+const pct = v => `${String(v / 100).replace('.', ',')}%`;
 
-function runHtml() {
-    const run = ctx.run;
-    if (!run.rows.length) {
-        return `<section class="buh-card"><p class="list-empty">${ctx.people.length ? 'У цьому місяці немає діючих працівників і договорів ЦПД' : 'Додайте працівників і виконавців за договорами ЦПД нижче — відомість складеться сама'}</p></section>`;
+/** Поля людини за місяць: табель чи акт, премія, перерахунок, відсутності. */
+function inputsHtml(r, locked) {
+    const id = escapeHtml(r.personId);
+    const dis = locked ? ' disabled' : '';
+    if (r.kind === 'gph') {
+        return `<div class="pr-fields"><label class="py-field"><span>Сума акта за місяць, грн</span>
+            <input class="pr-in" data-id="${id}" data-k="actKop" inputmode="decimal" value="${money2(r.actKop)}" placeholder="0,00"${dis}></label></div>`;
     }
-    const locked = ctx.closed || Boolean(ctx.stages.final) || ctx.stages.advance?.complete === false;
-    const rows = run.rows.map(r => {
-        const input = r.kind === 'gph'
-            ? `<input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="actKop" inputmode="decimal" value="${money2(r.actKop)}" aria-label="Сума акта"${locked ? ' disabled' : ''}><small>акт, грн</small>`
-            : `<input class="field-input pr-in pr-days" data-id="${escapeHtml(r.personId)}" data-k="workedDays" inputmode="numeric" value="${r.workedDays ?? ''}" aria-label="Відпрацьовано днів"${locked ? ' disabled' : ''}><small>з ${r.normDays} дн.</small>${absencesHtml(r, locked)}`;
-        const notes = [...r.problems.map(t => `<span class="is-out">${escapeHtml(t)}</span>`), ...r.warnings.map(t => escapeHtml(t))];
-        return `<tr><td class="t-main"><b>${escapeHtml(r.name)}</b><small>${escapeHtml(r.kind === 'gph' ? 'договір ЦПД' : `${r.position || 'працівник'}${r.fte && r.fte < 1 ? ` · ставка ${r.fte}` : ''} · оклад ${fmtKop(r.salaryKop)}`)}</small>
-                ${notes.length ? `<small class="pr-notes">${notes.join(' · ')}</small>` : ''}</td>
-            <td class="pr-input">${input}</td>
-            <td>${r.kind === 'employee' ? `<input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="bonusKop" inputmode="decimal" value="${money2(r.bonusKop)}" placeholder="0,00" aria-label="Премія"${locked ? ' disabled' : ''}>
-                <details class="pr-corr"${r.correctionKop ? ' open' : ''}><summary>перерахунок</summary>
-                    <input class="field-input pr-in" data-id="${escapeHtml(r.personId)}" data-k="correctionKop" inputmode="decimal" value="${r.correctionKop ? (r.correctionKop / 100).toFixed(2).replace('.', ',') : ''}" placeholder="±0,00" aria-label="Перерахунок за минулий місяць, плюс чи мінус"${locked ? ' disabled' : ''}>
-                    <input class="field-input pr-txt" type="month" data-id="${escapeHtml(r.personId)}" data-k="correctionFor" value="${escapeHtml(r.correctionFor || shift(ctx.period, -1))}" max="${shift(ctx.period, -1)}" aria-label="За який місяць"${locked ? ' disabled' : ''}>
-                    <input class="field-input pr-txt" data-id="${escapeHtml(r.personId)}" data-k="correctionNote" maxlength="120" value="${escapeHtml(r.correctionNote || '')}" placeholder="причина" aria-label="Причина перерахунку"${locked ? ' disabled' : ''}>
-                </details>` : ''}</td>
-            <td class="t-sum">${fmtKop(r.grossKop)}</td><td class="t-sum t-muted">${fmtKop(r.pdfoKop + r.vzKop)}</td>
-            <td class="t-sum"><b>${fmtKop(r.netKop)}</b></td><td class="t-sum t-muted">${fmtKop(r.esvKop)}</td>
-            <td class="t-sum">${r.advance.netKop ? fmtKop(r.advance.netKop) : '—'}</td><td class="t-sum">${fmtKop(r.final.netKop)}</td></tr>`;
+    return `<div class="pr-fields">
+        <div class="py-pair">
+            <label class="py-field"><span>Відпрацьовано днів (з ${r.normDays})</span>
+                <input class="pr-in pr-days" data-id="${id}" data-k="workedDays" inputmode="numeric" value="${r.workedDays ?? ''}"${dis}></label>
+            <label class="py-field"><span>Премія, грн</span>
+                <input class="pr-in" data-id="${id}" data-k="bonusKop" inputmode="decimal" value="${money2(r.bonusKop)}" placeholder="0,00"${dis}></label>
+        </div>
+        ${absencesHtml(r, locked)}
+        <details class="pr-corr"${r.correctionKop ? ' open' : ''}><summary>Перерахунок за минулий місяць</summary>
+            <div class="pr-corr-row">
+                <input class="field-input pr-in" data-id="${id}" data-k="correctionKop" inputmode="decimal" value="${r.correctionKop ? (r.correctionKop / 100).toFixed(2).replace('.', ',') : ''}" placeholder="±0,00" aria-label="Перерахунок, плюс чи мінус"${dis}>
+                <input class="field-input pr-txt" type="month" data-id="${id}" data-k="correctionFor" value="${escapeHtml(r.correctionFor || shift(ctx.period, -1))}" max="${shift(ctx.period, -1)}" aria-label="За який місяць"${dis}>
+                <input class="field-input pr-txt" data-id="${id}" data-k="correctionNote" maxlength="120" value="${escapeHtml(r.correctionNote || '')}" placeholder="причина" aria-label="Причина перерахунку"${dis}>
+            </div>
+        </details>
+    </div>`;
+}
+
+/** Розрахунок людини: рядки «оклад → утримання → до виплати» і поля місяця. */
+function personBodyHtml(r, locked) {
+    const rate = ctx.run.rate;
+    const lines = r.kind === 'gph'
+        ? [['За актом виконаних робіт', grn(r.actKop || 0)]]
+        : [['Оклад', `${grn(r.salaryKop)}${r.fte && r.fte < 1 ? ` · ставка ${String(r.fte).replace('.', ',')}` : ''}`],
+            ['Відпрацьовано', r.workedDays === undefined || r.workedDays === null ? `${r.normDays} з ${r.normDays} днів` : `${r.workedDays} з ${r.normDays} днів`],
+            ...(r.bonusKop ? [['Премія', grn(r.bonusKop)]] : []),
+            ...(r.correctionKop ? [['Перерахунок', grn(r.correctionKop)]] : [])];
+    lines.push(['Нараховано', grn(r.grossKop)], [`ПДФО ${pct(rate.pdfo)}`, `−${grn(r.pdfoKop)}`], [`Військовий збір ${pct(rate.vz)}`, `−${grn(r.vzKop)}`]);
+    const notes = [...r.problems.map(t => `<li class="is-bad">${escapeHtml(t)}</li>`), ...r.warnings.map(t => `<li>${escapeHtml(t)}</li>`)];
+    return `<dl class="pr-lines">${lines.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd${v.startsWith('−') ? ' class="is-minus"' : ''}>${escapeHtml(v)}</dd>`).join('')}
+            <dt class="is-total">До виплати</dt><dd class="is-total">${grn(r.netKop)}</dd></dl>
+        <p class="pr-split">${r.advance.netKop ? `аванс ${grn(r.advance.netKop)} · ` : ''}решта ${grn(r.final.netKop)}</p>
+        <p class="pr-employer">ЄСВ ${pct(rate.esv)} — ${grn(r.esvKop)} сплачує ОСББ понад зарплату.${r.kind === 'gph' ? ' Договір ЦПД: ЄСВ з суми акта.' : ''}</p>
+        ${notes.length ? `<ul class="pr-notes">${notes.join('')}</ul>` : ''}
+        <h3 class="pr-sub">${r.kind === 'gph' ? 'Акт за місяць' : 'Табель за місяць'}</h3>
+        ${inputsHtml(r, locked)}`;
+}
+
+/** Права картка: розрахунок кожної людини (видно лише обрану) або форма картки людини. */
+function cardHtml(locked) {
+    const bodies = ctx.run.rows.map(r => {
+        const person = ctx.people.find(p => p.id === r.personId) || {};
+        return `<div class="pr-body" data-person="${escapeHtml(r.personId)}"${r.personId === selected && !editing ? '' : ' hidden'}>
+            <div class="fl-card-head"><div><span class="fl-facts">${escapeHtml(r.kind === 'gph' ? `Договір ЦПД${person.contract ? ` ${person.contract}` : ''}` : `Трудовий договір${person.mainJob === false ? '' : ' · основне місце'}`)}</span>
+                <h2>${escapeHtml(r.name)}</h2>${r.position ? `<span class="fl-owner">${escapeHtml(r.position)}</span>` : ''}</div>
+                <button type="button" class="sv-btn is-soft pr-edit" data-act="person-edit" data-id="${escapeHtml(r.personId)}">Картка</button></div>
+            ${personBodyHtml(r, locked)}
+        </div>`;
     }).join('');
-    const t = run.totals;
-    return `<section class="buh-card">
-        <div class="buh-card-head"><h2>Відомість за ${escapeHtml(monthTitle(ctx.period).toLowerCase())}</h2><span>ставки: ПДФО ${run.rate.pdfo / 100} %, ВЗ ${run.rate.vz / 100} %, ЄСВ ${run.rate.esv / 100} % · МЗП ${fmtKop(run.rate.minWageKop)}</span></div>
-        <div class="jr-scroll"><table class="buh-table pr-table"><thead><tr><th>Людина</th><th>Табель / акт</th><th>Премія</th><th class="t-sum">Нараховано</th><th class="t-sum">ПДФО+ВЗ</th><th class="t-sum">На руки</th><th class="t-sum">ЄСВ</th><th class="t-sum">Аванс</th><th class="t-sum">Решта</th></tr></thead>
-            <tbody>${rows}</tbody>
-            <tfoot><tr><td>Разом</td><td></td><td></td><td class="t-sum">${fmtKop(t.grossKop)}</td><td class="t-sum">${fmtKop(t.pdfoKop + t.vzKop)}</td><td class="t-sum">${fmtKop(t.netKop)}</td><td class="t-sum">${fmtKop(t.esvKop)}</td><td class="t-sum">${fmtKop(t.advance.netKop)}</td><td class="t-sum">${fmtKop(t.final.netKop)}</td></tr></tfoot></table></div>
-        <p class="buh-note">ПДФО, військовий збір та ЄСВ сплачуються з кожною виплатою. З остаточним розрахунком — решта й доплата ЄСВ до мінімальної бази. Свята під час воєнного стану — робочі дні: норма — пн–пт.${ctx.stages.advance ? ' Аванс уже підготовлено — його суми не змінюються.' : ''}</p>
-    </section>`;
+    const outside = ctx.people.find(p => p.id === selected && !ctx.run.rows.some(r => r.personId === p.id));
+    const outsideHtml = outside && !editing ? `<div class="fl-card-head"><div><span class="fl-facts">${escapeHtml(ctx.kinds[outside.kind] || '')}</span><h2>${escapeHtml(outside.name)}</h2></div>
+            <button type="button" class="sv-btn is-soft pr-edit" data-act="person-edit" data-id="${escapeHtml(outside.id)}">Картка</button></div>
+        <p class="py-note">${outside.active === false ? 'Картку позначено «не діє» — у відомості людини немає.' : 'У цьому місяці договір не діє — перевірте дати в картці.'}</p>` : '';
+    const empty = !ctx.run.rows.length && !outside && !editing
+        ? `<div class="fl-empty"><b>${ctx.people.length ? 'У цьому місяці відомість порожня' : 'Ще нікого немає'}</b><span>${ctx.people.length ? 'Немає діючих працівників і договорів ЦПД.' : 'Додайте працівника чи виконавця за договором ЦПД — відомість складеться сама.'}</span></div>` : '';
+    return `${bodies}${outsideHtml}${empty}${editing ? personFormHtml(editing) : ''}`;
 }
 
 /** Відпустки й лікарняні працівника за місяць і кошти ПФУ за лікарняний. */
@@ -84,26 +124,31 @@ function absencesHtml(r, locked) {
 
 function paymentsHtml() {
     if (!ctx.payments.length) return '';
-    const STAT = { sending: 'надсилається', sent: 'на підписі в Приват24', paid: 'проведено', failed: 'банк не прийняв', unknown: 'перевірте у Приват24', canceled: 'скасовано' };
-    return `<section class="buh-card"><div class="buh-card-head"><h2>Платежі за відомістю</h2></div>
-        <table class="buh-table is-compact"><tbody>${ctx.payments.map(p => `<tr><td>${p.stage === 'advance' ? 'Аванс' : 'Зарплата'}</td><td class="t-main">${escapeHtml(p.recipient)}${p.error ? `<small class="is-out">${escapeHtml(p.error)}</small>` : ''}</td>
-            <td class="t-sum">${fmtKop(p.amountKop)}</td><td>${p.returnedKop ? `<span class="buh-tag is-error">повернено банком${p.repaid ? ' · відправлено знову' : ''}</span>`
-                : `<span class="buh-tag ${p.status === 'paid' ? 'is-payment' : p.status === 'failed' ? 'is-error' : 'is-review'}">${STAT[p.status] || p.status}${p.retry ? ' · повторно' : ''}</span>`}</td>
-            <td class="t-act">${p.status === 'paid' && p.returnedKop >= p.amountKop && !p.repaid ? `<button type="button" class="btn-ghost-small" data-act="repay" data-id="${escapeHtml(p.id)}" title="Спершу виправте IBAN у картці людини чи рахунок податку">Відправити знову</button>` : ''}</td></tr>`).join('')}</tbody></table>
-        ${ctx.payments.some(p => p.returnedKop) ? '<p class="buh-note">Повернений банком платіж: виправте IBAN у картці людини (або рахунок податку) і натисніть «Відправити знову» — новий платіж піде голові на підпис.</p>' : ''}</section>`;
+    const STAT = { sending: ['надсилається', 'is-work'], sent: ['на підписі', ''], paid: ['проведено', 'is-done'], failed: ['банк не прийняв', 'is-bad'], unknown: ['перевірте у Приват24', 'is-bad'], canceled: ['скасовано', 'is-locked'] };
+    return `<section class="py-card pr-payments"><div class="py-card-head"><h2>Платежі за відомістю</h2></div>
+        ${ctx.payments.map(p => { const [text, cls] = p.returnedKop ? [`повернено банком${p.repaid ? ' · відправлено знову' : ''}`, 'is-bad'] : STAT[p.status] || [p.status, ''];
+            return `<div class="py-row">
+            <span class="py-main"><b>${escapeHtml(p.recipient)}</b><small class="py-muted">${TAX_NAMES[String(p.key || '').split(':')[1]] ? `${TAX_NAMES[String(p.key).split(':')[1]]}${p.stage === 'advance' ? ' з авансу' : ''}` : p.stage === 'advance' ? 'Аванс' : 'Зарплата'}${p.retry ? ' · повторно' : ''}${p.error ? ` · ${escapeHtml(p.error)}` : ''}</small></span>
+            <span class="py-right"><b class="py-sum">${grn(p.amountKop)}</b><span class="sv-chip ${cls}">${escapeHtml(text)}</span></span>
+            ${p.status === 'paid' && p.returnedKop >= p.amountKop && !p.repaid ? `<span class="py-actions"><button type="button" class="sv-btn" data-act="repay" data-id="${escapeHtml(p.id)}" title="Спершу виправте IBAN у картці людини чи рахунок податку">Відправити знову</button></span>` : ''}
+        </div>`; }).join('')}
+        ${ctx.payments.some(p => p.returnedKop) ? '<p class="py-note">Повернений банком платіж: виправте IBAN у картці людини (або рахунок податку) і натисніть «Відправити знову» — новий платіж піде голові на підпис.</p>' : ''}</section>`;
 }
 
+/** Ліва колонка: люди місяця, далі — ті, чий договір зараз не діє. */
 function peopleHtml() {
-    const list = ctx.people.slice().sort((a, b) => Number(b.active !== false) - Number(a.active !== false) || a.name.localeCompare(b.name, 'uk'));
-    return `<section class="buh-card">
-        <div class="buh-card-head"><h2>Працівники й виконавці</h2><button type="button" class="btn-soft btn-compact" data-act="person-new">Додати</button></div>
-        ${list.length ? `<div class="jr-scroll"><table class="buh-table is-compact"><tbody>${list.map(p => `<tr${p.active === false ? ' class="t-muted"' : ''}>
-            <td class="t-main"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(ctx.kinds[p.kind])}${p.position ? ` · ${escapeHtml(p.position)}` : ''}${p.active === false ? ' · не діє' : ''}</small></td>
-            <td>${p.kind === 'employee' ? `${fmtKop(p.salaryKop)}${p.fte < 1 ? ` · ${p.fte} ст.` : ''}` : 'за актами'}</td>
-            <td class="t-muted">${p.iban ? escapeHtml(maskIban(p.iban)) : '<span class="is-out">немає IBAN</span>'}</td>
-            <td>${p.kind === 'employee' && !p.taxNotified ? '<span class="buh-tag is-review">повідомити ДПС</span>' : ''}</td>
-            <td class="t-act"><button type="button" class="btn-ghost-small" data-act="person-edit" data-id="${escapeHtml(p.id)}">Змінити</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="list-empty">Ще нікого немає</p>'}
-        ${editing ? personFormHtml(editing) : ''}
+    const inRun = new Map(ctx.run.rows.map(r => [r.personId, r]));
+    const list = ctx.people.slice().sort((a, b) => Number(inRun.has(b.id)) - Number(inRun.has(a.id)) || Number(b.active !== false) - Number(a.active !== false) || a.name.localeCompare(b.name, 'uk'));
+    return `<section class="fl-list pr-people" aria-label="Люди">
+        <div class="pr-list-head"><h2>Люди</h2><button type="button" class="sv-btn is-soft" data-act="person-new">+ Додати</button></div>
+        ${list.length ? `<ul class="fl-items">${list.map(p => {
+            const r = inRun.get(p.id);
+            const [state, cls] = personState(ctx, p.id, Boolean(r));
+            return `<li><button type="button" class="fl-item pr-item${p.id === selected && !editing ? ' is-current' : ''}" data-act="pick" data-id="${escapeHtml(p.id)}" aria-current="${p.id === selected}">
+                <span class="fl-no pr-ava">${escapeHtml(initials(p.name))}</span>
+                <span class="fl-copy"><b>${escapeHtml(p.name)}</b><small>${escapeHtml([p.position, p.kind === 'gph' ? 'договір ЦПД' : 'трудовий договір'].filter(Boolean).join(' · '))}${!p.iban ? ' · немає IBAN' : ''}${p.kind === 'employee' && !p.taxNotified ? ' · повідомити ДПС' : ''}</small></span>
+                <span class="dc-right">${r ? `<b class="fl-sum">${grn(r.netKop)}</b>` : ''}<span class="sv-chip ${cls}">${escapeHtml(state)}</span></span>
+            </button></li>`; }).join('')}</ul>` : '<p class="py-empty">Ще нікого немає</p>'}
     </section>`;
 }
 
@@ -111,7 +156,7 @@ function personFormHtml(p) {
     const gph = p.kind === 'gph';
     const f = (id, label, value, extra = '') => `<label class="field"><span class="field-label">${label}</span><input id="${id}" class="field-input" value="${escapeHtml(value ?? '')}" ${extra}></label>`;
     return `<div class="pay-form pr-form">
-        <h3 class="ch-sub">${p.id ? 'Картка' : 'Нова людина'}</h3>
+        <h2 class="pr-form-title">${p.id ? escapeHtml(p.name || 'Картка') : 'Нова людина'}</h2>
         <div class="rg-grid">
             ${f('pfName', 'Прізвище, імʼя, по батькові', p.name)}
             <label class="field"><span class="field-label">Договір</span><select id="pfKind" class="field-input field-select">${Object.entries(ctx.kinds).map(([k, v]) => `<option value="${k}"${k === (p.kind || 'employee') ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -139,57 +184,84 @@ function personFormHtml(p) {
         <label class="pr-check"><input id="pfMain" type="checkbox"${p.mainJob !== false ? ' checked' : ''}> Основне місце роботи (ЄСВ не менше ніж з мінімальної зарплати)</label>
         <label class="pr-check"><input id="pfNotified" type="checkbox"${p.taxNotified ? ' checked' : ''}> Повідомлення ДПС про прийняття подано (до початку роботи)</label>`}
         <label class="pr-check"><input id="pfActive" type="checkbox"${p.active !== false ? ' checked' : ''}> Діє (у відомості)</label>
-        <div class="pay-form-actions"><button type="button" class="btn-primary btn-compact" data-act="person-save">Зберегти</button><button type="button" class="btn-ghost-small" data-act="person-cancel">Скасувати</button></div>
+        <div class="pr-form-actions"><button type="button" class="sv-btn" data-act="person-save">Зберегти</button><button type="button" class="sv-btn is-soft" data-act="person-cancel">Скасувати</button></div>
     </div>`;
 }
 
 function taxesHtml() {
     const t = ctx.settings.taxes || {};
-    const row = (key, label) => `<tr data-tax="${key}"><td><b>${label}</b></td>
-        <td><input class="field-input" data-f="name" value="${escapeHtml(t[key]?.name || '')}" placeholder="Отримувач (казначейство)" aria-label="Отримувач"></td>
-        <td><input class="field-input" data-f="iban" value="${escapeHtml(t[key]?.iban || '')}" placeholder="UA…" spellcheck="false" aria-label="IBAN"></td>
-        <td><input class="field-input" data-f="code" value="${escapeHtml(t[key]?.code || '')}" placeholder="Код ЄДРПОУ" inputmode="numeric" aria-label="Код"></td></tr>`;
-    return `<section class="buh-card">
-        <div class="buh-card-head"><h2>Податки й аванс</h2></div>
-        <p class="buh-note">Рахунки для сплати — з Електронного кабінету ДПС («Бюджетні рахунки» для вашої громади). ПДФО й військовий збір — у день кожної виплати, ЄСВ — до 20 числа наступного місяця.</p>
-        <div class="jr-scroll"><table class="buh-table is-compact pr-taxes"><tbody>${row('pdfo', 'ПДФО')}${row('vz', 'Військовий збір')}${row('esv', 'ЄСВ')}</tbody></table></div>
-        <div class="buh-inline-form"><span>Аванс</span><input id="prAdvance" class="field-input ch-narrow" inputmode="numeric" value="${ctx.settings.advancePct}" aria-label="Аванс, %"><span>% нарахування</span>
-            <button type="button" class="btn-soft btn-compact" data-act="taxes-save">Зберегти</button></div>
-    </section>`;
+    const row = (key, label) => `<div class="pr-tax" data-tax="${key}"><b>${label}</b>
+        <input class="field-input" data-f="name" value="${escapeHtml(t[key]?.name || '')}" placeholder="Отримувач (казначейство)" aria-label="${label}: отримувач">
+        <input class="field-input" data-f="iban" value="${escapeHtml(t[key]?.iban || '')}" placeholder="UA…" spellcheck="false" aria-label="${label}: IBAN">
+        <input class="field-input" data-f="code" value="${escapeHtml(t[key]?.code || '')}" placeholder="Код ЄДРПОУ" inputmode="numeric" aria-label="${label}: код"></div>`;
+    const filled = ['pdfo', 'vz', 'esv'].every(k => t[k]?.iban);
+    return `<details class="py-card pr-settings"${filled ? '' : ' open'}>
+        <summary><span class="pr-settings-title">Податки й аванс</span><span class="py-muted">${filled ? `рахунки податків заповнено · аванс ${ctx.settings.advancePct}%` : 'заповніть рахунки податків'}</span></summary>
+        <p class="py-note">Рахунки для сплати — з Електронного кабінету ДПС («Бюджетні рахунки» для вашої громади). ПДФО й військовий збір — у день кожної виплати, ЄСВ — до 20 числа наступного місяця.</p>
+        ${row('pdfo', 'ПДФО')}${row('vz', 'Військовий збір')}${row('esv', 'ЄСВ')}
+        <div class="pr-advance"><span>Аванс</span><input id="prAdvance" class="field-input ch-narrow" inputmode="numeric" value="${ctx.settings.advancePct}" aria-label="Аванс, %"><span>% нарахування</span>
+            <button type="button" class="sv-btn is-soft" data-act="taxes-save">Зберегти</button></div>
+    </details>`;
 }
 
 export async function loadPayrollView() {
     ctx = await loadPayroll(period);
     period = ctx.period;
     const chair = session.role === 'chair';
-    const [label, cls] = STATUS[ctx.status] || STATUS.none;
+    const [label, cls] = ctx.closed ? ['Місяць закрито', 'is-locked'] : STATUS[ctx.status] || STATUS.none;
     const months = [...new Set([shift(ctx.today.slice(0, 7), 1), ctx.today.slice(0, 7), shift(ctx.today.slice(0, 7), -1), ...ctx.runs.map(r => r.period), ctx.period])].sort().reverse();
     const t = ctx.run.totals;
+    const sum = payrollTotals(ctx);
+    const locked = ctx.closed || Boolean(ctx.stages.final) || ctx.stages.advance?.complete === false;
+    const canSave = ctx.run.rows.length && !ctx.closed && !ctx.stages.final && ctx.stages.advance?.complete !== false;
     const canPayAdvance = ctx.status === 'approved' && (!ctx.stages.advance || ctx.stages.advance.complete === false) && !ctx.stages.final && t.advance.netKop > 0 && !ctx.closed;
     const canPayFinal = ctx.status === 'approved' && (!ctx.stages.final || ctx.stages.final.complete === false) && ctx.stages.advance?.complete !== false && !ctx.closed;
+    const ids = [...ctx.run.rows.map(r => r.personId), ...ctx.people.map(p => p.id)];
+    if (!ids.includes(selected)) selected = window.matchMedia('(max-width: 900px)').matches ? null : ids[0] || null;
+    const idle = !selected && !editing && (ctx.run.rows.length || ctx.people.length);
+    const people = [sum.employees ? `${sum.employees} ${sum.employees === 1 ? 'працівник' : 'працівники'}` : '', sum.contractors ? `${sum.contractors} ${sum.contractors === 1 ? 'договір' : 'договори'} ЦПД` : ''].filter(Boolean).join(' · ');
     document.getElementById('viewPayroll').innerHTML = `
-        <div class="buh-toolbar">
-            <select id="prPeriod" class="field-input field-select ch-period" aria-label="Місяць">${months.map(m => `<option value="${m}"${m === ctx.period ? ' selected' : ''}>${monthTitle(m)}</option>`).join('')}</select>
-            <span class="buh-tag ${cls}">${ctx.closed ? 'місяць закрито' : label}</span>
-            <span class="buh-note">${ctx.approvedAt ? `Затверджено ${escapeHtml(new Date(ctx.approvedAt).toLocaleDateString('uk-UA'))}` : ctx.status === 'draft' ? 'Відомість затверджує голова' : 'Табель — у полях відомості; збережіть, і відомість піде голові'}</span>
-            <span class="ch-tools">
-                ${ctx.run.rows.length && !ctx.closed && !ctx.stages.final && ctx.stages.advance?.complete !== false ? '<button type="button" class="btn-soft btn-compact" data-act="save" title="Збережена відомість чекає затвердження голови">Зберегти відомість</button>' : ''}
-                ${chair && ctx.status === 'draft' && !ctx.closed ? '<button type="button" class="btn-primary btn-compact" data-act="approve">Затвердити</button>' : ''}
-                ${canPayAdvance ? '<button type="button" class="btn-primary btn-compact" data-act="pay-advance">Виплатити аванс</button>' : ''}
-                ${canPayFinal ? '<button type="button" class="btn-primary btn-compact" data-act="pay-final">Виплатити зарплату</button>' : ''}
-            </span>
+        <div class="pr-head">
+            <div class="pr-head-left">
+                <select id="prPeriod" class="pr-period" aria-label="Місяць">${months.map(m => `<option value="${m}"${m === ctx.period ? ' selected' : ''}>${monthTitle(m)}</option>`).join('')}</select>
+                <span class="sv-chip ${cls}">${escapeHtml(label)}${ctx.approvedAt && ctx.status === 'approved' ? ` ${escapeHtml(new Date(ctx.approvedAt).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }))}` : ''}</span>
+            </div>
+            <div class="pr-head-actions">
+                ${canSave ? `<button type="button" class="sv-btn${chair && ctx.status === 'draft' || canPayAdvance || canPayFinal ? ' is-soft' : ''}" data-act="save" title="Збережена відомість чекає затвердження голови">Зберегти відомість</button>` : ''}
+                ${chair && ctx.status === 'draft' && !ctx.closed ? '<button type="button" class="sv-btn" data-act="approve">Затвердити</button>' : ''}
+                ${canPayAdvance ? '<button type="button" class="sv-btn" data-act="pay-advance">Виплатити аванс</button>' : ''}
+                ${canPayFinal ? '<button type="button" class="sv-btn" data-act="pay-final">Виплатити зарплату</button>' : ''}
+            </div>
         </div>
-        <div class="kpi-grid">
-            <div class="kpi"><span>Нараховано</span><b>${fmtKop(t.grossKop)}</b><small>${ctx.run.rows.length} особ.</small></div>
-            <div class="kpi"><span>Утримано ПДФО + ВЗ</span><b>${fmtKop(t.pdfoKop + t.vzKop)}</b><small>ПДФО ${fmtKop(t.pdfoKop)} · ВЗ ${fmtKop(t.vzKop)}</small></div>
-            <div class="kpi"><span>На руки</span><b>${fmtKop(t.netKop)}</b><small>аванс ${fmtKop(t.advance.netKop)}${ctx.stages.advance ? ctx.stages.advance.complete === false ? ' · не завершено' : ' ✓' : ''} · решта ${fmtKop(t.final.netKop)}${ctx.stages.final ? ctx.stages.final.complete === false ? ' · не завершено' : ' ✓' : ''}</small></div>
-            <div class="kpi"><span>Витрати ОСББ</span><b>${fmtKop(t.costKop)}</b><small>з ЄСВ ${fmtKop(t.esvKop)}</small></div>
+        <div class="pr-kpis">
+            <section class="py-card pr-kpi"><span class="bk-label">Нараховано</span><b class="pr-kpi-sum">${grn(sum.grossKop)}</b><span class="py-muted">${escapeHtml(people || 'нікого у відомості')}</span></section>
+            <button type="button" class="py-card pr-kpi" data-go="payments"><span class="bk-label">До виплати людям</span><b class="pr-kpi-sum">${grn(sum.netKop)}</b>
+                <span class="py-muted">${sum.netPaidKop || sum.netSigningKop ? `${sum.netPaidKop ? `${grn(sum.netPaidKop)} виплачено` : ''}${sum.netPaidKop && sum.netSigningKop ? ' · ' : ''}${sum.netSigningKop ? `${grn(sum.netSigningKop)} на підписі` : ''} ›` : `аванс ${grn(t.advance.netKop)} · решта ${grn(t.final.netKop)}`}</span></button>
+            <button type="button" class="py-card pr-kpi" data-go="payments"><span class="bk-label">Податки й внески</span><b class="pr-kpi-sum">${grn(sum.taxKop)}</b>
+                <span class="py-muted">${sum.taxPaidKop || sum.taxSigningKop ? `${sum.taxPaidKop ? `${grn(sum.taxPaidKop)} сплачено` : ''}${sum.taxPaidKop && sum.taxSigningKop ? ' · ' : ''}${sum.taxSigningKop ? `${grn(sum.taxSigningKop)} на підписі` : ''} ›` : `ПДФО ${grn(t.pdfoKop)} · ВЗ ${grn(t.vzKop)} · ЄСВ ${grn(t.esvKop)}`}</span></button>
         </div>
-        ${runHtml()}
+        <div class="fl-grid pr-grid">
+            ${peopleHtml()}
+            <section class="fl-card pr-card${idle ? ' is-idle' : ''}" id="prCard" aria-live="polite">${idle ? '<div class="fl-empty"><b>Оберіть людину</b><span>Розрахунок, табель чи акт місяця — тут.</span></div>' : ''}${cardHtml(locked)}</section>
+        </div>
+        <p class="py-note pr-rules">ПДФО ${pct(ctx.run.rate.pdfo)}, військовий збір ${pct(ctx.run.rate.vz)}, ЄСВ ${pct(ctx.run.rate.esv)} · мінімальна зарплата ${grn(ctx.run.rate.minWageKop)}. Податки сплачуються з кожною виплатою; з остаточним розрахунком — решта й доплата ЄСВ до мінімальної бази. Свята під час воєнного стану — робочі дні.${ctx.stages.advance ? ' Аванс уже підготовлено — його суми не змінюються.' : ''}</p>
         ${paymentsHtml()}
-        ${peopleHtml()}
         ${taxesHtml()}`;
     return ctx.status === 'draft' && chair ? 1 : 0;
+}
+
+/** Обрати людину: лише перемикаємо видимість — незбережені поля відомості лишаються. */
+function pick(id) {
+    if (editing) { editing = null; selected = id; loadPayrollView(); return; }
+    selected = id;
+    const card = document.getElementById('prCard');
+    card.classList.remove('is-idle');
+    card.querySelector(':scope > .fl-empty')?.remove();
+    const body = card.querySelector(`.pr-body[data-person="${CSS.escape(id)}"]`);
+    if (!body) { loadPayrollView(); return; }
+    card.querySelectorAll('.pr-body').forEach(b => { b.hidden = b !== body; });
+    document.querySelectorAll('#viewPayroll .pr-item').forEach(b => { b.classList.toggle('is-current', b.dataset.id === id); b.setAttribute('aria-current', b.dataset.id === id); });
+    if (window.matchMedia('(max-width: 900px)').matches) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function readInputs() {
@@ -292,6 +364,7 @@ export function initPayrollView() {
     const host = document.getElementById('viewPayroll');
     host.addEventListener('click', e => {
         const btn = e.target.closest('[data-act]');
+        if (btn?.dataset.act === 'pick') { pick(btn.dataset.id); return; }
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('change', e => {
