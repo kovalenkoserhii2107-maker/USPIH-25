@@ -1,47 +1,46 @@
 // ============================================================
-// «Банк» (рахунки й журнал операцій) і «Налаштування» (підключення
+// «Банк» (рахунки й операції за днями) і «Налаштування» (підключення
 // ПриватБанку, призначення рахунків, правила погодження).
+// Відбори, групування й рішення в один дотик — bank-view-core.js.
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, loadExpenses, loadDemo, loadRequisites, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadDemo, loadRequisites, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
 import { toKop } from './charges-core.js';
 import { registryHtml, saveRegistry } from './buh-registry.js';
+import { TABS, byDay, quickAssign, filterTx } from './bank-view-core.js';
 
 let requisites = {};
 
-const FILTERS = { all: 'Усі', in: 'Надходження', out: 'Списання', review: 'Чекають рішення' };
 let rows = [];
+let queue = [];
 let last = null;
 let more = false;
-let filter = 'all';
+let tab = 'all';
+let query = '';
 let opened = null;
+const busy = new Set();
+
+const opsWord = n => (n % 10 === 1 && n % 100 !== 11 ? 'операція' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'операції' : 'операцій');
+const timeOf = ts => (ts?.toDate ? ts.toDate() : new Date(ts)).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
 
 function accountsHtml(settings) {
-    const accounts = Object.entries(settings.accounts || {});
-    if (!accounts.length) return `<div class="buh-card buh-hint">Банк не підключено. <button type="button" class="btn-ghost-small" data-go="settings">Підключити ПриватБанк →</button></div>`;
-    return `<div class="acc-strip">${accounts.map(([iban, a]) => `
-        <div class="acc-card">
-            <span class="acc-purpose">${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')}</span>
-            <b class="acc-balance">${typeof a.balanceKop === 'number' ? money(a.balanceKop) : '—'}</b>
-            <small>${escapeHtml(maskIban(iban))}${a.balanceAt ? ` · ${escapeHtml(when(a.balanceAt))}` : ''}</small>
-        </div>`).join('')}</div>`;
-}
-
-function matches(tx) {
-    if (filter === 'in' && tx.direction !== 'in') return false;
-    if (filter === 'out' && tx.direction !== 'out') return false;
-    if (filter === 'review' && tx.status !== 'review') return false;
-    const q = (document.getElementById('bankQuery')?.value || '').trim().toLowerCase();
-    if (!q) return true;
-    const apt = q.replace(/^кв\.?\s*/, '');
-    return (tx.allocations || []).some(a => a.apt === apt)
-        || String(tx.counterparty?.name || '').toLowerCase().includes(q)
-        || String(tx.purpose || '').toLowerCase().includes(q)
-        || String(tx.amountKop / 100).includes(q.replace(',', '.'));
+    const accounts = Object.entries(settings.accounts || {})
+        .sort(([, a], [, b]) => ((a.purpose || 'current') === 'current' ? -1 : 0) - ((b.purpose || 'current') === 'current' ? -1 : 0));
+    if (!accounts.length) return `<section class="bk-card bk-hero"><span class="bk-label">Банк не підключено</span>
+        <button type="button" class="sv-btn" data-go="settings">Підключити ПриватБанк</button></section>`;
+    const sync = settings.lastSync;
+    const state = sync?.ok === false ? `<span class="bk-sync is-bad">Виписка не оновилась: ${escapeHtml(sync.error || 'помилка')}</span>`
+        : sync ? `<span class="bk-sync is-good">Виписка оновлена о ${escapeHtml(timeOf(sync.at))}</span>` : '<span class="bk-sync">Виписку ще не отримано</span>';
+    return accounts.map(([iban, a], i) => `<section class="bk-card ${i ? 'bk-acc' : 'bk-hero'}">
+            <span class="bk-label">${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')} · ПриватБанк</span>
+            <b class="bk-balance">${typeof a.balanceKop === 'number' ? money(a.balanceKop) : '—'}</b>
+            <span class="bk-iban">${escapeHtml(maskIban(iban))}${a.balanceAt ? ` · залишок на ${escapeHtml(when(a.balanceAt))}` : ''}</span>
+            ${i ? '' : state}
+        </section>`).join('');
 }
 
 function detailHtml(tx) {
@@ -54,83 +53,126 @@ function detailHtml(tx) {
         (tx.allocations || []).length > 1 ? ['Частини', tx.allocations.map(a => `кв. ${a.apt}: ${money(a.amountKop)}`).join(' · ')] : null
     ].filter(l => l && l[1]);
     const undo = tx.status === 'done' && tx.kind !== 'internal';
-    return `<dl class="tx-detail">${lines.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>
-        <div class="tx-actions">
-            ${tx.status === 'review' ? '<button type="button" class="btn-soft btn-compact" data-go="inbox">Розібрати у «Вхідних»</button>' : ''}
-            ${undo ? '<button type="button" class="btn-ghost-small" data-act="undo">Повернути у «Вхідні»</button>' : ''}
-        </div>`;
+    return `<div class="bk-detail"><dl class="dc-fields">${lines.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>
+        <div class="bk-detail-actions">
+            ${tx.status === 'review' ? '<button type="button" class="sv-btn" data-go="inbox">Розібрати в «Рішеннях»</button>' : ''}
+            ${undo ? '<button type="button" class="sv-btn is-soft" data-act="undo">Повернути в «Рішення»</button>' : ''}
+        </div></div>`;
 }
 
-function renderTable() {
-    const host = document.getElementById('bankTable');
+function chipHtml(tx) {
+    if (tx.status !== 'review') {
+        const tag = tagOf(tx);
+        return `<span class="bk-done">✓ ${escapeHtml(tag.text)}</span>`;
+    }
+    const q = quickAssign(tx);
+    if (busy.has(tx.id)) return '<span class="bk-done">Зберігаю…</span>';
+    if (q) return `<button type="button" class="bk-yes${q.sure ? '' : ' is-ask'}" data-act="quick">${q.sure ? `Так, кв. ${escapeHtml(q.apt)}` : `Це кв. ${escapeHtml(q.apt)}?`}</button>`;
+    return '<button type="button" class="bk-yes is-ask" data-go="inbox">Розібрати ›</button>';
+}
+
+function rowHtml(tx) {
+    const out = tx.direction === 'out';
+    return `<div class="bk-row${opened === tx.id ? ' is-open' : ''}" data-id="${escapeHtml(tx.id)}" tabindex="0" role="button" aria-expanded="${opened === tx.id}">
+            <span class="bk-ico${tx.status === 'review' ? ' is-wait' : ''}" aria-hidden="true">${out ? '↑' : '↓'}</span>
+            <span class="bk-main"><b>${escapeHtml(tx.counterparty?.name || '—')}</b><small>${escapeHtml(tx.purpose || '')}</small></span>
+            <span class="bk-right"><b class="bk-sum${out ? '' : ' is-in'}">${signed(tx)} грн</b>${chipHtml(tx)}</span>
+        </div>${opened === tx.id ? detailHtml(tx) : ''}`;
+}
+
+function renderList() {
+    const host = document.getElementById('bankList');
     if (!host) return;
-    const list = rows.filter(matches);
-    document.getElementById('bankMore').hidden = !more;
-    if (!list.length) { host.innerHTML = `<p class="list-empty">${rows.length ? 'Нічого не знайдено' : 'Операцій ще немає'}</p>`; return; }
-    host.innerHTML = `<table class="buh-table is-ops">
-        <thead><tr><th>Дата</th><th>Контрагент і призначення</th><th>Рахунок</th><th>Рішення</th><th class="t-sum">Сума, ₴</th></tr></thead>
-        <tbody>${list.map(tx => {
-            const tag = tagOf(tx);
-            return `<tr class="tx-row${opened === tx.id ? ' is-open' : ''}" data-id="${escapeHtml(tx.id)}" tabindex="0">
-                <td class="t-date">${escapeHtml(when(tx.at))}</td>
-                <td class="t-main"><b>${escapeHtml(tx.counterparty?.name || '—')}</b><small>${escapeHtml(tx.purpose || '')}</small></td>
-                <td class="t-acc">${escapeHtml(maskIban(tx.account).slice(-4))}</td>
-                <td><span class="buh-tag ${tag.cls}">${escapeHtml(tag.text)}</span></td>
-                <td class="t-sum ${tx.direction === 'out' ? 'is-out' : 'is-in'}">${signed(tx)}</td>
-            </tr>${opened === tx.id ? `<tr class="tx-detail-row"><td colspan="5">${detailHtml(tx)}</td></tr>` : ''}`;
-        }).join('')}</tbody></table>`;
+    const source = tab === 'review' ? queue : rows;
+    const list = filterTx(source, tab, query);
+    document.getElementById('bankMore').hidden = !more || tab === 'review';
+    host.innerHTML = list.length ? byDay(list).map(d => `<div class="bk-day">${escapeHtml(d.label)}</div>${d.rows.map(rowHtml).join('')}`).join('')
+        : `<p class="py-empty">${query ? 'Нічого не знайдено' : tab === 'review' ? 'Усі операції розподілено' : 'Операцій ще немає'}</p>`;
 }
 
 export async function loadBankView() {
-    const [settings, page] = await Promise.all([loadSettings(), loadPage()]);
+    const [settings, page, q, payments] = await Promise.all([loadSettings(), loadPage(), loadQueue().catch(() => []), loadPayments().catch(() => [])]);
     rows = page.rows; last = page.last; more = page.full;
+    queue = q;   // уже від новіших
+    const signing = payments.filter(p => p.status === 'sent');
     const host = document.getElementById('viewBank');
-    host.innerHTML = `${accountsHtml(settings)}
-        <section class="buh-card">
-            <div class="buh-toolbar">
-                <div class="buh-seg" role="tablist">${Object.entries(FILTERS).map(([k, v]) =>
-                    `<button type="button" class="buh-seg-item${k === filter ? ' active' : ''}" data-filter="${k}">${v}</button>`).join('')}</div>
-                <input type="search" id="bankQuery" class="field-input buh-search" placeholder="Квартира, платник, сума або призначення">
+    host.innerHTML = `${signing.length ? `<div class="bk-links"><button type="button" class="bk-link" data-go="payments">Платежі на підписі голови · ${signing.length} ›</button></div>` : ''}
+        <div class="bk-top">
+            ${accountsHtml(settings)}
+            ${queue.length ? `<button type="button" class="bk-card bk-need" data-go="inbox">
+                <span class="bk-label">Потрібне ваше рішення</span>
+                <b class="bk-balance">${queue.length} ${opsWord(queue.length)}</b>
+                <span class="bk-need-go">Розподілити ›</span>
+            </button>` : ''}
+        </div>
+        <section class="bk-card bk-ops">
+            <div class="bk-ops-head">
+                <h2>Операції</h2>
+                <div class="bk-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
+                    `<button type="button" class="bk-tab${k === tab ? ' active' : ''}" role="tab" aria-selected="${k === tab}" data-tab="${k}">${v}${k === 'review' && queue.length ? ` <span>${queue.length}</span>` : ''}</button>`).join('')}</div>
             </div>
-            <div id="bankTable"></div>
-            <button type="button" id="bankMore" class="btn-ghost-small buh-more" hidden>Показати ще</button>
+            <label class="fl-search dc-search bk-search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="bankQuery" placeholder="Квартира, платник, сума або призначення" value="${escapeHtml(query)}" aria-label="Пошук операції"></label>
+            <div id="bankList"></div>
+            <button type="button" id="bankMore" class="sv-btn is-soft is-wide" hidden>Показати ще</button>
         </section>`;
-    renderTable();
+    renderList();
+}
+
+async function quick(tx, btn) {
+    const q = quickAssign(tx);
+    if (!q) return;
+    if (!q.sure && !await confirmDialog(`Це оплата кв. ${q.apt}?`, `${tx.counterparty?.name || 'Платник'}: ${money(tx.amountKop)}. «${tx.purpose || ''}». Система не впевнена — перевірте призначення.`, `Так, кв. ${q.apt}`)) return;
+    busy.add(tx.id);
+    renderList();
+    try {
+        await act({ action: 'assign', txId: tx.id, allocations: [{ apt: q.apt, amountKop: tx.amountKop }], remember: q.sure });
+        toast(`Рознесено: кв. ${q.apt}`, 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { busy.delete(tx.id); if (btn.isConnected) renderList(); }
 }
 
 export function initBankView() {
     const host = document.getElementById('viewBank');
-    host.addEventListener('input', e => { if (e.target.id === 'bankQuery') renderTable(); });
+    host.addEventListener('input', e => { if (e.target.id === 'bankQuery') { query = e.target.value; renderList(); } });
     host.addEventListener('click', async e => {
-        const f = e.target.closest('[data-filter]');
-        if (f) {
-            filter = f.dataset.filter;
-            host.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b === f));
-            renderTable();
+        const t = e.target.closest('[data-tab]');
+        if (t) {
+            tab = t.dataset.tab;
+            host.querySelectorAll('[data-tab]').forEach(b => { b.classList.toggle('active', b === t); b.setAttribute('aria-selected', b === t); });
+            renderList();
             return;
         }
         if (e.target.closest('#bankMore')) {
             const btn = e.target.closest('#bankMore');
             setBusy(btn, true);
-            try { const page = await loadPage(last); rows = rows.concat(page.rows); last = page.last; more = page.full; renderTable(); }
+            try { const page = await loadPage(last); rows = rows.concat(page.rows); last = page.last; more = page.full; renderList(); }
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
             return;
         }
+        const quickBtn = e.target.closest('[data-act="quick"]');
+        if (quickBtn) {
+            const id = quickBtn.closest('[data-id]').dataset.id;
+            const tx = queue.find(x => x.id === id) || rows.find(x => x.id === id);
+            if (tx) await quick(tx, quickBtn);
+            return;
+        }
         if (e.target.closest('[data-act="undo"]')) {
-            const tx = rows.find(t => t.id === opened);
-            if (!tx || !await confirmDialog('Повернути у «Вхідні»?', tx.kind === 'payment'
+            const tx = rows.find(x => x.id === opened) || queue.find(x => x.id === opened);
+            if (!tx || !await confirmDialog('Повернути в «Рішення»?', tx.kind === 'payment'
                 ? 'Оплату буде прибрано з історії квартири, операція знову чекатиме рішення.' : 'Категорію буде знято.', 'Повернути')) return;
-            try { await act({ action: 'unassign', txId: tx.id }); toast('Повернуто у «Вхідні»', 'success'); }
+            try { await act({ action: 'unassign', txId: tx.id }); toast('Повернуто в «Рішення»', 'success'); }
             catch (err) { toast(err.message, 'error'); }
             return;
         }
-        const row = e.target.closest('.tx-row');
-        if (row) { opened = opened === row.dataset.id ? null : row.dataset.id; renderTable(); }
+        if (e.target.closest('[data-go]')) return;
+        const row = e.target.closest('.bk-row');
+        if (row) { opened = opened === row.dataset.id ? null : row.dataset.id; renderList(); }
     });
     host.addEventListener('keydown', e => {
-        const row = e.target.closest('.tx-row');
-        if (row && e.key === 'Enter') { opened = opened === row.dataset.id ? null : row.dataset.id; renderTable(); }
+        const row = e.target.closest('.bk-row');
+        if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); opened = opened === row.dataset.id ? null : row.dataset.id; renderList(); }
     });
 }
 
