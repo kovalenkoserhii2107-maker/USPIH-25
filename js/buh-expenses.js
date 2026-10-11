@@ -1,5 +1,7 @@
 // ============================================================
-// «Витрати»: рахунки й акти постачальників, договори, постачальники.
+// «Документи»: рахунки, акти й накладні постачальників, договори,
+// постачальники. Документи — списком і карткою зі сканом; файл можна
+// перетягнути на сторінку — відкриється форма з ним.
 //
 // Бухгалтер вносить документ з файлом → система визначає, хто
 // затверджує (за договором — бухгалтер, без договору чи понад нього —
@@ -10,15 +12,17 @@
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import {
-    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, EXPENSE_STATUS, CONTRACT_STATUS, maskIban
+    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, CONTRACT_STATUS, maskIban
 } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { periodName, fmtKop, toKop } from './charges-core.js';
+import { TABS, remaining, bucketOf, chipOf, filterDocs, docCounts, mainsFor as mainsOf, twinOf, scanKind } from './docs-core.js';
 
-const SEGMENTS = { docs: 'Документи', contracts: 'Договори', suppliers: 'Постачальники' };
-const FILTERS = { all: 'Усі', pending: 'Чекають голову', approved: 'До оплати', paid: 'Оплачені' };
-let segment = 'docs';
-let filter = 'all';
+const LEGACY = { docs: 'work' };
+let segment = 'work';
+let selected = null;      // id документа в картці
+let query = '';
+let paying = new Set();   // документи, платіж за якими вже в Приват24 на підписі
 let ctx = null;
 let form = null;          // { kind: 'doc'|'contract'|'supplier', data }
 let files = [];           // нові файли форми, ще не завантажені
@@ -27,20 +31,19 @@ const isChair = () => session.role === 'chair';
 const human = d => (d ? String(d).split('-').reverse().join('.') : '');
 const tag = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="buh-tag ${c}">${escapeHtml(t)}</span>`; };
 const contractOf = id => ctx.contracts.find(c => c.id === id);
-const remaining = e => e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0);
-const LIVE = ['pending', 'approved', 'paid'];
 let attaching = null;     // документ, який привʼязують до основного
 let stornoing = null;     // документ, який сторнують
 /** Основні документи постачальника, до яких можна привʼязати doc. */
-const mainsFor = doc => ctx.expenses.filter(x => x.id !== doc.id && x.supplierId === doc.supplierId && LIVE.includes(x.status) && !x.linkedTo && x.amountKop > 0 && x.amountKop >= (doc.amountKop || 0));
+const mainsFor = doc => mainsOf(doc, ctx.expenses);
 const docName = x => `${ctx.docTypes[x.docType] || 'Документ'} № ${x.number} від ${human(x.date)}`;
 const docsWord = n => (n % 10 === 1 && n % 100 !== 11 ? 'документ' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'документи' : 'документів');
 const val = id => document.getElementById(id)?.value?.trim() ?? '';
 const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
 
-/** Відкрити розділ на потрібній вкладці, за потреби — з готовою формою. */
-export function openExpenses(seg = 'docs', prefill = null) {
-    segment = SEGMENTS[seg] ? seg : 'docs';
+/** Відкрити розділ на потрібній вкладці, за потреби — з готовою формою чи документом. */
+export function openExpenses(seg = 'docs', prefill = null, docId = null) {
+    segment = TABS[LEGACY[seg] || seg] ? LEGACY[seg] || seg : 'work';
+    if (docId) { selected = docId; segment = 'work'; }
     form = prefill;
     files = [];
     if (location.hash !== '#expenses') location.hash = 'expenses';
@@ -85,6 +88,7 @@ function docFormHtml(d = {}) {
             <label class="field pay-wide"><span class="field-label">Скан або PDF документа</span><input id="dfFiles" class="field-input" type="file" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"></label>
         </div>
         ${d.files?.length ? `<p class="buh-note">Уже додано: ${filesHtml(d.files)}</p>` : ''}
+        ${files.length ? `<p class="buh-note">Буде додано: ${files.map(f => escapeHtml(f.name)).join(', ')}</p>` : ''}
         <p class="buh-note" id="dfHint">Документ за затвердженим договором у межах його суми затверджуєте ви. Без договору чи понад нього — голова: йому прийде сповіщення.</p>
         <div class="pay-form-actions"><button type="button" class="btn-primary" data-act="save-doc">${d.id ? 'Зберегти' : 'Внести документ'}</button></div>
     </section>`;
@@ -138,16 +142,19 @@ function formHtml() {
 // ------------------------------------------------------------
 // СПИСКИ
 // ------------------------------------------------------------
+/** Дії з документом: головна — перша (чорна), решта — світлі. */
 function docActions(e) {
     const out = [];
-    if (e.status === 'pending' && isChair()) out.push('<button type="button" class="btn-soft btn-compact" data-act="approve-doc">Затвердити</button>', '<button type="button" class="btn-ghost-small" data-act="reject-doc">Відхилити</button>');
-    if (e.status === 'approved' && remaining(e) > 0) out.push('<button type="button" class="btn-soft btn-compact" data-act="pay-doc">Сплатити</button>');
-    if (['pending', 'rejected'].includes(e.status)) out.push('<button type="button" class="btn-ghost-small" data-act="edit-doc">Змінити</button>');
-    if (['pending', 'approved', 'rejected'].includes(e.status) && !(e.paidKop > 0) && !e.linkedIds?.length && !e.stornoIds?.length && mainsFor(e).length) {
-        out.push('<button type="button" class="btn-ghost-small" data-act="attach-doc" title="Рахунок і акт однієї послуги — одна витрата">Це та сама послуга…</button>');
+    const btn = (act, label, extra = '') => `<button type="button" class="sv-btn${out.length ? ' is-soft' : ''}" data-act="${act}"${extra}>${label}</button>`;
+    if (e.status === 'pending' && isChair()) out.push(btn('approve-doc', 'Затвердити'), btn('reject-doc', 'Відхилити'));
+    if (e.status === 'approved' && remaining(e) > 0 && !paying.has(e.id)) out.push(btn('pay-doc', e.paidKop > 0 ? 'Доплатити' : 'Створити платіж'));
+    if (paying.has(e.id)) out.push('<button type="button" class="sv-btn" data-go="payments">Платіж на підписі голови</button>');
+    if (['pending', 'rejected'].includes(e.status)) out.push(btn('edit-doc', 'Змінити'));
+    if (['pending', 'approved', 'rejected'].includes(e.status) && !(e.paidKop > 0) && !e.linkedIds?.length && !e.stornoIds?.length && mainsFor(e).length && !twinOf(e, ctx.expenses)) {
+        out.push(btn('attach-doc', 'Це та сама послуга…', ' title="Рахунок і акт однієї послуги — одна витрата"'));
     }
-    if (['approved', 'paid'].includes(e.status) && e.amountKop > 0 && e.amountKop > (e.stornoKop || 0)) out.push('<button type="button" class="btn-ghost-small" data-act="storno-doc">Сторно</button>');
-    if (['pending', 'approved', 'rejected', 'linked'].includes(e.status) && !(e.paidKop > 0) && !e.stornoIds?.length) out.push('<button type="button" class="btn-ghost-small" data-act="cancel-doc">Скасувати</button>');
+    if (['approved', 'paid'].includes(e.status) && e.amountKop > 0 && e.amountKop > (e.stornoKop || 0)) out.push(btn('storno-doc', 'Сторно'));
+    if (['pending', 'approved', 'rejected', 'linked'].includes(e.status) && !(e.paidKop > 0) && !e.stornoIds?.length && !paying.has(e.id)) out.push(btn('cancel-doc', 'Скасувати'));
     return out.join('');
 }
 
@@ -161,16 +168,19 @@ function relationsHtml(e) {
     if (e.stornoOf) { const o = byId(e.stornoOf); parts.push(`Коригує ${o ? escapeHtml(docName(o)) : 'документ'}`); }
     if (e.stornoKop) parts.push(`Сторно −${fmtKop(e.stornoKop)} грн: до сплати ${fmtKop(e.amountKop - e.stornoKop)} грн`);
     if (e.refundTxIds?.length) parts.push('Банк повернув оплату — документ знову до сплати');
-    return parts.length ? `<span class="ex-rel">${parts.join(' · ')}</span>` : '';
+    return parts.map(p => `<p class="dc-hint">${LINK_ICON}<span>${p}</span></p>`).join('');
 }
+
+const LINK_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+const UP_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>';
 
 function attachHtml(e) {
     const list = mainsFor(e);
     return `<div class="ex-inline" id="exAttach">
         <label class="field"><span class="field-label">Основний документ тієї самої послуги</span><select id="atMain" class="field-input field-select">${list.map(x =>
-            `<option value="${escapeHtml(x.id)}">${escapeHtml(docName(x))} · ${fmtKop(x.amountKop)} грн · ${escapeHtml(EXPENSE_STATUS[x.status]?.[0] || x.status)}</option>`).join('')}</select></label>
+            `<option value="${escapeHtml(x.id)}">${escapeHtml(docName(x))} · ${fmtKop(x.amountKop)} грн · ${escapeHtml(chipOf(x)[0])}</option>`).join('')}</select></label>
         <p class="buh-note">${escapeHtml(docName(e))} стане підтвердним: витрата й борг лишаться лише за основним документом.</p>
-        <div class="pay-form-actions"><button type="button" class="btn-primary btn-compact" data-act="attach-save">Привʼязати</button><button type="button" class="btn-ghost-small" data-act="inline-close">Скасувати</button></div>
+        <div class="pay-form-actions"><button type="button" class="sv-btn" data-act="attach-save">Привʼязати</button><button type="button" class="sv-btn is-soft" data-act="inline-close">Скасувати</button></div>
     </div>`;
 }
 
@@ -185,40 +195,81 @@ function stornoHtml(e) {
             <label class="field pay-wide"><span class="field-label">Документ коригування (скан)</span><input id="stFiles" class="field-input" type="file" accept=".pdf,image/*"></label>
         </div>
         <p class="buh-note">Сторно зменшує витрату й борг постачальнику датою коригування — закриті місяці не змінюються. Якщо документ уже оплачено, постачальник винен ОСББ різницю: її повернення на рахунок рознесіть як «Повернення» до цієї оплати.</p>
-        <div class="pay-form-actions"><button type="button" class="btn-primary btn-compact" data-act="storno-save">Провести сторно</button><button type="button" class="btn-ghost-small" data-act="inline-close">Скасувати</button></div>
+        <div class="pay-form-actions"><button type="button" class="sv-btn" data-act="storno-save">Провести сторно</button><button type="button" class="sv-btn is-soft" data-act="inline-close">Скасувати</button></div>
     </div>`;
 }
 
-function docsHtml() {
-    const q = (document.getElementById('exQuery')?.value || '').trim().toLowerCase();
-    const list = ctx.expenses.filter(e => (filter === 'all' ? e.status !== 'canceled' : e.status === filter)
-        && (!q || `${e.supplierName} ${e.number} ${e.description}`.toLowerCase().includes(q)));
-    const sum = st => ctx.expenses.filter(e => e.status === st).reduce((s, e) => s + remaining(e), 0);
-    return `<div class="kpi-grid ch-kpi">
-            <div class="kpi"><span>Чекають голову</span><b>${ctx.expenses.filter(e => e.status === 'pending').length}</b><small>${fmtKop(ctx.expenses.filter(e => e.status === 'pending').reduce((s, e) => s + e.amountKop, 0))} грн</small></div>
-            <div class="kpi"><span>До оплати</span><b>${fmtKop(sum('approved'))}</b><small>${ctx.expenses.filter(e => e.status === 'approved').length} ${docsWord(ctx.expenses.filter(e => e.status === 'approved').length)}</small></div>
-            <div class="kpi"><span>Оплачено цього місяця</span><b class="is-in">${fmtKop(ctx.expenses.filter(e => e.status === 'paid' && String(e.paidAt || '').slice(0, 7) === ctx.today.slice(0, 7)).reduce((s, e) => s + e.amountKop, 0))}</b><small>за даними виписки</small></div>
+const docTitle = e => e.description || e.supplierName || 'Документ';
+
+function scanHtml(e) {
+    const [first, ...rest] = e.files || [];
+    if (!first) return `<div class="dc-scan is-empty"><b>Скану немає</b><span>${['pending', 'rejected'].includes(e.status) ? 'Додайте файл через «Змінити» — без нього документ важче перевірити' : 'Документ внесено без файлу'}</span></div>`;
+    const kind = scanKind(first);
+    const url = escapeHtml(first.url);
+    const view = kind === 'image' ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Скан: ${escapeHtml(first.name)}" loading="lazy"></a>`
+        : kind === 'pdf' ? `<iframe src="${url}#toolbar=0&amp;view=FitH" title="Скан: ${escapeHtml(first.name)}" loading="lazy"></iframe>`
+            : '';
+    return `<div class="dc-scan is-${kind}">${view}
+        <span class="dc-files">${[first, ...rest].map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('')}</span></div>`;
+}
+
+function fieldsHtml(e) {
+    const c = e.contractId ? contractOf(e.contractId) : null;
+    const rows = [
+        ['Постачальник', e.supplierName],
+        ['Документ', docName(e)],
+        ['За місяць', e.period ? periodName(e.period) : ''],
+        ['Стаття', ctx.items[e.item] || ''],
+        ['Договір', c ? `№ ${c.number} від ${human(c.date)}` : e.contractNumber ? `№ ${e.contractNumber}` : 'без договору'],
+        ['ПДВ', e.vatKop ? `${fmtKop(e.vatKop)} грн` : ''],
+        ['Затвердження', [e.approval?.reason, e.approval?.by ? `затвердив ${e.approval.by}` : ''].filter(Boolean).join(' · ')],
+        ['Оплата', e.status === 'paid' ? 'оплачено за випискою' : e.paidKop > 0 ? `сплачено ${fmtKop(e.paidKop)} грн, лишилось ${fmtKop(remaining(e))} грн`
+            : paying.has(e.id) ? 'у Приват24, чекає підпису голови' : e.status === 'approved' ? 'ще не створено' : ''],
+        ['Коментар', e.comment ? `«${e.comment}»` : '']
+    ].filter(([, v]) => v);
+    return `<dl class="dc-fields">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>`;
+}
+
+function cardHtml(e, empty) {
+    if (!e) return empty && segment === 'work' ? '<div class="fl-empty"><b>Усе опрацьовано</b><span>Нових документів немає. Додайте рахунок чи акт — перетягніть файл угору сторінки.</span></div>'
+        : '<div class="fl-empty"><b>Оберіть документ</b><span>Скан, реквізити й звʼязки документа — тут.</span></div>';
+    const [chip, cls] = chipOf(e, { chair: isChair(), paying: paying.has(e.id) });
+    const twin = twinOf(e, ctx.expenses);
+    return `<div class="fl-card-head">
+            <div><span class="fl-facts">${escapeHtml(ctx.docTypes[e.docType] || 'Документ')}${e.linkedIds?.length ? ' + підтвердні' : ''} · ${human(e.date)}</span>
+                <h2>${escapeHtml(docTitle(e))}</h2><span class="dc-amount">${fmtKop(e.amountKop)} грн</span></div>
+            <span class="sv-chip ${cls}">${escapeHtml(chip)}</span>
         </div>
-        <section class="buh-card">
-            <div class="buh-toolbar">
-                <div class="buh-seg">${Object.entries(FILTERS).map(([k, v]) => `<button type="button" class="buh-seg-item${k === filter ? ' active' : ''}" data-filter="${k}">${v}</button>`).join('')}</div>
-                <input type="search" id="exQuery" class="field-input buh-search" placeholder="Постачальник, номер, опис" value="${escapeHtml(q)}">
-                <button type="button" class="btn-primary btn-compact" data-act="new-doc">+ Документ</button>
-            </div>
-            ${list.length ? `<table class="buh-table is-ops ex-table"><thead><tr><th>Дата</th><th>Постачальник і опис</th><th>Документ</th><th>Стан</th><th class="t-sum">Сума, ₴</th></tr></thead>
-                <tbody>${list.map(e => `<tr class="tx-row" data-id="${escapeHtml(e.id)}">
-                    <td class="t-date">${human(e.date)}</td>
-                    <td class="t-main"><b>${escapeHtml(e.supplierName)}</b><small>${escapeHtml(e.description)} · ${escapeHtml(ctx.items[e.item] || '')}</small></td>
-                    <td class="t-acc ex-doc">${escapeHtml(ctx.docTypes[e.docType] || '')} № ${escapeHtml(e.number)}${e.contractNumber ? `<small>дог. № ${escapeHtml(e.contractNumber)}</small>` : ''}</td>
-                    <td>${tag(EXPENSE_STATUS, e.status)}</td>
-                    <td class="t-sum is-out">${fmtKop(e.amountKop)}${e.paidKop && e.status !== 'paid' ? `<small>сплачено ${fmtKop(e.paidKop)}</small>` : ''}</td>
-                </tr><tr class="tx-detail-row"><td colspan="5"><div class="ex-detail">
-                    <span class="t-muted">${escapeHtml(e.approval?.reason || '')}${e.approval?.by ? ` · затвердив ${escapeHtml(e.approval.by)}` : ''}${e.comment ? ` · «${escapeHtml(e.comment)}»` : ''}</span>
-                    ${filesHtml(e.files) || '<span class="buh-tag is-review">без файлу</span>'}
-                    ${relationsHtml(e)}
-                    <span class="tx-actions">${docActions(e)}</span>${attaching === e.id ? attachHtml(e) : ''}${stornoing === e.id ? stornoHtml(e) : ''}</div></td></tr>`).join('')}</tbody></table>`
-                : '<p class="list-empty">Документів немає</p>'}
-        </section>`;
+        <div class="dc-body">${scanHtml(e)}${fieldsHtml(e)}</div>
+        ${twin ? `<div class="dc-hint is-ask">${LINK_ICON}<span>${escapeHtml(ctx.docTypes[twin.docType] || 'Документ')} № ${escapeHtml(twin.number)} того самого постачальника на ту саму суму — схоже, це одна послуга. Обʼєднаємо в одну витрату, щоб вона не порахувалась двічі.</span>
+            <button type="button" class="sv-btn" data-act="merge-doc" data-to="${escapeHtml(twin.id)}">Обʼєднати</button></div>` : ''}
+        ${relationsHtml(e)}
+        ${attaching === e.id ? attachHtml(e) : ''}${stornoing === e.id ? stornoHtml(e) : ''}
+        <div class="fl-actions">${docActions(e)}</div>`;
+}
+
+function itemHtml(e) {
+    const [chip, cls] = chipOf(e, { chair: isChair(), paying: paying.has(e.id) });
+    return `<li><button type="button" class="fl-item dc-item${e.id === selected ? ' is-current' : ''}" data-act="pick" data-id="${escapeHtml(e.id)}" aria-current="${e.id === selected}">
+        <span class="fl-copy"><b>${escapeHtml(docTitle(e))}</b><small>${escapeHtml(e.supplierName)} · ${escapeHtml(ctx.docTypes[e.docType] || '')} № ${escapeHtml(e.number)}</small></span>
+        <span class="dc-right"><b class="fl-sum">${fmtKop(e.amountKop)} грн</b><span class="sv-chip ${cls}">${escapeHtml(chip)}</span></span>
+    </button></li>`;
+}
+
+function docsHtml() {
+    const list = filterDocs(ctx.expenses, segment, query);
+    if (!list.some(e => e.id === selected)) selected = window.matchMedia('(max-width: 900px)').matches ? null : list[0]?.id || null;
+    const cur = ctx.expenses.find(e => e.id === selected);
+    const toPay = ctx.expenses.filter(e => e.status === 'approved' && !paying.has(e.id)).reduce((s, e) => s + Math.max(0, remaining(e)), 0);
+    return `<div class="fl-grid dc-grid">
+            <section class="fl-list" aria-label="Документи">
+                <label class="fl-search dc-search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                    <input type="search" id="exQuery" placeholder="Постачальник, номер, опис" value="${escapeHtml(query)}" aria-label="Пошук документа"></label>
+                ${segment === 'work' && toPay ? `<p class="dc-sum">До оплати <b>${fmtKop(toPay)} грн</b></p>` : ''}
+                ${list.length ? `<ul class="fl-items">${list.map(itemHtml).join('')}</ul>` : `<p class="list-empty">${query ? 'Нічого не знайдено' : segment === 'work' ? 'Документів, що чекають дії, немає' : 'Архів порожній'}</p>`}
+            </section>
+            <section class="fl-card dc-card${cur || !list.length ? '' : ' is-idle'}" id="dcCard"${cur ? ` data-id="${escapeHtml(cur.id)}"` : ''} aria-live="polite">${cardHtml(cur, !list.length)}</section>
+        </div>`;
 }
 
 function contractsHtml() {
@@ -261,14 +312,31 @@ function suppliersHtml() {
 // РОЗДІЛ
 // ------------------------------------------------------------
 export async function loadExpensesView() {
-    ctx = await loadExpenses();
+    const [data, outgoing] = await Promise.all([loadExpenses(), loadPayments().catch(() => [])]);
+    ctx = data;
+    paying = new Set(outgoing.filter(p => p.expenseId && ['sending', 'sent'].includes(p.status)).map(p => p.expenseId));
     const host = document.getElementById('viewExpenses');
-    const body = segment === 'docs' ? docsHtml() : segment === 'contracts' ? contractsHtml() : suppliersHtml();
-    host.innerHTML = `<div class="buh-seg ch-segs" role="tablist">${Object.entries(SEGMENTS).map(([k, v]) =>
-            `<button type="button" class="buh-seg-item${k === segment ? ' active' : ''}" data-seg="${k}">${v}</button>`).join('')}</div>
+    const docs = segment === 'work' || segment === 'archive';
+    const counts = { ...docCounts(ctx.expenses), contracts: ctx.contracts.length, suppliers: ctx.suppliers.length };
+    const body = docs ? docsHtml() : segment === 'contracts' ? contractsHtml() : suppliersHtml();
+    host.innerHTML = `${docs ? `<label class="dc-drop" id="dcDrop">
+            <input type="file" id="dcPick" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" class="dc-pick">
+            <span class="dc-drop-icon">${UP_ICON}</span>
+            <span class="dc-drop-copy"><b>Додати рахунок, акт чи накладну</b><small>Перетягніть файл сюди або оберіть чи сфотографуйте — відкриється форма з цим файлом</small></span>
+        </label>` : ''}
+        <div class="fl-filters dc-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
+            `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}</div>
         ${formHtml()}${body}`;
     if (form) document.getElementById('exForm')?.querySelector('select, input')?.focus({ preventScroll: true });
     return ctx.expenses.filter(e => e.status === 'pending').length;
+}
+
+/** Файли, перетягнуті чи обрані у верхній зоні, — у форму нового документа. */
+function startWithFiles(list) {
+    if (!list.length) return;
+    files = list;
+    form = { kind: 'doc', data: form?.kind === 'doc' ? form.data : {} };
+    loadExpensesView().then(() => document.getElementById('exForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
 
 /** Затверджений документ → платіж у Приват24 на підпис голови. */
@@ -358,7 +426,7 @@ async function saveSupplier(btn) {
         toast('Постачальника збережено', 'success');
         // Повертаємось у форму документа чи договору, з якої прийшли, — уже з новим постачальником.
         form = back ? { ...back, data: { ...back.data, supplierId: r.id } } : null;
-        if (back) segment = back.kind === 'doc' ? 'docs' : 'contracts';
+        if (back) segment = back.kind === 'doc' ? 'work' : 'contracts';
     } catch (e) { toast(e.message, 'error'); }
     finally { setBusy(btn, false); }
 }
@@ -392,12 +460,17 @@ export function initExpensesView() {
     const host = document.getElementById('viewExpenses');
     host.addEventListener('click', async e => {
         const seg = e.target.closest('[data-seg]');
-        if (seg) { segment = seg.dataset.seg; form = null; loadExpensesView(); return; }
-        const f = e.target.closest('[data-filter]');
-        if (f) { filter = f.dataset.filter; loadExpensesView(); return; }
+        if (seg) { segment = seg.dataset.seg; form = null; attaching = null; stornoing = null; loadExpensesView(); return; }
         const btn = e.target.closest('[data-act]');
         if (!btn || btn.disabled) return;
-        const rowId = btn.closest('[data-id]')?.dataset.id || btn.closest('.tx-detail-row')?.previousElementSibling?.dataset.id;
+        if (btn.dataset.act === 'pick') {
+            selected = btn.dataset.id; attaching = null; stornoing = null;
+            loadExpensesView().then(() => {
+                if (window.matchMedia('(max-width: 900px)').matches) document.getElementById('dcCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+            return;
+        }
+        const rowId = btn.closest('[data-id]')?.dataset.id;
         const doc = ctx.expenses.find(x => x.id === rowId);
         const con = ctx.contracts.find(x => x.id === rowId);
         const sup = ctx.suppliers.find(x => x.id === rowId);
@@ -421,6 +494,13 @@ export function initExpensesView() {
                 if (!await confirmDialog('Сплатити документ?', `${doc.supplierName}: ${fmtKop(remaining(doc))} грн. Платіж зʼявиться в Приват24 й чекатиме підпису КЕП голови.`, 'Сплатити')) return;
                 setBusy(btn, true, 'Відправляю…');
                 await payExpense(doc);
+            } else if (a === 'merge-doc') {
+                const to = ctx.expenses.find(x => x.id === btn.dataset.to);
+                if (!await confirmDialog('Обʼєднати документи?', `${docName(doc)} стане підтвердним до ${docName(to)}: витрата й борг постачальнику — один раз, ${fmtKop(to.amountKop)} грн.`, 'Обʼєднати')) return;
+                setBusy(btn, true, 'Обʼєдную…');
+                await expAct({ action: 'linkExisting', id: doc.id, to: to.id });
+                selected = to.id;
+                toast('Обʼєднано: одна послуга — одна витрата', 'success');
             } else if (a === 'attach-doc') { attaching = doc.id; stornoing = null; loadExpensesView(); }
             else if (a === 'storno-doc') { stornoing = doc.id; attaching = null; loadExpensesView(); }
             else if (a === 'inline-close') { attaching = null; stornoing = null; loadExpensesView(); }
@@ -453,6 +533,7 @@ export function initExpensesView() {
     });
     host.addEventListener('change', e => {
         const t = e.target;
+        if (t.id === 'dcPick') { startWithFiles([...t.files]); return; }
         if (t.id === 'dfFiles' || t.id === 'cfFiles') { files = [...t.files]; return; }
         if ((t.id === 'dfSupplier' || t.id === 'cfSupplier') && t.value === '__new') {
             const back = snapshotForm();
@@ -475,8 +556,21 @@ export function initExpensesView() {
         if (t.id?.startsWith('cf')) contractHint();
     });
     host.addEventListener('input', e => {
-        if (e.target.id === 'exQuery') { const pos = e.target.selectionStart; loadExpensesView().then(() => { const q = document.getElementById('exQuery'); q?.focus(); q?.setSelectionRange(pos, pos); }); }
+        if (e.target.id === 'exQuery') { query = e.target.value; const pos = e.target.selectionStart; loadExpensesView().then(() => { const q = document.getElementById('exQuery'); q?.focus(); q?.setSelectionRange(pos, pos); }); }
         if (e.target.id?.startsWith('cf')) contractHint();
+    });
+    // Перетягнути файл можна на будь-яке місце розділу документів.
+    const docsTab = () => segment === 'work' || segment === 'archive';
+    host.addEventListener('dragover', e => {
+        if (!docsTab() || !e.dataTransfer?.types?.includes('Files')) return;
+        e.preventDefault();
+        document.getElementById('dcDrop')?.classList.add('is-over');
+    });
+    host.addEventListener('dragleave', e => { if (!host.contains(e.relatedTarget)) document.getElementById('dcDrop')?.classList.remove('is-over'); });
+    host.addEventListener('drop', e => {
+        if (!docsTab() || !e.dataTransfer?.files?.length) return;
+        e.preventDefault();
+        startWithFiles([...e.dataTransfer.files]);
     });
     host.addEventListener('keydown', e => {
         if (e.key !== 'Enter' || !e.target.closest('#exForm') || e.target.matches('textarea, select, [type="file"]')) return;

@@ -547,7 +547,7 @@ function openForm(item) {
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
     if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }
-    if (['approve-exp', 'pay-exp'].includes(item.proposal.type)) { openExpenses('docs'); return; }
+    if (['approve-exp', 'pay-exp'].includes(item.proposal.type)) { openExpenses('docs', null, item.proposal.expense?.id); return; }
     if (item.proposal.type === 'pay') {
         // Змінити суму чи призначення — у формі «Платежів».
         location.hash = 'payments';

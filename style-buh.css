@@ -830,3 +830,62 @@ button.sv-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -18p
     .fl-balance b { font-size: 32px; }
     .fl-history li { grid-template-columns: 82px minmax(0, 1fr) auto; }
 }
+
+/* ---------- Документи: зона завантаження, список і картка зі сканом ---------- */
+.dc-drop {
+    position: relative; display: flex; align-items: center; gap: 18px; margin-bottom: 16px; padding: 22px 26px;
+    border: 2px dashed #C9D2DE; border-radius: 28px; background: #fff; cursor: pointer; transition: background .2s ease, border-color .2s ease;
+}
+.dc-drop:hover, .dc-drop.is-over, .dc-drop:focus-within { border-color: #000; background: var(--sv-soft-2); }
+.dc-pick { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.dc-drop-icon { display: grid; flex: none; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #000; color: #fff; }
+.dc-drop-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dc-drop-copy b { font-size: 19px; font-weight: 800; }
+.dc-drop-copy small { color: var(--sv-muted); font-size: 14.5px; font-weight: 600; }
+.dc-tabs { margin-bottom: 18px; }
+.dc-grid { grid-template-columns: minmax(320px, 1fr) minmax(0, 1.5fr); }
+.dc-search { min-height: 52px; margin: 4px 4px 8px; background: var(--sv-soft-2); }
+.dc-search:focus-within { box-shadow: 0 0 0 2px #000; }
+.dc-search input { font-size: 15.5px; }
+.dc-sum { margin: 0 14px 8px; color: var(--sv-muted); font-size: 14px; font-weight: 600; }
+.dc-sum b { color: #000; font-weight: 800; }
+.fl-item.dc-item { grid-template-columns: minmax(0, 1fr) auto; min-height: 76px; padding: 10px 14px; }
+.dc-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.dc-right .sv-chip { align-self: flex-end; padding: 4px 11px; font-size: 12.5px; }
+.dc-amount { font-size: 22px; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.dc-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; align-items: start; }
+.dc-scan { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dc-scan img, .dc-scan iframe { display: block; width: 100%; height: 340px; border: 0; border-radius: 18px; background: var(--sv-soft); object-fit: contain; }
+.dc-scan.is-file, .dc-scan.is-empty { justify-content: center; min-height: 160px; padding: 20px; border-radius: 18px; background: var(--sv-soft-2); }
+.dc-scan.is-empty { border: 2px dashed #C9D2DE; }
+.dc-scan.is-empty b { font-size: 16px; font-weight: 800; }
+.dc-scan.is-empty span { color: var(--sv-muted); font-size: 14px; font-weight: 600; }
+.dc-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.dc-files a { overflow: hidden; max-width: 100%; padding: 6px 12px; border-radius: 999px; background: var(--sv-soft); color: #000; font-size: 13px; font-weight: 700; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.dc-files a:hover { background: #E2E7EE; }
+.dc-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 16px; margin: 0; }
+.dc-fields dt, .dc-fields dd { margin: 0; padding: 11px 0; border-top: 1px solid var(--sv-line); }
+.dc-fields dt { color: var(--sv-muted); font-size: 14px; font-weight: 600; }
+.dc-fields dd { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.dc-fields dt:first-of-type, .dc-fields dd:first-of-type { border-top: 0; }
+.dc-hint { display: flex; align-items: center; gap: 14px; margin: 0; padding: 16px 20px; border-radius: 20px; background: var(--sv-soft-2); font-size: 14.5px; font-weight: 600; }
+.dc-hint svg { flex: none; }
+.dc-hint span { flex: 1; min-width: 0; }
+.dc-hint.is-ask { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
+.dc-hint .sv-btn { flex: none; width: auto; }
+.dc-card .ex-inline { margin: 0; padding: 18px; border-radius: 20px; background: var(--sv-soft-2); }
+@media (max-width: 1180px) {
+    .dc-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+    .dc-grid { grid-template-columns: minmax(0, 1fr); }
+    .dc-card.is-idle { display: none; }
+    .dc-drop { gap: 14px; padding: 16px 18px; border-radius: 24px; }
+    .dc-drop-icon { width: 48px; height: 48px; }
+    .dc-drop-copy b { font-size: 17px; }
+    .dc-drop-copy small { font-size: 13.5px; }
+    .dc-scan img { height: auto; max-height: 420px; }
+    .dc-scan iframe { display: none; }
+    .dc-hint { flex-wrap: wrap; }
+    .dc-hint .sv-btn { width: 100%; }
+}
