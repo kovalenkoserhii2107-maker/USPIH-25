@@ -239,4 +239,29 @@ test('залишки після старого прибирання: дочис�
     assert.equal(st.canClean, false);
     await assert.rejects(demo.actions.remove('10'), /Слідів демо не знайдено/);
     assert.equal((await db.doc('expenses/real').get()).exists, true);
+    // Видно, що саме заважає: кількість і приклади документів.
+    assert.ok(st.blockers.some(b => /документи витрат \(1 документ: без постачальника № —\)/.test(b)), JSON.stringify(st.blockers));
+    // Банк не підключено, демо вже прибирали — тестовий облік: голова може очистити його повністю, лише зі словом.
+    assert.equal(st.canWipe, true);
+    await assert.rejects(demo.actions.remove('10', { wipe: true, confirm: 'так' }), /ОЧИСТИТИ/);
+    assert.equal((await db.doc('expenses/real').get()).exists, true);
+    // Підключено справжній банк — повна очистка недоступна.
+    await db.doc('bank_secrets/privat').set({ token: 'x' });
+    assert.equal((await demo.actions.status()).canWipe, false);
+    await assert.rejects(demo.actions.remove('10', { wipe: true, confirm: 'ОЧИСТИТИ' }), /тестовому обліку/);
+    await db.doc('bank_secrets/privat').delete();
+    const w = await demo.actions.remove('10', { wipe: true, confirm: 'очистити' });
+    assert.deepEqual(w.left, []);
+    assert.equal((await db.doc('expenses/real').get()).exists, false);
+    assert.equal((await db.doc('apartments/3/ledger/legacy1').get()).exists, true);
+});
+
+test('документ, чий постачальник видалений старим прибиранням, — слід демо', async () => {
+    await wipe();
+    await db.doc('demo/state').set({ status: 'removed' });
+    await db.doc('expenses/orphan').set({ supplierId: 'gone', supplierName: 'ТОВ Ліфт', status: 'approved', amountKop: 1000 });
+    const st = await demo.actions.status();
+    assert.deepEqual([st.canClean, st.canWipe], [true, false]);
+    await demo.actions.remove('10');
+    assert.deepEqual((await demo.actions.status()).blockers, []);
 });

@@ -3,7 +3,7 @@
 // ПриватБанку, призначення рахунків, правила погодження).
 // Відбори, групування й рішення в один дотик — bank-view-core.js.
 // ============================================================
-import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
+import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
     loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadDemo, loadRequisites, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
@@ -221,6 +221,8 @@ function demoHtml(d, chair) {
             <ul class="jr-checks">${d.blockers.map(b => `<li class="is-block"><span aria-hidden="true">✕</span>${escapeHtml(b)}</li>`).join('')}</ul>
             ${d.canClean ? `<p class="buh-note">Це залишки попереднього демо. «Дочистити» видалить увесь облік тестового акаунта: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Довідник квартир і власників не зміниться.</p>
                 <div class="inbox-actions"><button type="button" class="btn-primary btn-compact" data-act="demo-remove" data-clean="1">Дочистити залишки демо</button></div>`
+            : d.canWipe ? `<p class="buh-note">Слідів демо в цих даних не знайдено. Якщо це тестовий облік і їх можна видалити — «Очистити облік» видалить увесь облік: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Довідник квартир і власників і журнал дій лишаться. Потрібно ввести слово «ОЧИСТИТИ».</p>
+                <div class="inbox-actions"><button type="button" class="btn-ghost-small" data-act="demo-wipe">Очистити облік…</button></div>`
             : '<p class="buh-note">Якщо це тестовий акаунт і дані можна видалити — очистіть їх (або напишіть розробнику), тоді тут зʼявиться кнопка «Прогнати демо».</p>'}
         </section>` : '';
     }
@@ -315,6 +317,19 @@ export function initSettingsView() {
             const showcase = v('dmApt') ? { apt: v('dmApt'), area: v('dmArea'), residents: v('dmRes'), openingKop: opening, history: v('dmHistory') } : null;
             setBusy(btn, true, 'Проганяю… до хвилини');
             try { const r = await demoAct('run', showcase ? { showcase } : {}); toast(`Готово: ${r.steps.length} кроків. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис»`, 'success'); }
+            catch (err) { toast(err.message, 'error'); }
+            finally { setBusy(btn, false); }
+        }
+        if (btn.dataset.act === 'demo-wipe') {
+            const word = await promptDialog('Очистити облік повністю?', 'Буде видалено весь облік: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Повернути не можна. Щоб підтвердити, введіть ОЧИСТИТИ.',
+                { placeholder: 'ОЧИСТИТИ', confirmLabel: 'Очистити', maxLength: 20 });
+            if (word === null || word === undefined) return;
+            if (String(word).trim().toUpperCase() !== 'ОЧИСТИТИ') { toast('Облік не чіпали: слово не збігається', 'error'); return; }
+            setBusy(btn, true, 'Очищаю…');
+            try {
+                const r = await demoAct('remove', { wipe: true, confirm: String(word).trim() });
+                toast(r?.left?.length ? `Очищено, але лишилося: ${r.left.join('; ')}` : 'Облік очищено — можна прогнати демо', r?.left?.length ? 'error' : 'success');
+            }
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
         }
