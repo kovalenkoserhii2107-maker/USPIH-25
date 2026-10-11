@@ -55,6 +55,20 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // КОНТРОЛЬ ДОКУМЕНТІВ ВИТРАТ (для expenses.js)
     // --------------------------------------------------------
     /** Причина, з якої документ має затвердити голова (вихід за кошторис), або null. */
+    /**
+     * Списання, повернення яких потрапили в рік, хоча саме списання — у
+     * попередньому (комісія за грудень, повернена в січні): без них
+     * повернення не зменшило б статтю.
+     */
+    async function withRefundOrigins(list, transaction = null) {
+        const have = new Set(list.map(t => t.id));
+        const missing = [...new Set(list.filter(t => t.kind === 'refund' && t.refundOf && !have.has(t.refundOf)).map(t => t.refundOf))];
+        if (!missing.length) return list;
+        const refs = missing.map(id => db.doc(`bank_tx/${id}`));
+        const snaps = transaction ? await transaction.getAll(...refs) : await db.getAll(...refs);
+        return [...list, ...snaps.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() }))];
+    }
+
     async function guard(e, exceptId, transaction = null) {
         const read = ref => transaction ? transaction.get(ref) : ref.get();
         const year = String(e.period).slice(0, 4);
@@ -70,7 +84,8 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const payrollRuns = payroll.docs.map(d => ({ period: d.id, ...d.data() }));
         const approved = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
         const payrollPayments = new Map(payments.docs.filter(d => approved.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
-        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut: bank.docs.map(d => ({ id: d.id, ...d.data() })), payrollRuns, payrollPayments });
+        const bankOut = await withRefundOrigins(bank.docs.map(d => ({ id: d.id, ...d.data() })), transaction);
+        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut, payrollRuns, payrollPayments });
         return core.itemOverrun(budget, e.item, fact.get(e.item) || 0, e.amountKop);
     }
 
@@ -93,6 +108,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
         const tx = bank.docs.map(d => ({ id: d.id, ...d.data() }));
+        const bankOut = await withRefundOrigins(tx);
         const budget = core.effectiveBudget(budgets, year);
         const months = core.monthsElapsed(year, today());
         // Оплати мешканців за складовими: розподіл тим самим правилом, що й баланс квартири.
@@ -119,7 +135,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const payrollRuns = payrollSnap.docs.map(d => ({ period: d.id, ...d.data() }));
         const approvedPeriods = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
         const payrollPayments = new Map(payrollPaySnap.docs.filter(d => approvedPeriods.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
-        const factInput = { expenses: ex, bankOut: tx, payrollRuns, payrollPayments, year };
+        const factInput = { expenses: ex, bankOut, payrollRuns, payrollPayments, year };
         const result = core.execution({ budget, fact: core.factByItem(factInput), income: core.incomeFact({ bankIn: tx, year }), months, incomeParts });
         const accounts = Object.values(settings.exists ? settings.data().accounts || {} : {});
         const fundsKop = accounts.reduce((s, a) => s + (!a.currency || a.currency === 'UAH' ? a.balanceKop || 0 : 0), 0);

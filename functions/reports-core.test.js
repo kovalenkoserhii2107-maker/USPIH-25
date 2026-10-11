@@ -58,3 +58,52 @@ test('без затвердженої відомості цифр немає, л
     assert.deepEqual([draft.income.length, draft.summary.grossKop, draft.checks[0].level], [0, 0, 'block']);
     assert.match(r.payrollReport({ period: '2026-11', stored: null }).checks[0].text, /не складено/);
 });
+
+test('4ДФ за датою виплати: аванс жовтня в жовтні, остаточний розрахунок 05.11 — у листопаді', () => {
+    const card = { ...emp, from: '2026-01-01' };
+    const oct = payroll.buildRun({ people: [card], period: '2026-10' });
+    const nov = payroll.buildRun({ people: [card], period: '2026-11' });
+    const people = new Map([[emp.id, card]]);
+    const runs = new Map([['2026-10', { status: 'approved', run: oct }], ['2026-11', { status: 'approved', run: nov }]]);
+    const pay = (period, stage, key, amountKop, paidOn) => ({ period, stage, key, status: 'paid', amountKop, paidOn });
+    const payments = [
+        pay('2026-10', 'advance', 'e1', oct.rows[0].advance.netKop, '2026-10-20'), pay('2026-10', 'advance', 'pdfo', oct.totals.advance.pdfoKop, '2026-10-20'),
+        pay('2026-10', 'advance', 'vz', oct.totals.advance.vzKop, '2026-10-20'), pay('2026-10', 'final', 'vz', oct.totals.final.vzKop, '2026-11-05'),
+        pay('2026-10', 'final', 'e1', oct.rows[0].final.netKop, '2026-11-05'), pay('2026-10', 'final', 'pdfo', oct.totals.final.pdfoKop, '2026-11-05'),
+        pay('2026-11', 'advance', 'e1', nov.rows[0].advance.netKop, '2026-11-20')
+    ];
+    const o = r.payrollReport({ period: '2026-10', stored: runs.get('2026-10'), people, payments, runs });
+    const n = r.payrollReport({ period: '2026-11', stored: runs.get('2026-11'), people, payments, runs });
+    assert.equal(o.income[0].grossKop, oct.rows[0].grossKop);
+    assert.equal(o.income[0].paidKop, oct.rows[0].advance.grossKop);
+    assert.equal(o.income[0].pdfoPaidKop, oct.totals.advance.pdfoKop);
+    // Листопад: нараховано за листопад, виплачено — остаточний жовтня й аванс листопада.
+    assert.equal(n.income.length, 1);
+    assert.equal(n.income[0].grossKop, nov.rows[0].grossKop);
+    assert.equal(n.income[0].paidKop, oct.rows[0].final.grossKop + nov.rows[0].advance.grossKop);
+    assert.equal(n.income[0].pdfoPaidKop, oct.totals.final.pdfoKop);
+    assert.equal(n.summary.earlierKop, oct.rows[0].final.grossKop);
+    // Контроль сплати ПДФО — за відомістю місяця: жовтневий сплачено повністю.
+    assert.ok(!o.checks.some(c => /Не всі ПДФО/.test(c.text)), JSON.stringify(o.checks));
+    // Виплата за місяць без затвердженої відомості — перешкода.
+    const lost = r.payrollReport({ period: '2026-11', stored: runs.get('2026-11'), people, payments, runs: new Map([['2026-11', runs.get('2026-11')]]) });
+    assert.ok(lost.checks.some(c => c.level === 'block' && /2026-10/.test(c.text)));
+});
+
+test('виплати ФОП — 4ДФ з ознакою 157 за датою банку, мінус повернення', () => {
+    const suppliers = new Map([['s1', { name: 'ФОП Тестовий', kind: 'fop', code: '3124567809', iban: 'UA213052990000026001234567890' }],
+        ['s2', { name: 'ТОВ Тест', kind: 'company', code: '14360570', iban: 'UA213052990000026001234567891' }]]);
+    const expenses = new Map([['e1', { supplierId: 's1' }], ['e2', { supplierId: 's2' }]]);
+    const t = (id, extra) => ({ id, direction: 'out', kind: 'expense', status: 'done', category: 'supplier', amountKop: 150000, counterparty: {}, ...extra });
+    const tx = [t('a', { expenseId: 'e1' }), t('b', { expenseId: 'e2' }), t('c', { counterparty: { account: 'UA21 3052 9900 0002 6001 2345 6789 0' } }),
+        t('d', { category: 'bank_fee', amountKop: 500, counterparty: { code: '3124567809' } }),
+        { id: 'r', direction: 'in', kind: 'refund', status: 'done', refundOf: 'a', amountKop: 20000 }];
+    const fop = r.fopIncome({ tx, expenses, suppliers });
+    assert.deepEqual(fop, [{ supplierId: 's1', name: 'ФОП Тестовий', rnokpp: '3124567809', amountKop: 280000 }]);
+    const run = payroll.buildRun({ people: [{ ...emp, from: '2026-01-01' }], period: '2026-10' });
+    const rep = r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, people: new Map([[emp.id, emp]]), fop });
+    const f = rep.income.find(x => x.sign === '157');
+    assert.deepEqual([f.grossKop, f.paidKop, f.pdfoKop, f.vzKop], [280000, 280000, 0, 0]);
+    assert.equal(rep.summary.fopKop, 280000);
+    assert.ok(r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, fop: [{ ...fop[0], rnokpp: '' }] }).checks.some(c => /ФОП/.test(c.text)));
+});

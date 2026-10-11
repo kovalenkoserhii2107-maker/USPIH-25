@@ -100,8 +100,12 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         const reserved = await db.runTransaction(async t => {
             const existing = await t.get(ref);
             if (payment.expenseId) {
-                const e = (await t.get(db.doc(`expenses/${payment.expenseId}`))).data();
+                const [es, live] = await Promise.all([t.get(db.doc(`expenses/${payment.expenseId}`)),
+                    t.get(db.collection('payments').where('expenseId', '==', payment.expenseId).where('status', 'in', ['sending', 'unknown', 'sent']).limit(2))]);
+                const e = es.data();
                 if (!e || e.status !== 'approved' || e.amountKop - (e.stornoKop || 0) - (e.paidKop || 0) !== payment.amountKop) fail('aborted', 'Документ витрат змінився. Оновіть сторінку.');
+                // Один документ — один платіж у дорозі, хоч би з якої форми його відправили.
+                if (live.docs.some(d => d.id !== ref.id)) fail('already-exists', 'За цим документом уже є платіж у Приват24 — дочекайтеся виписки або скасуйте його в «Платежах»');
             }
             if (existing.exists && !['failed', 'canceled'].includes(existing.data().status)) {
                 const p = existing.data();

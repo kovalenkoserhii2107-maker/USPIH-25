@@ -337,9 +337,11 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         if (supplier.kind === 'person') fail('failed-precondition', 'Фізособі без ФОП платять як за ЦПД, з утриманням податків — не через «Витрати»');
         if (supplier.kind === 'fop' && !supplier.fopChecked) fail('failed-precondition', 'Позначте в картці постачальника, що витяг з ЄДР і КВЕД ФОП перевірено (п. 177.8 ПКУ)');
         if (!supplier.iban) fail('failed-precondition', 'У постачальника немає IBAN — додайте його в картці');
+        // Ключ — зі станом оплати: після повернення банком чи часткової оплати документ можна сплатити знову.
         return payments.actions.create(actor, role, {
             kind: 'supplier', recipient: { name: supplier.name, iban: supplier.iban, code: supplier.code },
-            amountKop: core.remaining(e), purpose: core.purposeFor(e), account, proposalKey: `exp-${e.id}`, expenseId: e.id
+            amountKop: core.remaining(e), purpose: core.purposeFor(e), account,
+            proposalKey: `exp-${e.id}-${e.paidKop || 0}-${(e.refundTxIds || []).length}`, expenseId: e.id
         });
     }
 

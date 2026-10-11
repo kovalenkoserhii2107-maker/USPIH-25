@@ -395,6 +395,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (reason === 'bounce' && ex?.exists) {
                 t.update(exRef, { paidKop: Math.max(0, (ex.data().paidKop || 0) - tx.amountKop), status: 'approved', paidAt: null, refundTxIds: FieldValue.arrayUnion(ref.id) });
             }
+            // Постачальник повернув гроші: сплачено за документом менше. Після сторно на ту саму суму
+            // документ лишається оплаченим; без сторно — знову чекає доплати.
+            if (reason === 'supplier' && ex?.exists && ['approved', 'paid'].includes(ex.data().status)) {
+                const paid = Math.max(0, (ex.data().paidKop || 0) - tx.amountKop);
+                const due = ex.data().amountKop - (ex.data().stornoKop || 0);
+                t.update(exRef, { paidKop: paid, status: paid >= due ? 'paid' : 'approved', ...(paid >= due ? {} : { paidAt: null }), refundTxIds: FieldValue.arrayUnion(ref.id) });
+            }
             if (reason === 'bounce' && pay?.exists) t.update(payRef, { returnedKop: (pay.data().returnedKop || 0) + tx.amountKop, returnTxIds: FieldValue.arrayUnion(ref.id) });
             return { tx, o, payroll: pay?.data()?.payroll || null };
         });
@@ -440,6 +447,9 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (data.status !== 'review' || data.expenseId || data.paymentId) fail('failed-precondition', 'Операцію вже розібрано. Спершу поверніть її у «Вхідні».');
             const overpaid = Math.round(Number(aptSnap.data().balance || 0) * 100);
             if (data.amountKop > overpaid) fail('failed-precondition', `Переплата прим. ${clean} — ${core.fromKop(Math.max(0, overpaid))} грн: повернути більше не можна`);
+            // Зменшуємо збережену переплату в тій самій транзакції: два одночасні повернення
+            // однієї переплати конфліктують, і друге перевіряється вже з новим залишком.
+            t.update(aptSnap.ref, { balance: core.fromKop(overpaid - data.amountKop) });
             const ledger = db.doc(`apartments/${aptId}/ledger/refund-${ref.id}`);
             t.set(ledger, { at: data.at, period: data.period, kind: 'refund', amount: core.fromKop(data.amountKop), amountKop: data.amountKop,
                 note: 'Повернення переплати на рахунок співвласника', source: 'bank', txId: ref.id, createdAt: FieldValue.serverTimestamp() });
@@ -468,11 +478,11 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             // Повернення списаного: знімаємо привʼязку з оригіналу, документа й платежу.
             const origRef = data.kind === 'refund' && data.refundOf ? db.doc(`bank_tx/${data.refundOf}`) : null;
             const orig = origRef ? await t.get(origRef) : null;
-            const origEx = orig?.data()?.expenseId && data.refundReason === 'bounce' ? await t.get(db.doc(`expenses/${orig.data().expenseId}`)) : null;
+            const origEx = orig?.data()?.expenseId && ['bounce', 'supplier'].includes(data.refundReason) ? await t.get(db.doc(`expenses/${orig.data().expenseId}`)) : null;
             const origPay = orig?.data()?.paymentId && data.refundReason === 'bounce' ? await t.get(db.doc(`payments/${orig.data().paymentId}`)) : null;
             if (origPay?.data()?.payroll && (origPay.data().repaidBy || []).length) fail('failed-precondition', 'Повернену зарплату вже відправлено знову — це повернення не знімається');
             if (orig?.exists) t.update(origRef, { refundedKop: Math.max(0, (orig.data().refundedKop || 0) - data.amountKop), refundTxIds: FieldValue.arrayRemove(ref.id) });
-            if (origEx?.exists) {
+            if (origEx?.exists && (origEx.data().refundTxIds || []).includes(ref.id)) {
                 const paid = (origEx.data().paidKop || 0) + data.amountKop;
                 const due = origEx.data().amountKop - (origEx.data().stornoKop || 0);
                 t.update(origEx.ref, { paidKop: paid, status: paid >= due ? 'paid' : 'approved', refundTxIds: FieldValue.arrayRemove(ref.id) });

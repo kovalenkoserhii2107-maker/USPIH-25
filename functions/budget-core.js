@@ -167,9 +167,20 @@ function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payro
             what: e.description || '', doc: `${docTypes[e.docType] || 'Документ'} № ${e.number}`, paid: e.status === 'paid',
             ...((e.files || []).length ? { files: e.files.map(f => ({ name: f.name, url: f.url })) } : {}) });
     }
+    const byId = new Map(bankOut.filter(t => t.id).map(t => [t.id, t]));
+    const direct = t => t.direction === 'out' && t.kind === 'expense' && t.status === 'done' && !t.expenseId
+        && !['supplier', 'resident_refund'].includes(t.category) && !payrollPayments.has(t.paymentId);
     for (const t of bankOut) {
-        if (t.direction !== 'out' || t.kind !== 'expense' || t.status !== 'done' || t.expenseId || !inYear(t.period, year)) continue;
-        if (['supplier', 'resident_refund'].includes(t.category) || payrollPayments.has(t.paymentId)) continue;
+        if (!inYear(t.period, year)) continue;
+        // Повернення прямої витрати (комісії тощо) — мінусом у тій самій статті, як у factByItem.
+        const o = t.kind === 'refund' && t.status === 'done' ? byId.get(t.refundOf) : null;
+        if (o && direct(o)) {
+            const kind = o.category === 'bank_fee' ? 'fee' : payeeKind(t.counterparty?.name, t.counterparty?.code);
+            add(BANK_ITEM[o.category] || 'other', { date: kyivDate(t.at), who: hide(BANK_ITEM[o.category] || 'other', kind) || t.counterparty?.name || '', kind,
+                amountKop: -t.amountKop, refund: true, what: publicView ? 'Повернення' : `Повернення: ${t.purpose || ''}`.trim() });
+            continue;
+        }
+        if (!direct(t)) continue;
         const item = BANK_ITEM[t.category] || 'other';
         const cp = t.counterparty || {};
         // Зарплату отримує людина, хоч би як банк назвав отримувача («ПРАЦІВНИК ОСББ …»).

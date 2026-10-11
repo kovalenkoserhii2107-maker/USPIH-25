@@ -10,7 +10,8 @@
 //   лікарняні ПФУ; 2.1 база ЄСВ 22 % у межах максимальної, 2.5 додаткова
 //   база (доплата до мінімальної); 3.1 і 3.5 — ЄСВ з них; 7 — до сплати.
 //   Д1 — рядок на особу (категорія 1), лікарняні — окремим рядком
-//   (категорія 29); 4ДФ — доходи, ПДФО й ВЗ за ознаками 101/102 з ПСП;
+//   (категорія 29), ЦПД — категорія 26; 4ДФ — доходи, ПДФО й ВЗ за
+//   ознаками 101/102 з ПСП і виплати ФОП (157);
 //   Д5 — прийом і звільнення (категорія 1/2/3, код КП, документ).
 // Файли — у windows-1251, імʼя — за правилами ДПС (filename()).
 // Остаточно файл перевіряє Електронний кабінет під час завантаження:
@@ -116,6 +117,7 @@ function buildPackage({ period, org, report, run, people = new Map(), fillDate, 
         if (!/^\d{10}$/.test(tinOf(r))) problems.push(`${r.name}: немає РНОКПП`);
         if (!['Ж', 'Ч'].includes(card(r).gender)) problems.push(`${r.name}: стать (Ж/Ч) у картці — для Д1`);
     }
+    for (const x of report.income || []) if (x.kind === 'fop' && !/^\d{10}$/.test(x.rnokpp || '')) problems.push(`${x.name}: РНОКПП ФОП (код у картці постачальника) — для 4ДФ`);
     const relations = report.relations || [];
     for (const rel of relations) {
         const c = people.get(rel.personId) || {};
@@ -148,20 +150,22 @@ function buildPackage({ period, org, report, run, people = new Map(), fillDate, 
         const days = (report.esv || []).find(e => e.personId === r.personId)?.days;
         const [s1, s2, s3] = splitName(r.name);
         const ident = { tin: tinOf(r), gender: card(r).gender, s1, s2, s3 };
-        d1.push({ ...ident, cat: '1', days, gross, within, topUp, esv: esvMain,
-            main: r.kind === 'employee' ? (r.relationship?.mainJob === false ? '0' : '1') : '0', partTime: r.kind === 'employee' && (r.fte || 1) < 1 ? '1' : '0' });
+        // Категорія застрахованої особи: 1 — працівник, 26 — виконавець за договором ЦПД.
+        const gph = r.kind === 'gph';
+        d1.push({ ...ident, cat: gph ? '26' : '1', days, gross, within, topUp, esv: esvMain,
+            main: gph ? '0' : r.relationship?.mainJob === false ? '0' : '1', partTime: gph ? null : (r.fte || 1) < 1 ? '1' : '0' });
         if (sick) d1.push({ ...ident, cat: '29', sickDays: r.sickDays || null, gross: sick, within: Math.min(sick, maxBase || sick), topUp: 0, esv: sickEsv, main: null, partTime: null });
     }
     const d1Body = `${top}${el('HNAME', org.name)}${el('HTIN', org.edrpou)}`
         + col('T1RXXXXG5', d1, () => '1') + col('T1RXXXXG6', d1, x => x.gender) + col('T1RXXXXG7S', d1, x => x.tin) + col('T1RXXXXG8', d1, x => x.cat)
         + col('T1RXXXXG101', d1, () => month) + col('T1RXXXXG102', d1, () => year)
         + col('T1RXXXXG111S', d1, x => x.s1) + col('T1RXXXXG112S', d1, x => x.s2) + col('T1RXXXXG113S', d1, x => x.s3)
-        + col('T1RXXXXG12', d1, x => x.sickDays) + col('T1RXXXXG13', d1, x => (x.cat === '1' ? 0 : null)) + col('T1RXXXXG14', d1, x => (x.cat === '1' ? x.days : null))
-        + col('T1RXXXXG15', d1, x => (x.cat === '1' ? 0 : null))
+        + col('T1RXXXXG12', d1, x => x.sickDays) + col('T1RXXXXG13', d1, x => (x.cat !== '29' ? 0 : null)) + col('T1RXXXXG14', d1, x => (x.cat !== '29' ? x.days : null))
+        + col('T1RXXXXG15', d1, x => (x.cat !== '29' ? 0 : null))
         + col('T1RXXXXG16', d1, x => money(x.gross)) + col('T1RXXXXG17', d1, x => money(x.within)) + col('T1RXXXXG18', d1, x => money(x.topUp))
         + col('T1RXXXXG19', d1, () => money(0)) + col('T1RXXXXG20', d1, x => money(x.esv))
-        + col('T1RXXXXG21', d1, x => x.main) + col('T1RXXXXG22', d1, x => x.partTime) + col('T1RXXXXG23', d1, x => (x.cat === '1' ? '0' : null))
-        + col('T1RXXXXG24', d1, x => (x.cat === '1' ? '0' : null)) + col('T1RXXXXG26', d1, x => (x.cat === '1' ? '0' : null))
+        + col('T1RXXXXG21', d1, x => x.main) + col('T1RXXXXG22', d1, x => x.partTime) + col('T1RXXXXG23', d1, x => (x.cat !== '29' ? '0' : null))
+        + col('T1RXXXXG24', d1, x => (x.cat !== '29' ? '0' : null)) + col('T1RXXXXG26', d1, x => (x.cat !== '29' ? '0' : null))
         + el('R01G16', money(sum(d1, x => x.gross))) + el('R01G17', money(sum(d1, x => x.within))) + el('R01G18', money(sum(d1, x => x.topUp)))
         + el('R01G19', money(0)) + el('R01G20', money(sum(d1, x => x.esv))) + footer;
 

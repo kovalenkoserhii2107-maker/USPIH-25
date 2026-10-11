@@ -158,3 +158,19 @@ test('надходження й боржники: приміщення — но�
     assert.deepEqual(debt.list.map(d => [d.apt, d.kop]), [['3А', 74221], ['7', 622967], ['191', 3732147]]);
     assert.equal(debt.totalKop, 74221 + 622967 + 3732147);
 });
+
+test('розшифровка статті: повернення комісії — мінусом, сума списку дорівнює факту', () => {
+    const bankOut = [
+        { id: 'f1', direction: 'out', kind: 'expense', category: 'bank_fee', status: 'done', period: '2027-01', at: new Date('2027-01-31T10:00:00Z'), amountKop: 5000, counterparty: { name: 'БАНК' } },
+        { id: 'f0', direction: 'out', kind: 'expense', category: 'bank_fee', status: 'done', period: '2026-12', at: new Date('2026-12-31T10:00:00Z'), amountKop: 3000, counterparty: { name: 'БАНК' } },
+        { id: 'r1', direction: 'in', kind: 'refund', category: 'refund', status: 'done', refundOf: 'f1', period: '2027-02', at: new Date('2027-02-03T10:00:00Z'), amountKop: 2000, counterparty: { name: 'БАНК' } },
+        // Повернення січня за грудневу комісію: оригінал з минулого року підвантажує budget.js.
+        { id: 'r0', direction: 'in', kind: 'refund', category: 'refund', status: 'done', refundOf: 'f0', period: '2027-01', at: new Date('2027-01-05T10:00:00Z'), amountKop: 3000, counterparty: { name: 'БАНК' } }
+    ];
+    const fact = b.factByItem({ bankOut, year: '2027' });
+    const ops = b.operationsByItem({ bankOut, year: '2027' });
+    const item = [...fact.keys()][0];
+    assert.equal(fact.get(item), 5000 - 2000 - 3000);
+    for (const [key, kop] of fact) assert.equal(ops[key].reduce((s, o) => s + o.amountKop, 0), kop);
+    assert.ok(ops[item].some(o => o.refund && o.amountKop === -2000));
+});

@@ -111,7 +111,7 @@ function payrollHtml(d) {
         </div>
         <h3 class="rp-h">Додаток 4ДФ — доходи, ПДФО й військовий збір</h3>
         <div class="jr-scroll"><table class="buh-table is-compact rp-table"><thead><tr><th>РНОКПП</th><th>ПІБ</th><th>Ознака</th><th class="t-sum">Нараховано</th><th class="t-sum">Виплачено</th><th class="t-sum">ПДФО</th><th class="t-sum">ВЗ</th></tr></thead>
-            <tbody>${d.income.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}</td><td>${r.sign}<small>${r.kind === 'gph' ? 'ЦПД' : 'зарплата'}${r.vacationKop ? `, з них відпускні ${fmtKop(r.vacationKop)}` : ''}${r.sickKop ? `, лікарняні ${fmtKop(r.sickKop)}` : ''}${r.pspKop ? ` · ПСП ${r.pspCode}: ${fmtKop(r.pspKop)}` : ''}</small></td>
+            <tbody>${d.income.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}</td><td>${r.sign}<small>${r.kind === 'gph' ? 'ЦПД' : r.kind === 'fop' ? 'ФОП' : 'зарплата'}${r.earlierKop ? `, виплачено за попередній місяць ${fmtKop(r.earlierKop)}` : ''}${r.vacationKop ? `, з них відпускні ${fmtKop(r.vacationKop)}` : ''}${r.sickKop ? `, лікарняні ${fmtKop(r.sickKop)}` : ''}${r.pspKop ? ` · ПСП ${r.pspCode}: ${fmtKop(r.pspKop)}` : ''}</small></td>
                 <td class="t-sum">${fmtKop(r.grossKop)}</td><td class="t-sum">${fmtKop(r.paidKop)}</td><td class="t-sum">${sum(r.pdfoKop, r.pdfoPaidKop)}</td><td class="t-sum">${sum(r.vzKop, r.vzPaidKop)}</td></tr>`).join('')}</tbody></table></div>
         <h3 class="rp-h">Додаток Д1 — єдиний внесок</h3>
         <div class="jr-scroll"><table class="buh-table is-compact rp-table"><thead><tr><th>РНОКПП</th><th>ПІБ</th><th>Відносини</th><th class="t-sum">Нараховано</th><th class="t-sum">Доплата до мін.</th><th class="t-sum">База</th><th class="t-sum">ЄСВ</th></tr></thead>
@@ -372,15 +372,15 @@ async function onAction(btn) {
         const key = form?.dataset.key;
         if (!key) return;
         if (a === 'unmark') {
-            await reportsAct({ action: 'mark', key, status: 'open' });
+            await reportsAct({ action: 'mark', key, status: 'open', seenAt: ctx.statuses[key]?.at || null });
             toast('Позначку знято', 'success');
         } else if (a === 'mark') {
             setBusy(btn, true, 'Зберігаю…');
             const picked = [...form.querySelectorAll('input[type=file]')].flatMap(i => [...i.files].map(file => ({ file, kind: i.dataset.kind })));
             const uploaded = picked.length ? await uploadReportFiles(key, picked) : [];
-            const before = ctx.statuses[key]?.auto ? [] : ctx.statuses[key]?.files || [];
             const v = name => form.elements[name]?.value?.trim() || '';
-            await reportsAct({ action: 'mark', key, status: v('status'), date: v('date'), regNumber: v('regNumber'), note: v('note'), files: [...before, ...uploaded] });
+            // Лише нові файли: сервер додає їх до збережених (квитанції з іншої вкладки не зникнуть).
+            await reportsAct({ action: 'mark', key, status: v('status'), date: v('date'), regNumber: v('regNumber'), note: v('note'), addFiles: uploaded });
             toast('Позначку збережено', 'success');
         }
         await loadReportsView();

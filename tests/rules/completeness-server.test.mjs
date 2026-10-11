@@ -91,12 +91,30 @@ test('рахунок і акт однієї послуги: підказка, п
     await inc('r1', { amountKop: 30000 });
     await bank.actions.refund(...A, { txId: 'r1', refundOf: 'o1', reason: 'supplier' });
     assert.equal((await db.doc('bank_tx/o1').get()).data().refundedKop, 30000);
+    // Сплачено за документом 700 = сума після сторно → документ оплачено.
+    let e = (await db.doc(`expenses/${inv}`).get()).data();
+    assert.deepEqual([e.paidKop, e.status, e.refundTxIds], [70000, 'paid', ['r1']]);
     await assert.rejects(bank.actions.unassign(...A, { txId: 'o1' }), /повернення/);
     ctx = await journal.actions.context({ period: '2026-10' });
     const sup = ctx.tb.rows.find(x => x.acc === '631').byA.find(x => x.a === 'ТОВ ТЕСТ-РЕМОНТ');
     assert.deepEqual([sup.closeDr, sup.closeCr], [0, 0]);
     assert.equal(ctx.tb.rows.find(x => x.acc === '92').dr, 70000);
     assert.ok(!ctx.checks.some(c => c.level === 'block' && /Документ витрат|Повернення|Списання o1/.test(c.text)), JSON.stringify(ctx.checks));
+    // Зняття повернення відновлює оплату документа.
+    await bank.actions.unassign(...A, { txId: 'r1' });
+    e = (await db.doc(`expenses/${inv}`).get()).data();
+    assert.deepEqual([e.paidKop, e.status, e.refundTxIds], [100000, 'paid', []]);
+});
+
+test('постачальник повернув гроші без сторно: документ знову чекає доплати', async () => {
+    const { id: sid } = await ex.actions.saveSupplier(...A, { name: 'ТОВ ТЕСТ-РЕМОНТ', kind: 'company', code: '14360570', iban: SUP_IBAN });
+    const { id } = await ex.actions.saveExpense(...C, { supplierId: sid, period: '2026-10', item: 'repair', description: 'Ремонт ґанку', files: [], docType: 'act', number: '11', date: '2026-10-05', amountKop: 100000 });
+    await out('o5', {});
+    await ex.actions.linkTx(...A, { txId: 'o5', expenseId: id });
+    await inc('r5', { amountKop: 40000 });
+    await bank.actions.refund(...A, { txId: 'r5', refundOf: 'o5', reason: 'supplier' });
+    const e = (await db.doc(`expenses/${id}`).get()).data();
+    assert.deepEqual([e.paidKop, e.status], [60000, 'approved']);
 });
 
 test('банк повернув оплату документа: документ знову до сплати; зняття повернення відновлює оплату', async () => {
@@ -135,6 +153,19 @@ test('повернення переплати співвласнику: не б�
     // Повернення в «Розібрати» прибирає й запис історії.
     await bank.actions.unassign(...A, { txId: 'o4' });
     assert.equal((await db.doc('apartments/5/ledger/refund-o4').get()).exists, false);
+});
+
+test('два одночасні повернення однієї переплати: проходить лише одне', async () => {
+    await db.doc('apartments/5').set({ area: 50, balance: 500 });
+    await db.doc('apartments/5/ledger/opening').set({ kind: 'opening', period: '2026-09', amountKop: 50000, amount: 500, at: Timestamp.fromDate(new Date('2026-09-30T10:00:00Z')) });
+    const who = { name: 'Власник Тестовий', account: 'UA973052990000026001234567801' };
+    await out('o6', { amountKop: 40000, counterparty: who });
+    await out('o7', { amountKop: 40000, counterparty: who });
+    const res = await Promise.allSettled([bank.actions.refundResident(...A, { txId: 'o6', apt: '5' }), bank.actions.refundResident(...A, { txId: 'o7', apt: '5' })]);
+    assert.equal(res.filter(r => r.status === 'fulfilled').length, 1);
+    assert.match(res.find(r => r.status === 'rejected').reason.message, /більше не можна/);
+    const ledger = await db.collection('apartments/5/ledger').where('kind', '==', 'refund').get();
+    assert.equal(ledger.size, 1);
 });
 
 test('зарплату повернув банк: повторна виплата на виправлений IBAN, лише один раз', async () => {
