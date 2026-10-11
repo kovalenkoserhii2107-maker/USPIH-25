@@ -28,14 +28,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=165">
-    <link rel="stylesheet" href="style-chat.css?v=165">
-    <link rel="stylesheet" href="style-sv.css?v=165">
-    <link rel="stylesheet" href="style-admin.css?v=165">
+    <link rel="stylesheet" href="style.css?v=166">
+    <link rel="stylesheet" href="style-chat.css?v=166">
+    <link rel="stylesheet" href="style-sv.css?v=166">
+    <link rel="stylesheet" href="style-admin.css?v=166">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=165">
+    <link rel="modulepreload" href="js/admin-main.js?v=166">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -215,7 +215,7 @@
                 </button>
                 <button class="admin-tab" data-tab="finance" type="button">
                     <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                    <span>Фінанси</span>
+                    <span>Фінанси: попередні розділи</span>
                 </button>
                 <button class="admin-tab" data-tab="meters" type="button">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg>
@@ -1400,7 +1400,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=165' : './js/admin-main.js?v=165').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=166' : './js/admin-main.js?v=166').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

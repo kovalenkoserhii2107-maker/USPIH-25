@@ -244,6 +244,11 @@ export function unlockScroll(force = false) {
     window.scrollTo(0, savedScroll);
 }
 
+// Хто відкрив шторку — туди повертаємо фокус після закриття (клавіатура, зчитувачі екрана).
+let sheetOpener = null;
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const focusables = el => [...el.querySelectorAll(FOCUSABLE)].filter(n => !n.hidden && !n.closest('[hidden]') && n.getClientRects().length);
+
 export function closeAllSheets() {
     let wasOpen = false;
     sheets().forEach(el => {
@@ -251,7 +256,13 @@ export function closeAllSheets() {
         el.classList.remove('is-open');
     });
     document.getElementById('navBackdrop')?.classList.remove('is-open');
-    if (wasOpen) unlockScroll();
+    if (wasOpen) {
+        unlockScroll();
+        const back = sheetOpener;
+        sheetOpener = null;
+        const active = document.activeElement;
+        if (back?.isConnected && (!active || active === document.body || active.closest?.('.sheet'))) back.focus?.({ preventScroll: true });
+    }
 }
 
 export function isSheetOpen(id) {
@@ -259,12 +270,18 @@ export function isSheetOpen(id) {
 }
 
 export function openSheet(id) {
+    const opener = document.activeElement;
     closeAllSheets();
     const el = document.getElementById(id);
     if (!el) return;
+    sheetOpener = opener && opener !== document.body ? opener : null;
     el.classList.add('is-open');
+    el.setAttribute('role', el.getAttribute('role') || 'dialog');
+    el.setAttribute('aria-modal', 'true');
     document.getElementById('navBackdrop')?.classList.add('is-open');
     lockScroll();
+    // Фокус — усередину шторки (на закриття), щоб Tab не блукав сторінкою позаду.
+    requestAnimationFrame(() => (el.querySelector('.sheet-close') || focusables(el)[0])?.focus?.({ preventScroll: true }));
 }
 
 export function toggleSheet(id) {
@@ -278,7 +295,17 @@ export function initSheets() {
         btn.addEventListener('click', closeAllSheets);
     });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeAllSheets();
+        if (e.key === 'Escape') { closeAllSheets(); return; }
+        // Tab лишається в межах відкритої шторки — фокус не виходить на сторінку під нею.
+        if (e.key !== 'Tab') return;
+        const open = [...sheets()].find(el => el.classList.contains('is-open'));
+        if (!open) return;
+        const list = focusables(open);
+        if (!list.length) return;
+        const first = list[0], last = list[list.length - 1];
+        if (!open.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+        else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
 }
 

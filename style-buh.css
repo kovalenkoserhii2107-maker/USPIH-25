@@ -1008,3 +1008,16 @@ body.chs-open { overflow: hidden; }
     .chs-sum { font-size: 30px; }
     @keyframes chs-up { from { transform: translateY(60px); opacity: 0; } to { transform: none; opacity: 1; } }
 }
+/* Версії пакета XML у позначці звіту */
+.rp-versions { margin-bottom: 10px; }
+.rp-versions .bk-label { display: block; margin-bottom: 6px; }
+/* Звіт за місяць — по кроках: суми, файли, позначка; таблиці додатків згорнуті */
+.rp-stepbox { margin: 0 0 16px; }
+.rp-num { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 10px; border-radius: 50%; background: #000; color: #fff; font-size: 13px; font-weight: 800; vertical-align: 1px; }
+.rp-fold { margin: 8px 0; border-radius: 16px; background: var(--sv-soft-2, #F4F6F9); }
+.rp-fold > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 16px; font-weight: 700; cursor: pointer; list-style: none; }
+.rp-fold > summary::-webkit-details-marker { display: none; }
+.rp-fold > summary::after { content: '›'; margin-left: auto; font-size: 20px; transition: transform .2s ease; }
+.rp-fold[open] > summary::after { transform: rotate(90deg); }
+.rp-fold > summary small { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: #fff; font-size: 12px; font-weight: 800; }
+.rp-fold > :not(summary) { margin: 0 12px 12px; }

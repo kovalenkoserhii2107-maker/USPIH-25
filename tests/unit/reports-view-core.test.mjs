@@ -45,3 +45,31 @@ test('головний строк — найближчий розрахунок,
     assert.equal(pickFocus(sent).hero.key, 'j0500111-2026-10');
     assert.equal(pickFocus([{ ...sent[0], mark: { status: 'accepted' } }, sent[1]]).hero.key, 'j0500111-2026-11');
 });
+
+test('строки: сплачене й подане не нагадуємо; поданий без № 2 понад 5 днів — нагадати', async () => {
+    const { reportTasks, nextDeadline, receiptOverdue } = await import('../../js/reports-view-core.js');
+    const ctx = { today: '2026-11-10', start: '2026-10', hasPeople: true, payrollMonths: [], statuses: {
+        'esv-2026-10': { status: 'paid' }, 'j0500111-2026-10': { status: 'submitted', date: '2026-11-03' } } };
+    const tasks = reportTasks(ctx);
+    const esv = tasks.find(t => t.key === 'esv-2026-10'), rep = tasks.find(t => t.key === 'j0500111-2026-10');
+    assert.deepEqual([esv.done, rep.done, rep.waiting], [true, false, true]);
+    // Ні сплачений ЄСВ, ні поданий розрахунок за жовтень не стають «наступним строком».
+    const next = nextDeadline(tasks);
+    assert.ok(next && !['esv-2026-10', 'j0500111-2026-10'].includes(next.key), next?.key);
+    assert.equal(receiptOverdue(rep, '2026-11-07'), false);
+    assert.equal(receiptOverdue(rep, '2026-11-08'), true);
+    // Вересень — до початку обліку: його строки не показуємо зовсім.
+    assert.ok(!tasks.some(t => t.key === 'esv-2026-9'));
+    // Прострочене — першим.
+    const late = nextDeadline(reportTasks({ ...ctx, today: '2026-11-25', statuses: {} }));
+    assert.ok(late.left < 0, JSON.stringify(late));
+});
+
+test('кроки: завантажений пакет — «готово до підпису», подано — з номером версії', () => {
+    const ready = reportSteps({ approved: true, pack: { version: 2 } });
+    assert.deepEqual(states(ready), ['done', 'done', 'current', 'next']);
+    assert.match(ready[1].note, /Версія 2/);
+    assert.equal(nextAction(ready).label, 'Голова подав — додати квитанцію № 1');
+    const sent = reportSteps({ approved: true, pack: { version: 3 }, mark: { status: 'submitted', packageVersion: 2 } });
+    assert.match(sent[2].note, /версію 2/);
+});

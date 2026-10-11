@@ -103,8 +103,10 @@ async function openPanel(apt) {
     if (!session.role || (apartment && !apartment.passwordChanged)) { toResident(); return; }
     // У бухгалтера свій кабінет. Сюди він заходить лише по попередні
     // розділи фінансів (посилання з бухгалтерії веде з ?tab=finance).
-    const wanted = new URLSearchParams(location.search).get('tab');
-    if (session.role === 'accountant' && !wanted) { location.replace('buh.html'); return; }
+    const asked = new URLSearchParams(location.search).get('tab');
+    if (session.role === 'accountant' && !asked) { location.replace('buh.html'); return; }
+    // Розділ — з ?tab= або з адреси після оновлення сторінки (#directory).
+    const wanted = asked || location.hash.slice(1) || null;
     session.isAdmin = true;
     if (!session.serviceAccount) rememberWorkMode('staff');
     startPowerListener();
@@ -158,9 +160,14 @@ async function refreshCurrentScreen() {
 // ------------------------------------------------------------
 // ВКЛАДКИ
 // ------------------------------------------------------------
+// Перехід по історії браузера («Назад»): відкриваємо розділ, не додаючи новий запис.
+let restoring = false;
+
 function initAdminTabs() {
     document.querySelectorAll('.admin-tab').forEach(tab => {
         tab.addEventListener('click', async () => {
+            // Кожен розділ — запис в історії: «Назад» у браузері веде на попередній розділ.
+            if (!restoring && tab.dataset.tab !== 'buh' && location.hash !== `#${tab.dataset.tab}`) history.pushState(null, '', `#${tab.dataset.tab}`);
             // Чат — окремий екран, а не картка в панелі: у картці
             // повідомлення тіснилися, а прокрутка всередині прокрутки
             // збивала сторінку вище й нижче потрібного.
@@ -184,6 +191,15 @@ function initAdminTabs() {
         });
     });
     document.getElementById('refreshHistoryBtn')?.addEventListener('click', () => loadAdminTab('send', true));
+    window.addEventListener('popstate', () => {
+        const name = location.hash.slice(1) || 'overview';
+        const tab = document.querySelector(`.admin-tab[data-tab="${CSS.escape(name)}"]:not([hidden])`);
+        if (!tab || name === activeAdminTab) return;
+        // З чату — спершу на екран панелі, як кнопкою «Назад» у чаті.
+        if (activeAdminTab === 'chat') { stopChat(); closeAllSheets(); showScreen('adminDashboardSection'); }
+        restoring = true;
+        try { tab.click(); } finally { restoring = false; }
+    });
 }
 
 // Усередині найскладнішого розділу показуємо один робочий контекст
