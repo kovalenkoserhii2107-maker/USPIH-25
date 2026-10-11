@@ -16,10 +16,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=149">
-    <link rel="stylesheet" href="style-buh.css?v=149">
+    <link rel="stylesheet" href="style.css?v=150">
+    <link rel="stylesheet" href="style-buh.css?v=150">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=149">
+    <link rel="modulepreload" href="js/buh-main.js?v=150">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -68,7 +68,7 @@
                     <button class="buh-nav-item" data-view="month" type="button"><span>Місяць</span></button>
                     <button class="buh-nav-item" data-view="bank" type="button"><span>Банк</span></button>
                     <button class="buh-nav-item" data-view="payments" type="button"><span>Платежі</span><span class="buh-badge is-soft" id="buhPayBadge" hidden></span></button>
-                    <button class="buh-nav-item" data-view="charges" type="button"><span>Квартири</span></button>
+                    <button class="buh-nav-item" data-view="flats" type="button"><span>Квартири</span></button>
                     <button class="buh-nav-item" data-view="expenses" type="button"><span>Документи</span></button>
                     <button class="buh-nav-item" data-view="payroll" type="button"><span>Зарплата</span></button>
                     <button class="buh-nav-item" data-view="reports" type="button"><span>Звіти</span><span class="buh-badge is-soft" id="buhReportBadge" hidden></span></button>
@@ -85,6 +85,7 @@
             <section class="buh-view" data-view="today" id="viewToday"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="month" id="viewMonth"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="inbox" id="viewInbox"><p class="list-empty">Завантаження…</p></section>
+            <section class="buh-view" data-view="flats" id="viewFlats"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="charges" id="viewCharges"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="expenses" id="viewExpenses"><p class="list-empty">Завантаження…</p></section>
             <section class="buh-view" data-view="budget" id="viewBudget"><p class="list-empty">Завантаження…</p></section>
@@ -130,7 +131,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=149').catch(error => {
+    import('./js/buh-main.js?v=150').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

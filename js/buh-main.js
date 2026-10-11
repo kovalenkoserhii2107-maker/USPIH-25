@@ -15,6 +15,7 @@ import { onChange, act, loadSettings, when } from './buh-data.js';
 import { initInbox, loadInbox } from './buh-inbox.js';
 import { loadToday, todayTitle } from './buh-today.js';
 import { initMonthView, loadMonthView } from './buh-month.js';
+import { initFlatsView, loadFlatsView } from './buh-flats.js';
 import { initBankView, loadBankView, initSettingsView, loadSettingsView } from './buh-bank.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 import { initChargesView, loadChargesView } from './buh-charges.js';
@@ -30,7 +31,8 @@ const VIEWS = {
     inbox: { title: 'Рішення', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
-    charges: { title: 'Квартири', sub: 'Нарахування внесків, баланси й борги квартир', load: loadChargesView },
+    flats: { title: 'Квартири', sub: 'Борги й переплати, історія квартири, довідка й акт звірки', load: loadFlatsView },
+    charges: { title: 'Нарахування', sub: 'Внески співвласників: тарифи, відомість за місяць, вхідні залишки', load: loadChargesView },
     expenses: { title: 'Документи', sub: 'Рахунки й акти, договори, постачальники', load: loadExpensesView },
     payroll: { title: 'Зарплата', sub: 'Табель, утримання, ЄСВ і виплати — голова затверджує й підписує', load: loadPayrollView },
     reports: { title: 'Звіти', sub: 'Строки ДПС, файли для Електронного кабінету, квитанції', load: loadReportsView },
@@ -108,10 +110,10 @@ function renderAccount(apartment) {
         <div class="buh-more-account"><span class="buh-avatar">${escapeHtml(initial)}</span>
             <span><b>${escapeHtml(name)}</b><small>${escapeHtml(ROLE_LABELS[session.role] || '')}</small></span></div>
         <nav class="buh-more-nav buh-more-mobile" aria-label="Розділи">
-            ${item('charges', 'Квартири')}${item('expenses', 'Документи')}${item('payroll', 'Зарплата')}${item('reports', 'Звіти')}
+            ${item('flats', 'Квартири')}${item('expenses', 'Документи')}${item('payroll', 'Зарплата')}${item('reports', 'Звіти')}
         </nav>
         <nav class="buh-more-nav" aria-label="Інші розділи">
-            ${item('inbox', 'Рішення — усі по черзі')}${item('budget', 'Кошторис')}${item('journal', 'Проводки й ОСВ')}${item('settings', 'Налаштування')}
+            ${item('inbox', 'Рішення — усі по черзі')}${item('charges', 'Нарахування й тарифи')}${item('budget', 'Кошторис')}${item('journal', 'Проводки й ОСВ')}${item('settings', 'Налаштування')}
             <a class="buh-more-item" href="admin.html?tab=finance">Фінанси: попередні розділи</a>
             ${links.join('')}
         </nav>
@@ -162,6 +164,7 @@ function init() {
     initReportsView();
     initSettingsView();
     initMonthView();
+    initFlatsView();
     registerServiceWorker();
 
     document.addEventListener('click', async e => {
