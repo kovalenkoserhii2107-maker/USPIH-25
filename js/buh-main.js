@@ -13,7 +13,8 @@ import { loadProfile, loadResiliently, initAppShell, sessionExpired, rememberWor
 import { registerServiceWorker } from './install.js';
 import { onChange, act, loadSettings, when } from './buh-data.js';
 import { initInbox, loadInbox } from './buh-inbox.js';
-import { loadOverview } from './buh-overview.js';
+import { loadToday, todayTitle } from './buh-today.js';
+import { initMonthView, loadMonthView } from './buh-month.js';
 import { initBankView, loadBankView, initSettingsView, loadSettingsView } from './buh-bank.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 import { initChargesView, loadChargesView } from './buh-charges.js';
@@ -24,19 +25,23 @@ import { initPayrollView, loadPayrollView } from './buh-payroll.js';
 import { initReportsView, loadReportsView } from './buh-reports.js';
 
 const VIEWS = {
-    overview: { title: 'Огляд', sub: 'Гроші ОСББ і що потребує уваги', load: loadOverview },
-    inbox: { title: 'Вхідні', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
-    budget: { title: 'Кошторис', sub: 'План на рік, виконання й звіт для мешканців', load: loadBudgetView },
-    payroll: { title: 'Зарплата', sub: 'Табель, утримання, ЄСВ і виплати — голова затверджує й підписує', load: loadPayrollView },
-    reports: { title: 'Звітність', sub: 'Строки ДПС, готові цифри для Електронного кабінету, квитанції', load: loadReportsView },
-    journal: { title: 'Проводки', sub: 'Оборотно-сальдова відомість і закриття місяця', load: loadJournalView },
-    expenses: { title: 'Витрати', sub: 'Рахунки й акти, договори, постачальники', load: loadExpensesView },
-    charges: { title: 'Нарахування', sub: 'Внески співвласників: площа × тариф, баланс з історії', load: loadChargesView },
-    payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
+    today: { title: () => todayTitle().title, sub: () => todayTitle().sub, load: loadToday },
+    month: { title: 'Місяць', sub: 'Закриття крок за кроком: нарахування, банк, документи, зарплата, перевірка', load: loadMonthView },
+    inbox: { title: 'Рішення', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
+    payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
+    charges: { title: 'Квартири', sub: 'Нарахування внесків, баланси й борги квартир', load: loadChargesView },
+    expenses: { title: 'Документи', sub: 'Рахунки й акти, договори, постачальники', load: loadExpensesView },
+    payroll: { title: 'Зарплата', sub: 'Табель, утримання, ЄСВ і виплати — голова затверджує й підписує', load: loadPayrollView },
+    reports: { title: 'Звіти', sub: 'Строки ДПС, файли для Електронного кабінету, квитанції', load: loadReportsView },
+    budget: { title: 'Кошторис', sub: 'План на рік, виконання й звіт для мешканців', load: loadBudgetView },
+    journal: { title: 'Проводки', sub: 'Оборотно-сальдова відомість і закриття місяця', load: loadJournalView },
     settings: { title: 'Налаштування', sub: 'Підключення банку й правила погодження', load: loadSettingsView }
 };
-let view = 'overview';
+// Старі посилання (#overview) ведуть на «Сьогодні».
+const ALIASES = { overview: 'today' };
+const textOf = v => (typeof v === 'function' ? v() : v);
+let view = 'today';
 
 const toResident = () => location.replace('index.html');
 
@@ -44,15 +49,19 @@ const toResident = () => location.replace('index.html');
 // РОЗДІЛИ
 // ------------------------------------------------------------
 async function show(name, { push = true, refresh = false } = {}) {
-    if (!VIEWS[name]) name = 'overview';
+    name = ALIASES[name] || name;
+    if (!VIEWS[name]) name = 'today';
     view = name;
     document.querySelectorAll('.buh-view').forEach(v => { v.hidden = v.dataset.view !== name; });
     document.querySelectorAll('[data-view]').forEach(b => {
         if (b.matches('.buh-nav-item, .buh-tab')) b.classList.toggle('active', b.dataset.view === name);
     });
-    document.getElementById('buhTitle').textContent = VIEWS[name].title;
-    document.getElementById('buhSubtitle').textContent = VIEWS[name].sub;
-    document.title = `${VIEWS[name].title} — Бухгалтерія`;
+    const title = textOf(VIEWS[name].title);
+    document.getElementById('buhTitle').textContent = title;
+    document.getElementById('buhSubtitle').textContent = textOf(VIEWS[name].sub);
+    document.title = `${name === 'today' ? 'Сьогодні' : title} — Бухгалтерія`;
+    // Активна вкладка видна й на вузькому екрані, де стрічка вкладок прокручується.
+    document.querySelector(`.buh-nav .buh-nav-item[data-view="${name}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     if (push && location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
     // Фокус на пункті меню перехоплював би Enter: «Так» у розділі
     // натискав би знову той самий пункт.
@@ -80,7 +89,7 @@ async function renderSync() {
 
 /** Лічильник «Вхідних» потрібен на будь-якому розділі. */
 async function refreshBadge() {
-    if (view !== 'inbox') await loadInbox().catch(() => {});
+    if (view !== 'inbox' && view !== 'today') await loadInbox().catch(() => {});
 }
 
 // ------------------------------------------------------------
@@ -89,26 +98,21 @@ async function refreshBadge() {
 function renderAccount(apartment) {
     const name = session.staffName || (session.serviceAccount ? 'Бухгалтер' : `Квартира ${session.apt}`);
     const initial = name.trim().charAt(0).toUpperCase() || 'Б';
-    document.getElementById('buhAccountName').textContent = name;
-    document.getElementById('buhAccountRole').textContent = ROLE_LABELS[session.role] || '';
-    document.getElementById('buhAvatar').textContent = initial;
     document.getElementById('buhAccountBtn').textContent = initial;
     const links = [];
-    if (hasRight(session.role, 'manage')) links.push('<a class="buh-nav-item buh-link" href="admin.html" data-mode="staff">Панель правління</a>');
-    if (!session.serviceAccount && apartment) links.push('<a class="buh-nav-item buh-link" href="index.html" data-mode="home">Мій кабінет</a>');
-    document.getElementById('buhSwitch').innerHTML = links.join('');
+    if (hasRight(session.role, 'manage')) links.push('<a class="buh-more-item" href="admin.html" data-mode="staff">Панель правління</a>');
+    if (!session.serviceAccount && apartment) links.push('<a class="buh-more-item" href="index.html" data-mode="home">Мій кабінет</a>');
+    // Рідше потрібне — у меню профілю; на телефоні тут і решта розділів.
+    const item = (v, t) => `<button class="buh-more-item buh-nav-item" data-view="${v}" type="button">${t}</button>`;
     document.getElementById('buhMoreBody').innerHTML = `
         <div class="buh-more-account"><span class="buh-avatar">${escapeHtml(initial)}</span>
             <span><b>${escapeHtml(name)}</b><small>${escapeHtml(ROLE_LABELS[session.role] || '')}</small></span></div>
-        <nav class="buh-more-nav">
-            <button class="buh-nav-item" data-view="charges" type="button">Нарахування</button>
-            <button class="buh-nav-item" data-view="expenses" type="button">Витрати</button>
-            <button class="buh-nav-item" data-view="budget" type="button">Кошторис</button>
-            <button class="buh-nav-item" data-view="payroll" type="button">Зарплата</button>
-            <button class="buh-nav-item" data-view="journal" type="button">Проводки</button>
-            <button class="buh-nav-item" data-view="reports" type="button">Звітність</button>
-            <button class="buh-nav-item" data-view="settings" type="button">Налаштування</button>
-            <a class="buh-nav-item buh-link" href="admin.html?tab=finance">Фінанси: попередні розділи</a>
+        <nav class="buh-more-nav buh-more-mobile" aria-label="Розділи">
+            ${item('charges', 'Квартири')}${item('expenses', 'Документи')}${item('payroll', 'Зарплата')}${item('reports', 'Звіти')}
+        </nav>
+        <nav class="buh-more-nav" aria-label="Інші розділи">
+            ${item('inbox', 'Рішення — усі по черзі')}${item('budget', 'Кошторис')}${item('journal', 'Проводки й ОСВ')}${item('settings', 'Налаштування')}
+            <a class="buh-more-item" href="admin.html?tab=finance">Фінанси: попередні розділи</a>
             ${links.join('')}
         </nav>
         <button type="button" class="menu-logout" data-act="logout">Вийти</button>`;
@@ -123,7 +127,7 @@ async function openCabinet(apt) {
     document.getElementById('buhApp').hidden = false;
     hideAppLoader();
     const wanted = location.hash.slice(1);
-    await show(VIEWS[wanted] ? wanted : 'overview', { push: false });
+    await show(VIEWS[ALIASES[wanted] || wanted] ? wanted : 'today', { push: false });
     renderSync();
     refreshBadge();
 }
@@ -157,6 +161,7 @@ function init() {
     initPayrollView();
     initReportsView();
     initSettingsView();
+    initMonthView();
     registerServiceWorker();
 
     document.addEventListener('click', async e => {
@@ -165,11 +170,11 @@ function init() {
         if (nav) {
             const name = nav.dataset.go || nav.dataset.view;
             if (name === 'more') { openSheet('buhMoreSheet'); return; }
-            if (VIEWS[name]) { e.preventDefault(); closeAllSheets(); show(name); return; }
+            if (VIEWS[ALIASES[name] || name]) { e.preventDefault(); closeAllSheets(); show(name); return; }
         }
         const mode = e.target.closest('[data-mode]')?.dataset.mode;
         if (mode) rememberWorkMode(mode);
-        if (e.target.closest('[data-act="logout"]') || e.target.closest('#buhLogoutBtn')) {
+        if (e.target.closest('[data-act="logout"]')) {
             localStorage.removeItem('session_timestamp');
             await signOut(auth);
         }
@@ -197,7 +202,7 @@ function init() {
             refreshBadge();
         }, 50);
     });
-    window.addEventListener('hashchange', () => { const name = location.hash.slice(1); if (VIEWS[name] && name !== view) show(name, { push: false }); });
+    window.addEventListener('hashchange', () => { const name = ALIASES[location.hash.slice(1)] || location.hash.slice(1); if (VIEWS[name] && name !== view) show(name, { push: false }); });
 }
 
 init();
