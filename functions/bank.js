@@ -29,6 +29,9 @@ const { matchesPayment } = require('./payments-core');
 const { matchExpense } = require('./expenses-core');
 const privat = require('./privat');
 const { balanceFromLedger } = require('./charges-core');
+const { refreshAccounts } = require('./bank-accounts');
+const { randomUUID } = require('crypto');
+const payrollIdentity = require('./payroll-payment-core');
 
 const REGION = 'europe-central2';
 const PURPOSES = ['current', 'repair', 'reserve', 'deposit', 'grant'];
@@ -127,6 +130,50 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     // --------------------------------------------------------
     // ЗБЕРЕЖЕННЯ ОПЕРАЦІЙ ВИПИСКИ
     // --------------------------------------------------------
+    async function voidTransaction(ref) {
+        return db.runTransaction(async t => {
+            const snap = await t.get(ref);
+            if (!snap.exists || snap.data().bankVoided) return { voided: false, apts: [] };
+            const old = snap.data();
+            const payRef = old.paymentId ? db.doc(`payments/${old.paymentId}`) : null;
+            const exRef = old.expenseId ? db.doc(`expenses/${old.expenseId}`) : null;
+            const [period, pay, expense] = await Promise.all([t.get(db.doc(`journal_periods/${old.period}`)), payRef ? t.get(payRef) : null, exRef ? t.get(exRef) : null]);
+            const payrollRef = pay?.data()?.payroll ? db.doc(`payroll_runs/${pay.data().payroll.period}`) : null;
+            const payroll = payrollRef ? await t.get(payrollRef) : null;
+            // Не переписуємо закритий місяць або ланцюг повернень. Цей
+            // конфлікт видно в черзі та він блокує закриття/звітність.
+            if (['closed', 'closing'].includes(period.data()?.status) || (old.refundTxIds || []).length || old.kind === 'refund'
+                || payroll?.data()?.sending || payroll?.data()?.canceling) {
+                t.update(ref, { bankConflict: 'void', bankStateAt: FieldValue.serverTimestamp() });
+                return { conflict: true, apts: [] };
+            }
+            const allocations = old.allocations || [];
+            const aptIds = [...new Set(allocations.filter(a => a.ledgerId).map(a => a.aptId || a.apt))];
+            const apts = await Promise.all(aptIds.map(id => t.get(db.doc(`apartments/${id}`))));
+            for (const a of allocations) if (a.ledgerId) t.delete(db.doc(`apartments/${a.aptId || a.apt}/ledger/${a.ledgerId}`));
+            if (old.category === 'resident_refund') for (const apt of apts) if (apt.exists) {
+                t.update(apt.ref, { balance: core.fromKop(Math.round(Number(apt.data().balance || 0) * 100) + old.amountKop) });
+            }
+            if (pay?.exists && pay.data().txId === ref.id) {
+                t.update(payRef, { status: 'unknown', txId: FieldValue.delete(), paidAt: FieldValue.delete(), uncertainAction: 'void',
+                    error: 'Банк сторнував списання. Голова має перевірити платіж у Приват24 перед повторною виплатою.' });
+                if (payroll?.exists && !pay.data().payroll.repayOf) {
+                    const stage = pay.data().payroll.stage;
+                    t.update(payrollRef, { [`stages.${stage}.complete`]: false,
+                        [`stages.${stage}.completed`]: payrollIdentity.withoutCompleted(payroll.data().stages?.[stage]?.completed, payRef.id) });
+                }
+            }
+            if (expense?.exists && (expense.data().txIds || []).includes(ref.id)) {
+                const e = expense.data(), paid = Math.max(0, (e.paidKop || 0) - old.amountKop);
+                t.update(exRef, { paidKop: paid, txIds: FieldValue.arrayRemove(ref.id),
+                    status: paid >= e.amountKop - (e.stornoKop || 0) ? 'paid' : 'approved', paidAt: null });
+            }
+            t.update(ref, { bankVoided: true, bankConflict: FieldValue.delete(), voidedAt: FieldValue.serverTimestamp(),
+                voidedKind: old.kind, voidedCategory: old.category || null, kind: 'void', status: 'done', category: FieldValue.delete(), allocations: [] });
+            return { voided: true, apts: aptIds };
+        });
+    }
+
     /**
      * Нові операції (вже нормалізовані privat.js або імпортом файлу):
      * класифікує, рознесені пише в історію квартир. Наявні не чіпає —
@@ -145,9 +192,16 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 for (const a of s.data()?.allocations || []) if (a.ledgerId) touched.add(a.aptId || ctx.known.ids?.get(a.apt) || a.apt);
             });
         }
-        let added = 0, matched = 0;
+        let added = 0, matched = 0, voided = 0, conflicts = 0;
         for (let i = 0; i < fresh.length; i++) {
             const id = ids[i];
+            if (fresh[i].void) {
+                const result = await voidTransaction(db.doc(`bank_tx/${id}`));
+                if (result.voided) voided++;
+                if (result.conflict) conflicts++;
+                result.apts.forEach(apt => touched.add(apt));
+                continue;
+            }
             if (existing.has(id)) continue;
             const raw = fresh[i];
             if ((raw.currency && raw.currency !== 'UAH') || !['in', 'out'].includes(raw.direction)) continue;
@@ -226,7 +280,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             }
         }
         await recompute([...touched]);
-        return { added, matched };
+        return { added, matched, ...(voided ? { voided } : {}), ...(conflicts ? { conflicts } : {}) };
     }
 
     // --------------------------------------------------------
@@ -239,42 +293,56 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         try {
             if (!await privat.isReady(token)) {
                 // Нічний регламент банку — спробуємо наступної години.
-                await settingsRef.set({ lastSync: { at: FieldValue.serverTimestamp(), ok: true, added: 0, waiting: true, trigger } }, { merge: true });
+                await settingsRef.set({ lastSync: { at: FieldValue.serverTimestamp(), ok: true, added: 0, waiting: true, partial: false, error: null, trigger } }, { merge: true });
                 return { added: 0, waiting: true };
             }
             const balances = await privat.fetchBalances(token);
             const ctx = await loadContext();
-            const accounts = { ...(ctx.settings.accounts || {}) };
-            for (const b of balances) {
-                accounts[b.iban] = {
-                    ...(accounts[b.iban] || { purpose: 'current' }),
-                    currency: b.currency, balanceKop: b.balanceKop, balanceAt: Timestamp.fromDate(b.at || new Date()),
-                    name: b.name || accounts[b.iban]?.name || ''
-                };
-            }
-            ctx.ownAccounts = new Set(Object.keys(accounts).map(core.normIban));
-            const last = ctx.settings.lastSync?.ok && ctx.settings.syncedTo ? ctx.settings.syncedTo : ctx.startDate;
-            const from = new Date(`${last}T00:00:00+03:00`);
-            from.setDate(from.getDate() - OVERLAP_DAYS);
-            const start = new Date(`${ctx.startDate}T00:00:00+03:00`);
-            const since = from < start ? start : from;
-            let added = 0, matched = 0;
-            for (const iban of Object.keys(accounts)) {
-                const list = await privat.fetchTransactions(token, { iban, from: since, to: new Date() });
-                const r = await storeTransactions(list, 'privat', ctx);
-                added += r.added;
-                matched += r.matched;
-            }
+            const connectionId = ctx.settings.connectionId || null;
+            if ((secret.data().connectionId || null) !== connectionId) throw new Error('Підключення банку змінилося — повторіть синхронізацію');
+            if (!balances.length) throw new Error('Токен не повернув доступних рахунків ОСББ');
+            ctx.ownAccounts = new Set([...Object.keys(ctx.settings.accounts || {}), ...balances.map(b => b.iban)].map(core.normIban));
             const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
-            await settingsRef.set({
-                accounts, syncedTo: today,
-                lastSync: { at: FieldValue.serverTimestamp(), ok: true, added, matched, trigger }
-            }, { merge: true });
-            return { added, matched };
+            const results = new Map(), errors = [];
+            let added = 0, matched = 0;
+            // Історичний рахунок без доступу не блокує доступні. Курсор
+            // кожного рахунку просувається тільки після повного імпорту.
+            for (const { iban } of balances) {
+                const previous = ctx.settings.accounts?.[iban];
+                const last = Object.hasOwn(previous || {}, 'syncedTo') ? previous.syncedTo || ctx.startDate
+                    : previous && ctx.settings.lastSync?.ok && ctx.settings.syncedTo ? ctx.settings.syncedTo : ctx.startDate;
+                const from = new Date(`${last}T00:00:00+03:00`);
+                from.setDate(from.getDate() - OVERLAP_DAYS);
+                const start = new Date(`${ctx.startDate}T00:00:00+03:00`);
+                try {
+                    const list = await privat.fetchTransactions(token, { iban, from: from < start ? start : from, to: new Date() });
+                    const r = await storeTransactions(list, 'privat', ctx);
+                    added += r.added; matched += r.matched;
+                    if (r.conflicts) throw new Error('Банк сторнував операцію закритого місяця або повʼязаного ланцюга. Перевірте конфлікт у «Вхідних»');
+                    results.set(iban, { ok: true, added: r.added, matched: r.matched, syncedTo: today });
+                } catch (error) {
+                    const message = String(error.message || error).slice(0, 240);
+                    errors.push({ iban, error: message }); results.set(iban, { ok: false, error: message });
+                }
+            }
+            await db.runTransaction(async t => {
+                const current = (await t.get(settingsRef)).data() || {};
+                if ((current.connectionId || null) !== connectionId) throw new Error('Підключення банку змінилося — повторіть синхронізацію');
+                const accounts = refreshAccounts(current.accounts, balances, Timestamp.fromDate);
+                for (const [iban, result] of results) {
+                    accounts[iban].lastSync = { ...result, at: Timestamp.now() };
+                    if (result.ok) accounts[iban].syncedTo = result.syncedTo;
+                }
+                t.set(settingsRef, { accounts, ...(!errors.length ? { syncedTo: today } : {}),
+                    lastSync: { at: FieldValue.serverTimestamp(), ok: !errors.length, partial: Boolean(errors.length), waiting: false,
+                        added, matched, trigger, error: errors.length ? errors.map(e => `…${e.iban.slice(-4)}: ${e.error}`).join('; ').slice(0, 300) : null }
+                }, { merge: true });
+            });
+            return { added, matched, ...(errors.length ? { partial: true, errors } : {}) };
         } catch (error) {
             logger.error('Синхронізація з ПриватБанком', error);
             await settingsRef.set({
-                lastSync: { at: FieldValue.serverTimestamp(), ok: false, error: String(error.message || error).slice(0, 300), trigger }
+                lastSync: { at: FieldValue.serverTimestamp(), ok: false, waiting: false, partial: false, error: String(error.message || error).slice(0, 300), trigger }
             }, { merge: true });
             throw error;
         }
@@ -417,7 +485,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             await lock?.assertOpen(tx.period, 'Операція банку', t);
             if (tx.direction !== 'in') fail('invalid-argument', 'Повернення — це надходження');
             if (tx.status !== 'review' || (tx.allocations || []).some(a => a.ledgerId)) fail('failed-precondition', 'Операцію вже розібрано. Спершу поверніть її у «Вхідні».');
-            if (o.direction !== 'out' || o.status !== 'done' || o.kind === 'internal') fail('failed-precondition', 'Повернути можна лише розібране списання ОСББ');
+            if (o.direction !== 'out' || o.status !== 'done' || o.kind === 'internal' || o.bankVoided || o.bankConflict) fail('failed-precondition', 'Повернути можна лише підтверджене списання ОСББ без сторно банку');
             if (!Number.isSafeInteger(tx.amountKop) || tx.amountKop <= 0 || tx.period < o.period) fail('invalid-argument', 'Сума й дата повернення мають відповідати списанню');
             const left = o.amountKop - (o.refundedKop || 0);
             if (tx.amountKop > left) fail('invalid-argument', `Повернення ${core.fromKop(tx.amountKop)} грн більше за неповернений залишок списання ${core.fromKop(left)} грн`);
@@ -468,7 +536,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         const since = new Date(Date.parse(`${tx.period}-01T00:00:00Z`) - 183 * 86400000).toISOString().slice(0, 7);
         const list = (await db.collection('bank_tx').where('period', '>=', since).get()).docs
             .map(d => ({ id: d.id, ...d.data() }))
-            .filter(o => o.direction === 'out' && o.status === 'done' && o.kind !== 'internal' && o.amountKop - (o.refundedKop || 0) >= tx.amountKop);
+            .filter(o => o.direction === 'out' && o.status === 'done' && o.kind !== 'internal' && !o.bankVoided && !o.bankConflict && o.amountKop - (o.refundedKop || 0) >= tx.amountKop);
         const iban = core.normIban(tx.counterparty?.account), code = String(tx.counterparty?.code || '');
         const name = core.normText(tx.counterparty?.name || '');
         const score = o => (iban && core.normIban(o.counterparty?.account) === iban ? 4 : 0) + (code && o.counterparty?.code === code ? 3 : 0)
@@ -524,6 +592,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
             const data = snap.data();
             await lock?.assertOpen(data.period, 'Операція банку', t);
+            if (data.bankVoided || data.bankConflict) fail('failed-precondition', 'Сторно банку потрібно звірити з випискою — цю операцію не можна рознести повторно');
             const expenseRef = data.expenseId ? db.doc(`expenses/${data.expenseId}`) : null;
             const expense = expenseRef ? await t.get(expenseRef) : null;
             const payment = data.paymentId ? await t.get(db.doc(`payments/${data.paymentId}`)) : null;
@@ -575,17 +644,15 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         } catch (error) {
             fail('failed-precondition', `Банк не прийняв токен: ${String(error.message || error).slice(0, 200)}`);
         }
-        const current = (await settingsRef.get()).data()?.accounts || {};
-        const accounts = { ...current };
-        for (const b of balances) {
-            accounts[b.iban] = { ...(current[b.iban] || { purpose: 'current' }), currency: b.currency,
-                balanceKop: b.balanceKop, balanceAt: Timestamp.fromDate(b.at || new Date()), name: b.name || '' };
-        }
-        await secretRef.set({ token: value, savedBy: actor, savedAt: FieldValue.serverTimestamp() });
-        await settingsRef.set({
-            tokenSet: true, tokenHint: value.slice(-4), tokenSavedBy: actor, tokenSavedAt: FieldValue.serverTimestamp(),
-            accounts, startDate: (await settingsRef.get()).data()?.startDate || DEFAULT_START
-        }, { merge: true });
+        if (!balances.length) fail('failed-precondition', 'Токен не повернув доступних рахунків ОСББ');
+        const connectionId = randomUUID();
+        await db.runTransaction(async t => {
+            const current = (await t.get(settingsRef)).data() || {};
+            const accounts = refreshAccounts(current.accounts, balances, Timestamp.fromDate);
+            t.set(secretRef, { token: value, connectionId, savedBy: actor, savedAt: FieldValue.serverTimestamp() });
+            t.set(settingsRef, { connectionId, tokenSet: true, tokenHint: value.slice(-4), tokenSavedBy: actor, tokenSavedAt: FieldValue.serverTimestamp(),
+                accounts, startDate: current.startDate || DEFAULT_START }, { merge: true });
+        });
         await audit(actor, role, 'bank.connect', 'bank/settings', `ПриватБанк підключено, рахунків: ${balances.length}`, { accounts: balances.length });
         return { accounts: balances.length };
     }

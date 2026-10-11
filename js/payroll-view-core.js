@@ -9,15 +9,16 @@
 
 const TAXES = new Set(['pdfo', 'vz', 'esv']);
 // Сервер повертає stage і key окремо; старі знімки містять «stage:key».
-export const paymentWho = p => String(p.key || '').includes(':') ? String(p.key).split(':')[1] : String(p.key || '');
+export const paymentWho = p => String(p.key || '').split(':').at(-1);
 const whoOf = paymentWho;
+const isTax = p => p.recipientType ? p.recipientType === 'tax' : p.kind ? p.kind === 'tax' : TAXES.has(whoOf(p));
 const live = p => !['failed', 'canceled'].includes(p.status) && !(p.returnedKop >= p.amountKop && p.status === 'paid');
 
 /** Ініціали для кружечка: «Іваненко Петро» → «ІП». */
 export const initials = name => String(name || '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '·';
 
 /** Платежі однієї людини за відомістю. */
-export const personPayments = (payments, personId) => payments.filter(p => whoOf(p) === personId);
+export const personPayments = (payments, personId) => payments.filter(p => !isTax(p) && whoOf(p) === personId);
 
 /**
  * Стан людини в місяці: [текст, клас позначки].
@@ -30,7 +31,7 @@ export function personState({ status, payments = [], closed = false }, personId,
     if (mine.some(p => p.status === 'failed' || (p.returnedKop && !p.repaid))) return ['банк не прийняв', 'is-bad'];
     if (mine.some(p => ['sent', 'sending', 'unknown'].includes(p.status))) return ['на підписі', 'is-work'];
     if (mine.length && mine.every(p => p.status === 'paid' || p.status === 'canceled') && mine.some(p => p.status === 'paid')) {
-        return [mine.some(p => p.stage === 'final' || p.key?.startsWith('final:')) ? 'виплачено' : 'аванс виплачено', 'is-done'];
+        return [mine.some(p => p.status === 'paid' && (p.stage === 'final' || p.key?.startsWith('final:'))) ? 'виплачено' : 'аванс виплачено', 'is-done'];
     }
     if (closed) return ['місяць закрито', 'is-locked'];
     if (status === 'approved') return ['до виплати', 'is-work'];
@@ -42,8 +43,8 @@ export function personState({ status, payments = [], closed = false }, personId,
 export function payrollTotals({ run, payments = [] }) {
     const t = run?.totals || {};
     const sum = list => list.reduce((s, p) => s + (p.amountKop || 0) - (p.status === 'paid' ? p.returnedKop || 0 : 0), 0);
-    const toPeople = payments.filter(p => whoOf(p) && !TAXES.has(whoOf(p)) && live(p));
-    const toTax = payments.filter(p => TAXES.has(whoOf(p)) && live(p));
+    const toPeople = payments.filter(p => whoOf(p) && !isTax(p) && live(p));
+    const toTax = payments.filter(p => isTax(p) && live(p));
     const rows = run?.rows || [];
     return {
         employees: rows.filter(r => r.kind !== 'gph').length,

@@ -254,7 +254,7 @@ function stagePayments(run, stage, { code, taxes = {}, people = new Map() }) {
         const part = r[stage];
         if (!part || part.netKop <= 0) continue;
         const p = r.payee || people.get(r.personId) || {};
-        out.push({ kind: 'salary', key: `${stage}:${r.personId}`, personId: r.personId, amountKop: part.netKop,
+        out.push({ kind: 'salary', key: `${stage}:person:${r.personId}`, personId: r.personId, amountKop: part.netKop,
             recipient: { name: r.name, iban: p.iban || '', code: p.rnokpp || '' },
             purpose: r.kind === 'gph' ? `Оплата за договором ЦПД${p.contract ? ` ${p.contract}` : ''} за ${monthName(run.period)}, без ПДВ` : `${what}, без ПДВ` });
     }
@@ -262,7 +262,7 @@ function stagePayments(run, stage, { code, taxes = {}, people = new Map() }) {
     const tax = (key, amountKop, label) => {
         if (amountKop <= 0) return;
         const t = taxes[key] || {};
-        out.push({ kind: 'tax', key: `${stage}:${key}`, amountKop, recipient: { name: t.name || '', iban: t.iban || '', code: t.code || '' },
+        out.push({ kind: 'tax', key: `${stage}:tax:${key}`, taxKey: key, amountKop, recipient: { name: t.name || '', iban: t.iban || '', code: t.code || '' },
             purpose: `*;101;${code};${label} ${stage === 'advance' ? 'з авансу ' : ''}за ${monthName(run.period)};;;` });
     };
     tax('pdfo', sum('pdfoKop'), 'ПДФО із заробітної плати');
@@ -273,9 +273,11 @@ function stagePayments(run, stage, { code, taxes = {}, people = new Map() }) {
 
 /** Що заважає створити платежі етапу. */
 function paymentProblems(payments) {
-    return payments.filter(p => !validIban(p.recipient.iban)).map(p => (p.kind === 'tax'
-        ? `немає рахунку для «${p.key.split(':')[1].toUpperCase()}» — внесіть у «Зарплата → Податки»`
+    const problems = payments.filter(p => !validIban(p.recipient.iban)).map(p => (p.kind === 'tax'
+        ? `немає рахунку для «${String(p.taxKey || p.key.split(':').at(-1)).toUpperCase()}» — внесіть у «Зарплата → Податки»`
         : `${p.recipient.name}: немає IBAN`));
+    if (new Set(payments.map(p => p.key)).size !== payments.length) problems.push('Ключі отримувачів у плані виплати повторюються — відомість потребує виправлення');
+    return problems;
 }
 
 module.exports = {

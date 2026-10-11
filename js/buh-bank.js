@@ -29,19 +29,28 @@ const busy = new Set();
 const opsWord = n => (n % 10 === 1 && n % 100 !== 11 ? 'операція' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'операції' : 'операцій');
 const timeOf = ts => (ts?.toDate ? ts.toDate() : new Date(ts)).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
 
+function accountBalance(a) {
+    if (typeof a.balanceKop !== 'number') return '—';
+    return a.currency && a.currency !== 'UAH'
+        ? `${(a.balanceKop / 100).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${escapeHtml(a.currency)}`
+        : money(a.balanceKop);
+}
+
 function accountsHtml(settings) {
     const accounts = Object.entries(settings.accounts || {})
         .sort(([, a], [, b]) => ((a.purpose || 'current') === 'current' ? -1 : 0) - ((b.purpose || 'current') === 'current' ? -1 : 0));
     if (!accounts.length) return `<section class="bk-card bk-hero"><span class="bk-label">Банк не підключено</span>
         <button type="button" class="sv-btn" data-go="settings">Підключити ПриватБанк</button></section>`;
     const sync = settings.lastSync;
-    const state = sync?.ok === false ? `<span class="bk-sync is-bad">Виписка не оновилась: ${escapeHtml(sync.error || 'помилка')}</span>`
+    const state = sync?.waiting ? '<span class="bk-sync">Банк зараз оновлює дані. Виписку перевіримо пізніше.</span>'
+        : sync?.ok === false ? `<span class="bk-sync is-bad">${sync.partial ? 'Оновлено частково' : 'Виписка не оновилась'}: ${escapeHtml(sync.error || 'помилка')}</span>`
         : sync ? `<span class="bk-sync is-good">Виписка оновлена о ${escapeHtml(timeOf(sync.at))}</span>` : '<span class="bk-sync">Виписку ще не отримано</span>';
     return accounts.map(([iban, a], i) => `<section class="bk-card ${i ? 'bk-acc' : 'bk-hero'}">
-            <span class="bk-label">${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')} · ПриватБанк</span>
-            <b class="bk-balance">${typeof a.balanceKop === 'number' ? money(a.balanceKop) : '—'}</b>
+            <span class="bk-label">${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')} · ПриватБанк${a.available === false ? ' · немає доступу' : ''}</span>
+            <b class="bk-balance">${accountBalance(a)}</b>
             <span class="bk-iban">${escapeHtml(maskIban(iban))}${a.balanceAt ? ` · залишок на ${escapeHtml(when(a.balanceAt))}` : ''}</span>
             ${i ? '' : state}
+            ${a.available !== false && a.lastSync?.ok === false ? `<span class="bk-sync is-bad">Рахунок не оновлено: ${escapeHtml(a.lastSync.error)}</span>` : ''}
         </section>`).join('');
 }
 
@@ -54,10 +63,10 @@ function detailHtml(tx) {
         tx.kind === 'payment' && tx.method ? ['Рознесено', `${METHOD[tx.method] || ''}${tx.resolvedBy ? ` · ${tx.resolvedBy}` : ''}`] : null,
         (tx.allocations || []).length > 1 ? ['Частини', tx.allocations.map(a => `кв. ${a.apt}: ${money(a.amountKop)}`).join(' · ')] : null
     ].filter(l => l && l[1]);
-    const undo = tx.status === 'done' && tx.kind !== 'internal';
+    const undo = tx.status === 'done' && tx.kind !== 'internal' && !tx.bankConflict && !tx.bankVoided;
     return `<div class="bk-detail"><dl class="dc-fields">${lines.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>
         <div class="bk-detail-actions">
-            ${tx.status === 'review' ? '<button type="button" class="sv-btn" data-go="inbox">Розібрати в «Рішеннях»</button>' : ''}
+            ${tx.status === 'review' || tx.bankConflict ? '<button type="button" class="sv-btn" data-go="inbox">Розібрати в «Рішеннях»</button>' : ''}
             ${tx.paymentId ? `<button type="button" class="sv-btn is-soft" data-open="payment" data-id="${escapeHtml(tx.paymentId)}">Платіж із кабінету ›</button>` : ''}
             ${tx.expenseId ? `<button type="button" class="sv-btn is-soft" data-open="doc" data-id="${escapeHtml(tx.expenseId)}">Документ ›</button>` : ''}
             <button type="button" class="sv-btn is-soft" data-open="tx" data-id="${escapeHtml(tx.id)}">Усі звʼязки ›</button>
@@ -260,6 +269,7 @@ export async function loadSettingsView() {
             <div class="buh-card-head"><h2>ПриватБанк</h2><span class="buh-tag ${connected ? 'is-payment' : 'is-review'}">${connected ? `підключено · токен …${escapeHtml(settings.tokenHint || '')}` : 'не підключено'}</span></div>
             <p class="buh-note">${!connected ? 'Після підключення виписка й залишки завантажуватимуться щогодини.'
                 : last?.ok === false ? `Остання спроба ${escapeHtml(when(last.at))}: ${escapeHtml(last.error || 'помилка')}`
+                : last?.waiting ? 'Банк зараз оновлює дані — виписку перевіримо пізніше.'
                 : last ? `Оновлено ${escapeHtml(when(last.at))}${last.added ? ` · нових операцій: ${last.added}` : ''}` : 'Перша виписка — протягом години.'}</p>
             <ol class="buh-steps">
                 <li>Приват24 для бізнесу → «Інтеграція (Автоклієнт)» → «Підключити додаток» → тип «API», назва «Бухгалтерія ОСББ».</li>
@@ -277,10 +287,10 @@ export async function loadSettingsView() {
         ${accounts.length ? `<section class="buh-card">
             <div class="buh-card-head"><h2>Рахунки</h2></div>
             <table class="buh-table"><tbody>${accounts.map(([iban, a]) => `<tr data-iban="${escapeHtml(iban)}">
-                <td class="t-main"><b>${escapeHtml(iban)}</b><small>${escapeHtml(a.name || '')}</small></td>
+                <td class="t-main"><b>${escapeHtml(iban)}</b><small>${escapeHtml(a.name || '')}${a.available === false ? ' · історичний, немає доступу за токеном' : ''}${a.currency && a.currency !== 'UAH' ? ` · ${escapeHtml(a.currency)}, недоступний для гривневих платежів` : ''}</small></td>
                 <td><select class="field-input field-select acc-purpose-select" aria-label="Призначення">${Object.entries(ACCOUNT_PURPOSES).map(([k, v]) =>
                     `<option value="${k}"${k === (a.purpose || 'current') ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-                <td class="t-sum">${typeof a.balanceKop === 'number' ? money(a.balanceKop) : '—'}</td></tr>`).join('')}</tbody></table>
+                <td class="t-sum">${accountBalance(a)}</td></tr>`).join('')}</tbody></table>
         </section>` : ''}
         <section class="buh-card">
             <div class="buh-card-head"><h2>Хто що підтверджує</h2></div>

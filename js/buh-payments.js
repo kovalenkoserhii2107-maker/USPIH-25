@@ -112,7 +112,8 @@ function draftOf() {
  * чи він там є (далі його закриє виписка). Бухгалтер бачить підказку.
  */
 function uncertainActions(p) {
-    const stale = p.status === 'unknown' || (p.status === 'sending' && Date.now() - (tsOf(p.createdAt) || Date.now()) > 10 * 60 * 1000);
+    const stale = p.status === 'unknown' || (p.status === 'sending' && Date.now() - (tsOf(p.createdAt) || Date.now()) > 10 * 60 * 1000)
+        || (p.canceling && Date.now() - Date.parse(p.canceling.at) > 10 * 60 * 1000);
     if (!stale) return '';
     if (!isChair()) return '<small class="py-muted">Голова перевіряє цей платіж у Приват24</small>';
     return `<button type="button" class="sv-btn is-soft" data-act="resolve-missing" data-id="${escapeHtml(p.id)}">У Приват24 його немає</button>
@@ -176,7 +177,8 @@ export async function loadPaymentsView() {
                     <div class="py-card-head"><h2>Чекають підпису голови${waiting.length ? ` · ${waiting.length}` : ''}</h2>${waiting.length ? `<b class="py-total">${money(total)}</b>` : ''}</div>
                     ${waiting.length ? waiting.map(p => rowHtml(p, {
                         sub: `${p.createdAt ? `створено ${escapeHtml(when(p.createdAt))}` : ''}${PAYMENT_KINDS[p.kind] ? ` · ${escapeHtml(PAYMENT_KINDS[p.kind].toLowerCase())}` : ''}`,
-                        actions: p.status === 'sent' ? `<button type="button" class="sv-btn is-soft" data-act="cancel" data-id="${escapeHtml(p.id)}">Скасувати</button>` : uncertainActions(p),
+                        actions: p.status === 'sent' && !p.canceling ? `<button type="button" class="sv-btn is-soft" data-act="cancel" data-id="${escapeHtml(p.id)}">Скасувати</button>`
+                            : p.canceling ? uncertainActions(p) || '<small class="py-muted">Скасування в банку…</small>' : uncertainActions(p),
                         chip: p.status !== 'sent'
                     })).join('') + (isChair() ? '<p class="py-note">Підпишіть їх у Приват24 для бізнесу — виписка сама позначить платежі виконаними.</p>'
                         : waiting.some(p => p.status === 'sent') ? '<button type="button" class="sv-btn is-soft is-wide" data-act="remind">Нагадати голові</button>' : '')

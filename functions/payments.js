@@ -20,12 +20,14 @@ const logger = require('firebase-functions/logger');
 const core = require('./payments-core');
 const { normIban, fromKop } = require('./bank-core');
 const privat = require('./privat');
-const { createHash } = require('crypto');
+const { createHash, randomUUID } = require('crypto');
+const { payable } = require('./bank-accounts');
+const identity = require('./payroll-payment-core');
 
 const REGION = 'europe-central2';
 const KINDS = ['supplier', 'tax', 'salary', 'other'];
 
-module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staffRole, notify }) {
+module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staffRole, notify, lock }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
 
     async function audit(actor, role, action, target, summary, details = {}) {
@@ -38,7 +40,21 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
     async function context() {
         const [settings, secret] = await Promise.all([db.doc('bank/settings').get(), db.doc('bank_secrets/privat').get()]);
         const accounts = settings.exists ? settings.data().accounts || {} : {};
-        return { ownAccounts: new Set(Object.keys(accounts).map(normIban)), token: secret.exists ? secret.data().token : null };
+        return { accounts, connectionId: settings.data()?.connectionId || null,
+            ownAccounts: new Set(Object.keys(accounts).map(normIban)), token: secret.exists ? secret.data().token : null };
+    }
+
+    const sameRecipient = (a, b) => ['name', 'iban', 'code'].every(k => String(a?.[k] || '') === String(b?.[k] || ''));
+    function approvedPlan(stored, payment, accounts) {
+        const stage = stored?.stages?.[payment.payroll.stage];
+        const plan = identity.findPlan(stage, payment.payroll);
+        const account = stage?.account || Object.entries(accounts).find(([, a]) => payable(a) && (a.purpose || 'current') === 'current')?.[0];
+        if (stored?.status !== 'approved' || !plan || plan.amountKop !== payment.amountKop || !sameRecipient(plan.recipient, payment.recipient)
+            || plan.kind !== payment.kind || String(plan.purpose).replace(/\s+/g, ' ').trim() !== payment.purpose || account !== payment.account) {
+            fail('failed-precondition', 'Платіж має повністю відповідати затвердженому плану виплати зарплати');
+        }
+        if (stored.canceling) fail('failed-precondition', 'Зачекайте завершення скасування зарплатного платежу');
+        return plan;
     }
 
     /** Платіж підтверджено — перевіряємо й створюємо в банку. */
@@ -54,19 +70,22 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             purpose: String(data.purpose || '').replace(/\s+/g, ' ').trim(),
             account: normIban(data.account)
         };
-        const { ownAccounts, token } = await context();
+        const { ownAccounts, token, accounts, connectionId } = await context();
         const error = core.checkPayment(payment, ownAccounts);
         if (error) fail('invalid-argument', error);
         if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
+        if (!payable(accounts[payment.account])) fail('failed-precondition', 'Для платежу потрібен доступний гривневий рахунок ОСББ');
 
         // Повторне «Так» на ту саму пропозицію не створює другий платіж.
-        const proposalKey = data.proposalKey ? String(data.proposalKey).slice(0, 80) : null;
+        let proposalKey = data.proposalKey ? String(data.proposalKey).slice(0, 80) : null;
         // Платіж за документом витрат (expenses.js → pay): виписка закриє й документ.
         payment.expenseId = data.expenseId ? String(data.expenseId).replace(/[^\w-]/g, '').slice(0, 60) : null;
         // Платіж за відомістю зарплати (payroll.js): у проводках — погашення 661/641/651.
         if (data.payroll?.period) {
+            if (!['advance', 'final'].includes(data.payroll.stage) || !/^[\w-]{1,200}$/.test(String(data.payroll.key || ''))) fail('invalid-argument', 'Невідомий отримувач або етап зарплатного платежу');
             payment.payroll = { period: String(data.payroll.period).slice(0, 7), stage: data.payroll.stage === 'advance' ? 'advance' : 'final',
-                key: String(data.payroll.key || '').replace(/[^\w-]/g, '').slice(0, 60) };
+                key: String(data.payroll.key), recipientType: identity.recipientType({ kind: payment.kind, key: data.payroll.key, recipientType: data.payroll.recipientType }) };
+            if (data.payroll.planKey) payment.payroll.planKey = String(data.payroll.planKey);
             if (data.payroll.repayOf) Object.assign(payment.payroll, { repayOf: String(data.payroll.repayOf).replace(/[^\w-]/g, '').slice(0, 80), retry: Number(data.payroll.retry) || 1 });
         }
         if (payment.expenseId) {
@@ -83,8 +102,11 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             }
         } else if (payment.payroll) {
             const payroll = (await db.doc(`payroll_runs/${payment.payroll.period}`).get()).data();
-            const plan = payroll?.stages?.[payment.payroll.stage]?.plan?.find(p => p.key === `${payment.payroll.stage}:${payment.payroll.key}`);
-            if (payroll?.status !== 'approved' || !plan || plan.amountKop !== payment.amountKop || JSON.stringify(plan.recipient) !== JSON.stringify(payment.recipient)) fail('failed-precondition', 'Платіж має відповідати затвердженій відомості зарплати');
+            const plan = approvedPlan(payroll, payment, accounts);
+            payment.payroll.planKey = plan.key;
+            // Ключ задає сервер. Інша форма чи клієнтський proposalKey не
+            // можуть створити другу виплату тієї самої строки відомості.
+            proposalKey = `payroll:${payment.payroll.period}:${plan.key}`;
         }
         if (proposalKey) {
             const dup = await db.collection('payments').where('proposalKey', '==', proposalKey).where('status', 'in', ['sending', 'unknown', 'sent', 'paid']).limit(1).get();
@@ -100,6 +122,14 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         const docNumber = createHash('sha256').update(ref.id).digest('hex').slice(0, 10).toUpperCase();
         const reserved = await db.runTransaction(async t => {
             const existing = await t.get(ref);
+            const currentBank = (await t.get(db.doc('bank/settings'))).data() || {};
+            if ((currentBank.connectionId || null) !== connectionId || !payable(currentBank.accounts?.[payment.account])) fail('aborted', 'Доступ до банку змінився. Оновіть сторінку.');
+            if (existing.data()?.canceling) fail('failed-precondition', 'Платіж ще скасовується — зачекайте завершення');
+            if (payment.payroll && !payment.payroll.repayOf) {
+                const stored = (await t.get(db.doc(`payroll_runs/${payment.payroll.period}`))).data();
+                await lock?.assertOpen(payment.payroll.period, 'Виплата зарплати', t);
+                approvedPlan(stored, payment, currentBank.accounts || {});
+            }
             if (payment.expenseId) {
                 const [es, live] = await Promise.all([t.get(db.doc(`expenses/${payment.expenseId}`)),
                     t.get(db.collection('payments').where('expenseId', '==', payment.expenseId).where('status', 'in', ['sending', 'unknown', 'sent']).limit(2))]);
@@ -175,21 +205,25 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             const data = snap.data();
             const created = data.createdAt?.toMillis?.() || 0;
             const stale = data.status === 'sending' && Date.now() - created > STALE_MS;
-            if (data.status !== 'unknown' && !stale) fail('failed-precondition', data.status === 'sending' ? 'Платіж ще відправляється — зачекайте 10 хвилин' : 'Результат цього платежу вже відомий');
-            const payrollRef = outcome === 'not_created' && data.payroll && !data.payroll.repayOf ? db.doc(`payroll_runs/${data.payroll.period}`) : null;
+            const staleCancel = data.canceling && Date.now() - Date.parse(data.canceling.at) > STALE_MS;
+            if (data.status === 'paid' || (data.status !== 'unknown' && !stale && !staleCancel)) fail('failed-precondition', data.status === 'sending' ? 'Платіж ще відправляється — зачекайте 10 хвилин' : 'Результат цього платежу вже відомий');
+            const deleting = data.uncertainAction === 'delete' || Boolean(data.canceling);
+            const payrollRef = (outcome === 'not_created' || staleCancel) && data.payroll && !data.payroll.repayOf ? db.doc(`payroll_runs/${data.payroll.period}`) : null;
             const payroll = payrollRef ? await t.get(payrollRef) : null;
+            if (payroll?.data()?.canceling?.paymentId === ref.id) t.update(payrollRef, { canceling: FieldValue.delete() });
             if (outcome === 'not_created') {
-                t.update(ref, { status: 'failed', error: `Платежу в Приват24 немає (перевірила голова): ${why}`, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
+                t.update(ref, { status: deleting ? 'canceled' : 'failed', canceling: FieldValue.delete(), uncertainAction: FieldValue.delete(),
+                    error: `Платежу в Приват24 немає (перевірила голова): ${why}`, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
                 // Пачка зарплати: цей платіж знову «не створено» — повторна відправка відомості створить лише його.
                 const stage = payroll?.data()?.stages?.[data.payroll.stage];
                 if (stage) {
-                    const completed = { ...(stage.completed || {}) };
-                    delete completed[`${data.payroll.stage}:${data.payroll.key}`];
+                    const completed = identity.withoutCompleted(stage.completed, ref.id);
                     t.update(payrollRef, { [`stages.${data.payroll.stage}.complete`]: false, [`stages.${data.payroll.stage}.completed`]: completed });
                 }
                 if (data.payroll?.repayOf) t.update(db.doc(`payments/${data.payroll.repayOf}`), { repaidBy: FieldValue.arrayRemove(ref.id) });
             } else {
-                t.update(ref, { status: 'sent', bankRef: String(bankRef || '').trim().slice(0, 60) || data.bankRef || null, error: null,
+                t.update(ref, { status: 'sent', canceling: FieldValue.delete(), uncertainAction: FieldValue.delete(),
+                    bankRef: String(bankRef || '').trim().slice(0, 60) || data.bankRef || null, error: null,
                     sentAt: FieldValue.serverTimestamp(), resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
             }
             return data;
@@ -201,39 +235,61 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
 
     async function cancel(actor, role, { id }) {
         const ref = db.doc(`payments/${String(id || '').replace(/[^\w-]/g, '')}`);
-        const snap = await ref.get();
-        if (!snap.exists) fail('not-found', 'Платіж не знайдено');
-        const p = snap.data();
-        if (!['sent', 'failed'].includes(p.status)) fail('failed-precondition', 'Платіж уже проведено, скасовано або його результат ще не підтверджено банком');
-        // Повторна виплата не входить у план відомості: скасування лише знімає позначку на поверненому платежі.
+        const attempt = randomUUID();
+        // Резервуємо платіж і відомість ДО зовнішнього видалення. Інша
+        // відправка не зможе пропустити чернетку, яку банк уже видалив.
+        const p = await db.runTransaction(async t => {
+            const snap = await t.get(ref);
+            if (!snap.exists) fail('not-found', 'Платіж не знайдено');
+            const data = snap.data();
+            if (!['sent', 'failed'].includes(data.status) || data.canceling) fail('failed-precondition', 'Платіж уже проведено, скасовується або його результат потребує перевірки');
+            const payrollRef = data.payroll && !data.payroll.repayOf ? db.doc(`payroll_runs/${data.payroll.period}`) : null;
+            const run = payrollRef ? (await t.get(payrollRef)).data() : null;
+            if (data.payroll) await lock?.assertOpen(data.payroll.period, 'Скасування зарплатного платежу', t);
+            if (payrollRef) {
+                if (run?.sending || run?.canceling) fail('failed-precondition', 'Зачекайте завершення відправки або скасування відомості');
+                if (!run?.stages?.[data.payroll.stage]?.plan) fail('failed-precondition', 'Стару зарплатну виплату треба виправити через окрему коригувальну відомість');
+                if (data.payroll.stage === 'advance' && run.stages.final) fail('failed-precondition', 'Остаточний розрахунок уже підготовлено. Аванс змінюється лише через коригування.');
+            }
+            const canceling = { attempt, at: new Date().toISOString(), by: actor, paymentId: ref.id };
+            t.update(ref, { canceling });
+            if (payrollRef) t.update(payrollRef, { canceling });
+            return data;
+        });
         const repayOfRef = p.payroll?.repayOf ? db.doc(`payments/${p.payroll.repayOf}`) : null;
         const payrollRef = p.payroll && !repayOfRef ? db.doc(`payroll_runs/${p.payroll.period}`) : null;
-        const canCancelPayroll = run => {
-            if (run?.sending) fail('failed-precondition', 'Зачекайте завершення відправки відомості');
-            if (!run?.stages?.[p.payroll.stage]?.plan) fail('failed-precondition', 'Стару зарплатну виплату треба виправити через окрему коригувальну відомість');
-            if (p.payroll.stage === 'advance' && run.stages.final) fail('failed-precondition', 'Остаточний розрахунок уже підготовлено. Аванс змінюється лише через коригування.');
-        };
-        if (payrollRef) canCancelPayroll((await payrollRef.get()).data());
         let deletedInBank = false;
+        let error = null;
         if (p.status === 'sent' && p.paymentRef) {
             const { token } = await context();
             try { deletedInBank = token ? await privat.deletePayment(token, p.paymentRef) : false; }
-            catch (e) { logger.warn('Видалення платежу в банку', e); }
+            catch (e) { error = e; logger.warn('Видалення платежу в банку', e); }
         }
-        if (p.status === 'sent' && !deletedInBank) fail('failed-precondition', 'Банк не підтвердив видалення. Платіж залишається на підписі: перевірте його у Приват24.');
-        await db.runTransaction(async t => {
+        const uncertain = p.status === 'sent' && error && error.bankRejected !== true;
+        const confirmed = p.status === 'failed' || deletedInBank;
+        const outcome = await db.runTransaction(async t => {
             const [fresh, payroll] = await Promise.all([t.get(ref), payrollRef ? t.get(payrollRef) : null]);
-            if (fresh.data()?.status !== p.status) fail('aborted', 'Статус платежу змінився. Оновіть сторінку.');
+            if (fresh.data()?.canceling?.attempt !== attempt) fail('aborted', 'Скасування вже перевірено іншим оператором. Оновіть сторінку.');
+            if (payroll && payroll.data()?.canceling?.attempt !== attempt) fail('aborted', 'Стан відомості змінився. Оновіть сторінку.');
             if (payroll) {
-                canCancelPayroll(payroll.data());
                 const stage = payroll.data().stages[p.payroll.stage];
-                const completed = { ...(stage.completed || {}) };
-                delete completed[`${p.payroll.stage}:${p.payroll.key}`];
-                t.update(payrollRef, { [`stages.${p.payroll.stage}.complete`]: false, [`stages.${p.payroll.stage}.completed`]: completed });
+                const update = { canceling: FieldValue.delete() };
+                if (fresh.data().status !== 'paid' && (confirmed || uncertain)) Object.assign(update, { [`stages.${p.payroll.stage}.complete`]: false,
+                    [`stages.${p.payroll.stage}.completed`]: identity.withoutCompleted(stage.completed, ref.id) });
+                t.update(payrollRef, update);
             }
-            if (repayOfRef) t.update(repayOfRef, { repaidBy: FieldValue.arrayRemove(ref.id) });
-            t.update(ref, { status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp(), deletedInBank });
+            if (fresh.data().status === 'paid') { t.update(ref, { canceling: FieldValue.delete() }); return 'paid'; }
+            if (repayOfRef && confirmed) t.update(repayOfRef, { repaidBy: FieldValue.arrayRemove(ref.id) });
+            if (confirmed) t.update(ref, { status: 'canceled', canceling: FieldValue.delete(), uncertainAction: FieldValue.delete(),
+                canceledBy: actor, canceledAt: FieldValue.serverTimestamp(), deletedInBank });
+            else if (uncertain) t.update(ref, { status: 'unknown', canceling: FieldValue.delete(), uncertainAction: 'delete',
+                error: 'Банк не підтвердив результат видалення. Голова має перевірити наявність чернетки у Приват24.' });
+            else t.update(ref, { canceling: FieldValue.delete() });
+            return confirmed ? 'canceled' : uncertain ? 'unknown' : 'sent';
         });
+        if (outcome === 'paid') fail('failed-precondition', 'Виписка вже підтвердила оплату — скасувати чернетку не можна');
+        if (outcome !== 'canceled') fail('failed-precondition', uncertain ? 'Банк не підтвердив результат видалення. Перевірте чернетку у Приват24 перед повторною виплатою.'
+            : 'Банк не підтвердив видалення. Платіж залишається на підписі: перевірте його у Приват24.');
         await audit(actor, role, 'payment.cancel', `payments/${ref.id}`, `${p.recipient?.name}: ${fromKop(p.amountKop)} грн скасовано`, { deletedInBank });
         return { ok: true, deletedInBank };
     }
@@ -271,7 +327,8 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             if (!core.validIban(iban) || recipients.has(iban)) continue;
             recipients.set(iban, { name: t.counterparty?.name || '', iban, code: String(t.counterparty?.code || ''), purpose: t.purpose || '', amountKop: t.amountKop });
         }
-        const accounts = Object.entries(settings.exists ? settings.data().accounts || {} : {}).map(([iban, a]) => ({ iban, purpose: a.purpose || 'current', balanceKop: a.balanceKop ?? null }));
+        const accounts = Object.entries(settings.exists ? settings.data().accounts || {} : {}).filter(([, a]) => payable(a))
+            .map(([iban, a]) => ({ iban, purpose: a.purpose || 'current', balanceKop: a.balanceKop ?? null }));
         return { proposals, recipients: [...recipients.values()], accounts };
     }
 

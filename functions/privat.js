@@ -134,7 +134,7 @@ async function pages(token, path, params, key) {
 async function isReady(token) {
     const body = await call(token, '/settings');
     const settings = body.settings || {};
-    return settings.phase === 'WRK' && settings.work_balance !== 'Y';
+    return settings.phase === 'WRK' && settings.work_balance === 'N';
 }
 
 /** Поточні залишки всіх рахунків, до яких має доступ токен. */
@@ -150,7 +150,7 @@ async function fetchBalances(token) {
 async function fetchTransactions(token, { iban, from, to }) {
     const rows = await pages(token, '/transactions', { acc: iban, startDate: apiDate(from), endDate: apiDate(to) }, 'transactions');
     // Рахунок беремо з запиту: у старих відповідях AUT_MY_ACC — не IBAN.
-    return rows.filter(raw => raw.FL_REAL === 'r' && raw.PR_PR === 'r').map(raw => {
+    return rows.filter(raw => (raw.FL_REAL === 'r' && raw.PR_PR === 'r') || ['t', 'n'].includes(raw.PR_PR)).map(raw => {
         const transaction = normalizeTransaction(raw);
         if (!transaction) throw new Error('Банк повернув некоректну проведену операцію: синхронізацію не завершено');
         return { ...transaction, account: normIban(iban) };

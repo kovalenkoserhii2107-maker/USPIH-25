@@ -64,7 +64,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const opening = openingSnap.exists ? openingSnap.data() : null;
         // Платежі за відомістю зарплати: { paymentId → { key, name } } для погашення 661/641/651.
         const payrollPayments = new Map(payrollPaySnap.docs.filter(d => d.data().payroll?.period)
-            .map(d => [d.id, { key: d.data().payroll.key, name: d.data().recipient?.name || '', period: d.data().payroll.period }]));
+            .map(d => [d.id, { key: d.data().payroll.key, kind: d.data().kind, recipientType: d.data().payroll.recipientType,
+                name: d.data().recipient?.name || '', period: d.data().payroll.period }]));
         const ledgers = new Map();
         ledgerSnap.forEach(d => {
             if (d.ref.parent.parent?.parent?.id !== 'apartments') return;

@@ -35,6 +35,7 @@ let busy = new Set();
 
 /** Пропозиція системи для операції з черги. */
 export function proposalFor(tx) {
+    if (tx.bankConflict) return { type: 'bank-conflict', apts: [] };
     const suggestions = tx.suggestions || [];
     if (tx.direction === 'out' && tx.paymentSuggestions?.length) return { type: 'payment-link', ids: tx.paymentSuggestions };
     // Списання постачальнику, схоже на затверджений документ витрат.
@@ -69,6 +70,8 @@ function linkLevel(item) {
 
 function proposalHtml(item, dir) {
     const p = item.proposal;
+    if (p.type === 'bank-conflict') return `<p class="inbox-proposal is-ask">Банк повідомив про сторно. Відкрийте ${escapeHtml(item.tx.period)} у журналі та повторіть синхронізацію. Якщо є повʼязані повернення, спершу звірте їх.</p>`;
+    if (item.tx.reason === 'possible-refund') return '<p class="inbox-proposal is-ask">Можливе повернення раніше списаних коштів. Знайдіть відповідне списання перед рознесенням.</p>';
     if (p.type === 'payment-link') return '<p class="inbox-proposal is-ask">Кілька платежів з однаковою сумою. Виберіть платіж за реквізитами банку.</p>';
     if (p.type === 'link') {
         return `<p class="inbox-proposal"><span class="inbox-arrow">→</span> Оплата за документом: <b>${escapeHtml(expenseLabel(p.ids[0]))}</b>
@@ -107,6 +110,7 @@ function refundListHtml(list) {
 }
 
 function formHtml(item, dir) {
+    if (item.proposal.type === 'bank-conflict') return '<button type="button" class="btn-primary btn-compact" data-act="edit">Переглянути місяць у журналі</button>';
     if (item.proposal.type === 'payment-link') return '<button type="button" class="btn-primary btn-compact" data-act="edit">Вибрати платіж за випискою</button>';
     return `${decisionHtml(item, dir)}${refundHtml(item)}`;
 }
@@ -554,6 +558,7 @@ const confirmProposal = item => {
 };
 
 function openForm(item) {
+    if (item.proposal.type === 'bank-conflict') { openJournal(item.tx.period); return; }
     if (item.proposal.type === 'payment-link') { openTxSheet(item.tx.id); return; }
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }

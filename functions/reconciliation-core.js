@@ -31,6 +31,10 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
     const txMap = new Map(bankTx.map(t => [t.id, t]));
     for (const tx of bankTx.filter(t => managed(t.period))) {
         if (!positive(tx.amountKop) || !['in', 'out'].includes(tx.direction)) block(`Операція виписки ${tx.id}: некоректна сума або напрямок`);
+        if (tx.bankVoided) {
+            if (tx.kind !== 'void' || tx.status !== 'done' || (tx.allocations || []).length) block(`Сторно ${tx.id}: анульована операція все ще має фінансовий рознос`);
+            continue;
+        }
         if (tx.expenseId) {
             const e = expenseMap.get(tx.expenseId);
             if (!e || !['approved', 'paid'].includes(e.status) || !e.txIds?.includes(tx.id) || tx.direction !== 'out' || tx.status !== 'done') block(`Оплата ${tx.id}: зв'язок з документом витрат не відповідає джерелам`);
@@ -70,10 +74,12 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
         if (a) refundEntries.add(`${a.apt}/${a.ledgerId}`);
     }
     for (const p of payrollRuns.filter(p => managed(p.period) && p.status === 'approved')) {
+        if (p.canceling || p.sending) block(`Відомість зарплати ${p.period}: відправка або скасування ще не завершені`);
         for (const field of ['grossKop', 'pdfoKop', 'vzKop', 'netKop', 'esvKop']) {
             if ((p.run?.rows || []).reduce((s, r) => s + (r[field] || 0), 0) !== p.run?.totals?.[field]) block(`Відомість зарплати ${p.period}: підсумки не відповідають нарахуванням за людьми`);
         }
     }
+    for (const tx of bankTx.filter(t => managed(t.period) && t.bankConflict)) block(`Операція банку ${tx.id}: банк повідомив про сторно. Відкрийте її місяць і повторіть синхронізацію або виправте повʼязані повернення`);
     for (const tx of bankTx.filter(t => managed(t.period) && t.direction === 'in' && t.status === 'done'
         && (t.kind === 'payment' || (t.kind === 'refund' && txMap.get(t.refundOf)?.category === 'resident_refund')))) {
         const list = tx.allocations || [];

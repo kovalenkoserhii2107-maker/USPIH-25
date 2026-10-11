@@ -26,6 +26,7 @@ const dps = require('./dps-xml');
 const STI = require('./dps/sti.json');
 const { fopReport } = require('./fop-report-core');
 const { kyivDate } = require('./journal-core');
+const { recipientType } = require('./payroll-payment-core');
 
 const REGION = 'europe-central2';
 const FILE_KINDS = { report: 'звіт', receipt1: 'квитанція № 1', receipt2: 'квитанція № 2', other: 'інше' };
@@ -75,7 +76,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         const esv = new Map();
         for (const d of esvPaid.docs) {
             const p = d.data();
-            if (p.status === 'paid' && Number.isSafeInteger(p.amountKop) && p.amountKop > 0) esv.set(p.payroll.period, (esv.get(p.payroll.period) || 0) + p.amountKop - (p.returnedKop || 0));
+            if (recipientType(p) === 'tax' && p.status === 'paid' && Number.isSafeInteger(p.amountKop) && p.amountKop > 0) esv.set(p.payroll.period, (esv.get(p.payroll.period) || 0) + p.amountKop - (p.returnedKop || 0));
         }
         for (const run of runs.docs) {
             const period = run.id, expected = run.data().run?.totals?.esvKop || 0;
@@ -107,6 +108,8 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         const fop = fopReport({ period, expenses: expenses.docs.map(d => ({ id: d.id, ...d.data() })),
             suppliers: new Map(suppliers.docs.map(d => [d.id, { id: d.id, ...d.data() }])), bankTx: txs });
         const checks = [...fop.checks], payments = [];
+        for (const t of txs.filter(t => t.bankConflict && t.period <= period)) checks.push({ level: 'block', text: `Операція банку ${t.id}: сторно ще не узгоджене з обліком — звітність потребує звірки` });
+        for (const t of txs.filter(t => t.reason === 'possible-refund' && t.status === 'review' && t.period <= period)) checks.push({ level: 'block', text: `Операція банку ${t.id}: можливе повернення ще не розібране — спершу звірте його зі списанням` });
         // Для виплати старої відомості потрібні також її аванс і податки:
         // інакше остаточний платіж у наступному місяці порівнюється з усією зарплатою.
         const sourcePeriods = new Set([period]);
@@ -133,7 +136,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
                     if (refund && refund.period !== pr.period && (refund.period === period || pr.period === period)) checks.push({ level: 'block', text: `Повернення виплати за ${pr.period} у ${refund.period}: звірте період коригування 4ДФ в Електронному кабінеті` });
                 }
             }
-            payments.push({ period: pr.period, stage: pr.stage, key: pr.key, paidOn: kyivDate(tx?.at),
+            payments.push({ period: pr.period, stage: pr.stage, key: pr.key, recipientType: recipientType(p), paidOn: kyivDate(tx?.at),
                 status: p.status === 'paid' && p.amountKop > 0 && p.returnedKop === p.amountKop ? 'returned' : p.status,
                 amountKop: p.amountKop - (p.returnedKop || 0) });
         }

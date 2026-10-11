@@ -55,11 +55,11 @@ test('відомість місяця, платежі етапів і перев
     assert.match(p.paymentProblems(p.stagePayments(run, 'advance', { code: '40562894', taxes, people: map }))[0], /ESV/);
     taxes.esv = { name: 'ГУК', iban: 'UA906543210000000260323012024', code: '37607526' };
     const adv = p.stagePayments(run, 'advance', { code: '40562894', taxes, people: map });
-    assert.deepEqual(adv.map(x => [x.key, x.amountKop]), [['advance:e1', 332909], ['advance:pdfo', 77823], ['advance:vz', 21618], ['advance:esv', 95117]]);
+    assert.deepEqual(adv.map(x => [x.key, x.amountKop]), [['advance:person:e1', 332909], ['advance:tax:pdfo', 77823], ['advance:tax:vz', 21618], ['advance:tax:esv', 95117]]);
     assert.match(adv[1].purpose, /^\*;101;40562894;ПДФО із заробітної плати з авансу за жовтень 2026;;;$/);
     const fin = p.stagePayments(run, 'final', { code: '40562894', taxes, people: map });
-    assert.deepEqual(fin.map(x => x.key), ['final:e1', 'final:g1', 'final:pdfo', 'final:vz', 'final:esv']);
-    assert.equal(fin.find(x => x.key === 'final:esv').amountKop, 271117);
+    assert.deepEqual(fin.map(x => x.key), ['final:person:e1', 'final:person:g1', 'final:tax:pdfo', 'final:tax:vz', 'final:tax:esv']);
+    assert.equal(fin.find(x => x.key === 'final:tax:esv').amountKop, 271117);
     assert.deepEqual(p.paymentProblems(fin), []);
     // Аванс + решта = усе нараховане до виплати й утримане.
     const total = k => adv.concat(fin).filter(x => x.key.endsWith(k)).reduce((s, x) => s + x.amountKop, 0);

@@ -38,7 +38,7 @@ export function byDay(list, now = new Date()) {
  * інакше — питання («Це кв. 7?», з підтвердженням). Решта — у «Рішеннях».
  */
 export function quickAssign(tx) {
-    if (tx.status !== 'review' || tx.direction !== 'in' || tx.kind === 'income' || tx.reason === 'several') return null;
+    if (tx.status !== 'review' || tx.direction !== 'in' || tx.kind === 'income' || ['several', 'possible-refund'].includes(tx.reason) || tx.bankConflict || tx.bankVoided) return null;
     const s = tx.suggestions || [];
     if (s.length !== 1 || !s[0].apt) return null;
     return { apt: String(s[0].apt), sure: SURE[s[0].reason] === true };
@@ -48,7 +48,7 @@ export function quickAssign(tx) {
 export function filterTx(list, tab = 'all', query = '') {
     const q = String(query).trim().toLowerCase();
     const apt = q.replace(/^кв\.?\s*/, '');
-    return list.filter(tx => (tab === 'review' ? tx.status === 'review' : tab === 'done' ? tx.status !== 'review' : true)
+    return list.filter(tx => (tab === 'review' ? tx.status === 'review' || tx.bankConflict : tab === 'done' ? tx.status !== 'review' && !tx.bankConflict : true)
         && (!q || (tx.allocations || []).some(a => a.apt === apt)
             || String(tx.counterparty?.name || '').toLowerCase().includes(q)
             || String(tx.purpose || '').toLowerCase().includes(q)

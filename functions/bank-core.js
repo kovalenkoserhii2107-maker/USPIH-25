@@ -201,6 +201,11 @@ function classify(tx, ctx) {
     if (tx.direction === 'out') {
         return { status: 'expense', category: guess(EXPENSE_HINTS, `${tx.purpose} ${cp.name}`), suggestions: [] };
     }
+    // Повернення від людини, що також сплачує внески, не стає внеском
+    // лише через запамʼятований IBAN або номер квартири в призначенні.
+    if (/повернен|повернут|возврат|returned|refund|відхилен[а-яіїєґ]* плат[еі]ж/i.test(String(tx.purpose || ''))) {
+        return { status: 'review', reason: 'possible-refund', suggestions: [] };
+    }
 
     const candidates = aptCandidates(tx.purpose, ctx.known);
     const strong = [...new Set(candidates.filter(c => c.strong).map(c => c.apt))];

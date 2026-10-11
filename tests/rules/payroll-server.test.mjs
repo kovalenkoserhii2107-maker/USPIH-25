@@ -17,12 +17,17 @@ let app, db, payroll, sent = [];
 before(() => {
     app = initializeApp({ projectId: 'uspih-25-rules-test' }, 'payroll-server-test');
     db = getFirestore(app);
-    const payments = { actions: { create: async (actor, role, p) => { sent.push(p); return { id: `pay${sent.length}` }; } } };
+    const payments = { actions: { create: async (actor, role, p) => {
+        sent.push(p);
+        const ref = db.collection('payments').doc();
+        await ref.create({ ...p, status: 'sent' });
+        return { id: ref.id };
+    } } };
     payroll = payrollFunctions({ db, FieldValue, requireAdmin: async () => '900', staffRole: async () => 'accountant', payments, lock: periodLock(db) });
 });
 const wipe = async () => {
     sent = [];
-    for (const name of ['payroll_people', 'payroll_runs', 'payroll_settings', 'audit_log', 'bank', 'osbb_settings', 'journal_periods']) {
+    for (const name of ['payroll_people', 'payroll_runs', 'payroll_settings', 'audit_log', 'bank', 'osbb_settings', 'journal_periods', 'payments']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -61,7 +66,7 @@ test('відомість: працівник і ЦПД, затвердження
 
     await a().pay(...A, { period: '2026-10', stage: 'advance' });
     assert.deepEqual(sent.map(p => [p.payroll.key, p.amountKop]), [['e1'.replace('e1', e), 332909], ['pdfo', 77823], ['vz', 21618], ['esv', 95117]]);
-    assert.ok(sent.every(p => p.account === OWN && p.proposalKey.startsWith('payroll:2026-10:advance:')));
+    assert.ok(sent.every(p => p.account === OWN && p.payroll.planKey.startsWith('advance:') && ['person', 'tax'].includes(p.payroll.recipientType)));
     await assert.rejects(a().pay(...A, { period: '2026-10', stage: 'advance' }), /уже відправлено/);
 
     // Табель змінено після авансу: знову чекає голову, аванс не перераховується.

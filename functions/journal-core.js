@@ -146,7 +146,8 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
         if (t.kind === 'expense' && t.status === 'done' && t.category === 'resident_refund') return { dr: '377', dA: t.allocations?.[0]?.apt || '' };
         if (t.kind === 'expense' && t.status === 'done' && payrollPayments.has(t.paymentId)) {
             const pp = payrollPayments.get(t.paymentId);
-            const dr = pp.key === 'pdfo' || pp.key === 'vz' ? '641' : pp.key === 'esv' ? '651' : '661';
+            const person = pp.kind === 'salary' || pp.recipientType === 'person';
+            const dr = person ? '661' : pp.key === 'pdfo' || pp.key === 'vz' ? '641' : pp.key === 'esv' ? '651' : '661';
             return { dr, dA: dr === '661' ? pp.name : pp.key };
         }
         if (t.kind === 'expense' && t.status === 'done' && t.expenseId) return { dr: '631', dA: expenses.find(x => x.id === t.expenseId)?.supplierName || cp.name || '' };
@@ -157,6 +158,7 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
 
     for (const t of bankTx) {
         if (!inRange(t.period)) continue;
+        if (t.bankVoided) continue;
         const date = kyivDate(t.at) || lastDay(t.period);
         const acc = t.account || '';
         const cp = t.counterparty || {};

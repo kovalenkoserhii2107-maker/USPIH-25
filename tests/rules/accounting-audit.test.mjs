@@ -119,7 +119,12 @@ test('component debts survive the year boundary and the annual forecast applies 
 async function seedPayroll(create) {
     await seedBank();
     await db.doc('osbb_settings/finance').set({ edrpou: '40562894' });
-    const payroll = payrollFunctions({ ...deps, payments: { actions: { create } } });
+    const payroll = payrollFunctions({ ...deps, payments: { actions: { create: async (...args) => {
+        const result = await create(...args);
+        const ref = db.doc(`payments/${result.id}`);
+        if (!(await ref.get()).exists) await ref.create({ ...args[2], status: 'sent' });
+        return result;
+    } } } });
     const tax = { name: 'ГУК', iban: PAYEE, code: '37607526' };
     await payroll.actions.saveSettings(...A, { advancePct: 50, taxes: { pdfo: tax, vz: tax, esv: tax } });
     const { id } = await payroll.actions.savePerson(...A, { name: 'Працівник Тестовий', kind: 'employee', salaryKop: 864700, fte: 1, iban: PAYEE, rnokpp: '3124567809', taxNotified: true });
@@ -155,7 +160,7 @@ test('partial payroll sending resumes only the missing payments and refuses chan
     const resumed = await payroll.actions.pay(...A, { period: '2026-10', stage: 'final' });
     assert.equal(resumed.ok, true);
     assert.equal(sent.length, 4);
-    assert.equal(new Set(sent.map(p => p.proposalKey)).size, 4);
+    assert.equal(new Set(sent.map(p => p.payroll.planKey)).size, 4);
 });
 
 test('late payments in a closed period wait for review and leave the resident balance unchanged', async () => {

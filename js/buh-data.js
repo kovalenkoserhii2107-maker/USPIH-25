@@ -39,6 +39,9 @@ export const maskIban = iban => iban ? `${iban.slice(0, 4)} … ${iban.slice(-4)
 
 /** Короткий ярлик рішення щодо операції. */
 export function tagOf(tx) {
+    if (tx.bankConflict) return { text: 'Сторно банку — потрібна звірка', cls: 'is-review' };
+    if (tx.bankVoided) return { text: 'Сторновано банком', cls: 'is-internal' };
+    if (tx.reason === 'possible-refund') return { text: 'Можливе повернення списаного', cls: 'is-review' };
     if (tx.status === 'review') return { text: 'Чекає рішення', cls: 'is-review' };
     if (tx.kind === 'payment') {
         const apts = (tx.allocations || []).map(a => a.apt);
@@ -71,8 +74,11 @@ export const loadSettings = () => once('settings', async () => {
 
 /** Усе, що чекає рішення людини. Без orderBy — не потрібен складений індекс. */
 export const loadQueue = () => once('queue', async () => {
-    const snap = await getDocs(query(collection(db, 'bank_tx'), where('status', '==', 'review')));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const snaps = await Promise.all([
+        getDocs(query(collection(db, 'bank_tx'), where('status', '==', 'review'))),
+        getDocs(query(collection(db, 'bank_tx'), where('bankConflict', '==', 'void')))
+    ]);
+    return [...new Map(snaps.flatMap(s => s.docs).map(d => [d.id, { id: d.id, ...d.data() }])).values()]
         .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
 });
 
@@ -133,8 +139,12 @@ export const PAYMENT_STATUS = {
 
 /** Платежі, найновіші вгорі. */
 export const loadPayments = () => once('payments', async () => {
-    const snap = await getDocs(query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(200)));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const [history, pending] = await Promise.all([
+        getDocs(query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(200))),
+        getDocs(query(collection(db, 'payments'), where('status', 'in', ['sending', 'sent', 'unknown'])))
+    ]);
+    const rows = new Map([...history.docs, ...pending.docs].map(d => [d.id, { id: d.id, ...d.data() }]));
+    return [...rows.values()].sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
 });
 
 /** Пропозиції системи (регулярні платежі), довідник отримувачів і рахунки — із сервера. */

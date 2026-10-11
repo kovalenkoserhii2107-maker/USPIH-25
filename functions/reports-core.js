@@ -33,7 +33,8 @@ function dueDate(period) {
     return new Date(Date.UTC(y, m, 20)).toISOString().slice(0, 10);
 }
 
-const paidAmount = (payments, stage, key) => payments.filter(p => p.status === 'paid' && p.stage === stage && p.key === key && Number.isSafeInteger(p.amountKop) && p.amountKop > 0).reduce((sum, p) => sum + p.amountKop, 0);
+const { recipientType } = require('./payroll-payment-core');
+const paidAmount = (payments, stage, key) => payments.filter(p => recipientType(p) === 'tax' && p.status === 'paid' && p.stage === stage && p.key === key && Number.isSafeInteger(p.amountKop) && p.amountKop > 0).reduce((sum, p) => sum + p.amountKop, 0);
 /** Розподіл фактично сплаченого податку: цілі копійки, сума частин точна. */
 function distribute(amount, weights) {
     const total = weights.reduce((s, k) => s + k, 0);
@@ -109,7 +110,7 @@ function payrollReport({ period, stored, people = new Map(), payments = [], runs
         const withAdvance = Boolean(source?.stages?.advance) || qPays.some(p => p.stage === 'advance' && ['paid', 'sent', 'sending', 'unknown'].includes(p.status));
         const part = (r, stage, f) => withAdvance ? r?.[stage]?.[f] || 0 : stage === 'final' ? (r?.advance?.[f] || 0) + (r?.final?.[f] || 0) : 0;
         const timelyWage = (r, stage) => {
-            const wages = paid.filter(p => p.stage === stage && p.key === r.personId);
+            const wages = paid.filter(p => recipientType(p) === 'person' && p.stage === stage && p.key === r.personId);
             return r.kind === 'employee' && stage === 'final' && wages.length > 0
                 && wages.reduce((s, p) => s + p.amountKop, 0) === part(r, stage, 'netKop')
                 && wages.every(p => !p.paidOn || String(p.paidOn).slice(0, 7) === q || (String(p.paidOn).slice(0, 7) === shift(q, 1) && Number(String(p.paidOn).slice(8)) <= 7));
@@ -118,11 +119,11 @@ function payrollReport({ period, stored, people = new Map(), payments = [], runs
             const month = p.paidOn ? String(p.paidOn).slice(0, 7) : q;
             return month === shift(q, 1) && Number(String(p.paidOn).slice(8)) <= 7 && timelyWage(r, p.stage) ? q : month;
         };
-        for (const p of paid) if (!stages.includes(p.stage) || !['pdfo', 'vz', 'esv', ...qRows.map(r => r.personId)].includes(p.key)) {
+        for (const p of paid) if (!stages.includes(p.stage) || !(recipientType(p) === 'tax' ? ['pdfo', 'vz', 'esv'] : qRows.map(r => r.personId)).includes(p.key)) {
             checks.push({ level: 'block', text: 'Проведений платіж не відповідає етапу чи отримувачу відомості — звірте його перед звітом' });
         }
         for (const r of qRows) for (const stage of stages) {
-            const wages = paid.filter(p => p.stage === stage && p.key === r.personId);
+            const wages = paid.filter(p => recipientType(p) === 'person' && p.stage === stage && p.key === r.personId);
             const actual = wages.reduce((s, p) => s + p.amountKop, 0), expected = part(r, stage, 'netKop');
             if (actual && actual !== expected) checks.push({ level: 'block', text: `${r.name}: проведена виплата не відповідає відомості; виплачений дохід треба уточнити` });
             if (!actual || actual !== expected) continue;
@@ -138,7 +139,7 @@ function payrollReport({ period, stored, people = new Map(), payments = [], runs
                 if (q !== period) x.earlierKop += amount;
             }
         }
-        for (const p of paid.filter(p => ['pdfo', 'vz'].includes(p.key) && stages.includes(p.stage))) {
+        for (const p of paid.filter(p => recipientType(p) === 'tax' && ['pdfo', 'vz'].includes(p.key) && stages.includes(p.stage))) {
             const f = `${p.key}Kop`, weights = qRows.map(r => part(r, p.stage, f));
             if (p.amountKop > weights.reduce((s, k) => s + k, 0)) checks.push({ level: 'block', text: `${q}: перерахований податок перевищує відомість — уточніть персональний розподіл переплати` });
             const shares = distribute(p.amountKop, weights);

@@ -27,7 +27,7 @@ export async function loadSignWidget() {
     // Підписує голова; бухгалтер бачить те саме у своєму кабінеті.
     if (session.role !== 'chair' || !hasRight(session.role, 'account')) { host.hidden = true; return; }
     const [snap, docs, contracts] = await Promise.all([
-        getDocs(query(collection(db, 'payments'), where('status', '==', 'sent'), limit(50))),
+        getDocs(query(collection(db, 'payments'), where('status', '==', 'sent'))),
         getDocs(query(collection(db, 'expenses'), where('status', '==', 'pending'), limit(50))).catch(() => ({ size: 0, docs: [] })),
         getDocs(query(collection(db, 'contracts'), where('status', '==', 'pending'), limit(50))).catch(() => ({ size: 0, docs: [] }))
     ]);

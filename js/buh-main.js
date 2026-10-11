@@ -223,7 +223,8 @@ function init() {
         chip.textContent = 'Банк: оновлюю…';
         try {
             const r = await act({ action: 'sync' }, 120000);
-            toast(r?.waiting ? 'Банк зараз оновлює дані — спробуйте за кілька хвилин' : r?.added ? `Нових операцій: ${r.added}` : 'Нових операцій немає', 'success');
+            toast(r?.partial ? `Частину рахунків не оновлено. Збережено нових операцій: ${r.added || 0}. Деталі у «Банку».`
+                : r?.waiting ? 'Банк зараз оновлює дані — спробуйте за кілька хвилин' : r?.added ? `Нових операцій: ${r.added}` : 'Виписку перевірено. Нових операцій немає', r?.partial ? 'error' : 'success');
         } catch (err) { toast(err.message, 'error'); }
         finally { chip.disabled = false; }
     });

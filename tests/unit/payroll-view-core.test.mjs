@@ -35,3 +35,16 @@ test('підсумки: людям і податки окремо, невдал�
         netPaidKop: 616000, netSigningKop: 665819, taxPaidKop: 299646, taxSigningKop: 366234
     });
 });
+test('salary and tax sharing a key remain separate in person status and payment totals', () => {
+    const payments=[{key:'esv',recipientType:'person',stage:'final',status:'paid',amountKop:665819},
+        {key:'esv',recipientType:'tax',stage:'final',status:'sent',amountKop:190234}];
+    const totals=payrollTotals({run:{rows:[],totals:{}},payments});
+    assert.equal(totals.netPaidKop,665819);assert.equal(totals.taxSigningKop,190234);assert.equal(totals.netSigningKop,0);
+    assert.equal(personState({status:'approved',payments},'esv')[0],'виплачено');
+});
+
+test('a canceled final payment does not make a paid advance look like fully paid wages', () => {
+    const payments=[{key:'p1',stage:'advance',status:'paid',amountKop:332909},{key:'p1',stage:'final',status:'canceled',amountKop:332910}];
+    assert.equal(personState({status:'approved',payments},'p1')[0],'аванс виплачено');
+    assert.equal(payrollTotals({run:{rows:[],totals:{}},payments}).netPaidKop,332909);
+});

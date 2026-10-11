@@ -406,7 +406,7 @@ const charges = require('./charges')({ db, FieldValue, Timestamp, requireAdmin, 
 exports.chargesAction = charges.chargesAction;
 
 // Вихідні платежі через API: бухгалтер підтверджує, голова підписує в Приват24.
-const payments = require('./payments')({ db, FieldValue, requireAdmin, staffRole, notify });
+const payments = require('./payments')({ db, FieldValue, requireAdmin, staffRole, notify, lock });
 exports.paymentAction = payments.paymentAction;
 
 // Кошторис і фінанси для мешканців (див. budget.js).

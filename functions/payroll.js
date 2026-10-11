@@ -20,6 +20,8 @@ const core = require('./payroll-core');
 const leave = require('./leave-core');
 const { randomUUID } = require('crypto');
 const { fromKop } = require('./bank-core');
+const { payable } = require('./bank-accounts');
+const paymentIdentity = require('./payroll-payment-core');
 
 const REGION = 'europe-central2';
 
@@ -97,6 +99,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const stored = runSnap.exists ? runSnap.data() : null;
         const run = stored?.run || compute(people, stored, p, settings, await loadHistory(p));
         const paymentsList = sent.docs.map(d => ({ id: d.id, stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status,
+            kind: d.data().kind, recipientType: paymentIdentity.recipientType(d.data()), canceling: Boolean(d.data().canceling),
             amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null,
             returnedKop: d.data().returnedKop || 0, repaid: Boolean(d.data().repaidBy?.length), retry: d.data().payroll?.retry || 0 }));
         const closed = lock ? await lock.closed() : [];
@@ -247,6 +250,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const snap = await ref.get();
         if (!snap.exists || snap.data().status !== 'approved') fail('failed-precondition', 'Спершу голова має затвердити відомість');
         const stored = snap.data();
+        if (stored.canceling) fail('failed-precondition', 'Зачекайте завершення скасування зарплатного платежу');
         if (stored.stages?.[stage] && stored.stages[stage].complete !== false) fail('failed-precondition', stage === 'advance' ? 'Аванс уже відправлено' : 'Зарплату вже відправлено');
         if (stage === 'final' && stored.stages?.advance?.complete === false) fail('failed-precondition', 'Спершу завершіть відправку авансу');
         if (stage === 'advance' && stored.stages?.final) fail('failed-precondition', 'Зарплату за місяць уже виплачено повністю');
@@ -270,8 +274,9 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (!/^\d{8}$/.test(code)) fail('failed-precondition', 'Внесіть код ЄДРПОУ ОСББ («Налаштування → ОСББ у реєстрах»): він потрібен у призначенні податкових платежів');
         // З поточного рахунку ОСББ (не з резервного фонду).
         const accounts = Object.entries((await db.doc('bank/settings').get()).data()?.accounts || {});
-        const account = (accounts.find(([, a]) => (a.purpose || 'current') === 'current') || [])[0] || '';
+        const account = (accounts.find(([, a]) => (a.purpose || 'current') === 'current' && payable(a)) || [])[0] || '';
         if (!account) fail('failed-precondition', 'Підключіть банк: немає поточного рахунку ОСББ, з якого платити');
+        if (!payable(Object.fromEntries(accounts)[stored.stages?.[stage]?.account || account])) fail('failed-precondition', 'Рахунок цього етапу недоступний або має іншу валюту. Перевірте гривневий рахунок ОСББ');
         const list = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
         if (!list.length) fail('failed-precondition', 'Немає що виплачувати');
         const problems = core.paymentProblems(list);
@@ -281,6 +286,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             const fresh = await t.get(ref);
             await lock?.assertOpen(period, 'Виплата зарплати', t);
             if (!fresh.updateTime.isEqual(snap.updateTime)) fail('aborted', 'Відомість змінилась. Оновіть сторінку.');
+            if (fresh.data().canceling) fail('failed-precondition', 'Зачекайте завершення скасування зарплатного платежу');
             if (fresh.data().sending && Date.now() - Date.parse(fresh.data().sending.at) < 600000) fail('aborted', 'Платежі вже відправляються. Зачекайте завершення.');
             t.update(ref, { sending: { attempt, at: new Date().toISOString() },
                 [`stages.${stage}`]: { ...(stored.stages?.[stage] || {}), complete: false, plan: list, account: stored.stages?.[stage]?.account || account },
@@ -288,12 +294,16 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         });
         const created = [...(stored.stages?.[stage]?.payments || [])];
         const completed = { ...(stored.stages?.[stage]?.completed || {}) };
+        for (const [key, id] of Object.entries(completed)) {
+            const p = (await db.doc(`payments/${id}`).get()).data();
+            if (!p || !['sent', 'paid'].includes(p.status) || p.canceling) delete completed[key];
+        }
         const errors = [];
         for (const p of list) {
             if (completed[p.key]) continue;
             try {
                 const r = await payments.actions.create(actor, role, { kind: p.kind, recipient: p.recipient, amountKop: p.amountKop, purpose: p.purpose,
-                    account: stored.stages?.[stage]?.account || account, proposalKey: `payroll:${period}:${p.key}`, reuseExisting: true, payroll: { period, stage, key: p.key.split(':')[1] } });
+                    account: stored.stages?.[stage]?.account || account, reuseExisting: true, payroll: { period, stage, ...paymentIdentity.planRecipient(p) } });
                 if (!created.includes(r.id)) created.push(r.id);
                 completed[p.key] = r.id;
                 await ref.update({ [`stages.${stage}.payments`]: created, [`stages.${stage}.completed`]: completed });
@@ -326,7 +336,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const { period, stage, key } = old.payroll;
         const settings = await loadSettings();
         let recipient = old.recipient;
-        if (['pdfo', 'vz', 'esv'].includes(key)) {
+        if (paymentIdentity.recipientType(old) === 'tax') {
             const t = settings.taxes?.[key];
             if (!t?.iban) fail('failed-precondition', `Немає рахунку для «${key.toUpperCase()}» — внесіть у «Зарплата → Податки й аванс»`);
             recipient = { name: t.name, iban: t.iban, code: t.code };
@@ -338,7 +348,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (recipient.iban === old.recipient?.iban) fail('failed-precondition', 'Рахунок отримувача той самий, що й у поверненому платежі. Спершу виправте IBAN');
         const tries = (old.payroll.retry || 0) + 1;
         const r = await payments.actions.create(actor, role, { kind: old.kind, recipient, amountKop: old.amountKop, purpose: old.purpose, account: old.account,
-            proposalKey: `payroll:${period}:${stage}:${key}:r${tries}`, payroll: { period, stage, key, retry: tries, repayOf: oldRef.id } });
+            proposalKey: `payroll:${period}:${stage}:${key}:r${tries}`, payroll: { period, stage, key, recipientType: paymentIdentity.recipientType(old), retry: tries, repayOf: oldRef.id } });
         await oldRef.update({ repaidBy: FieldValue.arrayUnion(r.id) });
         await audit(actor, role, 'payroll.repay', `payments/${oldRef.id}`, `Повторна виплата за ${core.monthName(period)} після повернення банком`, { key: ['pdfo', 'vz', 'esv'].includes(key) ? key : 'person', newPayment: r.id });
         return { id: r.id };
