@@ -9,7 +9,8 @@ import { collectInbox } from './buh-inbox.js';
 import { loadMonthData } from './buh-month.js';
 import { monthProgress } from './month-core.js';
 import { fmtKop, periodName } from './charges-core.js';
-import { deadlines, humanDate, daysLeft } from './tax-calendar.js';
+import { humanDate, daysLeft } from './tax-calendar.js';
+import { reportTasks, nextDeadline } from './reports-view-core.js';
 
 const BANK_TYPES = new Set(['link', 'assign', 'split', 'choose', 'income', 'expense']);
 const DOC_TYPES = new Set(['approve-con', 'approve-exp', 'pay-exp', 'missing-doc']);
@@ -80,7 +81,8 @@ export async function loadToday() {
     const run = charges?.runs?.find(r => r.period === charges.current);
     const paid = month.filter(t => t.kind === 'payment' && t.status === 'done').reduce((s, t) => s + t.amountKop, 0);
     const share = run?.totalKop ? Math.min(100, Math.round(paid / run.totalKop * 100)) : null;
-    const soon = deadlines(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())), new Date(Date.UTC(now.getFullYear(), now.getMonth() + 3, 0)))[0];
+    // Наступний строк — лише те, що ще треба зробити: сплачений ЄСВ чи поданий звіт не нагадуємо.
+    const soon = nextDeadline(reportTasks(inbox.reports));
     const progress = monthData ? monthProgress(monthData.steps) : null;
     const last = settings.lastSync;
 
@@ -105,9 +107,9 @@ export async function loadToday() {
                     <span class="td-small">${progress.done === progress.total ? 'Місяць закрито ›' : `Далі: ${escapeHtml(progress.next.title.toLowerCase())} — ${escapeHtml(progress.next.short)} ›`}</span>
                 </button>` : ''}
                 ${soon ? `<button type="button" class="sv-card td-deadline" data-go="reports">
-                    <span class="td-label">Наступний строк</span>
+                    <span class="td-label">${soon.left < 0 ? 'Прострочено' : 'Наступний строк'}</span>
                     <b class="td-big">${escapeHtml(humanDate(soon.date))}</b>
-                    <span class="td-small">${escapeHtml(soon.title)} · ${(d => (d === 0 ? 'сьогодні' : d === 1 ? 'завтра' : `через ${d} дн.`))(daysLeft(soon.date, now))} ›</span>
+                    <span class="td-small">${escapeHtml(soon.title)} · ${(d => (d < 0 ? `${-d} дн. тому` : d === 0 ? 'сьогодні' : d === 1 ? 'завтра' : `через ${d} дн.`))(daysLeft(soon.date, now))} ›</span>
                 </button>` : ''}
                 <button type="button" class="sv-card td-balance" data-go="bank">
                     <span class="td-label">На рахунку</span>

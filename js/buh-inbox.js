@@ -19,6 +19,7 @@ import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
 import { openPayroll } from './buh-payroll.js';
 import { openReports, reportTasks } from './buh-reports.js';
+import { receiptOverdue } from './reports-view-core.js';
 import { openTxSheet } from './buh-chain.js';
 
 const CONFIDENCE = {
@@ -391,14 +392,22 @@ export function payrollItems(p, chair) {
 /**
  * Звітність: звіт, строк якого за 10 днів чи минув, і не позначений;
  * ЄСВ — за 3 дні, якщо платежі ще не проведено; кошторис — за місяць.
+ * Поданий звіт (квитанція № 1) — не справа, поки не мине 5 днів без № 2.
  */
 export function reportItems(r) {
     const near = t => (t.kind === 'decision' ? 30 : t.kind === 'payment' ? 3 : 10);
-    return reportTasks(r).filter(t => !t.done && t.left <= near(t)).map(t => ({ tx: { id: `report:${t.key}` }, proposal: {
+    const tasks = reportTasks(r);
+    // Подано й чекаємо квитанцію № 2 — не справа; лише якщо її довго немає, нагадуємо додати.
+    const receipts = tasks.filter(t => receiptOverdue(t, r.today)).map(t => ({ tx: { id: `report:${t.key}` }, proposal: {
+        type: 'setup', meta: 'звітність', reportKey: t.key, yes: 'Додати квитанцію № 2',
+        title: `Квитанція № 2: ${t.title.charAt(0).toLowerCase()}${t.title.slice(1)}`,
+        text: `Подано ${t.mark.date.split('-').reverse().join('.')}, а квитанції № 2 ще немає. Перевірте в Електронному кабінеті й додайте її — тоді звіт буде прийнято.`
+    } }));
+    return receipts.concat(tasks.filter(t => !t.done && !t.waiting && t.left <= near(t)).map(t => ({ tx: { id: `report:${t.key}` }, proposal: {
         type: 'setup', meta: 'звітність', reportKey: t.key, yes: 'Відкрити',
         title: t.left < 0 ? `Прострочено: ${t.title.charAt(0).toLowerCase()}${t.title.slice(1)}` : t.title,
         text: `${t.detail}. Строк — ${t.date.getUTCDate()}.${String(t.date.getUTCMonth() + 1).padStart(2, '0')}${t.left >= 0 ? ` (${t.left === 0 ? 'сьогодні' : `через ${t.left} дн.`})` : ''}. ${t.kind === 'report' ? 'Цифри готові в «Звітності»; подає голова в Електронному кабінеті, потім позначте «подано» й додайте квитанцію.' : ''}`.trim()
-    } }));
+    } })));
 }
 
 /** Справи з витратами для «Вхідних» (голова бачить і затвердження). */
@@ -449,7 +458,7 @@ export async function loadInbox() {
     const { reports } = await collectInbox();
     const reportBadge = document.getElementById('buhReportBadge');
     if (reportBadge) {
-        const urgent = reportTasks(reports).filter(t => !t.done && t.kind === 'report' && t.left <= 10).length;
+        const urgent = reportTasks(reports).filter(t => !t.done && !t.waiting && t.kind === 'report' && t.left <= 10).length;
         reportBadge.hidden = !urgent;
         reportBadge.textContent = urgent || '';
     }

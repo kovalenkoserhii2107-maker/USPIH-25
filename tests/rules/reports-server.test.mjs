@@ -16,7 +16,7 @@ before(() => {
     reports = require('./reports.js')({ db, FieldValue, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
 });
 const wipe = async () => {
-    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings', 'bank_tx', 'suppliers', 'expenses']) {
+    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings', 'bank_tx', 'suppliers', 'expenses', 'report_packages']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -172,4 +172,37 @@ test('XML для Електронного кабінету: реквізити, 
     const log = (await db.collection('audit_log').get()).docs.map(x => x.data());
     assert.deepEqual(log.map(x => x.action).sort(), ['reports.settings', 'reports.xml']);
     assert.ok(!JSON.stringify(log).includes('3124567809'));
+});
+
+test('версії пакета XML: кожне завантаження зберігається; «подано» й квитанції — до конкретної версії', async () => {
+    const person = { name: 'Працівник Тестовий Іванович', kind: 'employee', position: 'двірник', salaryKop: 864700, fte: 1, mainJob: true, rnokpp: '3124567809',
+        iban: 'UA213052990000026001234567891', taxNotified: true, from: '2026-10-16', active: true, gender: 'Ч', kpCode: '9141', hireDoc: 'Наказ № 1-к від 15.10.2026' };
+    await db.doc('payroll_people/e1').set(person);
+    await db.doc('osbb_settings/finance').set({ edrpou: '40562894', registry: { legalName: 'ОСББ «ТЕСТ»', code: '40562894', kved: '81.10 Комплексне обслуговування' } });
+    const run = payroll.buildRun({ people: [{ id: 'e1', ...person }], period: '2026-10' });
+    await db.doc('payroll_runs/2026-10').set({ period: '2026-10', status: 'approved', run: JSON.parse(JSON.stringify(run)) });
+    await a().saveXmlSettings(...A, { sti: 1553, katottg: 'UA51100270010069184', zip: '65101', address: 'м. Одеса, вул. Тестова, 1', headName: 'Голова Тестовий', headTin: '3124567809' });
+    const key = 'j0500111-2026-10';
+
+    const v1 = await a().xml(...A, { period: '2026-10', stan: 1, num: 1 });
+    const v2 = await a().xml(...A, { period: '2026-10', stan: 1, num: 1 });
+    assert.deepEqual([v1.version, v2.version], [1, 2]);
+    let ctx = await a().context();
+    assert.deepEqual(ctx.packages[key].map(p => p.version), [2, 1]);
+    assert.ok(ctx.packages[key][0].files.every(f => /^[0-9a-f]{64}$/.test(f.sha256) && !('data' in f)));
+    // Повторне завантаження — байт у байт ті самі файли.
+    const again = await a().packageFiles({ id: v1.packageId });
+    assert.deepEqual(again.files.map(f => f.data), v1.files.map(f => f.data));
+
+    // Подали першу версію (явно), квитанція № 1 привʼязується до неї.
+    await a().mark(...A, { key, status: 'submitted', date: '2026-10-10', packageId: v1.packageId,
+        addFiles: [{ name: 'kv1.pdf', path: `reports/${key}/1_kv1.pdf`, kind: 'receipt1' }] });
+    let saved = (await a().context()).statuses[key];
+    assert.deepEqual([saved.packageId, saved.packageVersion, saved.files[0].packageId], [v1.packageId, 1, v1.packageId]);
+    // «Прийнято» без вибору версії лишає ту, яку подали, а не новішу.
+    await a().mark(...A, { key, status: 'accepted', date: '2026-10-10', addFiles: [{ name: 'kv2.pdf', path: `reports/${key}/2_kv2.pdf`, kind: 'receipt2' }] });
+    saved = (await a().context()).statuses[key];
+    assert.deepEqual([saved.packageVersion, saved.files.map(f => f.packageId)], [1, [v1.packageId, v1.packageId]]);
+    // Чужа версія — відмова.
+    await assert.rejects(a().mark(...A, { key: 'j0500111-2026-11', status: 'submitted', date: '2026-10-10', packageId: v1.packageId }), /не належить/);
 });

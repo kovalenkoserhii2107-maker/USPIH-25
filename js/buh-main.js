@@ -64,7 +64,8 @@ async function show(name, { push = true, refresh = false } = {}) {
     document.title = `${name === 'today' ? 'Сьогодні' : title} — Бухгалтерія`;
     // Активна вкладка видна й на вузькому екрані, де стрічка вкладок прокручується.
     document.querySelector(`.buh-nav .buh-nav-item[data-view="${name}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    if (push && location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
+    // Кожен перехід — запис в історії: «Назад» у браузері веде на попередній розділ.
+    if (push && location.hash !== `#${name}`) history.pushState(null, '', `#${name}`);
     // Фокус на пункті меню перехоплював би Enter: «Так» у розділі
     // натискав би знову той самий пункт.
     if (document.activeElement?.closest?.('.buh-nav-item, .buh-tab, [data-go]')) document.activeElement.blur();
@@ -237,7 +238,8 @@ function init() {
             refreshBadge();
         }, 50);
     });
-    window.addEventListener('hashchange', () => { const name = ALIASES[location.hash.slice(1)] || location.hash.slice(1); if (VIEWS[name] && name !== view) show(name, { push: false }); });
+    // «Назад» до першого екрана повертає адресу без розділу — це «Сьогодні».
+    window.addEventListener('hashchange', () => { const name = ALIASES[location.hash.slice(1)] || location.hash.slice(1) || 'today'; if (VIEWS[name] && name !== view) show(name, { push: false }); });
 }
 
 init();
