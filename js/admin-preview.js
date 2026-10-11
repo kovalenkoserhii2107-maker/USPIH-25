@@ -10,10 +10,6 @@ document.getElementById('appLoader').style.display = 'none';
 // promotes it to the two-column workspace grid at the 960px breakpoint.
 section.style.display = 'block';
 
-const today = document.getElementById('adminToday');
-if (today) today.textContent = new Date().toLocaleDateString('uk-UA', {
-    day: 'numeric', month: 'long', year: 'numeric', weekday: 'short'
-});
 
 const go = '<svg class="dash-go" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="9 18 15 12 9 6"></polyline></svg>';
 
@@ -141,6 +137,6 @@ renderAccount({ name: 'Олена Коваленко', role: 'Голова пр�
 buildShell('chair');
 markActive('overview');
 
-document.getElementById('adminLogoutBtn').addEventListener('click', () => {
+document.getElementById('adminMoreLogoutBtn').addEventListener('click', () => {
     selectTab('overview');
 });

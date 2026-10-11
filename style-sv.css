@@ -1,0 +1,219 @@
+/* ============================================================
+   ВИГЛЯД «СЕРВІС» — спільне для бухгалтерії (buh.html) і панелі
+   правління (admin.html): шапка з розділами-«пігулками», аватар із
+   меню профілю, великі заголовки, на телефоні — плаваюча нижня
+   панель вкладок. Решта стилів — у style-buh.css і style-admin.css.
+   ============================================================ */
+
+body.buh-mode, body.admin-sv {
+    --font: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --sv-bg: #E9EEF4; --sv-ink: #000; --sv-muted: #4D4D4D; --sv-line: #ECECEC;
+    --sv-soft: #EEF1F5; --sv-soft-2: #F4F6F9; --sv-yellow: #FFF0A8; --sv-yellow-ink: #4D4000;
+    --sv-green: #1A7F37; --sv-green-bg: #E3F2E8; --sv-red: #B42318; --sv-red-bg: #FBE3E0;
+    background: var(--sv-bg); color: var(--sv-ink); font-family: var(--font);
+}
+body.buh-mode .container { max-width: none; margin: 0; padding: 0; }
+
+.buh { min-height: 100vh; }
+.buh[hidden] { display: none; }
+
+/* ---------- Шапка й розділи ---------- */
+.buh-top {
+    position: sticky; top: 0; z-index: 20; padding: 16px clamp(16px, 3vw, 40px) 12px;
+    background: rgba(233, 238, 244, .9); backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
+}
+.buh-top-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 20px; max-width: 1240px; margin: 0 auto; }
+.buh-brand { display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.buh-brand-mark { width: 44px; height: 44px; }
+.buh-brand > span:last-child { display: flex; flex-direction: column; }
+.buh-brand b { font-size: 17px; font-weight: 800; }
+.buh-brand small { color: var(--sv-muted); font-size: 12.5px; font-weight: 600; }
+.buh-nav {
+    justify-self: center; display: flex; gap: 2px; max-width: 100%; padding: 5px; border-radius: 999px; background: #fff;
+    overflow-x: auto; scrollbar-width: none;
+}
+.buh-nav::-webkit-scrollbar { display: none; }
+.buh-nav-item {
+    flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; border: 0; border-radius: 999px;
+    background: none; color: #000; font: 700 14.5px var(--font); white-space: nowrap; cursor: pointer; transition: background .2s ease, color .2s ease;
+}
+.buh-nav-item:hover { background: var(--sv-soft); }
+.buh-nav-item.active { background: #000; color: #fff; }
+.buh-badge {
+    display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 7px;
+    border-radius: 11px; background: var(--sv-yellow); color: #000; font-size: 12px; font-weight: 800;
+}
+.buh-badge.is-soft { background: var(--sv-soft); }
+.buh-badge[hidden] { display: none; }
+.buh-top-tools { display: flex; align-items: center; gap: 8px; }
+.buh-chip { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: #fff; color: #000; font: 700 13.5px var(--font); white-space: nowrap; cursor: pointer; }
+.buh-chip.is-error { background: var(--sv-red-bg); color: var(--sv-red); }
+.buh-chip[hidden] { display: none; }
+.buh-avatar { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: #fff; color: #000; font-weight: 800; font-size: 15px; }
+.buh-avatar-btn { border: 0; cursor: pointer; font-family: var(--font); }
+
+.buh-main { box-sizing: border-box; width: 100%; max-width: 1240px; margin: 0 auto; padding: 4px clamp(16px, 3vw, 40px) 64px; }
+.buh-head { display: flex; flex-direction: column; gap: 4px; padding: 10px 0 22px; }
+.buh-head h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.buh-head span { color: var(--sv-muted); font-size: 16px; font-weight: 600; }
+.buh-view[hidden] { display: none; }
+.buh-tabbar { display: none; }
+.buh-more-mobile { display: none !important; }
+
+/* Вужчий компʼютер: розділи — окремим рядком під назвою. */
+@media (max-width: 1320px) {
+    .buh-top-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .buh-nav { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* ---------- Меню профілю (аватар; «Ще» на телефоні) ---------- */
+.mn-sheet { max-width: 460px; background: var(--sv-bg); border-radius: 32px 32px 0 0; font-family: var(--font); }
+.mn-sheet .sheet-header { padding: 6px 20px 8px; border: 0; }
+.mn-sheet .sheet-title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; color: #000; }
+.mn-sheet .sheet-close { width: 40px; height: 40px; background: #fff; color: #000; font-size: 15px; }
+.mn-sheet .sheet-body { display: flex; flex-direction: column; gap: 10px; padding: 4px 16px 24px; }
+.mn-sheet .sheet-body > * { flex-shrink: 0; }
+.mn-sheet .sheet-body * { box-sizing: border-box; }
+.mn-sheet a.mn-row { display: flex; align-items: center; gap: 14px; min-height: 64px; margin: 0; padding: 10px 16px; border-radius: 0; color: #000; font-weight: inherit; text-decoration: none; }
+.mn-sheet .mn-chev { margin-left: auto; }
+.mn-profile { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 24px; background: #fff; }
+.mn-avatar { display: grid; flex: none; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: #000; color: #fff; font-size: 21px; font-weight: 800; }
+.mn-copy { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.mn-copy b { overflow: hidden; font-size: 16.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.mn-copy small { overflow: hidden; color: var(--sv-muted); font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.mn-logout { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--sv-soft);
+    color: var(--sv-red); font: 800 14px var(--font); cursor: pointer; }
+.mn-logout:hover { background: var(--sv-red-bg); }
+.mn-logout .mn-ico-svg { width: 18px; height: 18px; }
+.mn-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mn-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 108px; padding: 14px; border: 0; border-radius: 22px; background: #fff;
+    color: #000; font: inherit; text-align: left; cursor: pointer; transition: transform .15s ease, background .2s ease; }
+.mn-tile:active { transform: scale(.97); }
+.mn-tile b { margin-top: auto; font-size: 16px; font-weight: 800; }
+.mn-tile small { color: var(--sv-muted); font-size: 12.5px; font-weight: 600; }
+.mn-tile.active { background: #000; color: #fff; }
+.mn-tile.active small { color: rgba(255, 255, 255, .7); }
+.mn-tile.active .mn-ico { background: rgba(255, 255, 255, .14); color: #fff; }
+.mn-h { margin: 8px 6px 0; color: var(--sv-muted); font-size: 13px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; }
+.mn-group { display: flex; flex-direction: column; overflow: hidden; border-radius: 24px; background: #fff; }
+.mn-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 10px 16px; border: 0; background: none; color: #000;
+    font: inherit; text-align: left; text-decoration: none; cursor: pointer; transition: background .2s ease; }
+.mn-row + .mn-row { box-shadow: inset 0 1px 0 var(--sv-line); }
+.mn-sheet .mn-row { border-radius: 0; }
+.mn-row:hover, .mn-row.active { background: var(--sv-soft-2); }
+.mn-ico { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--sv-soft); color: #000; }
+.mn-row.active .mn-ico { background: #000; color: #fff; }
+.mn-chev { color: var(--sv-muted); font-size: 22px; line-height: 1; }
+.mn-badge { display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--sv-yellow); color: #000; font-size: 12.5px; font-weight: 800; }
+.mn-badge[hidden] { display: none; }
+@media (min-width: 901px) {
+    .mn-tiles { display: none; }
+    /* На компʼютері — панель під аватаром, а не шторка знизу. */
+    .mn-sheet { top: 88px; right: max(16px, calc((100vw - 1440px) / 2 + 24px)); bottom: auto; left: auto; transform: none; width: 420px; max-height: calc(100vh - 110px);
+        border-radius: 28px; box-shadow: 0 24px 60px -24px rgba(15, 23, 42, .45); }
+    .mn-sheet.is-open { animation: mn-drop .22s cubic-bezier(.2, .8, .2, 1); }
+    .mn-sheet .sheet-grabber { display: none; }
+    .mn-sheet .sheet-header { padding-top: 16px; }
+}
+@keyframes mn-drop { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* ---------- Спільні елементи нових екранів ---------- */
+.sv-card {
+    display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; min-width: 0; padding: 24px; border: 0; border-radius: 28px;
+    background: #fff; color: #000; font: inherit; text-align: left;
+}
+button.sv-card { cursor: pointer; transition: transform .3s cubic-bezier(.2, .8, .2, 1), box-shadow .3s ease; }
+button.sv-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .28); }
+.sv-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sv-card-head h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
+.sv-card-head > span { color: var(--sv-muted); font-size: 15px; font-weight: 700; }
+.sv-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 0 26px; border: 0; border-radius: 999px;
+    background: #000; color: #fff; font: 800 16px var(--font); cursor: pointer; transition: background .2s ease, transform .15s ease;
+}
+.sv-btn:hover { background: #262626; }
+.sv-btn:active { transform: scale(.97); }
+.sv-btn:disabled { background: var(--sv-soft); color: #6B7280; cursor: not-allowed; transform: none; }
+.sv-btn.is-soft { background: var(--sv-soft); color: #000; font-weight: 700; }
+.sv-btn.is-soft:hover { background: #E2E7EE; }
+.sv-btn.is-white { min-height: 46px; padding: 0 18px; background: #fff; color: #000; font-weight: 700; }
+.sv-btn.is-white:hover { background: var(--sv-soft-2); }
+.sv-btn.is-white:disabled { background: rgba(255, 255, 255, .5); }
+.sv-btn.is-wide { width: 100%; }
+.sv-chip { align-self: flex-start; display: inline-flex; padding: 7px 14px; border-radius: 999px; background: var(--sv-soft); font-size: 13.5px; font-weight: 800; }
+.sv-chip.is-done { background: var(--sv-green-bg); color: #145C29; }
+.sv-chip.is-work { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
+.sv-chip.is-locked, .sv-chip.is-unknown { color: var(--sv-muted); }
+.sv-meter { display: block; height: 10px; border-radius: 5px; background: var(--sv-soft); overflow: hidden; }
+.sv-meter i { display: block; height: 100%; border-radius: 5px; background: #000; }
+
+/* ---------- «Сьогодні» ---------- */
+.td-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 18px; align-items: start; }
+.td-tasks { gap: 12px; padding: 28px; }
+.td-list { margin: 0; padding: 0; list-style: none; }
+.td-task {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) auto 16px; gap: 16px; align-items: center; width: calc(100% + 20px); min-height: 76px;
+    margin: 0 -10px; padding: 0 10px; border: 0; border-radius: 20px; background: none; color: #000; font: inherit; text-align: left; cursor: pointer;
+}
+.td-task:hover { background: var(--sv-soft-2); }
+.td-count { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: var(--sv-soft); font-size: 20px; font-weight: 800; }
+.td-count.is-hot { background: var(--sv-yellow); }
+.td-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.td-copy b { font-size: 17px; font-weight: 800; }
+.td-copy small { overflow: hidden; color: var(--sv-muted); font-size: 14.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.td-sum { font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.td-chev { font-size: 22px; font-weight: 800; }
+.td-clear { display: flex; flex-direction: column; gap: 4px; padding: 18px 0 6px; }
+.td-clear b { font-size: 20px; font-weight: 800; }
+.td-clear span { color: var(--sv-muted); font-weight: 600; }
+.td-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.td-label { color: var(--sv-muted); font-size: 15px; font-weight: 700; }
+.td-label b { color: #000; }
+.td-big { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.td-mid { font-size: 28px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.td-small { font-size: 14.5px; font-weight: 700; }
+.td-small.is-good { color: var(--sv-green); }
+.td-small.is-bad { color: var(--sv-red); }
+.td-deadline { background: var(--sv-yellow); }
+.td-deadline .td-label { color: var(--sv-yellow-ink); }
+.td-bars { display: flex; gap: 6px; margin: 4px 0; }
+.td-bars i { flex: 1; height: 10px; border-radius: 5px; background: var(--sv-soft); }
+.td-bars i.is-done { background: #000; }
+.td-bars i.is-work { background: #F2C94C; }
+.td-signing { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin-top: 18px; background: var(--sv-yellow); }
+.td-signing span { display: flex; flex-direction: column; gap: 2px; }
+.td-signing b { font-size: 18px; font-weight: 800; }
+.td-signing small { color: var(--sv-yellow-ink); font-size: 14.5px; font-weight: 600; }
+.td-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin: 18px 0; }
+
+/* ---------- Телефон ---------- */
+@media (max-width: 900px) {
+    .td-grid { grid-template-columns: minmax(0, 1fr); }
+    .td-tasks { padding: 20px; }
+    .td-task { grid-template-columns: 44px minmax(0, 1fr) 14px; gap: 12px; }
+    .td-task .td-sum { display: none; }
+    .td-count { width: 44px; height: 44px; border-radius: 14px; font-size: 17px; }
+    .td-big { font-size: 26px; }
+    .sv-card { padding: 20px; border-radius: 24px; }
+    .buh-top { padding: calc(10px + env(safe-area-inset-top)) 16px 8px; }
+    .buh-top-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .buh-nav { display: none; }
+    .buh-brand-mark { width: 40px; height: 40px; }
+    .buh-chip { min-height: 40px; padding: 0 12px; font-size: 12px; }
+    .buh-avatar { width: 40px; height: 40px; }
+    .buh-main { padding: 0 16px calc(104px + env(safe-area-inset-bottom)); }
+    .buh-head { padding: 6px 0 16px; }
+    .buh-head h1 { font-size: clamp(26px, 7.5vw, 32px); }
+    .buh-head span { font-size: 14.5px; }
+    .buh-more-mobile { display: flex !important; }
+    .buh-tabbar {
+        position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 120;
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 999px;
+        background: #fff; box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .35);
+    }
+    .buh-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 54px; border: 0; border-radius: 999px; background: none; color: #000; font: 700 10.5px var(--font); cursor: pointer; }
+    .buh-tab.active { background: #000; color: #fff; }
+    .buh-tab-icon { position: relative; display: block; line-height: 0; }
+    .buh-tab .buh-badge { position: absolute; top: -6px; left: 14px; min-width: 18px; height: 18px; padding: 0 5px; border: 2px solid #fff; font-size: 10px; }
+    body.buh-mode .toast-host, body.admin-sv .toast-host { bottom: calc(96px + env(safe-area-inset-bottom)); }
+}

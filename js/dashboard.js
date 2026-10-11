@@ -1,9 +1,8 @@
 // ============================================================
-// Головний дашборд панелі правління.
-//
-// Показує стан будинку одним поглядом і працює як навігація:
-// натиснув плитку — потрапив у потрібну вкладку, а не шукаєш її
-// серед шести.
+// «Сьогодні» панелі правління — як у бухгалтерії: що зробити
+// (заявки, звернення, протокол, звірка), поруч — збори й гроші на
+// рахунку, нижче — надходження, витрати й борги. Кожна картка веде
+// у свій розділ.
 // ============================================================
 import { db } from './firebase.js';
 import {
@@ -55,8 +54,6 @@ function plural(n, one, few, many) {
 }
 
 const num = (v) => new Intl.NumberFormat('uk-UA').format(v);
-
-const CHEVRON = '<svg class="dash-go" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
 
 export async function loadDashboard() {
     const host = document.getElementById('adminDashboard');
@@ -110,7 +107,6 @@ export async function loadDashboard() {
         const reqCount = (newReqCount || 0) + (workReqCount || 0);
         const activeMeetings = activePolls.filter(isMeeting);
         const verified = apts.filter(a => a.ownersStatus === 'confirmed').length;
-        const verifiedPct = aptCount ? Math.round(verified / aptCount * 100) : 0;
         const verificationLeft = Math.max(0, aptCount - verified);
         const debtors = apts.filter(a => parseMoney(a.balance) < -0.005);
         const debtSum = debtors.reduce((sum, a) => sum - parseMoney(a.balance), 0);
@@ -143,85 +139,63 @@ export async function loadDashboard() {
         const daysLeft = deadline && !isNaN(deadline)
             ? Math.max(0, Math.ceil((deadline - new Date()) / 86400000)) : null;
 
-        const urgent = [];
-        if (current && !current.protocolUrl) urgent.push({
-            tone: 'danger', tab: 'meetings', target: '#meetingsActive',
-            title: 'Перевірити дані для протоколу', note: 'Підсумки зборів і голосування ще не опубліковані'
-        });
-        if (changes) urgent.push({
-            tone: 'neutral', tab: 'directory', target: '.vf-card',
-            title: `Звірити ${changes} ${plural(changes, 'заявку', 'заявки', 'заявок')}`,
-            note: 'Зміни у списку співвласників чекають рішення'
-        });
-        if (requestsReady && reqCount) urgent.push({
-            tone: 'neutral', tab: 'requests', target: '.req-item',
-            title: `Відповісти на ${reqCount} ${plural(reqCount, 'звернення', 'звернення', 'звернень')}`,
-            note: 'Мешканці очікують відповідь правління'
-        });
+        // Справи — як «Що зробити» в бухгалтерії: число, що зробити, звідки, куди перейти.
+        const tasks = [];
+        if (changes) tasks.push({ count: changes, hot: true, tab: 'directory', target: '.vf-card',
+            title: 'Зміни співвласників', note: `${plural(changes, 'заявка чекає', 'заявки чекають', 'заявок чекають')} вашого рішення` });
+        if (requestsReady && newReqCount) tasks.push({ count: newReqCount, hot: true, tab: 'requests', target: '.req-item',
+            title: 'Нові звернення', note: 'Мешканці чекають відповіді правління' });
+        if (requestsReady && workReqCount) tasks.push({ count: workReqCount, tab: 'requests', target: '.req-item',
+            title: 'Звернення в роботі', note: 'Повідомте мешканцям, коли буде виконано' });
+        if (current && !current.protocolUrl) tasks.push({ count: 1, hot: true, tab: 'meetings', target: '#meetingsActive',
+            title: 'Протокол зборів', note: 'Підсумки голосування ще не опубліковані' });
+        if (directoryReady && verificationLeft) tasks.push({ count: verificationLeft, tab: 'directory', target: '.vf-cover',
+            title: 'Звірити квартири', note: `${verified} з ${aptCount} уже звірено — решта чекає перевірки` });
+        const total = tasks.reduce((sum, t) => sum + t.count, 0);
+        const go = (tab, target) => `data-tab="${tab}"${target ? ` data-target="${target}"` : ''}`;
 
-        const taskRows = urgent.length ? urgent.slice(0, 3).map(item => `
-            <button type="button" class="admin-task" data-tab="${item.tab}" data-target="${item.target}">
-                <span class="admin-task-mark task-${item.tone}">!</span>
-                <span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.note)}</small></span>
-                ${CHEVRON}
-            </button>`).join('') : `<div class="admin-all-clear"><b>Усе під контролем</b><span>Термінових завдань немає</span></div>`;
-
-        const meetingContent = current ? `
-            <div class="overview-card-head">
-                <div><span class="overview-kicker">Активні збори</span><h2>${escapeHtml(current.title || 'Загальні збори співвласників')}</h2></div>
-                <span class="admin-status status-live">Тривають</span>
-            </div>
-            <div class="overview-meeting-stats">
-                <span><b>${quorum ? `${String(quorum.ownersPct).replace('.', ',')}%` : '—'}</b><small>кворум</small></span>
-                <span><b>${agendaCount}</b><small>${plural(agendaCount, 'питання', 'питання', 'питань')}</small></span>
-                <span><b>${daysLeft === null ? '—' : daysLeft}</b><small>${daysLeft === 1 ? 'день лишився' : 'днів лишилось'}</small></span>
-            </div>
-            <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingsActive">Продовжити роботу ${CHEVRON}</button>` : !pollsReady ? `
-            <div class="overview-card-head"><div><span class="overview-kicker">Загальні збори</span><h2>Дані оновлюються</h2></div></div>
-            <p class="overview-empty-copy">Не вдалося отримати стан зборів. Інші показники залишаються доступними.</p>
-            <button type="button" class="overview-link" data-tab="meetings">Відкрити збори ${CHEVRON}</button>` : `
-            <div class="overview-card-head"><div><span class="overview-kicker">Загальні збори</span><h2>Активних зборів немає</h2></div></div>
-            <p class="overview-empty-copy">Підготуйте порядок денний, голосування та протокол в одному процесі.</p>
-            <button type="button" class="overview-link" data-tab="meetings" data-target="#meetingTitle">Створити збори ${CHEVRON}</button>`;
+        const meetingCard = current ? `
+            <button type="button" class="sv-card td-deadline" ${go('meetings', '#meetingsActive')}>
+                <span class="td-label">Загальні збори тривають</span>
+                <b class="td-big">${quorum ? `${String(quorum.ownersPct).replace('.', ',')}%` : '—'}</b>
+                <span class="td-small">кворум · ${agendaCount} ${plural(agendaCount, 'питання', 'питання', 'питань')}${daysLeft === null ? '' : ` · ${daysLeft === 0 ? 'останній день' : `ще ${daysLeft} дн.`}`} ›</span>
+            </button>` : `
+            <button type="button" class="sv-card" ${go('meetings', pollsReady ? '#meetingTitle' : '')}>
+                <span class="td-label">Загальні збори</span>
+                <b class="td-mid">${pollsReady ? 'Немає активних' : 'Оновлюються'}</b>
+                <span class="td-small">${pollsReady ? 'Порядок денний, голосування й протокол — в одному процесі ›' : 'Спробуйте оновити екран ›'}</span>
+            </button>`;
 
         host.innerHTML = `
-            <div class="admin-overview-head">
-                <div><span class="overview-kicker">Огляд будинку</span><h2>Що потребує уваги сьогодні</h2></div>
-                <span class="overview-updated">Оновлено щойно</span>
-            </div>
             ${unavailable.length ? `<div class="overview-partial" role="status">Частина даних тимчасово недоступна. Показуємо все, що вдалося завантажити.</div>` : ''}
-            <div class="overview-status-grid">
-                <section class="overview-card overview-data-card">
-                    <div class="overview-card-head"><div><span class="overview-kicker">Оновлення даних</span><h2>${directoryReady ? `${verified} з ${aptCount} квартир` : 'Дані оновлюються'}</h2></div><span class="overview-percent">${directoryReady ? `${verifiedPct}%` : '—'}</span></div>
-                    <div class="overview-progress" role="progressbar" aria-label="Звірено квартир" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${verifiedPct}"><i style="width:${verifiedPct}%"></i></div>
-                    <p>${directoryReady ? `${verificationLeft ? `${verificationLeft} ${plural(verificationLeft, 'квартира потребує', 'квартири потребують', 'квартир потребують')} перевірки` : 'Усі квартири перевірено'}${changes ? ` · ${changes} змін очікують рішення` : ''}` : 'Не вдалося отримати дані квартир. Спробуйте оновити екран.'}</p>
-                    <button type="button" class="overview-link" data-tab="directory" data-target=".vf-cover">Продовжити звірку ${CHEVRON}</button>
+            <div class="td-grid">
+                <section class="sv-card td-tasks" aria-label="Що зробити">
+                    <div class="sv-card-head"><h2>Що зробити</h2><span>${total ? `${total} ${plural(total, 'справа', 'справи', 'справ')}` : ''}</span></div>
+                    ${tasks.length ? `<ul class="td-list">${tasks.map(t => `<li>
+                        <button type="button" class="td-task" ${go(t.tab, t.target)}>
+                            <span class="td-count${t.hot ? ' is-hot' : ''}">${t.count}</span>
+                            <span class="td-copy"><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.note)}</small></span>
+                            <span class="td-sum"></span>
+                            <span class="td-chev" aria-hidden="true">›</span>
+                        </button></li>`).join('')}</ul>`
+                    : '<div class="td-clear"><b>Усе вирішено</b><span>Нових звернень і заявок немає. Щойно мешканці напишуть чи збори потребуватимуть рішення — справа зʼявиться тут.</span></div>'}
                 </section>
-                <section class="overview-card overview-requests-card">
-                    <div class="overview-card-head"><div><span class="overview-kicker">Звернення мешканців</span><h2>${requestsReady ? reqCount : '—'} відкритих</h2></div></div>
-                    <div class="overview-request-values"><span class="is-new"><b>${newReqCount ?? '—'}</b><small>нові</small></span><span><b>${workReqCount ?? '—'}</b><small>у роботі</small></span></div>
-                    <button type="button" class="overview-link" data-tab="requests" data-target=".req-item">Опрацювати звернення ${CHEVRON}</button>
-                </section>
-            </div>
-            <section class="overview-finance-card">
-                <div class="overview-finance-head"><div><span class="overview-kicker">Фінанси ОСББ</span><h2>${escapeHtml(finance.period || (financeReady ? 'Поточний період' : 'Дані оновлюються'))}</h2></div><button type="button" class="overview-link" data-tab="finance">Відкрити фінанси ${CHEVRON}</button></div>
-                <div class="overview-finance-body">
-                    <div class="overview-balance"><small>Залишок на рахунку</small><strong>${moneyText(funds)}</strong><span>${finance.fundsDate ? `Станом на ${escapeHtml(finance.fundsDate)}` : 'За останньою внесеною випискою'}</span></div>
-                    <div class="overview-finance-metrics">
-                        <div class="finance-stat is-income"><small>Надходження</small><b>${moneyText(income)}</b></div>
-                        <div class="finance-stat is-expense"><small>Витрати</small><b>${moneyText(spent)}</b></div>
-                        <div class="finance-stat is-debt"><small>Заборгованість</small><b>${moneyText(directoryReady ? debtSum : null)}</b><span>${directoryReady ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')}` : 'дані оновлюються'}</span></div>
-                    </div>
+                <div class="td-side">
+                    ${meetingCard}
+                    <button type="button" class="sv-card td-balance" ${go('finance')}>
+                        <span class="td-label">На рахунку ОСББ</span>
+                        <b class="td-big">${moneyText(funds)}</b>
+                        <span class="td-small">${finance.fundsDate ? `станом на ${escapeHtml(finance.fundsDate)}` : 'за останньою випискою'} ›</span>
+                    </button>
                 </div>
-                ${income !== null ? `<div class="overview-finance-ratio"><span>Витрачено ${spentShare}% надходжень</span><div class="overview-progress"><i style="width:${spentShare}%"></i></div></div>` : ''}
-            </section>
-            <div class="overview-lower-grid">
-                <section class="overview-card overview-meeting-card">${meetingContent}</section>
-                <aside class="overview-card overview-tasks-card">
-                    <div class="admin-tasks-head"><h2>Термінові завдання</h2><span>${urgent.length}</span></div>
-                    ${taskRows}
-                    <button type="button" class="admin-all-tasks" data-tab="requests">Усі завдання →</button>
-                </aside>
+            </div>
+            <div class="td-row">
+                <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Надходження${finance.period ? ` · ${escapeHtml(finance.period)}` : ''}</span><b class="td-mid">${moneyText(income)}</b>
+                    <span class="td-small">внески й інші доходи</span></button>
+                <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Витрати</span><b class="td-mid">${moneyText(financeReady ? spent : null)}</b>
+                    ${income !== null ? `<span class="sv-meter" aria-hidden="true"><i style="width:${spentShare}%"></i></span><span class="td-small">витрачено ${spentShare}% надходжень</span>` : '<span class="td-small">за звітом</span>'}</button>
+                <button type="button" class="sv-card" ${go('directory')}><span class="td-label">Борг мешканців</span><b class="td-mid">${moneyText(directoryReady ? debtSum : null)}</b>
+                    <span class="td-small${debtors.length ? ' is-bad' : ''}">${directoryReady ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')} ›` : 'дані оновлюються'}</span></button>
             </div>`;
 
         host.querySelectorAll('[data-tab]').forEach(el => {
