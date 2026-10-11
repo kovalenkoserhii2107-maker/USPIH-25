@@ -12,7 +12,7 @@ import {
     PAYMENT_KINDS, PAYMENT_STATUS, ACCOUNT_PURPOSES
 } from './buh-data.js';
 import { payExpense, openExpenses } from './buh-expenses.js';
-import { remaining } from './docs-core.js';
+import { remaining, paidByDocuments, coveredByDocuments } from './docs-core.js';
 import { validIban } from './nbu-qr.js';
 import { toKop as kop } from './charges-core.js';
 
@@ -26,12 +26,16 @@ let docs = [];            // погоджені документи, за яки�
 /** Рахунок для списання за замовчуванням — поточний. */
 export const defaultAccount = accounts => (accounts.find(a => a.purpose === 'current') || accounts[0])?.iban || '';
 
-/** Пропозиції, які ще актуальні: не відкладені й не відправлені. */
+/**
+ * Пропозиції, які ще актуальні: не відкладені, не відправлені й не тому,
+ * кому платимо за документами (одне правило для «Рішень» і «Платежів»).
+ */
 export async function activeProposals() {
-    const [context, payments] = await Promise.all([loadPaymentContext(), loadPayments()]);
+    const [context, payments, expenses] = await Promise.all([loadPaymentContext(), loadPayments(), loadExpenses().catch(() => null)]);
     const skipped = skippedProposals();
     const sentKeys = new Set(payments.filter(p => ['sending', 'unknown', 'sent', 'paid'].includes(p.status)).map(p => p.proposalKey).filter(Boolean));
-    return { context, list: context.proposals.filter(p => !skipped.has(p.proposalKey) && !sentKeys.has(p.proposalKey)) };
+    const byDocs = paidByDocuments(expenses);
+    return { context, list: context.proposals.filter(p => !skipped.has(p.proposalKey) && !sentKeys.has(p.proposalKey) && !coveredByDocuments(p, byDocs)) };
 }
 
 /** Відправити пропозицію в банк — і з «Платежів», і з «Вхідних». */
@@ -148,10 +152,6 @@ export async function loadPaymentsView() {
     const inBank = new Set(payments.filter(p => p.expenseId && ['sending', 'unknown', 'sent'].includes(p.status)).map(p => p.expenseId));
     docs = (expenses?.expenses || []).filter(e => e.status === 'approved' && remaining(e) > 0 && !inBank.has(e.id))
         .map(e => ({ ...e, docTypeName: expenses.docTypes?.[e.docType] }));
-    // Є погоджений документ — платимо за ним, а не регулярною пропозицією тому самому отримувачу (інакше — двічі).
-    const iban = v => String(v || '').replace(/\s+/g, '').toUpperCase();
-    const docIbans = new Set(docs.map(e => iban(expenses.suppliers?.find(x => x.id === e.supplierId)?.iban)).filter(Boolean));
-    const regular = list.filter(p => !docIbans.has(iban(p.recipient?.iban)));
     const waiting = payments.filter(p => ['sent', 'sending', 'unknown'].includes(p.status));
     const failed = payments.filter(p => p.status === 'failed');
     const now = new Date();
@@ -183,7 +183,7 @@ export async function loadPaymentsView() {
                 </section>
                 <section class="py-card">
                     <div class="py-card-head"><h2>Варто створити</h2><span>за погодженими документами й регулярними платежами</span></div>
-                    ${suggestHtml(regular, account)}
+                    ${suggestHtml(list, account)}
                 </section>
                 <section class="py-card">
                     <div class="py-card-head"><h2>Виконані цього місяця${done.length ? ` · ${done.length}` : ''}</h2>${done.length ? `<b class="py-total is-muted">${money(done.reduce((s, p) => s + p.amountKop, 0))}</b>` : ''}</div>

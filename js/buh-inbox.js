@@ -429,9 +429,6 @@ export async function collectInbox() {
     dirCache = dir;
     exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
-    // Кому платимо за документами (щомісячний договір) — тому регулярний платіж «за історією» не пропонуємо.
-    const byDocs = new Set((ex?.contracts || []).filter(c => c.status === 'approved' && c.type === 'monthly')
-        .map(c => ex.suppliers.find(s => s.id === c.supplierId)?.iban).filter(Boolean));
     items = chargeItems(charges)
         .concat(budgetItems(budget))
         .concat(openingItems(journal, session.role === 'chair'))
@@ -440,7 +437,7 @@ export async function collectInbox() {
         .concat(reportItems(reports))
         .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
-        .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
+        .concat(payAccount ? pays.list.map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
     return { items, queue, charges, expenses: ex, payments, budget, journal, payroll, reports };
 }
 
