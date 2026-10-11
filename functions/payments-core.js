@@ -138,7 +138,21 @@ function alreadyPaidThisMonth(rec, payments, history, date) {
         || history.some(t => normIban(t.counterparty?.account) === rec.key && same(t.at));
 }
 
+/** Нагадування голові: скільки платежів чекає підпису, на яку суму, і перші три отримувачі. */
+const REMIND_EVERY_MS = 60 * 60 * 1000;
+function reminderText(waiting) {
+    const total = waiting.reduce((s, p) => s + (p.amountKop || 0), 0);
+    const n = waiting.length;
+    const word = n % 10 === 1 && n % 100 !== 11 ? 'платіж чекає' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'платежі чекають' : 'платежів чекають';
+    const names = waiting.slice(0, 3).map(p => p.recipient?.name).filter(Boolean);
+    const more = n > 3 ? ` і ще ${n - 3}` : '';
+    return {
+        title: `${n} ${word} вашого підпису`,
+        body: `${names.join(', ')}${more}: разом ${fromKop(total).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} грн. Підпишіть у Приват24 для бізнесу.`
+    };
+}
+
 module.exports = {
     MAX_PURPOSE, validIban, checkPayment, matchesPayment, recurringRecipients, purposeForMonth, alreadyPaidThisMonth,
-    normText, fromKop
+    normText, fromKop, reminderText, REMIND_EVERY_MS
 };

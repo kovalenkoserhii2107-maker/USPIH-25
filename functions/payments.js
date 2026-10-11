@@ -256,6 +256,33 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         return { proposals, recipients: [...recipients.values()], accounts };
     }
 
+    /**
+     * Нагадати голові про платежі на підписі: одне push-сповіщення з
+     * переліком, не частіше ніж раз на годину (позначка — bank/payReminder).
+     */
+    async function remind(actor, role) {
+        const snap = await db.collection('payments').where('status', '==', 'sent').get();
+        const waiting = snap.docs.map(d => d.data());
+        if (!waiting.length) fail('failed-precondition', 'Немає платежів, що чекають підпису голови');
+        const mark = db.doc('bank/payReminder');
+        await db.runTransaction(async t => {
+            const last = (await t.get(mark)).data()?.at?.toMillis?.() || 0;
+            if (Date.now() - last < core.REMIND_EVERY_MS) fail('resource-exhausted', 'Голові вже нагадали протягом останньої години');
+            t.set(mark, { at: FieldValue.serverTimestamp(), by: actor });
+        });
+        const { title, body } = core.reminderText(waiting);
+        try {
+            await notify?.({ roles: ['chair'], title, body, link: 'admin.html' });
+        } catch (e) {
+            // Сповіщення не пішло — знімаємо позначку, щоб можна було повторити одразу.
+            await mark.delete().catch(() => {});
+            logger.warn('Нагадування голові', e);
+            fail('unavailable', 'Не вдалося надіслати сповіщення голові — спробуйте ще раз');
+        }
+        await audit(actor, role, 'payment.remind', 'payments', title, { count: waiting.length });
+        return { count: waiting.length };
+    }
+
     const paymentAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, callGuard('paymentAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
@@ -263,9 +290,10 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         if (data.action === 'create') return create(actor, role, data);
         if (data.action === 'cancel') return cancel(actor, role, data);
         if (data.action === 'resolve') return resolve(actor, role, data);
+        if (data.action === 'remind') return remind(actor, role);
         if (data.action === 'context') return contextFor();
         fail('invalid-argument', 'Невідома дія');
     }));
 
-    return { paymentAction, actions: { create, cancel, resolve } };
+    return { paymentAction, actions: { create, cancel, resolve, remind } };
 };
