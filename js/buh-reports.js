@@ -14,6 +14,7 @@ import { loadReports, loadPayrollReport, reportsAct, reportsQuery, uploadReportF
 import { zip, saveBlob } from './xlsx-write.js';
 import { fmtKop } from './charges-core.js';
 import { deadlines, humanDate } from './tax-calendar.js';
+import { reportSteps, nextAction, pickFocus } from './reports-view-core.js';
 
 const E_CABINET = 'https://cabinet.tax.gov.ua/';
 const MONTHS = ['січень', 'лютий', 'березень', 'квітень', 'травень', 'червень', 'липень', 'серпень', 'вересень', 'жовтень', 'листопад', 'грудень'];
@@ -36,6 +37,7 @@ let ctx = null;
 let selected = null;        // ключ відкритого строку
 let detail = null;          // дані розрахунку за місяць
 let xmlState = null;        // { settings } — форма реквізитів, { problems } чи { files } — результат XML
+let heroDetail = null;      // дані розрахунку для картки зверху
 
 /** Місяць звіту з ключа календаря: 'j0500111-2026-10' → '2026-10'. */
 export function periodOfKey(key) {
@@ -239,6 +241,53 @@ function detailHtml(t) {
     return `${body}${markHtml(t)}`;
 }
 
+// ------------------------------------------------------------
+// ГОЛОВНИЙ СТРОК І НАЙБЛИЖЧІ
+// ------------------------------------------------------------
+const CHECK = '<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M7.5 12.5l3 3 6-6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const dueText = t => `до ${humanDate(t.date)}`;
+const KICKER = { report: 'До податкової', payment: 'Сплата', decision: 'Рішення зборів' };
+
+function heroHtml(t) {
+    if (!t) return `<section class="py-card rp-hero"><span class="bk-label">Звіти</span><h2 class="rp-hero-title">Найближчим часом нічого подавати не треба</h2>
+        <p class="py-note">Строки нижче — за календарем ДПС; позначки й квитанції зберігаються тут.</p></section>`;
+    const left = leftText(t);
+    const head = `<div class="rp-hero-head"><div><span class="bk-label">${escapeHtml(KICKER[t.kind] || 'Строк')}${periodOfKey(t.key) ? ` · за ${escapeHtml(monthName(periodOfKey(t.key)))}` : ''}</span>
+            <h2 class="rp-hero-title">${escapeHtml(t.title)}</h2></div>
+        <span class="rp-due${!t.done && t.left <= 3 ? ' is-near' : ''}">${escapeHtml(dueText(t))}${left ? `<small>${left}</small>` : ''}</span></div>`;
+    if (!t.key.startsWith('j0500111-')) {
+        return `<section class="py-card rp-hero">${head}<p class="py-note">${escapeHtml(t.detail)}</p>
+            <div class="rp-hero-actions"><button type="button" class="sv-btn" data-act="hero-open">Відкрити й позначити</button></div></section>`;
+    }
+    const d = heroDetail?.key === t.key ? heroDetail : null;
+    const steps = reportSteps({ approved: d?.status === 'approved', hasIncome: !d || d.income.length > 0, mark: t.mark });
+    const next = nextAction(steps);
+    const s = d?.summary;
+    return `<section class="py-card rp-hero" id="rpHero">${head}
+        <ol class="rp-steps">${steps.map(st => `<li class="is-${st.state}"><span class="rp-dot" aria-hidden="true">${st.state === 'done' ? CHECK : ''}</span>
+            <span class="rp-step"><b>${escapeHtml(st.title)}</b><small>${escapeHtml(st.note)}</small></span></li>`).join('')}</ol>
+        ${s && d.income.length ? `<div class="rp-sums">
+            <div><span>Дохід</span><b>${fmtKop(s.grossKop)}</b></div><div><span>ПДФО</span><b>${fmtKop(s.pdfoKop)}</b></div>
+            <div><span>Військовий збір</span><b>${fmtKop(s.vzKop)}</b></div><div><span>ЄСВ</span><b>${fmtKop(s.esvKop)}</b></div></div>` : d ? '' : '<p class="py-note">Рахую суми…</p>'}
+        <div class="rp-hero-actions">
+            ${next ? (next.act === 'go-payroll' ? `<button type="button" class="sv-btn" data-go="payroll">${next.label}</button>`
+                : `<button type="button" class="sv-btn" data-act="${next.act}"${next.act === 'hero-xml' && d?.status !== 'approved' ? ' disabled' : ''}>${next.label}</button>`) : ''}
+            <button type="button" class="sv-btn is-soft" data-act="hero-open">Розрахунок і позначка</button>
+            <a class="sv-btn is-soft" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a>
+        </div>
+    </section>`;
+}
+
+function sideHtml(t) {
+    const [label, cls] = t.mark ? STATUS[t.mark.status] || [t.mark.status, ''] : t.left < 0 ? ['прострочено', 'is-bad'] : ['', ''];
+    return `<button type="button" class="py-card rp-side${!t.done && t.left <= 3 ? ' is-near' : ''}" data-act="open" data-key="${escapeHtml(t.key)}">
+        <span class="bk-label">${escapeHtml(t.title)}</span>
+        <b class="rp-side-due">${escapeHtml(dueText(t))}</b>
+        <span class="py-muted">${escapeHtml(t.detail)}</span>
+        ${label ? `<span class="sv-chip ${cls === 'is-payment' ? 'is-done' : cls === 'is-error' ? 'is-bad' : cls}">${escapeHtml(label)}</span>` : `<span class="rp-side-left">${leftText(t)}</span>`}
+    </button>`;
+}
+
 export async function loadReportsView() {
     ctx = await loadReports();
     const tasks = reportTasks(ctx);
@@ -253,12 +302,22 @@ export async function loadReportsView() {
             if (host) host.innerHTML = detailHtml(open);
         }).catch(e => toast(e.message, 'error'));
     }
+    const focus = pickFocus(tasks);
+    if (focus.hero?.key.startsWith('j0500111-') && heroDetail?.key !== focus.hero.key) {
+        const key = focus.hero.key;
+        loadPayrollReport(periodOfKey(key)).then(d => {
+            heroDetail = d;
+            const host = document.getElementById('rpHero');
+            if (host && focus.hero.key === key) host.outerHTML = heroHtml(focus.hero);
+        }).catch(() => {});
+    }
     const attention = tasks.filter(t => !t.done && t.left <= 30);
     const later = tasks.filter(t => !t.done && t.left > 30);
     const done = tasks.filter(t => t.done).reverse();
-    const group = (title, list, empty) => `<section class="buh-card"><div class="buh-card-head"><h2>${title}</h2><span>${list.length || ''}</span></div>
-        ${list.length ? `<ul class="deadline-list rp-list">${list.map(rowHtml).join('')}</ul>` : `<p class="list-empty">${empty}</p>`}</section>`;
+    const group = (title, list, empty) => `<section class="py-card rp-group"><div class="py-card-head"><h2>${title}</h2><span>${list.length || ''}</span></div>
+        ${list.length ? `<ul class="deadline-list rp-list">${list.map(rowHtml).join('')}</ul>` : `<p class="py-empty">${empty}</p>`}</section>`;
     document.getElementById('viewReports').innerHTML = `
+        <div class="rp-top">${heroHtml(focus.hero)}${focus.side.length ? `<div class="rp-sides">${focus.side.map(sideHtml).join('')}</div>` : ''}</div>
         ${group('Найближчі строки', attention, 'Найближчим місяцем нічого подавати не треба')}
         ${later.length ? group('Далі', later, '') : ''}
         ${group('Виконано', done, 'Позначок ще немає')}
@@ -287,11 +346,15 @@ function csv() {
 async function onAction(btn) {
     const a = btn.dataset.act;
     try {
-        if (a === 'open') {
-            selected = selected === btn.dataset.key ? null : btn.dataset.key;
-            detail = null;
+        if (a === 'open' || a === 'hero-open' || a === 'hero-xml') {
+            const key = a === 'open' ? btn.dataset.key : pickFocus(reportTasks(ctx)).hero?.key;
+            const fromList = a === 'open' && btn.classList.contains('rp-row');
+            selected = fromList && selected === key ? null : key;
+            detail = selected && heroDetail?.key === selected ? heroDetail : null;
             xmlState = null;
             await loadReportsView();
+            if (!fromList) document.getElementById('rpDetail')?.closest('.rp-item')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (a === 'hero-xml' && detail) { await buildXml(btn); document.getElementById('rpXml')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
             return;
         }
         if (a === 'csv' && detail) { csv(); return; }

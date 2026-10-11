@@ -1073,3 +1073,52 @@ button.pr-kpi:active { transform: scale(.98); }
     .pr-tax { grid-template-columns: minmax(0, 1fr); }
     .pr-lines .is-total { font-size: 19px; }
 }
+
+/* ---------- Звіти: головний строк по кроках і найближчі строки ---------- */
+.rp-top { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 18px; align-items: start; margin-bottom: 18px; }
+.rp-top > .rp-hero:only-child { grid-column: 1 / -1; }
+.rp-hero { gap: 18px; }
+.rp-hero-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.rp-hero-head > div { display: flex; flex-direction: column; gap: 4px; }
+.rp-hero-title { margin: 0; font-size: clamp(26px, 3vw, 34px); font-weight: 800; letter-spacing: -.02em; }
+.rp-due { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 9px 16px; border-radius: 18px; background: var(--sv-soft); font-size: 15px; font-weight: 800; }
+.rp-due small { color: var(--sv-muted); font-size: 12.5px; font-weight: 700; }
+.rp-due.is-near { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
+.rp-steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.rp-steps li { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 16px; padding-bottom: 18px; }
+.rp-steps li:last-child { padding-bottom: 0; }
+.rp-steps li:not(:last-child)::before { content: ''; position: absolute; top: 30px; bottom: 2px; left: 13px; width: 2px; background: #D3D9E1; }
+.rp-steps li.is-done:not(:last-child)::before { background: #000; }
+.rp-dot { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #000; }
+.rp-steps .is-current .rp-dot { box-shadow: inset 0 0 0 3px #000; background: var(--sv-yellow); }
+.rp-steps .is-next .rp-dot { box-shadow: inset 0 0 0 2px #D3D9E1; }
+.rp-steps .is-bad .rp-dot { background: var(--sv-red); }
+.rp-step { display: flex; flex-direction: column; gap: 3px; padding-top: 3px; }
+.rp-step b { font-size: 16.5px; font-weight: 800; }
+.rp-step small { color: var(--sv-muted); font-size: 14px; font-weight: 600; }
+.rp-steps .is-next .rp-step b { color: var(--sv-muted); }
+.rp-steps .is-bad .rp-step small { color: var(--sv-red); }
+.rp-sums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.rp-sums > div { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 18px; background: var(--sv-soft-2); }
+.rp-sums span { color: var(--sv-muted); font-size: 13.5px; font-weight: 700; }
+.rp-sums b { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.rp-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.rp-hero-actions .sv-btn { width: auto; text-decoration: none; }
+.rp-sides { display: flex; flex-direction: column; gap: 18px; }
+.rp-side { gap: 6px; border: 0; color: #000; font: inherit; text-align: left; cursor: pointer; transition: transform .15s ease; }
+.rp-side:active { transform: scale(.98); }
+.rp-side.is-near { box-shadow: inset 0 0 0 2px var(--sv-yellow); }
+.rp-side-due { font-size: 24px; font-weight: 800; }
+.rp-side-left { color: var(--sv-muted); font-size: 13.5px; font-weight: 700; }
+.rp-group { margin-bottom: 18px; }
+#viewReports .rp-group .deadline-list { margin: 0; }
+#viewReports .rp-row { border-radius: 18px; }
+@media (max-width: 1100px) {
+    .rp-top { grid-template-columns: minmax(0, 1fr); }
+    .rp-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+}
+@media (max-width: 900px) {
+    .rp-sums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rp-hero-actions .sv-btn { flex: 1 1 100%; }
+    .rp-due { align-items: flex-start; }
+}
