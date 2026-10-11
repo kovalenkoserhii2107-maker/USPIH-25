@@ -72,3 +72,13 @@ test('платіж цього місяця вже є — не пропонуєм
     assert.equal(pay.alreadyPaidThisMonth(rec, [{ recipient: { iban: SUPPLIER }, status: 'canceled', createdAt: new Date('2026-11-02') }], [], now), false);
     assert.equal(pay.alreadyPaidThisMonth(rec, [], [{ at: new Date('2026-10-05'), counterparty: { account: SUPPLIER } }], now), false);
 });
+
+test('нагадування голові: кількість, сума й перші три отримувачі', () => {
+    const one = pay.reminderText([{ recipient: { name: 'Отримувач А' }, amountKop: 665819 }]);
+    assert.equal(one.title, '1 платіж чекає вашого підпису');
+    assert.equal(one.body.replace(/\s/g, ' '), 'Отримувач А: разом 6 658,19 грн. Підпишіть у Приват24 для бізнесу.');
+    const five = pay.reminderText(['А', 'Б', 'В', 'Г', 'Ґ'].map(n => ({ recipient: { name: n }, amountKop: 100 })));
+    assert.equal(five.title, '5 платежів чекають вашого підпису');
+    assert.match(five.body, /^А, Б, В і ще 2: разом 5,00 грн/);
+    assert.equal(pay.reminderText([{ amountKop: 1 }, { amountKop: 1 }]).title, '2 платежі чекають вашого підпису');
+});
