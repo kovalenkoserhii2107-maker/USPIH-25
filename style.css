@@ -172,16 +172,11 @@ body.no-scroll {
     gap: 12px;
 }
 .nav-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* Знак застосунку — та сама картинка, що й іконка на телефоні, усюди однаково. */
+.app-icon { display: block; flex-shrink: 0; object-fit: cover; background: #1c2b44; border-radius: 23%; }
 .nav-logo-tile {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 36px; height: 36px;
-    background: var(--surface);
-    border-radius: var(--r-sm);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
-    border: 0.5px solid rgba(0, 0, 0, 0.06);
-    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 .nav-brand-text { display: flex; flex-direction: column; min-width: 0; }
 /* Номер квартири й парадна дублювалися з герой-карткою одразу
@@ -478,14 +473,9 @@ select.field-input {
 /* Шапка екранів входу та зміни пароля */
 .auth-brand { text-align: center; margin-bottom: 26px; }
 .auth-logo {
-    display: inline-flex;
-    align-items: center; justify-content: center;
     width: 84px; height: 84px;
-    background: var(--surface);
-    border-radius: 22px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-    border: 0.5px solid rgba(0, 0, 0, 0.06);
-    margin-bottom: 14px;
+    margin: 0 auto 14px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
 }
 .auth-brand-title {
     margin: 0;
@@ -3245,7 +3235,7 @@ select.field-input {
     padding: 0 8px; border-radius: 9px; background: var(--surface);
     animation: sc-in 0.5s both;
 }
-.sc-logo { width: 14px; height: 14px; border-radius: 4px; background: var(--blue); }
+.sc-logo { width: 14px; height: 14px; border-radius: 4px; background: #1c2b44 url('assets/icons/icon-192x192.png') center / cover; }
 .sc-name { flex: 1; height: 6px; border-radius: 3px; background: rgba(120,120,128,0.35); max-width: 78px; }
 .sc-bell { width: 12px; height: 12px; border-radius: 50%; background: rgba(0,122,255,0.25); }
 .sc-hero {
@@ -4079,4 +4069,9 @@ select.field-input {
 .balance-parts li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
 .balance-parts span { opacity: .8; }
 .balance-parts b { font-weight: 600; white-space: nowrap; }
+.lg-parts { margin: 0 0 12px; padding: 10px 14px; border-radius: var(--r-md, 14px); background: var(--surface); }
+.lg-parts summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.lg-parts .balance-parts { font-size: 13px; }
+.lg-parts .is-debt { color: var(--red, #d70015); }
+.lg-parts .is-credit { color: var(--green, #248a3d); }
 .lg-note p { white-space: pre-line; }

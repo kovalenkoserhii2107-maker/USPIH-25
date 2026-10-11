@@ -21,15 +21,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=162">
-    <link rel="stylesheet" href="style-buh.css?v=162">
+    <link rel="stylesheet" href="style.css?v=163">
+    <link rel="stylesheet" href="style-buh.css?v=163">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=162">
+    <link rel="modulepreload" href="js/buh-main.js?v=163">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -72,7 +73,7 @@
     <div id="buhApp" class="buh" hidden>
         <header class="buh-top">
             <div class="buh-top-row">
-                <button class="buh-brand" type="button" data-go="today" aria-label="Сьогодні"><span class="buh-brand-mark">25</span><span><b>Успіх-25</b><small>Бухгалтерія</small></span></button>
+                <button class="buh-brand" type="button" data-go="today" aria-label="Сьогодні"><img class="buh-brand-mark app-icon" src="assets/icons/icon-192x192.png" alt="" width="44" height="44"><span><b>Успіх-25</b><small>Бухгалтерія</small></span></button>
                 <nav class="buh-nav" aria-label="Розділи бухгалтерії">
                     <button class="buh-nav-item" data-view="today" type="button"><span>Сьогодні</span><span class="buh-badge" id="buhInboxBadge" hidden></span></button>
                     <button class="buh-nav-item" data-view="month" type="button"><span>Місяць</span></button>
@@ -141,7 +142,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=162').catch(error => {
+    import('./js/buh-main.js?v=163').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
