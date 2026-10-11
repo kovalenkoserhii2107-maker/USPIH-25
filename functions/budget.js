@@ -183,7 +183,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             spentByItem.set(key, (spentByItem.get(key) || 0) + l.factKop);
             itemOf.set(key, l);
         }));
-        const items = [...spentByItem.entries()].filter(([, kop]) => kop > 0).map(([key, kop]) => ({ label: itemOf.get(key).title, item: itemOf.get(key).item, amount: fromKop(kop) }));
+        const items = [...spentByItem.entries()].filter(([, kop]) => kop !== 0).map(([key, kop]) => ({ label: itemOf.get(key).title, item: itemOf.get(key).item, amount: fromKop(kop) }));
         const start = `${year}-01` > '2026-10' ? `01.01.${year}` : '01.10.2026';
         const expenses = g.expenses.filter(e => ['approved', 'paid', 'storno'].includes(e.status) && String(e.period).startsWith(year))
             .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, PUBLIC_EXPENSES)

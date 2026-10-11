@@ -16,19 +16,20 @@ const org = { edrpou: '40562894', name: 'ОСББ «ТЕСТ»', katottg: 'UA511
     headName: 'Голова Тестовий', headTin: '3124567809' };
 const emp = { id: 'e1', name: 'Працівник Тестовий Іванович', kind: 'employee', position: 'двірник', salaryKop: 864700, fte: 1, mainJob: true, rnokpp: '3124567809',
     iban: 'UA223052990000026001234567890', taxNotified: true, from: '2026-10-16', gender: 'Ч', kpCode: '9141', hireDoc: 'Наказ № 1-к від 15.10.2026', insuranceYears: 10 };
-const half = { id: 'e2', name: 'Прибиральниця Тестова', kind: 'employee', position: 'прибиральниця', salaryKop: 432350, fte: 0.5, mainJob: true, rnokpp: '3124567809',
+const half = { id: 'e2', name: 'Прибиральниця Тестова', kind: 'employee', position: 'прибиральниця', salaryKop: 432350, fte: 0.5, mainJob: true, rnokpp: '3124567821',
     iban: 'UA223052990000026001234567890', taxNotified: true, from: '2026-01-01', gender: 'Ж', psp: { kind: '169.1.1', from: '2026-01-10' } };
-const gph = { id: 'g1', name: 'Виконавець Тестовий', kind: 'gph', position: 'прибирання території', rnokpp: '3124567809', iban: 'UA223052990000026001234567890',
+const gph = { id: 'g1', name: 'Виконавець Тестовий', kind: 'gph', position: 'прибирання території', rnokpp: '3124567880', iban: 'UA223052990000026001234567890',
     from: '2026-10-01', to: '2026-10-31', gender: 'Ч', contract: 'Договір № 5 від 01.10.2026' };
 
-const fop = [{ supplierId: 's1', name: 'ФОП Тестовий', rnokpp: '3124567809', amountKop: 1500000 }];
+const fop = [{ personId: 'fop:s1', kind: 'fop', sign: '157', name: 'ФОП Тестовий', rnokpp: '3124567809', grossKop: 1500000, paidKop: 1500000,
+    pdfoKop: 0, pdfoPaidKop: 0, vzKop: 0, vzPaidKop: 0 }];
 
 function pack() {
     const people = [emp, half, gph];
     const run = payroll.buildRun({ people, period: '2026-10',
         inputs: { g1: { actKop: 800000 }, e2: { absences: [{ type: 'sick', from: '2026-10-05', to: '2026-10-07', avgDailyKop: 14000 }] } } });
     const stored = { status: 'approved', run };
-    const report = reports.payrollReport({ period: '2026-10', stored, people: new Map(people.map(p => [p.id, p])), payments: [], fop });
+    const report = reports.payrollReport({ period: '2026-10', stored, people: new Map(people.map(p => [p.id, p])), payments: [], otherIncome: fop });
     return { run, report, out: dps.buildPackage({ period: '2026-10', org, report, run, people: new Map(people.map(p => [p.id, p])), fillDate: '2026-11-12' }) };
 }
 
@@ -39,10 +40,16 @@ function validate(file, xsdName) {
     fs.copyFileSync(path.join(__dirname, 'dps', 'common_types.local.xsd'), path.join(dir, 'common_types.xsd'));
     const xml = path.join(dir, 'doc.xml');
     fs.writeFileSync(xml, dps.encode1251(file.xml));
-    try { execFileSync('xmllint', ['--noout', '--schema', path.join(dir, `${xsdName}.xsd`), xml], { stdio: 'pipe' }); return null; }
-    catch (e) { return String(e.stderr || e.message); }
+    try {
+        const schema = path.join(dir, `${xsdName}.xsd`);
+        if (hasXmllint) execFileSync('xmllint', ['--noout', '--schema', schema, xml], { stdio: 'pipe' });
+        else execFileSync('python', ['-c', 'import sys; from lxml import etree; etree.XMLSchema(etree.parse(sys.argv[1])).assertValid(etree.parse(sys.argv[2]))', schema, xml], { stdio: 'pipe' });
+        return null;
+    } catch (e) { return String(e.stderr || e.message); }
+    finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 const hasXmllint = (() => { try { execFileSync('xmllint', ['--version'], { stdio: 'pipe' }); return true; } catch { return false; } })();
+const hasLxml = (() => { try { execFileSync('python', ['-c', 'from lxml import etree'], { stdio: 'pipe' }); return true; } catch { return false; } })();
 
 test('пакет: чотири файли з правильними іменами й звʼязками', () => {
     const { out } = pack();
@@ -55,10 +62,11 @@ test('пакет: чотири файли з правильними іменам
     assert.ok(out.files.every(f => f.xml.startsWith('<?xml version="1.0" encoding="windows-1251"?>')));
 });
 
-test('за офіційними XSD: розрахунок, Д1, 4ДФ, Д5', { skip: !hasXmllint && 'xmllint не встановлено' }, () => {
+test('структура за XSD ДПС з локальними common_types: розрахунок, Д1, 4ДФ, Д5', { skip: !hasXmllint && !hasLxml && 'Потрібен xmllint або Python lxml' }, () => {
     const { out } = pack();
     for (const [i, xsd] of ['J0500111', 'J0510111', 'J0510411', 'J0510511'].entries()) {
-        assert.equal(validate(out.files[i], xsd), null, `${xsd}: ${validate(out.files[i], xsd)}`);
+        const error = validate(out.files[i], xsd);
+        assert.equal(error, null, `${xsd}: ${error}`);
     }
 });
 
@@ -78,9 +86,9 @@ test('суми: розділ I розрахунку, Д1 і 4ДФ збігают
     assert.match(d1, /<T1RXXXXG8 ROWNUM="3">29<\/T1RXXXXG8>/);
     assert.match(d1, /<T1RXXXXG12 ROWNUM="3">3<\/T1RXXXXG12>/);
     // ЦПД — категорія 26, з днями договору, без ознаки неповного часу.
-    assert.match(d1, /<T1RXXXXG8 ROWNUM="4">26<\/T1RXXXXG8>/);
-    assert.match(d1, /<T1RXXXXG14 ROWNUM="4">31<\/T1RXXXXG14>/);
-    assert.doesNotMatch(d1, /<T1RXXXXG22 ROWNUM="4">/);
+    assert.match(d1, /<T1RXXXXG8 ROWNUM="5">26<\/T1RXXXXG8>/);
+    assert.match(d1, /<T1RXXXXG14 ROWNUM="5">31<\/T1RXXXXG14>/);
+    assert.doesNotMatch(d1, /<T1RXXXXG22 ROWNUM="5">/);
     assert.match(d1, /<T1RXXXXG22 ROWNUM="2">1<\/T1RXXXXG22>/);
     // 4ДФ: ознаки 101/102, ПСП 01 у півставки, дата прийому.
     assert.equal(Math.round(val(df4, 'R01G04A') * 100), report.income.reduce((s, x) => s + x.pdfoKop, 0));
@@ -102,6 +110,10 @@ test('суми: розділ I розрахунку, Д1 і 4ДФ збігают
 
 test('немає реквізитів чи даних людей — файлів немає, лише перелік', () => {
     const { run, report } = pack();
+    // Із затвердження збережено код професії: змінена жива картка його не стирає.
+    // Ця перевірка моделює відомість, у якій реквізит не був збережений.
+    delete run.rows.find(r => r.personId === emp.id).reporting.kpCode;
+    for (const r of report.relations.filter(r => r.personId === emp.id)) delete r.reporting.kpCode;
     const out = dps.buildPackage({ period: '2026-10', org: { ...org, katottg: '', headTin: '' }, report, run, people: new Map([[emp.id, { ...emp, kpCode: '' }]]), fillDate: '2026-11-12' });
     assert.deepEqual(out.files, []);
     assert.ok(out.problems.some(p => /КАТОТТГ/.test(p)));

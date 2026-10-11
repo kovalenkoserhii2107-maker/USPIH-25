@@ -9,9 +9,9 @@
 //   перерахунком), 1.2 ЦПД, 1.3 перші 5 днів лікарняних (ОСББ), 1.4
 //   лікарняні ПФУ; 2.1 база ЄСВ 22 % у межах максимальної, 2.5 додаткова
 //   база (доплата до мінімальної); 3.1 і 3.5 — ЄСВ з них; 7 — до сплати.
-//   Д1 — рядок на особу (категорія 1), лікарняні — окремим рядком
-//   (категорія 29), ЦПД — категорія 26; 4ДФ — доходи, ПДФО й ВЗ за
-//   ознаками 101/102 з ПСП і виплати ФОП (157);
+//   Д1 — зарплата (категорія 1), ЦПД (26), відпускні (тип 10),
+//   лікарняні (29), різниця до МЗП (тип 13) — окремими рядками;
+//   4ДФ — доходи, ПДФО й ВЗ за ознаками 101/102 з ПСП;
 //   Д5 — прийом і звільнення (категорія 1/2/3, код КП, документ).
 // Файли — у windows-1251, імʼя — за правилами ДПС (filename()).
 // Остаточно файл перевіряє Електронний кабінет під час завантаження:
@@ -21,6 +21,8 @@
 // ============================================================
 
 const SOFTWARE = 'OSBB Uspikh-25 accounting';
+const { esvParts } = require('./esv-core');
+const { validDate } = require('./expenses-core');
 const DOCS = { main: { sub: '001', name: 'J0500111' }, d1: { sub: '101', name: 'J0510111' }, df4: { sub: '104', name: 'J0510411' }, d5: { sub: '105', name: 'J0510511' } };
 
 // ------------------------------------------------------------
@@ -53,7 +55,6 @@ const col = (name, rows, pick) => rows.map((r, i) => {
     return v === null || v === undefined || v === '' ? '' : `<${name} ROWNUM="${i + 1}">${esc(v)}</${name}>`;
 }).join('');
 const sum = (list, f) => list.reduce((s, x) => s + (f(x) || 0), 0);
-const pct = (kop, bp) => Math.round(kop * bp / 10000);
 
 /** «Прізвище Ім'я По батькові» → [прізвище, імʼя, по батькові]. */
 function splitName(full) {
@@ -92,6 +93,7 @@ function orgProblems(org) {
     if (!String(org.address || '').trim()) out.push('Податкова адреса');
     if (!/^\d{10}$/.test(org.headTin || '') || !String(org.headName || '').trim()) out.push('Керівник: власне імʼя й прізвище та РНОКПП');
     if (org.accTin && !/^\d{10}$/.test(org.accTin)) out.push('РНОКПП бухгалтера — 10 цифр');
+    if (Boolean(org.accTin) !== Boolean(String(org.accName || '').trim())) out.push('Бухгалтер: вкажіть і імʼя, і РНОКПП або залиште обидва поля порожніми');
     return out;
 }
 
@@ -107,22 +109,38 @@ function orgProblems(org) {
  */
 function buildPackage({ period, org, report, run, people = new Map(), fillDate, num = 1, stan = 1 }) {
     const problems = orgProblems(org);
+    problems.push(...(report.checks || []).filter(c => c.level === 'block').map(c => c.text));
     if (report.status !== 'approved') problems.push('Відомість зарплати за місяць не затверджено');
+    if (stan !== 1) problems.push('Звітний новий та уточнюючий розрахунки потребують рядків виключення й введення та даних попереднього подання. Складіть коригування в Електронному кабінеті за CSV; автоматичний пакет доступний для звітного розрахунку.');
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(period) || !validDate(fillDate)) problems.push('Вкажіть правильний місяць і дату складання розрахунку');
+    if (!Number.isSafeInteger(num) || num < 1 || num > 9999) problems.push('Номер розрахунку — ціле число від 1 до 9999');
     const rows = run?.rows || [];
     const rate = run?.rate || {};
     const year = Number(period.slice(0, 4)), month = Number(period.slice(5, 7));
-    const card = r => people.get(r.personId) || {};
-    const tinOf = r => r.payee?.rnokpp || card(r).rnokpp || '';
+    const card = r => ({ ...(people.get(r.personId) || {}), ...(r.reporting || {}) });
+    const tinOf = r => r.payee ? r.payee.rnokpp || '' : card(r).rnokpp || '';
     for (const r of rows) {
         if (!/^\d{10}$/.test(tinOf(r))) problems.push(`${r.name}: немає РНОКПП`);
         if (!['Ж', 'Ч'].includes(card(r).gender)) problems.push(`${r.name}: стать (Ж/Ч) у картці — для Д1`);
+        if (r.correctionKop) problems.push(`${r.name}: перерахунок за минулий місяць потребує окремих рядків Д1 з місяцем і типом нарахувань та звірки 4ДФ; перенесіть дані за CSV в Електронний кабінет`);
+        if (r.fundSickKop && !(r.sickDays && r.absences?.some(a => a.type === 'sick'))) problems.push(`${r.name}: для лікарняних ПФУ немає місяця й днів хвороби; дані минулих місяців перенесіть окремими рядками Д1`);
+        if (r.fundDays && !r.fundSickKop) problems.push(`${r.name}: повний дохід за лікарняний ПФУ ще не визначено — звірте місячну базу ЄСВ перед поданням Д1`);
+        const parts = esvParts(r, rate);
+        if (!['grossKop', 'esvBaseKop', 'esvKop'].every(k => Number.isSafeInteger(r[k]) && r[k] >= 0)
+            || parts.some(p => !Number.isSafeInteger(p.baseKop) || p.grossKop < 0 || p.esvKop < 0)
+            || sum(parts, p => p.baseKop) !== r.esvBaseKop || sum(parts, p => p.esvKop) !== r.esvKop) {
+            problems.push(`${r.name}: затверджена база/сума ЄСВ не відповідає окремим рядкам Д1; потрібна перевірка відомості, її суми в XML не змінюються`);
+        }
     }
     for (const x of report.income || []) if (x.kind === 'fop' && !/^\d{10}$/.test(x.rnokpp || '')) problems.push(`${x.name}: РНОКПП ФОП (код у картці постачальника) — для 4ДФ`);
     const relations = report.relations || [];
     for (const rel of relations) {
-        const c = people.get(rel.personId) || {};
+        const c = card(rel);
+        if (!/^\d{10}$/.test(rel.rnokpp || '')) problems.push(`${rel.name}: немає РНОКПП для Д5`);
         if (rel.kind === 'employee' && !c.kpCode) problems.push(`${rel.name}: код класифікатора професій у картці — для Д5`);
-        if (!c.gender) problems.push(`${rel.name}: стать (Ж/Ч) у картці — для Д5`);
+        if (rel.kind === 'employee' && rel.event === 'start' && !c.hireDoc) problems.push(`${rel.name}: документ про прийняття — для Д5`);
+        if (rel.kind === 'employee' && rel.event === 'end' && (!c.fireDoc || !c.fireBasis)) problems.push(`${rel.name}: документ і підстава звільнення — для Д5`);
+        if (rel.kind === 'gph' && !c.contract) problems.push(`${rel.name}: договір ЦПД — для Д5`);
     }
     if (problems.length) return { files: [], problems: [...new Set(problems)] };
 
@@ -136,33 +154,27 @@ function buildPackage({ period, org, report, run, people = new Map(), fillDate, 
     const footer = `${el('HFILL', base.fill)}${el('HKBOS', org.headTin)}${el('HBOS', org.headName)}${el('HKBUH', org.accTin)}${el('HBUH', org.accName)}`;
     const top = `<${STAN_TAG[stan]}>1</${STAN_TAG[stan]}>${el('HZY', year)}${el('HZM', month)}`;
 
-    // ---------------- Д1: рядок на особу, лікарняні — окремим рядком (категорія 29) ----------------
-    const maxBase = (rate.minWageKop || 0) * (rate.maxBaseMult || 20);
+    // ---------------- Д1: одна максимальна база місяця, окремі види нарахувань ----------------
     const d1 = [];
     for (const r of rows) {
-        const sick = (r.sickKop || 0) + (r.fundSickKop || 0);
-        const gross = r.grossKop - sick;
-        const within = Math.min(gross, maxBase || gross);
-        const sickEsv = pct(sick, rate.esv || 2200);
-        const esvMain = r.esvKop - sickEsv;
-        // База ЄСВ без лікарняних мінус фактична зарплата в межах максимальної — доплата до мінімальної (рядок 2.5, графа 18 Д1).
-        const topUp = Math.max(0, (r.esvBaseKop - sick) - within);
         const days = (report.esv || []).find(e => e.personId === r.personId)?.days;
         const [s1, s2, s3] = splitName(r.name);
         const ident = { tin: tinOf(r), gender: card(r).gender, s1, s2, s3 };
-        // Категорія застрахованої особи: 1 — працівник, 26 — виконавець за договором ЦПД.
-        const gph = r.kind === 'gph';
-        d1.push({ ...ident, cat: gph ? '26' : '1', days, gross, within, topUp, esv: esvMain,
-            main: gph ? '0' : r.relationship?.mainJob === false ? '0' : '1', partTime: gph ? null : (r.fte || 1) < 1 ? '1' : '0' });
-        if (sick) d1.push({ ...ident, cat: '29', sickDays: r.sickDays || null, gross: sick, within: Math.min(sick, maxBase || sick), topUp: 0, esv: sickEsv, main: null, partTime: null });
+        for (const part of esvParts(r, rate)) {
+            const topUp = part.kind === 'topup', regular = part.kind === 'regular';
+            d1.push({ ...ident, cat: part.kind === 'sick' ? '29' : r.kind === 'gph' ? '26' : '1',
+                type: topUp ? '13' : part.kind === 'vacation' ? '10' : null,
+                days: regular ? days : null, sickDays: part.kind === 'sick' ? r.sickDays || null : null,
+                gross: topUp ? null : part.grossKop, within: topUp ? null : part.baseKop, topUp: topUp ? part.baseKop : null, esv: part.esvKop,
+                main: r.kind === 'employee' ? (r.relationship?.mainJob === false ? '0' : '1') : '0', partTime: r.kind === 'employee' ? ((r.fte || 1) < 1 ? '1' : '0') : null });
+        }
     }
     const d1Body = `${top}${el('HNAME', org.name)}${el('HTIN', org.edrpou)}`
-        + col('T1RXXXXG5', d1, () => '1') + col('T1RXXXXG6', d1, x => x.gender) + col('T1RXXXXG7S', d1, x => x.tin) + col('T1RXXXXG8', d1, x => x.cat)
+        + col('T1RXXXXG5', d1, () => '1') + col('T1RXXXXG6', d1, x => x.gender) + col('T1RXXXXG7S', d1, x => x.tin) + col('T1RXXXXG8', d1, x => x.cat) + col('T1RXXXXG9', d1, x => x.type)
         + col('T1RXXXXG101', d1, () => month) + col('T1RXXXXG102', d1, () => year)
         + col('T1RXXXXG111S', d1, x => x.s1) + col('T1RXXXXG112S', d1, x => x.s2) + col('T1RXXXXG113S', d1, x => x.s3)
-        + col('T1RXXXXG12', d1, x => x.sickDays) + col('T1RXXXXG13', d1, x => (x.cat !== '29' ? 0 : null)) + col('T1RXXXXG14', d1, x => (x.cat !== '29' ? x.days : null))
-        + col('T1RXXXXG15', d1, x => (x.cat !== '29' ? 0 : null))
-        + col('T1RXXXXG16', d1, x => money(x.gross)) + col('T1RXXXXG17', d1, x => money(x.within)) + col('T1RXXXXG18', d1, x => money(x.topUp))
+        + col('T1RXXXXG12', d1, x => x.sickDays) + col('T1RXXXXG14', d1, x => x.days)
+        + col('T1RXXXXG16', d1, x => x.gross === null ? null : money(x.gross)) + col('T1RXXXXG17', d1, x => x.within === null ? null : money(x.within)) + col('T1RXXXXG18', d1, x => x.topUp === null ? null : money(x.topUp))
         + col('T1RXXXXG19', d1, () => money(0)) + col('T1RXXXXG20', d1, x => money(x.esv))
         + col('T1RXXXXG21', d1, x => x.main) + col('T1RXXXXG22', d1, x => x.partTime) + col('T1RXXXXG23', d1, x => (x.cat !== '29' ? '0' : null))
         + col('T1RXXXXG24', d1, x => (x.cat !== '29' ? '0' : null)) + col('T1RXXXXG26', d1, x => (x.cat !== '29' ? '0' : null))
@@ -187,15 +199,17 @@ function buildPackage({ period, org, report, run, people = new Map(), fillDate, 
     // ---------------- Д5: трудові й цивільно-правові відносини ----------------
     const byPerson = new Map();
     for (const rel of relations) {
-        const x = byPerson.get(rel.personId) || { ...rel, start: '', end: '' };
+        // Прийняття і звільнення працівника — різні підстави/накази.
+        const key = rel.kind === 'employee' ? `${rel.personId}:${rel.event}` : rel.personId;
+        const x = byPerson.get(key) || { ...rel, start: '', end: '' };
         x[rel.event] = rel.date;
-        byPerson.set(rel.personId, x);
+        byPerson.set(key, x);
     }
     const d5 = [...byPerson.values()].map(x => {
-        const c = people.get(x.personId) || {};
+        const c = card(x);
         const [s1, s2, s3] = splitName(x.name);
         const gph = x.kind === 'gph';
-        return { tin: x.rnokpp || c.rnokpp || '', s1, s2, s3, gph, cat: gph ? '3' : c.mainJob === false ? '2' : '1', start: x.start, end: x.end,
+        return { tin: x.rnokpp, s1, s2, s3, gph, cat: gph ? '3' : (x.mainJob ?? c.mainJob) === false ? '2' : '1', start: x.start, end: x.end,
             profession: x.position || c.position || '', kp: gph ? '' : c.kpCode || '', position: gph ? '' : x.position || c.position || '',
             doc: x.end && !x.start ? c.fireDoc || '' : c.hireDoc || c.contract || '', basis: x.end ? c.fireBasis || '' : '' };
     });
@@ -212,10 +226,13 @@ function buildPackage({ period, org, report, run, people = new Map(), fillDate, 
     const gphKop = sum(rows.filter(r => r.kind === 'gph'), r => r.grossKop);
     const sickOwn = sum(rows, r => r.sickKop), sickFund = sum(rows, r => r.fundSickKop);
     const within = sum(d1, x => x.within), topUp = sum(d1, x => x.topUp);
-    const esv31 = sum(d1, x => pct(x.within, rate.esv || 2200));
+    const esv31 = sum(d1.filter(x => x.type !== '13'), x => x.esv);
     const esvAll = sum(d1, x => x.esv);
     const dim = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    const avg = Math.round(sum(emp, r => (r.fte || 1) * ((report.esv || []).find(e => e.personId === r.personId)?.days ?? dim) / dim));
+    // Середньооблікова чисельність — люди, а не еквівалент повної ставки.
+    const avg = Math.round(sum(emp, r => ((report.esv || []).find(e => e.personId === r.personId)?.days ?? dim) / dim));
+    const last = `${period}-${String(dim).padStart(2, '0')}`;
+    const atEnd = emp.filter(r => !r.relationship?.to || r.relationship.to >= last).length;
     const linked = [
         { linkType: 1, sub: DOCS.d1.sub, type: 0, cnt: num, file: names.d1 },
         { linkType: 1, sub: DOCS.df4.sub, type: 0, cnt: num, file: names.df4 },
@@ -225,7 +242,7 @@ function buildPackage({ period, org, report, run, people = new Map(), fillDate, 
     const mainBody = `${top}${el('HNUM', num)}${el('HNAME', org.name)}${el('HTIN', org.edrpou)}${el('HKATOTTG', org.katottg)}`
         + `${el('HLOC', org.address)}${el('HZIP', org.zip)}${el('HTEL', org.phone)}${el('HEMAIL', org.email)}${el('HSTI', org.sti.name)}`
         + `<R061G3>1</R061G3><R061G4>1</R061G4><R064G3>1</R064G3><R064G4>1</R064G4>${hasD5 ? '<R065G3>1</R065G3><R065G4>1</R065G4>' : ''}`
-        + `${el('HKVED', kved)}${emp.length ? '<R081G3>1</R081G3>' : ''}${el('R091G3', emp.length ? avg : null)}${el('R092G3', emp.filter(r => r.grossKop > 0).length || null)}`
+        + `${el('HKVED', kved)}${emp.length ? '<R081G3>1</R081G3>' : ''}${el('R091G3', emp.length ? avg : null)}${el('R092G3', emp.length ? atEnd : null)}`
         + el('R0101G3', money(salary + gphKop + sickOwn + sickFund)) + el('R01011G3', money(salary)) + el('R01012G3', money(gphKop))
         + el('R01013G3', money(sickOwn)) + el('R01014G3', money(sickFund)) + el('R01015G3', money(0))
         + el('R0102G3', money(within + topUp)) + el('R01021G3', money(within)) + el('R01025G3', money(topUp))

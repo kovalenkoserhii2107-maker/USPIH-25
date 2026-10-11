@@ -56,6 +56,7 @@ function matchesPayment(tx, payment) {
     if (tx.amountKop !== payment.amountKop) return false;
     if (payment.account && normIban(tx.account) !== normIban(payment.account)) return false;
     if (normIban(tx.counterparty?.account) !== normIban(payment.recipient?.iban)) return false;
+    if (tx.counterparty?.code && payment.recipient?.code && String(tx.counterparty.code) !== String(payment.recipient.code)) return false;
     if (payment.bankRef && tx.dlr) return String(tx.dlr) === String(payment.bankRef);
     const sent = payment.sentAt instanceof Date ? payment.sentAt : new Date(payment.sentAt);
     const at = tx.at instanceof Date ? tx.at : new Date(tx.at);

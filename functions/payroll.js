@@ -58,8 +58,9 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             for (const r of d.data().run?.rows || []) {
                 if (r.kind !== 'employee') continue;
                 const list = history.get(r.personId) || [];
-                list.push({ period: d.id, regularKop: r.regularKop ?? (r.grossKop - (r.correctionKop || 0)), vacationKop: r.vacationKop || 0,
-                    sickKop: (r.sickKop || 0) + (r.fundSickKop || 0), vacationDays: r.vacationDays || 0, sickDays: r.sickDays || 0, calendarDays: r.calendarDays });
+                list.push({ period: d.id, regularKop: r.regularKop ?? (r.grossKop - (r.correctionKop || 0) - (r.vacationKop || 0) - (r.sickKop || 0) - (r.fundSickKop || 0)), vacationKop: r.vacationKop || 0,
+                    sickKop: (r.sickKop || 0) + (r.fundSickKop || 0), vacationDays: r.vacationDays || 0, sickDays: r.sickDays || 0, calendarDays: r.calendarDays,
+                    absences: r.absences || [] });
                 history.set(r.personId, list);
             }
         }

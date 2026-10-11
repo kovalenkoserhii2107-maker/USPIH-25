@@ -27,6 +27,13 @@ after(async () => { await wipe(); await deleteApp(app); });
 const a = () => reports.actions;
 const A = ['900', 'accountant'];
 const C = ['10', 'chair'];
+async function paidPayment(key, amountKop, paidOn = '2026-10-30', period = '2026-10', stage = 'final') {
+    const ref = db.collection('payments').doc(), txId = `bank-${ref.id}`;
+    const at = Timestamp.fromDate(new Date(`${paidOn}T10:00:00Z`));
+    await ref.set({ status: 'paid', amountKop, txId, paidAt: at, payroll: { period, stage, key } });
+    await db.doc(`bank_tx/${txId}`).set({ period: paidOn.slice(0, 7), at, direction: 'out', kind: 'expense', status: 'done',
+        amountKop, paymentId: ref.id, category: key === 'esv' ? 'esv' : ['pdfo', 'vz'].includes(key) ? 'taxes' : 'salary' });
+}
 
 test('розрахунок за жовтень: суми за людьми, сплачене за платежами, ЄСВ «сплачено» само', async () => {
     const person = { name: 'Працівник Тестовий', kind: 'employee', salaryKop: 864700, fte: 1, mainJob: true, rnokpp: '3124567809',
@@ -36,7 +43,7 @@ test('розрахунок за жовтень: суми за людьми, сп
     const run = payroll.buildRun({ people: [{ id: 'e1', ...person }], period: '2026-10' });
     await db.doc('payroll_runs/2026-10').set({ period: '2026-10', status: 'approved', run: JSON.parse(JSON.stringify(run)) });
     for (const [key, amountKop] of Object.entries({ e1: 665819, pdfo: 155646, vz: 43235, esv: 190234 })) {
-        await db.collection('payments').add({ status: 'paid', amountKop, payroll: { period: '2026-10', stage: 'final', key } });
+        await paidPayment(key, amountKop);
     }
     const d = await a().payrollData({ period: '2026-10' });
     assert.equal(d.key, 'j0500111-2026-10');
@@ -91,7 +98,7 @@ test('квитанції з двох вкладок: сервер додає н�
     assert.equal((await db.doc(`reports/${key}`).get()).exists, false);
 });
 
-test('4ДФ: виплачене — за датою банку (остаточний розрахунок жовтня в листопаді), виплати ФОП — ознака 157', async () => {
+test('4ДФ: своєчасна зарплата лишається за жовтнем, виплати ФОП — за датою банку з ознакою 157', async () => {
     const person = { name: 'Працівник Тестовий', kind: 'employee', salaryKop: 864700, fte: 1, mainJob: true, rnokpp: '3124567809',
         iban: 'UA213052990000026001234567891', taxNotified: true, from: '2026-01-01', active: true };
     await db.doc('payroll_people/e1').set(person);
@@ -102,19 +109,19 @@ test('4ДФ: виплачене — за датою банку (остаточн
     }
     const at = s => Timestamp.fromDate(new Date(s));
     const oct = runs['2026-10'].rows[0], nov = runs['2026-11'].rows[0];
-    await db.collection('payments').add({ status: 'paid', amountKop: oct.advance.netKop, paidAt: at('2026-10-20T10:00:00Z'), payroll: { period: '2026-10', stage: 'advance', key: 'e1' } });
-    await db.collection('payments').add({ status: 'paid', amountKop: oct.final.netKop, paidAt: at('2026-11-05T08:00:00Z'), payroll: { period: '2026-10', stage: 'final', key: 'e1' } });
-    await db.collection('payments').add({ status: 'paid', amountKop: nov.advance.netKop, paidAt: at('2026-11-20T08:00:00Z'), payroll: { period: '2026-11', stage: 'advance', key: 'e1' } });
-    await db.doc('suppliers/s1').set({ name: 'ФОП Тестовий', kind: 'fop', code: '3124567809', iban: 'UA213052990000026001234567892' });
-    await db.doc('expenses/x1').set({ supplierId: 's1', amountKop: 150000, status: 'paid' });
-    await db.doc('bank_tx/t1').set({ period: '2026-11', direction: 'out', kind: 'expense', status: 'done', category: 'supplier', expenseId: 'x1', amountKop: 150000, counterparty: {} });
+    await paidPayment('e1', oct.advance.netKop, '2026-10-20', '2026-10', 'advance');
+    await paidPayment('e1', oct.final.netKop, '2026-11-05');
+    await paidPayment('e1', nov.advance.netKop, '2026-11-20', '2026-11', 'advance');
+    await db.doc('suppliers/s1').set({ name: 'ФОП Тестовий', kind: 'fop', code: '3124567809', iban: 'UA213052990000026001234567892', fopChecked: true });
+    await db.doc('expenses/x1').set({ supplierId: 's1', supplierName: 'ФОП Тестовий', period: '2026-11', amountKop: 150000, status: 'paid' });
+    await db.doc('bank_tx/t1').set({ period: '2026-11', at: at('2026-11-20T10:00:00Z'), direction: 'out', kind: 'expense', status: 'done', category: 'supplier', expenseId: 'x1', amountKop: 150000, counterparty: {} });
 
     const o = await a().payrollData({ period: '2026-10' });
-    assert.equal(o.income[0].paidKop, oct.advance.grossKop);
+    assert.equal(o.income[0].paidKop, oct.grossKop);
     const n = await a().payrollData({ period: '2026-11' });
     const e = n.income.find(r => r.personId === 'e1'), f = n.income.find(r => r.sign === '157');
     assert.equal(e.grossKop, nov.grossKop);
-    assert.equal(e.paidKop, oct.final.grossKop + nov.advance.grossKop);
+    assert.equal(e.paidKop, nov.advance.grossKop);
     assert.deepEqual([f.rnokpp, f.paidKop, f.pdfoKop], ['3124567809', 150000, 0]);
 });
 

@@ -382,6 +382,6 @@ function entriesKey(entries, period) {
 const isClosed = (period, closed = []) => closed.includes(String(period || ''));
 
 module.exports = {
-    START_PERIOD, ACCOUNTS, ORDER, INCOME_ACCOUNT, OPENING_ACCOUNTS, OPENING_NEEDS_A, lastDay, shift, periodsUpTo,
+    START_PERIOD, ACCOUNTS, ORDER, INCOME_ACCOUNT, OPENING_ACCOUNTS, OPENING_NEEDS_A, kyivDate, lastDay, shift, periodsUpTo,
     buildEntries, openingEntries, checkOpening, openingTotals, closingEntries, journal, trialBalance, closeChecks, entriesKey, isClosed
 };

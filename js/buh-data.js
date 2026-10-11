@@ -71,7 +71,7 @@ export const loadSettings = () => once('settings', async () => {
 
 /** Усе, що чекає рішення людини. Без orderBy — не потрібен складений індекс. */
 export const loadQueue = () => once('queue', async () => {
-    const snap = await getDocs(query(collection(db, 'bank_tx'), where('status', '==', 'review'), limit(300)));
+    const snap = await getDocs(query(collection(db, 'bank_tx'), where('status', '==', 'review')));
     return snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
 });

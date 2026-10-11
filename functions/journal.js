@@ -173,7 +173,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             labels: { 92: ITEMS, 641: { pdfo: 'ПДФО', vz: 'Військовий збір' }, 48: { ...Object.fromEntries(data.components.map(c => [c.id, c.name])), grant: INCOME_SOURCES.grant }, 703: INCOME_SOURCES, 719: INCOME_SOURCES, 733: INCOME_SOURCES },
             opening: { status: data.opening?.status || 'none', lines: data.opening?.lines?.length || 0 },
             tb,
-            entries: entries.filter(e => e.period === p).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(0, 6000),
+            entries: entries.filter(e => e.period === p).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
             checks
         };
     }
@@ -286,7 +286,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
                 t.set(ref, {
                     status: 'closed', key: fresh.key, totals: fresh.tb.totals,
-                    tb: fresh.tb.rows.map(r => ({ ...r, byA: r.byA.slice(0, 2000) })), entries: fresh.entries.length,
+                    tb: fresh.tb.rows, entries: fresh.entries.length,
                     closedBy: actor, closedAt: FieldValue.serverTimestamp(),
                     history: FieldValue.arrayUnion({ action: 'close', by: actor, at }),
                     closingToken: FieldValue.delete(), closingUntil: FieldValue.delete()

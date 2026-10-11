@@ -5,14 +5,16 @@
 // бухгалтером; підстави й упевненість — docs/accounting/LEGAL.md, розділ 7.
 //
 // ВІДПУСТКА (Порядок № 100): середньоденна = заробіток за 12 календарних
-//   місяців перед місяцем відпустки / календарні дні цих місяців без днів
-//   відпусток і лікарняних (і без виплат за них). Під час воєнного стану
+//   місяців перед місяцем відпустки / календарні дні цих місяців. Попередні
+//   щорічні відпускні й допомога з тимчасової непрацездатності включаються
+//   (п. 3 Порядку № 100); неоплачений час виключається. Під час воєнного стану
 //   святкові дні не виключаються (ст. 73 КЗпП не застосовується).
 //   Відпускні = середньоденна × календарні дні відпустки; виплачуються до
 //   відпустки — разом з авансом.
 // ЛІКАРНЯНИЙ (Порядок № 1266): середньоденна = заробіток за 12 місяців
-//   (з відпускними) / календарні дні без днів лікарняних; не менше
-//   МЗП × ставка / дні місяця, не більше максимальної бази / дні місяця.
+//   (з відпускними) / календарні дні без днів лікарняних; не більше
+//   максимальної бази / 30,44. Загальної нижньої межі з МЗП для звичайної
+//   тимчасової непрацездатності немає (це не допомога з вагітності й пологів).
 //   Відсоток за страховим стажем: до 3 р. — 50 %, 3–5 — 60 %, 5–8 — 70 %,
 //   понад 8 — 100 %. Перші 5 календарних днів випадку — за рахунок ОСББ,
 //   далі — ПФУ: ОСББ подає заяву-розрахунок, а коли кошти надійдуть,
@@ -26,6 +28,7 @@
 // ============================================================
 
 const DAY = 86400000;
+const { validDate } = require('./expenses-core');
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
 const parse = d => Date.parse(`${d}T00:00:00Z`);
 const pad = n => String(n).padStart(2, '0');
@@ -61,9 +64,9 @@ function checkAbsences(list, period) {
     for (const [i, a] of list.entries()) {
         const n = `Відсутність ${i + 1}`;
         if (!TYPES[a.type]) return `${n}: оберіть відпустку чи лікарняний`;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(a.from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(a.to || '') || a.to < a.from) return `${n}: вкажіть дати з … по …`;
+        if (!validDate(a.from) || !validDate(a.to) || a.to < a.from) return `${n}: вкажіть правильні дати з … по …`;
         if (a.from < first || a.to > last) return `${n}: дати мають бути в межах місяця відомості. Відпустку чи лікарняний на два місяці внесіть у кожну відомість окремо`;
-        if (a.caseStart && (!/^\d{4}-\d{2}-\d{2}$/.test(a.caseStart) || a.caseStart > a.from)) return `${n}: початок лікарняного — не пізніше першого дня в цьому місяці`;
+        if (a.caseStart && (!validDate(a.caseStart) || a.caseStart > a.from)) return `${n}: вкажіть правильну дату початку відсутності — не пізніше першого дня в цьому місяці`;
         if (a.avgDailyKop !== undefined && a.avgDailyKop !== null && (!Number.isSafeInteger(a.avgDailyKop) || a.avgDailyKop < 0 || a.avgDailyKop > 10000000)) return `${n}: середньоденна — сума в копійках`;
         for (let t = parse(a.from); t <= parse(a.to); t += DAY) {
             if (taken.has(t)) return `${n}: дати перетинаються з іншою відсутністю`;
@@ -86,11 +89,8 @@ function averageDaily({ mode, period, history = [], prior = {} }) {
         const p = shift(period, -i);
         const h = byPeriod.get(p);
         if (h) {
-            // Порядок № 100, п. 4 і 7: дні попередньої відпустки (середній заробіток збережено) лишаються
-            // в періоді разом із відпускними — і для відпускних, і для лікарняних; дні лікарняного
-            // (заробіток збережено частково) виключаються разом із сумами.
-            const excluded = h.sickDays || 0;
-            const kop = (h.regularKop || 0) + (h.vacationKop || 0);
+            const excluded = (h.excludedDays || 0) + (mode === 'sick' ? h.sickDays || 0 : 0);
+            const kop = (h.regularKop || 0) + (h.vacationKop || 0) + (mode === 'vacation' ? h.sickKop || 0 : 0);
             const d = Math.max(0, (h.calendarDays ?? daysInMonth(p)) - excluded);
             if (d > 0 || kop) { earnings += kop; days += d; months += 1; }
         } else if (prior[p] && Number.isSafeInteger(prior[p].kop)) {
@@ -109,26 +109,34 @@ function averageDaily({ mode, period, history = [], prior = {} }) {
 function leaveFor({ person, absences = [], period, rate, history = [] }) {
     const out = { vacationKop: 0, vacationDays: 0, vacationWorkdays: 0, sickKop: 0, sickDays: 0, sickWorkdays: 0, sickEmployerDays: 0,
         fundDays: 0, fundExpectKop: 0, avgVacationKop: null, avgSickKop: null, warnings: [], problems: [], items: [] };
-    const dim = daysInMonth(period);
+    const average = (a, mode) => {
+        if (Number.isSafeInteger(a.avgDailyKop) && a.avgDailyKop > 0) return { avgKop: a.avgDailyKop, months: null, manual: true };
+        const start = a.caseStart || a.from;
+        if (start.slice(0, 7) < period) {
+            const saved = history.flatMap(h => h.absences || []).find(x => x.type === mode && (x.caseStart || x.from) === start && x.avgKop > 0);
+            if (saved) return { avgKop: saved.avgKop, percent: saved.percent, fixed: true };
+            out.problems.push('продовження відсутності: немає зафіксованої середньоденної з початку випадку — вкажіть підтверджену суму вручну');
+            return { avgKop: 0, months: 0 };
+        }
+        return averageDaily({ mode, period, history, prior: person.priorEarnings || {} });
+    };
     for (const a of absences) {
         const dates = absenceDates(a, period, person);
         if (!dates.length) continue;
         const work = dates.filter(isWorkday).length;
         if (a.type === 'vacation') {
-            const avg = Number.isSafeInteger(a.avgDailyKop) && a.avgDailyKop > 0 ? { avgKop: a.avgDailyKop, months: null, manual: true }
-                : averageDaily({ mode: 'vacation', period, history, prior: person.priorEarnings || {} });
+            const avg = average(a, 'vacation');
             if (!avg.avgKop) out.problems.push(`відпустка ${dates[0].slice(8)}–${dates.at(-1).slice(8)}: немає заробітку за 12 міс. для середньої — вкажіть середньоденну`);
             const kop = Math.round(avg.avgKop * dates.length);
             out.vacationKop += kop; out.vacationDays += dates.length; out.vacationWorkdays += work; out.avgVacationKop = avg.avgKop;
-            out.items.push({ type: 'vacation', from: dates[0], to: dates.at(-1), days: dates.length, avgKop: avg.avgKop, kop, manual: Boolean(avg.manual) });
-            out.warnings.push(`відпустка ${dates.length} дн.: ${(kop / 100).toFixed(2).replace('.', ',')} грн (середньоденна ${(avg.avgKop / 100).toFixed(2).replace('.', ',')}${avg.manual ? ', внесена вручну' : `, за ${avg.months} міс.`}) — виплатіть не пізніше ніж за 3 дні до відпустки`);
+            out.items.push({ type: 'vacation', from: dates[0], to: dates.at(-1), caseStart: a.caseStart || a.from, days: dates.length, avgKop: avg.avgKop, kop, manual: Boolean(avg.manual) });
+            out.warnings.push(`відпустка ${dates.length} дн.: ${(kop / 100).toFixed(2).replace('.', ',')} грн (середньоденна ${(avg.avgKop / 100).toFixed(2).replace('.', ',')}${avg.manual ? ', внесена вручну' : avg.fixed ? ', з початку відпустки' : `, за ${avg.months} міс.`}) — виплатіть до початку відпустки або у строк трудового/колективного договору`);
         } else {
-            const raw = Number.isSafeInteger(a.avgDailyKop) && a.avgDailyKop > 0 ? { avgKop: a.avgDailyKop, months: null, manual: true }
-                : averageDaily({ mode: 'sick', period, history, prior: person.priorEarnings || {} });
-            const min = Math.round(rate.minWageKop * (person.fte || 1) / dim);
-            const max = Math.round(rate.minWageKop * rate.maxBaseMult / dim);
-            const avgKop = Math.min(max, Math.max(raw.avgKop, min));
-            const percent = sickPercent(person.insuranceYears);
+            const raw = average(a, 'sick');
+            if (!raw.avgKop) out.problems.push(`лікарняний ${dates[0].slice(8)}–${dates.at(-1).slice(8)}: немає заробітку для середньоденної — вкажіть підтверджену середньоденну`);
+            const max = Math.round(rate.minWageKop * rate.maxBaseMult / 30.44);
+            const avgKop = Math.min(max, raw.avgKop);
+            const percent = raw.fixed && raw.percent ? raw.percent : sickPercent(person.insuranceYears);
             const start = a.caseStart || a.from;
             // Перші 5 календарних днів випадку — ОСББ (навіть якщо випадок почався в попередньому місяці).
             const employerDays = dates.filter(d => (parse(d) - parse(start)) / DAY < SICK_EMPLOYER_DAYS).length;
@@ -140,7 +148,8 @@ function leaveFor({ person, absences = [], period, rate, history = [] }) {
             out.fundDays += fundDays; out.fundExpectKop += fund; out.avgSickKop = avgKop;
             out.items.push({ type: 'sick', from: dates[0], to: dates.at(-1), caseStart: start, days: dates.length, employerDays, fundDays, percent, avgKop, kop, fundKop: fund, manual: Boolean(raw.manual) });
             out.warnings.push(`лікарняний ${dates.length} дн. (${percent} % за стажем): ОСББ — ${employerDays} дн., ${(kop / 100).toFixed(2).replace('.', ',')} грн${fundDays ? `; ПФУ — ${fundDays} дн., ≈${(fund / 100).toFixed(2).replace('.', ',')} грн: подайте заяву-розрахунок, а коли кошти надійдуть — внесіть їх у відомість` : ''}`);
-            if (raw.avgKop < min) out.warnings.push('лікарняний — із мінімальної зарплати: власний заробіток нижчий');
+            if (raw.avgKop > max) out.warnings.push('середньоденна лікарняного обмежена максимальною базою ЄСВ / 30,44');
+            if (!raw.manual && !raw.fixed && raw.months < 12) out.warnings.push(`середня лікарняного: є дані за ${raw.months} міс. — звірте повноту розрахункового періоду і страховий стаж за останні 12 міс.`);
         }
     }
     return out;

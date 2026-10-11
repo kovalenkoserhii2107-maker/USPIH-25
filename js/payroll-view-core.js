@@ -8,7 +8,9 @@
 // ============================================================
 
 const TAXES = new Set(['pdfo', 'vz', 'esv']);
-const whoOf = p => String(p.key || '').split(':')[1] || '';
+// Сервер повертає stage і key окремо; старі знімки містять «stage:key».
+export const paymentWho = p => String(p.key || '').includes(':') ? String(p.key).split(':')[1] : String(p.key || '');
+const whoOf = paymentWho;
 const live = p => !['failed', 'canceled'].includes(p.status) && !(p.returnedKop >= p.amountKop && p.status === 'paid');
 
 /** Ініціали для кружечка: «Іваненко Петро» → «ІП». */
@@ -28,7 +30,7 @@ export function personState({ status, payments = [], closed = false }, personId,
     if (mine.some(p => p.status === 'failed' || (p.returnedKop && !p.repaid))) return ['банк не прийняв', 'is-bad'];
     if (mine.some(p => ['sent', 'sending', 'unknown'].includes(p.status))) return ['на підписі', 'is-work'];
     if (mine.length && mine.every(p => p.status === 'paid' || p.status === 'canceled') && mine.some(p => p.status === 'paid')) {
-        return [mine.some(p => p.key?.startsWith('final:')) ? 'виплачено' : 'аванс виплачено', 'is-done'];
+        return [mine.some(p => p.stage === 'final' || p.key?.startsWith('final:')) ? 'виплачено' : 'аванс виплачено', 'is-done'];
     }
     if (closed) return ['місяць закрито', 'is-locked'];
     if (status === 'approved') return ['до виплати', 'is-work'];
@@ -39,7 +41,7 @@ export function personState({ status, payments = [], closed = false }, personId,
 /** Підсумки для карток: людям і податки — скільки всього, скільки проведено, скільки на підписі. */
 export function payrollTotals({ run, payments = [] }) {
     const t = run?.totals || {};
-    const sum = list => list.reduce((s, p) => s + (p.amountKop || 0), 0);
+    const sum = list => list.reduce((s, p) => s + (p.amountKop || 0) - (p.status === 'paid' ? p.returnedKop || 0 : 0), 0);
     const toPeople = payments.filter(p => whoOf(p) && !TAXES.has(whoOf(p)) && live(p));
     const toTax = payments.filter(p => TAXES.has(whoOf(p)) && live(p));
     const rows = run?.rows || [];

@@ -12,13 +12,13 @@ const history = [['2026-07', 31], ['2026-08', 31], ['2026-09', 30]].map(([period
 
 test('середньоденна: історія застосунку, заробіток до застосунку, виключення днів', () => {
     assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history }).avgKop, Math.round(864700 * 3 / 92));
-    // Відпустка у вересні: її дні й відпускні лишаються в періоді (Порядок № 100, п. 4) — і для відпускних, і для лікарняних.
+    // Попередні щорічні відпускні та календарні дні включаються в обидві середні.
     const withVacation = [...history.slice(0, 2), { period: '2026-09', regularKop: 500000, vacationKop: 400000, vacationDays: 14, calendarDays: 30 }];
-    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withVacation }).avgKop, Math.round((864700 * 2 + 500000 + 400000) / (62 + 30)));
-    // Лікарняний виключається разом із днями.
-    const withSick = [...history.slice(0, 2), { period: '2026-09', regularKop: 600000, sickKop: 100000, sickDays: 9, calendarDays: 30 }];
-    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withSick }).avgKop, Math.round((864700 * 2 + 600000) / (62 + 21)));
+    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withVacation }).avgKop, Math.round((864700 * 2 + 900000) / 92));
     assert.equal(leave.averageDaily({ mode: 'sick', period: '2026-10', history: withVacation }).avgKop, Math.round((864700 * 2 + 900000) / 92));
+    const withSick = [...history.slice(0, 2), { period: '2026-09', regularKop: 600000, sickKop: 100000, sickDays: 9, calendarDays: 30 }];
+    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withSick }).avgKop, Math.round((864700 * 2 + 700000) / 92));
+    assert.equal(leave.averageDaily({ mode: 'sick', period: '2026-10', history: withSick }).avgKop, Math.round((864700 * 2 + 600000) / 83));
     const prior = { '2026-06': { kop: 800000, days: 30 } };
     assert.deepEqual(leave.averageDaily({ mode: 'vacation', period: '2026-10', history, prior }).months, 4);
 });
@@ -31,7 +31,7 @@ test('відпустка: відпускні за календарні дні, �
     assert.equal(r.regularKop, Math.round(864700 * 12 / 22));
     assert.equal(r.grossKop, r.regularKop + r.vacationKop);
     assert.equal(r.advance.grossKop, Math.round(r.regularKop / 2) + r.vacationKop);
-    assert.ok(r.warnings.some(w => /за 3 дні до відпустки/.test(w)));
+    assert.ok(r.warnings.some(w => /до початку відпустки/.test(w)));
 });
 
 test('лікарняний: 70 % за стажем, перші 5 днів — ОСББ, решта — ПФУ; кошти ПФУ — окремо', () => {
@@ -48,9 +48,10 @@ test('лікарняний: 70 % за стажем, перші 5 днів — О
     const paid = payroll.calcRow(emp(), { fundSickKop: 98690 }, '2026-11', payroll.rateFor('2026-11'), { history });
     assert.equal(paid.grossKop, 864700 + 98690);
     assert.equal(paid.fundSickKop, 98690);
-    // Немає заробітку — лікарняний з мінімальної зарплати; відпустка — проблема.
+    // Без заробітку для середньої жодну виплату не вигадуємо: обидві відсутності — проблеми.
     const fresh = payroll.calcRow(emp(), { absences: [{ type: 'sick', from: '2026-10-05', to: '2026-10-06' }, { type: 'vacation', from: '2026-10-20', to: '2026-10-21' }] }, '2026-10', rate, {});
-    assert.equal(fresh.sickKop, Math.round(Math.round(864700 / 31) * 70 / 100 * 2));
+    assert.equal(fresh.sickKop, 0);
+    assert.equal(fresh.leaveProblems.length, 2);
     assert.equal(leave.leaveFor({ person: emp(), absences: [{ type: 'vacation', from: '2026-10-20', to: '2026-10-21' }], period: '2026-10', rate }).problems.length, 1);
 });
 
@@ -60,6 +61,26 @@ test('перевірка відсутностей', () => {
     assert.match(leave.checkAbsences([{ type: 'sick', from: '2026-10-01', to: '2026-10-05' }, { type: 'vacation', from: '2026-10-05', to: '2026-10-06' }], '2026-10'), /перетинаються/);
     assert.match(leave.checkAbsences([{ type: 'x', from: '2026-10-01', to: '2026-10-02' }], '2026-10'), /оберіть/);
     assert.deepEqual([leave.sickPercent(2), leave.sickPercent(3), leave.sickPercent(5), leave.sickPercent(8)], [50, 60, 70, 100]);
+});
+
+test('перехідні відпустка й лікарняний зберігають середню та стаж на початок випадку', () => {
+    const old = { period: '2026-09', regularKop: 9000000, calendarDays: 30, absences: [
+        { type: 'vacation', from: '2026-09-29', caseStart: '2026-09-29', avgKop: 25000 },
+        { type: 'sick', from: '2026-09-29', caseStart: '2026-09-29', avgKop: 23000, percent: 60 }
+    ] };
+    const vacation = leave.leaveFor({ person: emp(), period: '2026-10', rate, history: [old],
+        absences: [{ type: 'vacation', from: '2026-10-01', to: '2026-10-03', caseStart: '2026-09-29' }] });
+    assert.equal(vacation.vacationKop, 75000);
+    assert.deepEqual(vacation.problems, []);
+    const sick = leave.leaveFor({ person: emp({ insuranceYears: 8 }), period: '2026-10', rate, history: [old],
+        absences: [{ type: 'sick', from: '2026-10-01', to: '2026-10-06', caseStart: '2026-09-29' }] });
+    assert.deepEqual([sick.sickKop, sick.fundExpectKop], [41400, 41400]);
+    assert.equal(sick.items[0].percent, 60);
+    assert.deepEqual(sick.problems, []);
+    const missing = leave.leaveFor({ person: emp(), period: '2026-10', rate, history,
+        absences: [{ type: 'vacation', from: '2026-10-01', to: '2026-10-03', caseStart: '2026-09-29' }] });
+    assert.equal(missing.vacationKop, 0);
+    assert.ok(missing.problems.some(p => /немає зафіксованої/.test(p)));
 });
 
 test('ПСП: зменшує базу ПДФО, межа доходу, пільга на дітей', () => {

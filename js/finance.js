@@ -31,6 +31,7 @@ export async function loadKnownApts() {
 
 const SLICE_COLORS = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30',
                       '#5AC8FA', '#FFC300', '#14A79D'];
+const signedMoney = value => `${value < 0 ? '−' : ''}${formatMoney(value)}`;
 
 // ------------------------------------------------------------
 // БАЛАНС КВАРТИРИ (мешканець)
@@ -162,15 +163,17 @@ export async function loadReceipts() {
 export function renderDonut(items) {
     const clean = (items || [])
         .map(i => ({ label: String(i.label || '').trim(), amount: parseMoney(i.amount) }))
-        .filter(i => i.label && i.amount > 0);
+        .filter(i => i.label && i.amount !== 0);
 
     const total = clean.reduce((s, i) => s + i.amount, 0);
-    if (!total) return '';
+    if (!clean.length) return '';
+    const positive = clean.reduce((s, i) => s + Math.max(0, i.amount), 0);
 
     const R = 42, C = 2 * Math.PI * R;
     let acc = 0;
     const arcs = clean.map((it, idx) => {
-        const frac = it.amount / total;
+        if (it.amount <= 0 || !positive) return '';
+        const frac = it.amount / positive;
         const seg = `<circle class="donut-seg" cx="50" cy="50" r="${R}"
             stroke="${SLICE_COLORS[idx % SLICE_COLORS.length]}"
             stroke-dasharray="${(C * frac).toFixed(2)} ${(C * (1 - frac)).toFixed(2)}"
@@ -184,19 +187,19 @@ export function renderDonut(items) {
         <div class="donut-row">
             <span class="donut-dot" style="background: ${SLICE_COLORS[idx % SLICE_COLORS.length]};"></span>
             <span class="donut-name">${escapeHtml(it.label)}</span>
-            <span class="donut-pct">${Math.round((it.amount / total) * 100)}%</span>
-            <span class="donut-sum">${formatMoney(it.amount)}</span>
+            <span class="donut-pct">${it.amount < 0 ? 'повернення' : `${Math.round((it.amount / positive) * 100)}%`}</span>
+            <span class="donut-sum">${signedMoney(it.amount)}</span>
         </div>`).join('');
 
     return `<div class="donut-wrap">
         <div class="donut">
             <svg viewBox="0 0 100 100" aria-hidden="true">${arcs}</svg>
             <span class="donut-center">
-                <b>${formatMoney(total)}</b>
+                <b>${signedMoney(total)}</b>
                 <small>грн</small>
             </span>
         </div>
-        <div class="donut-legend">${legend}</div>
+        <div class="donut-legend">${clean.some(i => i.amount < 0) ? '<p class="hint">Коло — витрати до повернень. Підсумок враховує повернення.</p>' : ''}${legend}</div>
     </div>`;
 }
 
@@ -229,7 +232,7 @@ export function renderBudget(d) {
             ? `<span class="bud-label">Фінанси ОСББ</span>
                <span class="bud-sum bud-sum-muted">${escapeHtml(d.period || 'Витрати за місяць')}</span>`
             : `<span class="bud-label">Залишок на рахунку ОСББ</span>
-               <span class="bud-sum">${formatMoney(funds)}<small>грн</small></span>
+               <span class="bud-sum">${signedMoney(funds)}<small>грн</small></span>
                ${asOf ? `<span class="bud-when">станом на ${escapeHtml(asOf)}</span>` : ''}`;
 
         // Надходження й витрати поруч: одна цифра без другої нічого не
@@ -238,11 +241,11 @@ export function renderBudget(d) {
         const flows = (income === null && !spent) ? '' : `<div class="bud-flows">
             ${income === null ? '' : `<div class="bud-flow bud-flow-in">
                 <span class="bud-flow-label">Надходження</span>
-                <span class="bud-flow-sum">${formatMoney(income)}</span>
+                <span class="bud-flow-sum">${signedMoney(income)}</span>
             </div>`}
             ${!spent ? '' : `<div class="bud-flow bud-flow-out">
                 <span class="bud-flow-label">Витрати</span>
-                <span class="bud-flow-sum">${formatMoney(spent)}</span>
+                <span class="bud-flow-sum">${signedMoney(spent)}</span>
             </div>`}
         </div>`;
 

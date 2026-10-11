@@ -26,7 +26,8 @@ let openItem = null, opsMonth = '', debtSort = 'address';
 // Операції статей вантажаться при відкритті (finance_ops/{ключ}): key → список | 'loading' | 'error'.
 const opsCache = new Map();
 const EXPENSES_SHOWN = 8;
-const kop = value => formatMoney((Number(value) || 0) / 100);
+const signedMoney = value => `${Number(value) < 0 ? '−' : ''}${formatMoney(Number(value) || 0)}`;
+const kop = value => signedMoney((Number(value) || 0) / 100);
 const CHEVRON = '<svg class="hf-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>';
 
 /** Рядок статті: якщо є операції — відкривається розшифровка (expense — ключ exp-…, надходження — inc-…). */
@@ -52,7 +53,7 @@ function budgetHtml(b) {
     const line = l => {
         const p = share(l.factKop, l.toDateKop);
         return itemLi(`exp-${l.item}`, l.title, `<span class="hf-line"><span class="hf-item-head"><span>${escapeHtml(l.title)}${l.outside ? ' <small class="hf-tag">поза кошторисом</small>' : ''}</span><b>${kop(l.factKop)} грн</b></span>
-            ${l.planKop ? `<span class="hf-bar${p > 100 ? ' is-over' : ''}"><i style="width:${Math.min(100, p || 0)}%"></i></span>
+            ${l.planKop ? `<span class="hf-bar${p > 100 ? ' is-over' : ''}"><i style="width:${Math.max(0, Math.min(100, p || 0))}%"></i></span>
             <small>${p === null ? '' : `${p}% від плану на сьогодні · `}план на рік ${kop(l.planKop)} грн</small>` : ''}</span>`);
     };
     return `<section class="card">
@@ -78,7 +79,7 @@ function expensesHtml(list) {
         <h3 class="am-card-title">Витрати з документами</h3>
         <ul class="hf-docs">${shown.map(e => `<li>
             <div class="hf-item-head"><span><b>${escapeHtml(e.supplier)}</b></span><b>${kop(e.amountKop)} грн</b></div>
-            <small>${escapeHtml(String(e.date).split('-').reverse().join('.'))} · ${escapeHtml(e.description)} · ${escapeHtml(e.item)}${e.paid ? '' : ' · до оплати'}</small>
+            <small>${escapeHtml(String(e.date).split('-').reverse().join('.'))} · ${escapeHtml(e.description)} · ${escapeHtml(e.item)}${e.amountKop < 0 ? ' · сторно' : e.paid ? '' : ' · до оплати'}</small>
             ${(e.files || []).length ? `<p class="hf-files">${e.files.map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(e.doc)}: ${escapeHtml(f.name)}</a>`).join('')}</p>` : ''}
         </li>`).join('')}</ul>
         ${list.length > shown.length ? `<button type="button" class="btn-ghost am-more-btn" data-hf-allexp>Показати всі (${list.length})</button>` : ''}
@@ -161,7 +162,7 @@ function moneyHtml() {
     if (summary.funds !== null) {
         parts.push(`<section class="card hf-hero">
             <p class="am-heat-kicker">На рахунку ОСББ</p>
-            <p class="am-heat-amount">${formatMoney(summary.funds)}<span> грн</span></p>
+            <p class="am-heat-amount">${signedMoney(summary.funds)}<span> грн</span></p>
             ${summary.fundsDate ? `<p class="hf-asof">станом на ${escapeHtml(summary.fundsDate)}</p>` : ''}
         </section>`);
     }
@@ -171,13 +172,13 @@ function moneyHtml() {
         <p class="am-heat-kicker">Звіт за період</p>
         <h2 class="hf-period">${escapeHtml(summary.period || 'Поточний період')}</h2>
         <div class="hf-flows">
-            ${summary.income === null ? '' : `<div class="hf-flow is-in"><span>Надійшло</span><b>${formatMoney(summary.income)}</b><small>грн</small></div>`}
-            <div class="hf-flow is-out"><span>Витрачено</span><b>${formatMoney(summary.spent)}</b><small>грн</small></div>
+            ${summary.income === null ? '' : `<div class="hf-flow is-in"><span>Надійшло</span><b>${signedMoney(summary.income)}</b><small>грн</small></div>`}
+            <div class="hf-flow is-out"><span>Витрачено</span><b>${signedMoney(summary.spent)}</b><small>грн</small></div>
         </div>
         ${summary.spentShare === null ? '' : `<div class="hf-meter${over ? ' is-over' : ''}" role="img" aria-label="Витрачено ${num(summary.spentShare, 0)}% надходжень"><i style="width:${Math.min(100, summary.spentShare)}%"></i></div>
         <p class="hf-meter-note${over ? ' is-over' : ''}">${over
             ? `Витрати перевищили надходження на ${formatMoney(-summary.difference)} грн`
-            : `Витрачено ${num(summary.spentShare, 0)}% зібраного · лишилося ${formatMoney(summary.difference)} грн`}</p>`}
+            : `Витрачено ${num(summary.spentShare, 0)}% зібраного · лишилося ${signedMoney(summary.difference)} грн`}</p>`}
     </section>`);
 
     if (report.budget?.sections?.length) parts.push(budgetHtml(report.budget));
@@ -187,13 +188,13 @@ function moneyHtml() {
 
     if (summary.items.length) {
         const shown = allItems ? summary.items : summary.items.slice(0, ITEMS_SHOWN);
-        const max = summary.items[0].amount;
+        const max = Math.max(0, ...summary.items.map(i => i.amount));
         parts.push(`<section class="card">
             <h3 class="am-card-title">Куди пішли гроші</h3>
             <ul class="hf-items">${shown.map(item => itemLi(item.item && `exp-${item.item}`, item.label, `<span class="hf-line">
-                <span class="hf-item-head"><span>${escapeHtml(item.label)}</span><b>${formatMoney(item.amount)} грн</b></span>
-                <span class="hf-bar"><i style="width:${item.amount / max * 100}%"></i></span>
-                <small>${num(item.share, 1)}% усіх витрат</small></span>`)).join('')}</ul>
+                <span class="hf-item-head"><span>${escapeHtml(item.label)}</span><b>${signedMoney(item.amount)} грн</b></span>
+                <span class="hf-bar"><i style="width:${max > 0 ? Math.max(0, item.amount / max * 100) : 0}%"></i></span>
+                <small>${item.amount < 0 ? 'Повернення зменшили витрати' : `${num(item.share, 1)}% усіх витрат`}</small></span>`)).join('')}</ul>
             ${summary.items.length > shown.length ? `<button type="button" class="btn-ghost am-more-btn" data-hf-all>Показати всі статті (${summary.items.length})</button>` : ''}
         </section>`);
     }

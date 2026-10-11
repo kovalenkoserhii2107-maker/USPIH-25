@@ -6,6 +6,7 @@
 // Тут немає ні мережі, ні DOM: тести — tests/unit/month-core.test.mjs.
 // ============================================================
 import { fmtKop, periodName } from './charges-core.js';
+import { paymentWho } from './payroll-view-core.js';
 
 /** done — зроблено, work — потрібна дія, locked — ще недоступно, unknown — даних немає. */
 export const STATES = { done: 'готово', work: 'потрібна ваша дія', locked: 'ще недоступно', unknown: 'немає даних' };
@@ -40,7 +41,7 @@ function docsStep(period, expenses) {
     const base = { key: 'docs', title: 'Документи витрат', go: 'expenses',
         text: 'Рахунки й акти постачальників за місяць. Рахунок і акт однієї послуги — один запис, щоб витрата не задвоїлась.' };
     if (!expenses) return { ...base, state: 'unknown', short: 'немає даних', facts: [], action: 'Відкрити документи' };
-    const list = (expenses.expenses || []).filter(e => e.period === period && e.status !== 'rejected');
+    const list = (expenses.expenses || []).filter(e => e.period === period && ['pending', 'approved', 'paid'].includes(e.status));
     const pending = list.filter(e => e.status === 'pending');
     const facts = [['Документів', String(list.length)], ['На суму', grn(list.reduce((s, e) => s + (e.amountKop || 0) - (e.stornoKop || 0), 0))]];
     if (!pending.length) return { ...base, state: 'done', short: list.length ? `${list.length} ${plural(list.length, 'документ', 'документи', 'документів')} погоджено` : 'документів немає', facts, action: 'Відкрити документи' };
@@ -58,7 +59,13 @@ function payrollStep(payroll) {
     if (payroll.status === 'none') return { ...base, state: 'work', short: 'відомість не складено', facts, action: 'Скласти відомість' };
     if (payroll.status === 'draft') return { ...base, state: 'work', short: 'чекає затвердження голови', facts, action: 'Відкрити відомість' };
     const final = payroll.stages?.final;
-    if (final && final.complete !== false) return { ...base, state: 'done', short: 'затверджено й виплачено', facts, action: 'Відкрити відомість' };
+    if (final && final.complete !== false) {
+        const paid = new Map();
+        for (const p of payroll.payments || []) if (p.status === 'paid') paid.set(paymentWho(p), (paid.get(paymentWho(p)) || 0) + p.amountKop - (p.returnedKop || 0));
+        const expected = [...(payroll.run?.rows || []).map(r => [r.personId, r.netKop]), ...['pdfo', 'vz', 'esv'].map(k => [k, payroll.run?.totals?.[`${k}Kop`] || 0])];
+        if (payroll.run?.rows && expected.every(([k, amount]) => (paid.get(k) || 0) === amount)) return { ...base, state: 'done', short: 'затверджено й виплачено', facts, action: 'Відкрити відомість' };
+        return { ...base, state: 'work', short: 'платежі надіслано — чекають проведення банком', facts, action: 'Перевірити платежі' };
+    }
     return { ...base, state: 'work', short: 'затверджено, виплату не завершено', facts, action: 'Відкрити відомість' };
 }
 

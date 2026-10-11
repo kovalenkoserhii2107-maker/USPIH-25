@@ -10,7 +10,10 @@ const ready = {
     charges: { runs: [{ period, count: 312, totalKop: 8663216, complete: true }] },
     bank: { count: 0, sumKop: 0 },
     expenses: { expenses: [{ period, status: 'approved', amountKop: 684000 }, { period: '2026-09', status: 'pending', amountKop: 100 }] },
-    payroll: { status: 'approved', activePeople: 2, stages: { advance: { complete: true }, final: { complete: true } }, run: { totals: { grossKop: 1664700 } } }
+    payroll: { status: 'approved', activePeople: 2, stages: { advance: { complete: true }, final: { complete: true } },
+        run: { rows: [{ personId: 'e1', netKop: 1281819 }], totals: { grossKop: 1664700, pdfoKop: 299646, vzKop: 83235, esvKop: 366234 } },
+        payments: [{ stage: 'final', key: 'e1', status: 'paid', amountKop: 1281819 }, { stage: 'final', key: 'pdfo', status: 'paid', amountKop: 299646 },
+            { stage: 'final', key: 'vz', status: 'paid', amountKop: 83235 }, { stage: 'final', key: 'esv', status: 'paid', amountKop: 366234 }] }
 };
 const stateOf = (steps, key) => steps.find(s => s.key === key).state;
 

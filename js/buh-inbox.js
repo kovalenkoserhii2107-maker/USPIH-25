@@ -19,6 +19,7 @@ import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
 import { openPayroll } from './buh-payroll.js';
 import { openReports, reportTasks } from './buh-reports.js';
+import { openTxSheet } from './buh-chain.js';
 
 const CONFIDENCE = {
     'імʼя власника': ['high', 'висока'],
@@ -34,6 +35,7 @@ let busy = new Set();
 /** Пропозиція системи для операції з черги. */
 export function proposalFor(tx) {
     const suggestions = tx.suggestions || [];
+    if (tx.direction === 'out' && tx.paymentSuggestions?.length) return { type: 'payment-link', ids: tx.paymentSuggestions };
     // Списання постачальнику, схоже на затверджений документ витрат.
     if (tx.direction === 'out' && tx.expenseSuggestions?.length) return { type: 'link', ids: tx.expenseSuggestions };
     if (tx.direction === 'out') return { type: 'expense' };
@@ -66,6 +68,7 @@ function linkLevel(item) {
 
 function proposalHtml(item, dir) {
     const p = item.proposal;
+    if (p.type === 'payment-link') return '<p class="inbox-proposal is-ask">Кілька платежів з однаковою сумою. Виберіть платіж за реквізитами банку.</p>';
     if (p.type === 'link') {
         return `<p class="inbox-proposal"><span class="inbox-arrow">→</span> Оплата за документом: <b>${escapeHtml(expenseLabel(p.ids[0]))}</b>
             ${linkLevel(item)}</p>`;
@@ -98,11 +101,12 @@ function refundListHtml(list) {
             <option value="bounce">Банк повернув платіж — документ знову до сплати</option>
             <option value="supplier">Постачальник повернув кошти (сторно, знижка, переплата)</option>
             <option value="other">Інше повернення списаного</option></select></label>
-        <div class="inbox-chips">${list.map(o => `<button type="button" class="inbox-chip" data-refund-of="${escapeHtml(o.id)}">${escapeHtml(o.at ? new Date(o.at).toLocaleDateString('uk-UA') : '')} · ${money(o.amountKop / 100)}${o.refundedKop ? ` (повернено ${money(o.refundedKop / 100)})` : ''}
+        <div class="inbox-chips">${list.map(o => `<button type="button" class="inbox-chip" data-refund-of="${escapeHtml(o.id)}">${escapeHtml(o.at ? new Date(o.at).toLocaleDateString('uk-UA') : '')} · ${money(o.amountKop)}${o.refundedKop ? ` (повернено ${money(o.refundedKop)})` : ''}
             <small>${escapeHtml(o.name)}${o.payroll ? ' · зарплата' : o.expense ? ' · за документом' : ''} — ${escapeHtml(o.purpose)}</small></button>`).join('')}</div>`;
 }
 
 function formHtml(item, dir) {
+    if (item.proposal.type === 'payment-link') return '<button type="button" class="btn-primary btn-compact" data-act="edit">Вибрати платіж за випискою</button>';
     return `${decisionHtml(item, dir)}${refundHtml(item)}`;
 }
 
@@ -541,6 +545,7 @@ const confirmProposal = item => {
 };
 
 function openForm(item) {
+    if (item.proposal.type === 'payment-link') { openTxSheet(item.tx.id); return; }
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
     if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }

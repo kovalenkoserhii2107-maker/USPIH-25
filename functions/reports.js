@@ -17,6 +17,8 @@ const { START_PERIOD } = require('./journal-core');
 const { validDate } = require('./expenses-core');
 const dps = require('./dps-xml');
 const STI = require('./dps/sti.json');
+const { fopReport } = require('./fop-report-core');
+const { kyivDate } = require('./journal-core');
 
 const REGION = 'europe-central2';
 const FILE_KINDS = { report: 'звіт', receipt1: 'квитанція № 1', receipt2: 'квитанція № 2', other: 'інше' };
@@ -42,11 +44,12 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
 
     /** Стан усіх звітів, місяці зарплати й чи є кому платити (тоді щомісячний розрахунок обовʼязковий). */
     async function context() {
-        const [reports, runs, people, esvPaid] = await Promise.all([
+        const [reports, runs, people, esvPaid, fops] = await Promise.all([
             db.collection('reports').get(),
             db.collection('payroll_runs').select('status', 'run.totals').get(),
             db.collection('payroll_people').select('active', 'from', 'to').get(),
-            db.collection('payments').where('payroll.key', '==', 'esv').get()
+            db.collection('payments').where('payroll.key', '==', 'esv').get(),
+            db.collection('suppliers').where('kind', '==', 'fop').limit(1).get()
         ]);
         const statuses = Object.fromEntries(reports.docs.map(d => [d.id, plain(d)]));
         // Порівнюємо фактичну суму з усім місячним нарахуванням, а не кількість платежів.
@@ -64,58 +67,68 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             today: today(), start: START_PERIOD, statuses, fileKinds: FILE_KINDS,
             payrollMonths: runs.docs.map(d => ({ period: d.id, status: d.data().status, grossKop: d.data().run?.totals?.grossKop || 0 }))
                 .sort((a, b) => b.period.localeCompare(a.period)),
-            hasPeople: people.docs.some(d => d.data().active !== false)
+            hasPeople: people.docs.some(d => d.data().active !== false), hasFop: !fops.empty
         };
     }
 
-    const kyivDay = v => {
-        const d = v?.toDate?.() || null;
-        return d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d) : '';
-    };
-
-    /**
-     * Дані розрахунку за місяць: відомість, платежі за нею й виплачені цього
-     * місяця за попередні місяці (4ДФ — за датою виплати), виплати ФОП.
-     */
-    async function reportInput(period) {
-        const [y, m] = period.split('-').map(Number);
-        // Із запасом на добу з кожного боку: точний місяць — за київською датою.
-        const from = new Date(Date.UTC(y, m - 1, 1) - 86400000), to = new Date(Date.UTC(y, m, 1) + 86400000);
-        const [run, people, accrued, paidIn, tx, suppliers] = await Promise.all([
-            db.doc(`payroll_runs/${period}`).get(),
+    /** Спільний знімок джерел для таблиць, CSV і XML. */
+    async function reportSource(period) {
+        const [runs, people, pays, expenses, suppliers, bank] = await Promise.all([
+            db.collection('payroll_runs').get(),
             db.collection('payroll_people').get(),
-            db.collection('payments').where('payroll.period', '==', period).get(),
-            db.collection('payments').where('paidAt', '>=', from).where('paidAt', '<', to).get(),
-            db.collection('bank_tx').where('period', '==', period).get(),
-            db.collection('suppliers').get()
+            db.collection('payments').get(),
+            db.collection('expenses').get(),
+            db.collection('suppliers').get(),
+            db.collection('bank_tx').where('period', '>=', START_PERIOD).get()
         ]);
-        const seen = new Map();
-        for (const d of [...accrued.docs, ...paidIn.docs]) {
+        const stored = runs.docs.find(d => d.id === period)?.data() || null;
+        const cards = new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+        const runMap = new Map(runs.docs.map(d => [d.id, d.data()]));
+        const txs = bank.docs.map(d => ({ id: d.id, ...d.data() })), byTx = new Map(txs.map(t => [t.id, t]));
+        const fop = fopReport({ period, expenses: expenses.docs.map(d => ({ id: d.id, ...d.data() })),
+            suppliers: new Map(suppliers.docs.map(d => [d.id, { id: d.id, ...d.data() }])), bankTx: txs });
+        const checks = [...fop.checks], payments = [];
+        // Для виплати старої відомості потрібні також її аванс і податки:
+        // інакше остаточний платіж у наступному місяці порівнюється з усією зарплатою.
+        const sourcePeriods = new Set([period]);
+        for (const d of pays.docs) {
             const p = d.data();
-            if (!p.payroll || seen.has(d.id)) continue;
-            seen.set(d.id, { period: p.payroll.period, stage: p.payroll.stage, key: p.payroll.key, status: p.status,
-                amountKop: p.amountKop - (p.returnedKop || 0), paidOn: kyivDay(p.paidAt) });
+            if (p.payroll?.period && (byTx.get(p.txId)?.period === period || kyivDate(p.paidAt).slice(0, 7) === period
+                || (p.returnTxIds || []).some(id => byTx.get(id)?.period === period))) sourcePeriods.add(p.payroll.period);
         }
-        const payments = [...seen.values()];
-        const others = [...new Set(payments.filter(p => p.status === 'paid' && p.paidOn.startsWith(period) && p.period !== period).map(p => p.period))];
-        const runSnaps = others.length ? await db.getAll(...others.map(q => db.doc(`payroll_runs/${q}`))) : [];
-        const txList = tx.docs.map(d => ({ id: d.id, ...d.data() }));
-        const exIds = [...new Set(txList.map(t => t.expenseId).filter(Boolean))];
-        const exSnaps = exIds.length ? await db.getAll(...exIds.map(id => db.doc(`expenses/${id}`))) : [];
-        const stored = run.exists ? run.data() : null;
-        return {
-            period, stored, people: new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }])), payments,
-            runs: new Map(runSnaps.filter(d => d.exists).map(d => [d.id, d.data()])),
-            fop: core.fopIncome({ tx: txList, expenses: new Map(exSnaps.filter(d => d.exists).map(d => [d.id, d.data()])),
-                suppliers: new Map(suppliers.docs.map(d => [d.id, d.data()])) })
-        };
+        for (const d of pays.docs) {
+            const p = d.data(), pr = p.payroll;
+            if (!pr?.period) continue;
+            const tx = byTx.get(p.txId);
+            if (!sourcePeriods.has(pr.period)) continue;
+            if (p.status === 'paid') {
+                if (!tx || tx.direction !== 'out' || tx.status !== 'done' || tx.paymentId !== d.id || tx.amountKop !== p.amountKop) {
+                    checks.push({ level: 'block', text: 'Виплата за відомістю не має узгодженого підтвердження випискою — звірте платіж перед 4ДФ' });
+                }
+                if (!Number.isSafeInteger(p.returnedKop || 0) || (p.returnedKop || 0) < 0 || (p.returnedKop || 0) > p.amountKop) {
+                    checks.push({ level: 'block', text: 'Некоректна сума повернення зарплатного/податкового платежу — звірте виписку' });
+                }
+                if (tx && kyivDate(tx.at).slice(0, 7) !== tx.period) checks.push({ level: 'block', text: 'Місяць банківського платежу не відповідає його даті — звірте виписку' });
+                for (const id of p.returnTxIds || []) {
+                    const refund = byTx.get(id);
+                    if (refund && refund.period !== pr.period && (refund.period === period || pr.period === period)) checks.push({ level: 'block', text: `Повернення виплати за ${pr.period} у ${refund.period}: звірте період коригування 4ДФ в Електронному кабінеті` });
+                }
+            }
+            payments.push({ period: pr.period, stage: pr.stage, key: pr.key, paidOn: kyivDate(tx?.at),
+                status: p.status === 'paid' && p.amountKop > 0 && p.returnedKop === p.amountKop ? 'returned' : p.status,
+                amountKop: p.amountKop - (p.returnedKop || 0) });
+        }
+        const report = core.payrollReport({
+            period, stored, people: cards, payments, runs: runMap, otherIncome: fop.income
+        });
+        report.checks.push(...[...new Map(checks.map(c => [c.text, c])).values()]);
+        return { stored, cards, report };
     }
 
-    /** Податковий розрахунок за місяць: суми за людьми з затвердженої відомості. */
+    /** Податковий розрахунок за місяць: ті самі суми, що й в XML. */
     async function payrollData({ period }) {
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) fail('invalid-argument', 'Невідомий місяць');
-        const [input, saved] = await Promise.all([reportInput(period), db.doc(`reports/${core.keyFor('j0500111', period)}`).get()]);
-        const report = core.payrollReport(input);
+        const [{ report }, saved] = await Promise.all([reportSource(period), db.doc(`reports/${core.keyFor('j0500111', period)}`).get()]);
         const settings = (await db.doc('osbb_settings/finance').get()).data() || {};
         return { ...report, key: core.keyFor('j0500111', period), edrpou: settings.edrpou || '', saved: saved.exists ? plain(saved) : null };
     }
@@ -160,11 +173,9 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     async function xml(actor, role, { period, stan, num }) {
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) fail('invalid-argument', 'Невідомий місяць');
         if (period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
-        const kind = [1, 2, 3].includes(Number(stan)) ? Number(stan) : 1;
-        const number = Math.max(1, Math.min(9999, Math.round(Number(num) || 1)));
-        const [input, cfg] = await Promise.all([reportInput(period), xmlSettings()]);
-        const { stored, people: cards } = input;
-        const report = core.payrollReport(input);
+        const kind = stan === undefined ? 1 : Number(stan);
+        const number = num === undefined ? 1 : Number(num);
+        const [{ stored, cards, report }, cfg] = await Promise.all([reportSource(period), xmlSettings()]);
         const s = cfg.settings;
         const office = STI.find(x => x.sti === Number(s.sti));
         const org = { ...cfg.org, ...s, sti: office ? { reg: office.reg, raj: office.raj, code: office.sti, name: office.name } : null };
@@ -175,11 +186,6 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     }
 
     /** Позначка звіту: подано, прийнято (квитанція № 2), відхилено, не потрібно; «open» — зняти позначку. */
-    /**
-     * files — повний перелік файлів (заміна); addFiles — лише нові: сервер
-     * додає їх до збережених, тож квитанції з двох вкладок не губляться.
-     * seenAt — коли кабінет бачив позначку: знімаємо лише ту, яку бачили.
-     */
     async function mark(actor, role, { key, status, regNumber, date, note, files, addFiles, seenAt }) {
         if (!core.validKey(key)) fail('invalid-argument', 'Невідомий звіт');
         const period = core.periodOf(key);
@@ -190,41 +196,44 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
                 const snap = await t.get(ref);
                 if (!snap.exists) return null;
                 if (role !== 'chair' && snap.data().status === 'accepted') fail('permission-denied', 'Позначку прийнятого звіту знімає лише голова');
-                const at = snap.data().at?.toDate?.()?.toISOString() || null;
-                if (seenAt !== undefined && seenAt !== at) fail('aborted', 'Позначку щойно змінили в іншій вкладці чи іншим користувачем — оновіть сторінку');
+                if (seenAt !== undefined && seenAt !== (snap.data().at?.toDate?.()?.toISOString() || null)) fail('aborted', 'Позначку змінено в іншій вкладці — оновіть сторінку перед зняттям');
+                t.set(db.collection('audit_log').doc(), { actor, role, action: 'reports.reopen', target: `reports/${key}`,
+                    summary: `Знято позначку «${core.STATUSES[snap.data().status] || snap.data().status}»`, details: { before: snap.data() }, at: FieldValue.serverTimestamp() });
                 t.delete(ref);
                 return snap;
             });
             if (!before) return { ok: true };
-            await audit(actor, role, 'reports.reopen', `reports/${key}`, `Знято позначку «${core.STATUSES[before.data().status] || before.data().status}»`, { before: before.data() });
             return { ok: true };
         }
         if (!core.STATUSES[status]) fail('invalid-argument', 'Невідомий стан');
         if (status === 'paid' && !key.startsWith('esv-')) fail('invalid-argument', '«Сплачено» — лише для платежів');
+        if (!core.allowedStatus(key, status)) fail('invalid-argument', 'Цей стан не відповідає виду звіту або платежу');
         const day = String(date || '') || today();
         if (!validDate(day) || day > today()) fail('invalid-argument', 'Вкажіть правильну дату подання — не пізніше сьогодні');
-        for (const v of [files, addFiles]) if (v !== undefined && (!Array.isArray(v) || v.length > 12)) fail('invalid-argument', 'Додайте не більше 12 файлів');
-        const clean = v => (Array.isArray(v) ? v : []).map(f => ({
+        const incoming = addFiles === undefined ? files : addFiles;
+        if (incoming !== undefined && (!Array.isArray(incoming) || incoming.length > 12)) fail('invalid-argument', 'Додайте не більше 12 файлів');
+        const list = (Array.isArray(incoming) ? incoming : []).map(f => ({
             name: text(f?.name, 120), path: String(f?.path || ''), kind: FILE_KINDS[f?.kind] ? f.kind : 'other'
         }));
-        const list = clean(files), added = clean(addFiles);
-        for (const f of [...list, ...added]) {
+        for (const f of list) {
             if (!f.path.startsWith(`reports/${key}/`) || f.path.includes('..')) fail('invalid-argument', 'Файл має бути в теці цього звіту');
         }
-        const doc = await db.runTransaction(async t => {
+        await db.runTransaction(async t => {
             const before = (await t.get(ref)).data();
             if (before?.status === 'accepted' && status !== 'accepted' && role !== 'chair') fail('permission-denied', 'Стан прийнятого звіту змінює лише голова');
-            const base = files === undefined ? before?.files || [] : list;
-            const keptFiles = [...base, ...added.filter(f => !base.some(b => b.path === f.path))];
-            if (keptFiles.length > 24) fail('invalid-argument', 'У звіті вже забагато файлів (до 24)');
+            // Паралельні вкладки доповнюють архів; старий список з клієнта
+            // не може затерти квитанцію, яку щойно додали в іншій вкладці.
+            const keptFiles = [...new Map([...(before?.files || []), ...list].map(f => [f.path, f])).values()];
+            if (keptFiles.length > 12) fail('invalid-argument', 'В архіві вже 12 файлів — нове подання збережіть після зняття позначки головою');
             const number = regNumber === undefined ? before?.regNumber || '' : text(regNumber, 40);
             if (status === 'accepted' && !keptFiles.some(f => f.kind === 'receipt2') && !number) fail('invalid-argument', 'Для «прийнято» додайте квитанцію № 2 або реєстраційний номер документа');
             const value = { key, status, regNumber: number, date: day, note: note === undefined ? before?.note || '' : text(note, 300), files: keptFiles, by: actor, at: FieldValue.serverTimestamp() };
             t.set(ref, value);
+            t.set(db.collection('audit_log').doc(), { actor, role, action: 'reports.mark', target: `reports/${key}`,
+                summary: `Звіт ${key}: ${core.STATUSES[status]}${number ? `, № ${number}` : ''}`,
+                details: { before: before || null, after: { key, status, regNumber: number, date: day, note: value.note, files: keptFiles } }, at: FieldValue.serverTimestamp() });
             return value;
         });
-        await audit(actor, role, 'reports.mark', `reports/${key}`, `Звіт ${key}: ${core.STATUSES[status]}${doc.regNumber ? `, № ${doc.regNumber}` : ''}`,
-            { status, regNumber: doc.regNumber, date: day, files: doc.files.map(f => f.kind) });
         return { ok: true };
     }
 

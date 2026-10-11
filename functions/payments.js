@@ -76,7 +76,8 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         if (payment.payroll?.repayOf) {
             // Повторна виплата поверненого банком платежу: та сама сума й призначення, рахунок — з виправленої картки.
             const old = (await db.doc(`payments/${payment.payroll.repayOf}`).get()).data();
-            const same = old?.payroll && ['period', 'stage', 'key'].every(k => old.payroll[k] === payment.payroll[k]);
+            const same = old?.payroll && ['period', 'stage', 'key'].every(k => old.payroll[k] === payment.payroll[k])
+                && old.kind === payment.kind && old.account === payment.account && old.purpose === payment.purpose;
             if (!same || old.status !== 'paid' || (old.returnedKop || 0) < old.amountKop || old.amountKop !== payment.amountKop || (old.repaidBy || []).length) {
                 fail('failed-precondition', 'Повторити можна лише повністю повернений банком зарплатний платіж');
             }
@@ -107,6 +108,11 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
                 // Один документ — один платіж у дорозі, хоч би з якої форми його відправили.
                 if (live.docs.some(d => d.id !== ref.id)) fail('already-exists', 'За цим документом уже є платіж у Приват24 — дочекайтеся виписки або скасуйте його в «Платежах»');
             }
+            const oldRef = payment.payroll?.repayOf ? db.doc(`payments/${payment.payroll.repayOf}`) : null;
+            const old = oldRef ? await t.get(oldRef) : null;
+            if (oldRef && (!old.exists || old.data().status !== 'paid' || (old.data().returnedKop || 0) !== payment.amountKop || (old.data().repaidBy || []).length)) {
+                fail('aborted', 'Повернений платіж уже повторюється або його стан змінився');
+            }
             if (existing.exists && !['failed', 'canceled'].includes(existing.data().status)) {
                 const p = existing.data();
                 if (data.reuseExisting && ['sent', 'paid'].includes(p.status) && p.amountKop === payment.amountKop && p.account === payment.account
@@ -114,6 +120,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
                 fail('already-exists', 'Цей платіж уже відправлено в банк або ще перевіряється');
             }
             t.set(ref, { ...payment, status: 'sending', proposalKey, docNumber, createdBy: actor, createdAt: FieldValue.serverTimestamp() });
+            if (oldRef) t.update(oldRef, { repaidBy: FieldValue.arrayUnion(ref.id) });
             return true;
         });
         if (!reserved) return { id: ref.id };
@@ -124,7 +131,15 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         } catch (e) {
             logger.error('Створення платежу в ПриватБанку', e);
             const status = e.bankRejected === true ? 'failed' : 'unknown';
-            await ref.update({ status, error: String(e.message || e).slice(0, 300) });
+            await db.runTransaction(async t => {
+                const current = await t.get(ref);
+                const oldRef = payment.payroll?.repayOf ? db.doc(`payments/${payment.payroll.repayOf}`) : null;
+                if (oldRef) await t.get(oldRef);
+                // Пізня виписка могла вже підтвердити платіж.
+                if (current.data()?.status === 'paid') return;
+                t.update(ref, { status, error: String(e.message || e).slice(0, 300) });
+                if (oldRef && status === 'failed') t.update(oldRef, { repaidBy: FieldValue.arrayRemove(ref.id) });
+            });
             await audit(actor, role, status === 'failed' ? 'payment.failed' : 'payment.unknown', `payments/${ref.id}`, `${payment.recipient.name}: ${fromKop(payment.amountKop)} грн — ${status === 'failed' ? 'банк не прийняв' : 'результат не підтверджено'}`, { error: String(e.message || e).slice(0, 300) });
             fail('unavailable', status === 'failed' ? `Банк не прийняв платіж: ${String(e.message || e).slice(0, 200)}`
                 : 'Банк не підтвердив результат. Перевірте платіж у Приват24 перед повторною відправкою.');

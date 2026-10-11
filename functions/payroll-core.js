@@ -27,6 +27,7 @@ const KINDS = { employee: 'Трудовий договір', gph: 'Догові�
 const { validIban } = require('./payments-core');
 const { validDate } = require('./expenses-core');
 const leave = require('./leave-core');
+const { esvParts } = require('./esv-core');
 
 const pct = (kop, bp) => Math.round(kop * bp / 10000);
 /** «4 323,50» — як суми в застосунку. */
@@ -141,16 +142,15 @@ function calcRow(person, input, period, rate, { advancePct = 50, history = [] } 
         if (person.salaryKop < Math.round(rate.minWageKop * fte)) {
             warnings.push(`оклад менший за мінімальну зарплату${fte < 1 ? ` для ставки ${fte}` : ''} (${uah(rate.minWageKop * fte)} грн) — потрібна доплата до МЗП`);
         }
-        if (person.mainJob !== false && grossKop > 0 && available === norm) {
-            // Мінімальна база — на зарплату й відпускні; у місяці з лікарняним — пропорційно дням без нього.
-            const dim = leave.daysInMonth(period);
-            const minBase = lv.sickDays ? Math.round(rate.minWageKop * (dim - lv.sickDays) / dim) : rate.minWageKop;
-            const nonSick = regularKop + lv.vacationKop;
-            if (nonSick < minBase) {
-                esvBaseKop = minBase + lv.sickKop + fundSickKop;
+        if (person.mainJob !== false && grossKop > 0 && calendarDays(person, period) === leave.daysInMonth(period)) {
+            // ЄСВ з усього місячного доходу, включно з лікарняними, не нижче МЗП
+            // за повний календарний місяць трудових відносин. МЗП не зменшуємо на дні хвороби.
+            if (grossKop < rate.minWageKop) {
+                esvBaseKop = rate.minWageKop;
                 warnings.push('ЄСВ — з мінімальної бази (основне місце роботи): різницю сплачує ОСББ');
             }
         }
+        if (lv.fundDays && !fundSickKop) warnings.push('ПФУ за цей лікарняний ще не нараховано: після уточнення повного доходу місяця звірте мінімальну базу ЄСВ і Д1');
         if (worked < norm) warnings.push(`відпрацьовано ${worked} з ${norm} дн.`);
     }
     // Перерахунок за минулий місяць: окремо від мінімальної бази й авансу поточного місяця.
@@ -167,7 +167,8 @@ function calcRow(person, input, period, rate, { advancePct = 50, history = [] } 
     else if (psp.pspKop) warnings.push(`ПСП ${uah(psp.pspKop)} грн (ознака ${psp.code})`);
     const pdfoKop = pct(Math.max(0, grossKop - psp.pspKop), rate.pdfo);
     const vzKop = pct(grossKop, rate.vz);
-    const esvKop = pct(esvBaseKop, rate.esv);
+    const contributionParts = esvParts({ grossKop, esvBaseKop, vacationKop: lv?.vacationKop || 0, sickKop: lv?.sickKop || 0, fundSickKop }, rate);
+    const esvKop = contributionParts.reduce((s, r) => s + r.esvKop, 0);
     // Аванс — лише працівникам: частина зарплати за першу половину плюс відпускні (їх платять до відпустки).
     const vacation = lv?.vacationKop || 0;
     const advGross = person.kind === 'employee' ? Math.max(0, Math.min(grossKop, Math.round(regularKop * advancePct / 100) + vacation)) : 0;
@@ -177,7 +178,7 @@ function calcRow(person, input, period, rate, { advancePct = 50, history = [] } 
     const final = { grossKop: grossKop - advance.grossKop, pdfoKop: pdfoKop - advance.pdfoKop, vzKop: vzKop - advance.vzKop };
     final.netKop = final.grossKop - final.pdfoKop - final.vzKop;
     final.esvKop = esvKop - advance.esvKop;
-    return { grossKop, pdfoKop, vzKop, netKop: grossKop - pdfoKop - vzKop, esvBaseKop, esvKop, advance, final, normDays: norm, warnings, leaveProblems: problems,
+    return { grossKop, pdfoKop, vzKop, netKop: grossKop - pdfoKop - vzKop, esvBaseKop, esvKop, esvParts: contributionParts, advance, final, normDays: norm, warnings, leaveProblems: problems,
         regularKop, calendarDays: calendarDays(person, period), ...(workedDays !== null ? { workedDays } : {}),
         vacationKop: vacation, vacationDays: lv?.vacationDays || 0, sickKop: lv?.sickKop || 0, sickDays: lv?.sickDays || 0,
         sickEmployerDays: lv?.sickEmployerDays || 0, fundDays: lv?.fundDays || 0, fundExpectKop: lv?.fundExpectKop || 0, fundSickKop,
@@ -216,6 +217,7 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
             workedDays: null,
             payee: { iban: p.iban || '', rnokpp: p.rnokpp || '', contract: p.contract || '' },
             relationship: { from: p.from || '', to: p.to || '', mainJob: p.mainJob !== false, position: p.position || '', kind: p.kind },
+            reporting: reportingDetails(p),
             bonusKop: Math.round(Number(input.bonusKop) || 0), actKop: p.kind === 'gph' ? Math.round(Number(input.actKop) || 0) : null,
             ...r, problems };
     });
@@ -223,12 +225,17 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
     const sumIn = (stage, key) => rows.reduce((s, r) => s + r[stage][key], 0);
     return {
         period, rate, rows,
-        peopleSnapshot: people.map(p => ({ id: p.id, name: p.name, rnokpp: p.rnokpp || '', kind: p.kind, position: p.position || '', from: p.from || '', to: p.to || '', active: p.active !== false })),
+        peopleSnapshot: people.map(p => ({ id: p.id, name: p.name, rnokpp: p.rnokpp || '', kind: p.kind, position: p.position || '', from: p.from || '', to: p.to || '', active: p.active !== false,
+            mainJob: p.mainJob !== false, reporting: reportingDetails(p) })),
         totals: { grossKop: sum('grossKop'), pdfoKop: sum('pdfoKop'), vzKop: sum('vzKop'), netKop: sum('netKop'), esvKop: sum('esvKop'),
             advance: { grossKop: sumIn('advance', 'grossKop'), pdfoKop: sumIn('advance', 'pdfoKop'), vzKop: sumIn('advance', 'vzKop'), netKop: sumIn('advance', 'netKop'), esvKop: sumIn('advance', 'esvKop') },
             final: { grossKop: sumIn('final', 'grossKop'), pdfoKop: sumIn('final', 'pdfoKop'), vzKop: sumIn('final', 'vzKop'), netKop: sumIn('final', 'netKop'), esvKop: sumIn('final', 'esvKop') },
             costKop: sum('grossKop') + sum('esvKop') }
     };
+}
+
+function reportingDetails(p) {
+    return Object.fromEntries(['gender', 'kpCode', 'hireDoc', 'fireDoc', 'fireBasis', 'contract'].filter(k => p[k]).map(k => [k, p[k]]));
 }
 
 const MONTHS_GEN = ['січень', 'лютий', 'березень', 'квітень', 'травень', 'червень', 'липень', 'серпень', 'вересень', 'жовтень', 'листопад', 'грудень'];

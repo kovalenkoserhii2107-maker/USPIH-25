@@ -31,7 +31,7 @@ const STATUS = {
     submitted: ['подано · чекає квитанцію № 2', 'is-review'], accepted: ['прийнято', 'is-payment'], rejected: ['відхилено', 'is-error'],
     not_required: ['не потрібно', 'is-muted'], paid: ['сплачено', 'is-payment']
 };
-const DONE = new Set(['accepted', 'paid', 'not_required', 'submitted']);
+const DONE = new Set(['accepted', 'paid', 'not_required']);
 
 let ctx = null;
 let selected = null;        // ключ відкритого строку
@@ -54,10 +54,9 @@ export function reportTasks(c) {
     if (!c) return [];
     const today = c.today;
     const from = new Date(`${c.start}-01T00:00:00Z`);
-    const yearAgo = new Date(`${today}T00:00:00Z`); yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
     const to = new Date(`${today}T00:00:00Z`); to.setUTCMonth(to.getUTCMonth() + 4);
-    const payroll = c.hasPeople || c.payrollMonths.length > 0;
-    return deadlines(from > yearAgo ? from : yearAgo, to, { payroll, land: false })
+    const payroll = c.hasPeople || c.hasFop || c.payrollMonths.length > 0;
+    return deadlines(from, to, { payroll, land: false })
         .filter(d => { const p = periodOfKey(d.key); return !p || p >= c.start; })
         .map(d => {
             const iso = d.date.toISOString().slice(0, 10);
@@ -104,7 +103,7 @@ function payrollHtml(d) {
     const sum = (a, b) => `${fmtKop(a)}${b !== undefined && b !== a ? `<small>сплачено ${fmtKop(b)}</small>` : ''}`;
     return `${checks}
         <div class="kpi-grid rp-kpi">
-            <div class="kpi"><span>Нараховано доходу</span><b>${fmtKop(s.grossKop)}</b><small>${s.employees} працівн. · ${s.gph} ЦПД</small></div>
+            <div class="kpi"><span>Нараховано доходу</span><b>${fmtKop(s.grossKop)}</b><small>${s.employees} працівн. · ${s.gph} ЦПД${s.fop ? ` · ${s.fop} ФОП` : ''}</small></div>
             <div class="kpi"><span>ПДФО 18 %</span><b>${fmtKop(s.pdfoKop)}</b><small>сплачено ${fmtKop(s.pdfoPaidKop)}</small></div>
             <div class="kpi"><span>Військовий збір 5 %</span><b>${fmtKop(s.vzKop)}</b><small>сплачено ${fmtKop(s.vzPaidKop)}</small></div>
             <div class="kpi"><span>ЄСВ 22 %</span><b>${fmtKop(s.esvKop)}</b><small>база ${fmtKop(s.esvBaseKop)} · сплачено ${fmtKop(s.esvPaidKop)}</small></div>
@@ -120,9 +119,9 @@ function payrollHtml(d) {
         ${d.relations.length ? `<h3 class="rp-h">Додаток Д5 — трудові відносини й договори ЦПД</h3>
         <table class="buh-table is-compact"><tbody>${d.relations.map(r => `<tr><td>${escapeHtml(r.rnokpp || '—')}</td><td class="t-main">${escapeHtml(r.name)}<small>${escapeHtml(r.position || (r.kind === 'gph' ? 'договір ЦПД' : 'працівник'))}</small></td>
             <td>${r.kind === 'gph' ? (r.event === 'start' ? 'початок договору' : 'кінець договору') : (r.event === 'start' ? 'прийнято' : 'звільнено')}</td><td>${dmy(r.date)}</td></tr>`).join('')}</tbody></table>` : ''}
-        <p class="buh-note">Звіт подає голова в Електронному кабінеті ДПС: «Завантажити XML» нижче → у кабінеті «Звітність → Завантаження» обрати файли з архіву (розрахунок і додатки разом) → перевірити заповнену форму → підписати КЕП і надіслати. Ознака доходу 101 — зарплата, 102 — договір ЦПД. Коди категорій у Д1 (1 — працівник і ЦПД, 29 — лікарняні) і Д5 перевіряє бухгалтер за довідником форми. Сплата ЄСВ — до ${dmy(s.due)}.</p>
+        <p class="buh-note">Звіт подає голова в Електронному кабінеті ДПС: «Завантажити XML» нижче → у кабінеті «Звітність → Завантаження» обрати файли з архіву (розрахунок і додатки разом) → перевірити заповнену форму → підписати КЕП і надіслати. Ознака доходу 101 — зарплата, 102 — договір ЦПД. Д1: категорії 1 — працівник, 26 — ЦПД, 29 — лікарняні; відпускні — тип 10, різниця до мінімальної бази — тип 13. Сплата ЄСВ — до ${dmy(s.due)}.</p>
         ${d.status === 'approved' ? `<div class="rp-form rp-xml-opts">
-            <label class="field"><span>Вид розрахунку</span><select class="field-input field-select" id="rpStan"><option value="1">звітний</option><option value="2">звітний новий</option><option value="3">уточнюючий</option></select></label>
+            <label class="field"><span>Вид розрахунку</span><select class="field-input field-select" id="rpStan"><option value="1">звітний</option></select><small>Коригування попереднього подання — в Електронному кабінеті за даними CSV.</small></label>
             <label class="field"><span>Номер розрахунку</span><input class="field-input" id="rpNum" inputmode="numeric" maxlength="4" value="1"></label>
         </div>` : ''}
         <div class="rp-actions">${d.status === 'approved' ? '<button type="button" class="btn-primary btn-compact" data-act="xml">Завантажити XML</button>' : ''}
@@ -333,7 +332,7 @@ function csv() {
     const cell = v => (/[;"\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
     const rows = [['Додаток', 'РНОКПП', 'ПІБ', 'Ознака / відносини', 'Нараховано', 'Виплачено', 'ПДФО', 'ПДФО сплачено', 'ВЗ', 'ВЗ сплачено', 'База ЄСВ', 'ЄСВ']];
     for (const r of detail.income) rows.push(['4ДФ', r.rnokpp, r.name, `${r.sign}${r.pspCode ? ` ПСП ${r.pspCode}` : ''}`, m(r.grossKop), m(r.paidKop), m(r.pdfoKop), m(r.pdfoPaidKop), m(r.vzKop), m(r.vzPaidKop), '', '']);
-    for (const r of detail.esv) rows.push(['Д1', r.rnokpp, r.name, r.kind === 'gph' ? 'ЦПД' : `трудові ${r.days}/${r.normDays}`, m(r.grossKop), '', '', '', '', '', m(r.baseKop), m(r.esvKop)]);
+    for (const r of detail.esv) rows.push(['Д1', r.rnokpp, r.name, r.kind === 'gph' ? 'ЦПД' : `трудові ${r.days ?? '—'}/${r.normDays}`, m(r.grossKop), '', '', '', '', '', m(r.baseKop), m(r.esvKop)]);
     for (const r of detail.relations) rows.push(['Д5', r.rnokpp, r.name, `${r.event === 'start' ? 'початок' : 'кінець'} ${dmy(r.date)}`, '', '', '', '', '', '', '', '']);
     const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');

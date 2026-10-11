@@ -15,14 +15,14 @@ function money(value) {
 export function financeSummary(report) {
     const items = (report.items || [])
         .map(item => ({ label: String(item.label || '').trim(), amount: money(item.amount) ?? 0, ...(item.item ? { item: String(item.item) } : {}) }))
-        .filter(item => item.label && item.amount > 0)
+        .filter(item => item.label && item.amount !== 0)
         .sort((a, b) => b.amount - a.amount);
     const spent = round2(items.reduce((sum, item) => sum + item.amount, 0));
     const income = money(report.income), funds = money(report.funds);
     return {
         period: String(report.period || '').trim(), funds, fundsDate: String(report.fundsDate || '').trim(),
         income, spent, difference: income === null ? null : round2(income - spent),
-        spentShare: income > 0 ? spent / income * 100 : null,
+        spentShare: income > 0 && spent >= 0 ? spent / income * 100 : null,
         items: items.map(item => ({ ...item, share: spent ? item.amount / spent * 100 : 0 }))
     };
 }

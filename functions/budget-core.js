@@ -94,6 +94,8 @@ function effectiveBudget(budgets, year) {
 // ВИКОНАННЯ
 // ------------------------------------------------------------
 const inYear = (period, year) => String(period || '').slice(0, 4) === String(year);
+const directExpense = (t, payments) => t.direction === 'out' && t.kind === 'expense' && t.status === 'done' && !t.expenseId
+    && !['supplier', 'resident_refund'].includes(t.category) && !payments.has(t.paymentId);
 
 /**
  * Факт витрат за статтями за рік: документи (затверджені й оплачені)
@@ -107,14 +109,12 @@ function factByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPaym
         if (['approved', 'paid', 'storno'].includes(e.status) && inYear(e.period, year)) add(e.item, e.amountKop);
     }
     const byId = new Map(bankOut.filter(t => t.id).map(t => [t.id, t]));
-    const direct = t => t.direction === 'out' && t.kind === 'expense' && t.status === 'done' && !t.expenseId
-        && !['supplier', 'resident_refund'].includes(t.category) && !payrollPayments.has(t.paymentId);
     for (const t of bankOut) {
         if (!inYear(t.period, year)) continue;
-        if (direct(t)) add(BANK_ITEM[t.category] || 'other', t.amountKop);
+        if (directExpense(t, payrollPayments)) add(BANK_ITEM[t.category] || 'other', t.amountKop);
         // Повернення прямої витрати банку (комісії, іншої) зменшує її статтю; документи — через сторно.
         const o = t.kind === 'refund' && t.status === 'done' ? byId.get(t.refundOf) : null;
-        if (o && direct(o)) add(BANK_ITEM[o.category] || 'other', -t.amountKop);
+        if (o && directExpense(o, payrollPayments)) add(BANK_ITEM[o.category] || 'other', -t.amountKop);
     }
     for (const p of payrollRuns) {
         if (p.status !== 'approved' || !inYear(p.period, year)) continue;
@@ -168,25 +168,17 @@ function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payro
             ...((e.files || []).length ? { files: e.files.map(f => ({ name: f.name, url: f.url })) } : {}) });
     }
     const byId = new Map(bankOut.filter(t => t.id).map(t => [t.id, t]));
-    const direct = t => t.direction === 'out' && t.kind === 'expense' && t.status === 'done' && !t.expenseId
-        && !['supplier', 'resident_refund'].includes(t.category) && !payrollPayments.has(t.paymentId);
     for (const t of bankOut) {
         if (!inYear(t.period, year)) continue;
-        // Повернення прямої витрати (комісії тощо) — мінусом у тій самій статті, як у factByItem.
-        const o = t.kind === 'refund' && t.status === 'done' ? byId.get(t.refundOf) : null;
-        if (o && direct(o)) {
-            const kind = o.category === 'bank_fee' ? 'fee' : payeeKind(t.counterparty?.name, t.counterparty?.code);
-            add(BANK_ITEM[o.category] || 'other', { date: kyivDate(t.at), who: hide(BANK_ITEM[o.category] || 'other', kind) || t.counterparty?.name || '', kind,
-                amountKop: -t.amountKop, refund: true, what: publicView ? 'Повернення' : `Повернення: ${t.purpose || ''}`.trim() });
-            continue;
-        }
-        if (!direct(t)) continue;
-        const item = BANK_ITEM[t.category] || 'other';
-        const cp = t.counterparty || {};
+        const returned = t.kind === 'refund' && t.status === 'done';
+        const original = returned ? byId.get(t.refundOf) : t;
+        if (!original || !directExpense(original, payrollPayments)) continue;
+        const item = BANK_ITEM[original.category] || 'other';
+        const cp = t.counterparty || original.counterparty || {};
         // Зарплату отримує людина, хоч би як банк назвав отримувача («ПРАЦІВНИК ОСББ …»).
-        const kind = t.category === 'bank_fee' ? 'fee' : t.category === 'salary' && !/^\d{8}$/.test(String(cp.code || '')) ? 'person' : payeeKind(cp.name, cp.code);
-        add(item, { date: kyivDate(t.at), who: hide(item, kind) || cp.name || '', kind, amountKop: t.amountKop,
-            ...(publicView ? {} : { what: t.purpose || '' }) });
+        const kind = original.category === 'bank_fee' ? 'fee' : original.category === 'salary' && !/^\d{8}$/.test(String(cp.code || '')) ? 'person' : payeeKind(cp.name, cp.code);
+        add(item, { date: kyivDate(t.at), who: hide(item, kind) || cp.name || '', kind, amountKop: returned ? -t.amountKop : t.amountKop,
+            ...(returned ? { refund: true } : {}), ...(publicView ? {} : { what: t.purpose || '' }) });
     }
     for (const p of payrollRuns) {
         if (p.status !== 'approved' || !inYear(p.period, year)) continue;
@@ -238,13 +230,15 @@ function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвлас�
 /** Факт надходжень за джерелами: внески (оплати мешканців) та інше з виписки. */
 function incomeFact({ bankIn = [], year }) {
     const fact = new Map();
+    const byId = new Map(bankIn.map(t => [t.id, t]));
     for (const t of bankIn) {
         if (t.status !== 'done' || !inYear(t.period, year)) continue;
         // Повернена співвласнику переплата зменшує надходження внесків.
         if (t.direction === 'out' && t.category === 'resident_refund') { fact.set('contributions', (fact.get('contributions') || 0) - t.amountKop); continue; }
         if (t.direction !== 'in') continue;
         // Кошти ПФУ на лікарняні — транзит працівнику, не надходження ОСББ.
-        const source = t.kind === 'payment' ? 'contributions' : t.kind === 'income' && t.category !== 'sick_fund' ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
+        const source = t.kind === 'payment' || (t.kind === 'refund' && byId.get(t.refundOf)?.category === 'resident_refund') ? 'contributions'
+            : t.kind === 'income' && t.category !== 'sick_fund' ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
         if (source) fact.set(source, (fact.get(source) || 0) + t.amountKop);
     }
     return fact;

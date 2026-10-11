@@ -40,7 +40,7 @@ test('розрахунок за місяць: 4ДФ, ЄСВ, прийом і к�
     const es = rep.esv.find(x => x.personId === 'e1');
     assert.deepEqual([es.days, es.normDays, es.topUpKop], [16, 31, 0]);
     assert.deepEqual(rep.relations.map(x => [x.personId, x.event, x.date]), [['e1', 'start', '2026-10-16'], ['g1', 'end', '2026-10-31']]);
-    assert.deepEqual(rep.checks.map(c => c.level), ['block', 'block', 'warn', 'warn', 'info']);
+    assert.deepEqual(rep.checks.map(c => c.level), ['block', 'block', 'block', 'warn', 'warn', 'info']);
     assert.match(rep.checks[0].text, /Виконавець Тестовий: немає правильного РНОКПП/);
     assert.equal(rep.summary.due, '2026-11-20');
 });
@@ -59,7 +59,7 @@ test('без затвердженої відомості цифр немає, л
     assert.match(r.payrollReport({ period: '2026-11', stored: null }).checks[0].text, /не складено/);
 });
 
-test('4ДФ за датою виплати: аванс жовтня в жовтні, остаточний розрахунок 05.11 — у листопаді', () => {
+test('4ДФ: аванс і своєчасний остаточний розрахунок 05.11 лишаються у жовтні', () => {
     const card = { ...emp, from: '2026-01-01' };
     const oct = payroll.buildRun({ people: [card], period: '2026-10' });
     const nov = payroll.buildRun({ people: [card], period: '2026-11' });
@@ -75,14 +75,14 @@ test('4ДФ за датою виплати: аванс жовтня в жовт�
     const o = r.payrollReport({ period: '2026-10', stored: runs.get('2026-10'), people, payments, runs });
     const n = r.payrollReport({ period: '2026-11', stored: runs.get('2026-11'), people, payments, runs });
     assert.equal(o.income[0].grossKop, oct.rows[0].grossKop);
-    assert.equal(o.income[0].paidKop, oct.rows[0].advance.grossKop);
-    assert.equal(o.income[0].pdfoPaidKop, oct.totals.advance.pdfoKop);
-    // Листопад: нараховано за листопад, виплачено — остаточний жовтня й аванс листопада.
+    assert.equal(o.income[0].paidKop, oct.rows[0].grossKop);
+    assert.equal(o.income[0].pdfoPaidKop, oct.totals.pdfoKop);
+    // У листопаді своєчасна зарплата жовтня вдруге не рахується.
     assert.equal(n.income.length, 1);
     assert.equal(n.income[0].grossKop, nov.rows[0].grossKop);
-    assert.equal(n.income[0].paidKop, oct.rows[0].final.grossKop + nov.rows[0].advance.grossKop);
-    assert.equal(n.income[0].pdfoPaidKop, oct.totals.final.pdfoKop);
-    assert.equal(n.summary.earlierKop, oct.rows[0].final.grossKop);
+    assert.equal(n.income[0].paidKop, nov.rows[0].advance.grossKop);
+    assert.equal(n.income[0].pdfoPaidKop, 0);
+    assert.equal(n.summary.earlierKop, 0);
     // Контроль сплати ПДФО — за відомістю місяця: жовтневий сплачено повністю.
     assert.ok(!o.checks.some(c => /Не всі ПДФО/.test(c.text)), JSON.stringify(o.checks));
     // Виплата за місяць без затвердженої відомості — перешкода.
@@ -90,20 +90,22 @@ test('4ДФ за датою виплати: аванс жовтня в жовт�
     assert.ok(lost.checks.some(c => c.level === 'block' && /2026-10/.test(c.text)));
 });
 
-test('виплати ФОП — 4ДФ з ознакою 157 за датою банку, мінус повернення', () => {
-    const suppliers = new Map([['s1', { name: 'ФОП Тестовий', kind: 'fop', code: '3124567809', iban: 'UA213052990000026001234567890' }],
+test('ФОП: нарахування з документа, виплата за банком, повернення потребує уточнення XML', () => {
+    const { fopReport } = require('./fop-report-core');
+    const suppliers = new Map([['s1', { name: 'ФОП Тестовий', kind: 'fop', code: '3124567809', iban: 'UA213052990000026001234567890', fopChecked: true }],
         ['s2', { name: 'ТОВ Тест', kind: 'company', code: '14360570', iban: 'UA213052990000026001234567891' }]]);
-    const expenses = new Map([['e1', { supplierId: 's1' }], ['e2', { supplierId: 's2' }]]);
-    const t = (id, extra) => ({ id, direction: 'out', kind: 'expense', status: 'done', category: 'supplier', amountKop: 150000, counterparty: {}, ...extra });
+    const expenses = [{ id: 'e1', supplierId: 's1', period: '2026-10', amountKop: 300000, status: 'paid' }, { id: 'e2', supplierId: 's2', period: '2026-10', amountKop: 150000, status: 'paid' }];
+    const t = (id, extra) => ({ id, period: '2026-10', direction: 'out', kind: 'expense', status: 'done', category: 'supplier', amountKop: 150000, counterparty: {}, ...extra });
     const tx = [t('a', { expenseId: 'e1' }), t('b', { expenseId: 'e2' }), t('c', { counterparty: { account: 'UA21 3052 9900 0002 6001 2345 6789 0' } }),
         t('d', { category: 'bank_fee', amountKop: 500, counterparty: { code: '3124567809' } }),
-        { id: 'r', direction: 'in', kind: 'refund', status: 'done', refundOf: 'a', amountKop: 20000 }];
-    const fop = r.fopIncome({ tx, expenses, suppliers });
-    assert.deepEqual(fop, [{ supplierId: 's1', name: 'ФОП Тестовий', rnokpp: '3124567809', amountKop: 280000 }]);
+        { id: 'r', period: '2026-10', direction: 'in', kind: 'refund', status: 'done', refundOf: 'a', amountKop: 20000 }];
+    const fop = fopReport({ period: '2026-10', bankTx: tx, expenses, suppliers });
+    assert.deepEqual(fop.income.map(x => [x.rnokpp, x.grossKop, x.paidKop]), [['3124567809', 300000, 280000]]);
+    assert.ok(fop.checks.some(c => c.level === 'block' && /повернення/i.test(c.text)));
     const run = payroll.buildRun({ people: [{ ...emp, from: '2026-01-01' }], period: '2026-10' });
-    const rep = r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, people: new Map([[emp.id, emp]]), fop });
+    const rep = r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, people: new Map([[emp.id, emp]]), otherIncome: fop.income });
     const f = rep.income.find(x => x.sign === '157');
-    assert.deepEqual([f.grossKop, f.paidKop, f.pdfoKop, f.vzKop], [280000, 280000, 0, 0]);
-    assert.equal(rep.summary.fopKop, 280000);
-    assert.ok(r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, fop: [{ ...fop[0], rnokpp: '' }] }).checks.some(c => /ФОП/.test(c.text)));
+    assert.deepEqual([f.grossKop, f.paidKop, f.pdfoKop, f.vzKop], [300000, 280000, 0, 0]);
+    assert.equal(rep.summary.fopKop, 300000);
+    assert.ok(r.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, otherIncome: [{ ...fop.income[0], rnokpp: '' }] }).checks.some(c => /ФОП/.test(c.text)));
 });

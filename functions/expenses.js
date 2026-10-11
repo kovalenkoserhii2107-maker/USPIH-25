@@ -193,7 +193,8 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             const approved = role === 'chair' || need.level === 'accountant';
             // Serialize automatic approvals, including initially empty queries.
             t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
-            t.set(ref, { ...e, supplierName: supplier.name, contractNumber: actualContract?.number || null,
+            t.set(ref, { ...e, supplierName: supplier.name,
+                supplierSnapshot: { name: supplier.name, kind: supplier.kind, code: supplier.code || '', fopChecked: Boolean(supplier.fopChecked) }, contractNumber: actualContract?.number || null,
                 status: approved ? 'approved' : 'pending',
                 approval: { level: need.level, reason: need.reason, by: approved ? actor : null, at: approved ? FieldValue.serverTimestamp() : null },
                 paidKop: 0, txIds: [], updatedBy: actor, updatedAt: FieldValue.serverTimestamp(),
@@ -219,6 +220,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             if (why) fail('failed-precondition', why);
             if (dups.docs.some(d => d.data().date === e.date && d.data().status !== 'canceled')) fail('already-exists', 'Цей документ постачальника вже внесено');
             t.set(ref, { ...e, supplierName: m.supplierName, contractId: m.contractId || null, contractNumber: m.contractNumber || null,
+                ...(m.supplierSnapshot ? { supplierSnapshot: m.supplierSnapshot } : {}),
                 period: m.period, item: m.item, status: 'linked', linkedTo: m.id,
                 approval: { level: 'none', reason: `підтверджує ${core.DOC_TYPES[m.docType].toLowerCase()} № ${m.number}`, by: actor, at: FieldValue.serverTimestamp() },
                 paidKop: 0, txIds: [], createdBy: actor, createdAt: FieldValue.serverTimestamp(), updatedBy: actor, updatedAt: FieldValue.serverTimestamp() });
@@ -273,6 +275,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             const total = (o.stornoKop || 0) + s.amountKop;
             t.set(settingsRef, { revision: FieldValue.increment(1) }, { merge: true });
             t.set(ref, { supplierId: o.supplierId, supplierName: o.supplierName, contractId: o.contractId || null, contractNumber: o.contractNumber || null,
+                ...(o.supplierSnapshot ? { supplierSnapshot: o.supplierSnapshot } : {}),
                 docType: o.docType, number: s.number, date: s.date, amountKop: -s.amountKop, vatKop: 0, period, item: o.item,
                 description: `Сторно № ${o.number} від ${core.humanDate(o.date)}: ${s.reason}`, files: cleanFiles(files), status: 'storno', stornoOf: o.id,
                 approval: { level: role, reason: s.reason, by: actor, at: FieldValue.serverTimestamp() }, paidKop: 0, txIds: [],

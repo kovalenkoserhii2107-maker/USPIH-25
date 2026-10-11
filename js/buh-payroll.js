@@ -13,7 +13,7 @@ import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { loadPayroll, payrollAct, maskIban } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
-import { initials, personState, payrollTotals } from './payroll-view-core.js';
+import { initials, personState, payrollTotals, paymentWho } from './payroll-view-core.js';
 import { openPaymentSheet } from './buh-chain.js';
 
 const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
@@ -116,7 +116,7 @@ function absencesHtml(r, locked) {
             <select class="field-input field-select" data-f="type" aria-label="Вид"${dis}><option value="vacation"${a.type === 'vacation' ? ' selected' : ''}>відпустка</option><option value="sick"${a.type === 'sick' ? ' selected' : ''}>лікарняний</option></select>
             <input class="field-input" type="date" data-f="from" value="${escapeHtml(a.from || '')}" min="${first}" max="${last}" aria-label="З"${dis}>
             <input class="field-input" type="date" data-f="to" value="${escapeHtml(a.to || '')}" min="${first}" max="${last}" aria-label="По"${dis}>
-            <input class="field-input" type="date" data-f="caseStart" value="${escapeHtml(a.caseStart || '')}" title="Лікарняний почався раніше (у минулому місяці) — дата початку" aria-label="Початок випадку"${dis}>
+            <input class="field-input" type="date" data-f="caseStart" value="${escapeHtml(a.caseStart || '')}" title="Відпустка чи лікарняний почались раніше — дата початку для незмінної середньоденної" aria-label="Початок випадку"${dis}>
             <input class="field-input" data-f="avg" inputmode="decimal" value="${a.avgDailyKop ? money2(a.avgDailyKop) : ''}" placeholder="середньоденна" title="Лише якщо немає заробітку за 12 місяців" aria-label="Середньоденна вручну"${dis}>
         </div>`).join('')}
         <input class="field-input pr-in" data-id="${id}" data-k="fundSickKop" inputmode="decimal" value="${money2(input.fundSickKop)}" placeholder="кошти ПФУ за лікарняний, грн" aria-label="Кошти ПФУ за лікарняний"${dis}>
@@ -129,7 +129,7 @@ function paymentsHtml() {
     return `<section class="py-card pr-payments"><div class="py-card-head"><h2>Платежі за відомістю</h2></div>
         ${ctx.payments.map(p => { const [text, cls] = p.returnedKop ? [`повернено банком${p.repaid ? ' · відправлено знову' : ''}`, 'is-bad'] : STAT[p.status] || [p.status, ''];
             return `<div class="py-row is-link" data-pay="${escapeHtml(p.id)}" tabindex="0" role="button">
-            <span class="py-main"><b>${escapeHtml(p.recipient)}</b><small class="py-muted">${TAX_NAMES[String(p.key || '').split(':')[1]] ? `${TAX_NAMES[String(p.key).split(':')[1]]}${p.stage === 'advance' ? ' з авансу' : ''}` : p.stage === 'advance' ? 'Аванс' : 'Зарплата'}${p.retry ? ' · повторно' : ''}${p.error ? ` · ${escapeHtml(p.error)}` : ''}</small></span>
+            <span class="py-main"><b>${escapeHtml(p.recipient)}</b><small class="py-muted">${TAX_NAMES[paymentWho(p)] ? `${TAX_NAMES[paymentWho(p)]}${p.stage === 'advance' ? ' з авансу' : ''}` : p.stage === 'advance' ? 'Аванс' : 'Зарплата'}${p.retry ? ' · повторно' : ''}${p.error ? ` · ${escapeHtml(p.error)}` : ''}</small></span>
             <span class="py-right"><b class="py-sum">${grn(p.amountKop)}</b><span class="sv-chip ${cls}">${escapeHtml(text)}</span></span>
             ${p.status === 'paid' && p.returnedKop >= p.amountKop && !p.repaid ? `<span class="py-actions"><button type="button" class="sv-btn" data-act="repay" data-id="${escapeHtml(p.id)}" title="Спершу виправте IBAN у картці людини чи рахунок податку">Відправити знову</button></span>` : ''}
         </div>`; }).join('')}
@@ -281,7 +281,7 @@ function readInputs() {
         const avg = f('avg') ? toKop(f('avg')) : null;
         if (f('avg') && avg === null) throw new Error('Середньоденну вказуйте в гривнях, напр. 412,35');
         ((inputs[row.dataset.id] ||= {}).absences ||= []).push({ type: f('type'), from: f('from'), to: f('to'),
-            ...(f('type') === 'sick' && f('caseStart') ? { caseStart: f('caseStart') } : {}), ...(avg ? { avgDailyKop: avg } : {}) });
+            ...(f('caseStart') ? { caseStart: f('caseStart') } : {}), ...(avg ? { avgDailyKop: avg } : {}) });
     });
     // Місяць і причина перерахунку — лише разом із сумою.
     document.querySelectorAll('#viewPayroll .pr-txt').forEach(i => {

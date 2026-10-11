@@ -7,7 +7,7 @@
 // ============================================================
 import { escapeHtml, toast, confirmDialog } from './ui.js';
 import {
-    loadPayment, loadTx, loadPayments, loadExpenses, payAct, money, signed, when, dateOnly, tagOf, maskIban,
+    loadPayment, loadTx, loadPayments, loadExpenses, payAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     PAYMENT_KINDS, PAYMENT_STATUS, CONTRACT_STATUS
 } from './buh-data.js';
 import { fmtKop, periodName } from './charges-core.js';
@@ -134,6 +134,9 @@ async function txBody(id) {
     const expense = tx.expenseId ? ex?.expenses?.find(e => e.id === tx.expenseId) : null;
     const contract = expense?.contractId ? ex?.contracts?.find(c => c.id === expense.contractId) : null;
     const tag = tagOf(tx);
+    const candidates = tx.status === 'review' && tx.paymentSuggestions?.length
+        ? (await Promise.all(tx.paymentSuggestions.map(id => loadPayment(id).catch(() => null))))
+            .filter(p => p && ['sent', 'unknown'].includes(p.status)) : [];
     const links = [
         pay ? payRow(pay, 'Платіж із кабінету') : '',
         expense ? docRow(expense, ex) : '',
@@ -146,6 +149,9 @@ async function txBody(id) {
         ${fields([['Дата', dateOnly(tx.at)], ['Контрагент', tx.counterparty?.name], ['Рахунок контрагента', tx.counterparty?.account], ['Код', tx.counterparty?.code],
             ['Призначення', tx.purpose], ['Рахунок ОСББ', maskIban(tx.account || '')]])}
         <h3 class="chs-h">Повʼязано</h3>
+        ${candidates.length ? `<p class="py-note">Кілька платежів мають однакові суму й рахунки. Звірте реквізити та виберіть проведений банком платіж.</p>
+            <div class="chs-links">${candidates.map(p => linkRow(`data-ch="match-payment" data-id="${escapeHtml(p.id)}" data-tx="${escapeHtml(tx.id)}"`, 'Привʼязати платіж',
+                p.recipient?.name || 'Платіж', [p.purpose, p.bankRef ? `№ ${p.bankRef}` : ''].filter(Boolean).join(' · '), `<b>${grn(p.amountKop)}</b>`)).join('')}</div>` : ''}
         ${links.length ? `<div class="chs-links">${links.join('')}</div>` : `<p class="py-note">${tx.status === 'review' ? 'Операцію ще не розібрано — зробіть це в «Рішеннях».' : 'Операцію рознесено без документа чи платежу.'}</p>`}
         ${tx.status === 'review' ? '<div class="chs-actions"><button type="button" class="sv-btn" data-ch="inbox">Розібрати в «Рішеннях»</button></div>' : ''}`];
 }
@@ -187,6 +193,12 @@ async function onClick(e) {
     if (a === 'payroll') { close(); openPayroll(t.dataset.period); return; }
     if (a === 'flat') { close(); location.hash = 'flats'; setTimeout(() => openFlat(t.dataset.apt), 0); return; }
     if (a === 'inbox') { close(); location.hash = 'inbox'; return; }
+    if (a === 'match-payment') {
+        t.disabled = true;
+        try { await act({ action: 'matchPayment', txId: t.dataset.tx, paymentId: t.dataset.id }); toast('Платіж проведено за випискою', 'success'); render(); }
+        catch (err) { toast(err.message, 'error'); t.disabled = false; }
+        return;
+    }
     if (a === 'cancel') {
         if (!await confirmDialog('Скасувати платіж?', 'Якщо голова ще не підписав, платіж буде видалено й у Приват24 (або видаліть його там вручну).', 'Скасувати платіж')) return;
         try { const r = await payAct({ action: 'cancel', id: t.dataset.id }); toast(r?.deletedInBank ? 'Скасовано й видалено в банку' : 'Скасовано. Перевірте, чи видалено його в Приват24', 'success'); render(); }

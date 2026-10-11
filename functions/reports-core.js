@@ -3,13 +3,11 @@
 // Звітність (частина 9): дані для Податкового розрахунку J0500111 з
 // затвердженої відомості зарплати й платежів за нею.
 //
-// XML за XSD ДПС поки не формуємо (схеми ще не перевірено на пробному
-// поданні): кабінет показує готові суми за людьми — їх переносять у
-// форму в Електронному кабінеті, де голова підписує й подає звіт.
-// Ознаки доходу 4ДФ: 101 — зарплата, 102 — договір ЦПД, 157 — виплати ФОП
-// (LEGAL.md, розділ 7).
+// Дані використовує XML-експорт (dps-xml.js) і таблиці кабінету.
+// Ознаки доходу 4ДФ: 101 — зарплата, 102 — договір ЦПД, 157 — ФОП.
 // ============================================================
 const payroll = require('./payroll-core');
+const { shift } = require('./leave-core');
 
 // Ключі — як у календарі кабінету (js/tax-calendar.js): місяць без нуля.
 const KEY_RE = /^(?:(j0500111|esv)-(\d{4})-(1[0-2]|[1-9])|(budget|fs-stat|npo|land)-(\d{4}))$/;
@@ -17,6 +15,11 @@ const STATUSES = { submitted: 'подано', accepted: 'прийнято', reje
 const INCOME_SIGN = { employee: '101', gph: '102' };
 
 const validKey = key => KEY_RE.test(String(key || ''));
+function allowedStatus(key, status) {
+    const list = key.startsWith('esv-') ? ['paid', 'not_required'] : key.startsWith('budget-') ? ['accepted', 'not_required']
+        : ['submitted', 'accepted', 'rejected', 'not_required'];
+    return list.includes(status);
+}
 /** 'j0500111-2026-10' → '2026-10'; для річних — null. */
 function periodOf(key) {
     const m = KEY_RE.exec(String(key || ''));
@@ -47,117 +50,103 @@ function distribute(amount, weights) {
 }
 
 /**
- * Виплати ФОП за місяць — дохід з ознакою 157 у 4ДФ (ПДФО й ВЗ ФОП сплачує
- * сам). Списання постачальникам-ФОП за датою банку, мінус повернення того
- * самого місяця.
- *   tx        — bank_tx місяця: [{ id, direction, kind, status, category, expenseId, refundOf, amountKop, counterparty }]
- *   expenses  — Map(id → { supplierId })
- *   suppliers — Map(id → { name, kind, code, iban })
- */
-function fopIncome({ tx = [], expenses = new Map(), suppliers = new Map() }) {
-    const norm = v => String(v || '').replace(/\s+/g, '').toUpperCase();
-    const fops = [...suppliers].filter(([, x]) => x.kind === 'fop');
-    const supplierOf = t => {
-        const byDoc = t.expenseId ? expenses.get(t.expenseId)?.supplierId : null;
-        if (byDoc) return suppliers.get(byDoc)?.kind === 'fop' ? byDoc : null;
-        const cp = t.counterparty || {};
-        const hit = fops.find(([, x]) => (x.code && x.code === cp.code) || (x.iban && norm(x.iban) === norm(cp.account)));
-        return hit ? hit[0] : null;
-    };
-    const sums = new Map(), byTx = new Map();
-    for (const t of tx) {
-        if (t.direction !== 'out' || t.status !== 'done' || t.kind !== 'expense' || t.category !== 'supplier') continue;
-        const id = supplierOf(t);
-        if (!id || !Number.isSafeInteger(t.amountKop)) continue;
-        byTx.set(t.id, id);
-        sums.set(id, (sums.get(id) || 0) + t.amountKop);
-    }
-    for (const t of tx) {
-        if (t.kind === 'refund' && t.status === 'done' && byTx.has(t.refundOf)) sums.set(byTx.get(t.refundOf), sums.get(byTx.get(t.refundOf)) - t.amountKop);
-    }
-    return [...sums].filter(([, kop]) => kop > 0)
-        .map(([id, kop]) => ({ supplierId: id, name: suppliers.get(id).name || '', rnokpp: suppliers.get(id).code || '', amountKop: kop }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'uk'));
-}
-
-/**
  * Дані розрахунку за місяць.
  *   stored   — payroll_runs/{period} (або null)
  *   people   — Map(id → картка) для дат прийому/звільнення
- *   payments — платежі за відомостями: [{ period, stage, key, status, amountKop, paidOn }];
- *              period — місяць нарахування (без нього — цей), paidOn — дата банку (Київ)
- *   runs     — Map(місяць → payroll_runs) для виплат цього місяця за попередні місяці
- *   fop      — fopIncome(…): виплати ФОП (ознака 157)
- * 4ДФ: нараховане — з відомості цього місяця; виплачене й перераховані
- * податки — за датою виплати (аванс за жовтень 20.10 — у жовтні, остаточний
- * розрахунок 05.11 — у листопаді). ЄСВ і контроль сплати податків — за
- * місяцем нарахування.
+ *   payments — [{ period, stage, key, status, amountKop, paidOn }],
+ *              paidOn — підтверджена випискою київська дата.
+ *   runs     — затверджені відомості інших місяців для пізніх виплат.
+ * Зарплата, виплачена у встановлений строк наступного місяця,
+ * лишається в місяці нарахування; пізні виплати й ЦПД — за датою банку.
  * Повертає { period, status, summary, income (4ДФ), esv (Д1), relations (Д5), checks }.
  */
-function payrollReport({ period, stored, people = new Map(), payments = [], runs = new Map(), fop = [] }) {
+function payrollReport({ period, stored, people = new Map(), payments = [], runs = new Map(), otherIncome = [] }) {
     const checks = [];
     const status = stored?.status || 'none';
     const run = stored?.run || null;
-    const rows = status === 'approved' && run ? run.rows : [];
+    const rows = status === 'approved' && Array.isArray(run?.rows) ? run.rows : [];
     if (status === 'none') checks.push({ level: 'block', text: 'Відомість зарплати за місяць не складено' });
     if (status === 'draft') checks.push({ level: 'block', text: 'Відомість ще не затверджена головою — цифри можуть змінитися' });
+    if (status === 'approved' && (!run || !Array.isArray(run.rows))) checks.push({ level: 'block', text: 'У затвердженій відомості відсутній розрахунок — відновіть джерело звіту' });
+    if (status === 'approved' && run) for (const field of ['grossKop', 'pdfoKop', 'vzKop', 'netKop', 'esvKop']) {
+        if (rows.some(r => !Number.isSafeInteger(r[field]) || r[field] < 0) || rows.reduce((s, r) => s + (r[field] || 0), 0) !== run.totals?.[field]) {
+            checks.push({ level: 'block', text: `Відомість: ${field} у підсумках не відповідає правильним сумам за людьми` });
+        }
+    }
+    for (const r of rows) if (r.grossKop !== r.netKop + r.pdfoKop + r.vzKop) checks.push({ level: 'block', text: `${r.name}: нараховано не дорівнює виплаті та утриманим податкам` });
     if (status === 'approved' && run && !Array.isArray(run.peopleSnapshot)) checks.push({ level: 'warn', text: 'Стара відомість не зберігає склад людей і дати відносин: звірте Д1/Д5 з кадровими документами' });
 
     const stages = ['advance', 'final'];
     const monthOf = p => p.period || period;
-    // Платежі за відомістю цього місяця (будь-коли) і виплачені цього місяця (за будь-який місяць).
     const own = payments.filter(p => monthOf(p) === period);
-    const paidHere = payments.filter(p => p.status === 'paid' && (p.paidOn ? String(p.paidOn).slice(0, 7) === period : monthOf(p) === period));
     for (const p of payments) if (p.status === 'paid' && (!Number.isSafeInteger(p.amountKop) || p.amountKop <= 0)) checks.push({ level: 'block', text: 'У проведеному платежі відсутня правильна сума. Перевірте виписку.' });
-
-    const income = new Map();
+    const incomeByKey = new Map();
     const rowOf = r => {
-        if (!income.has(r.personId)) {
-            const rnokpp = r.payee ? r.payee.rnokpp || '' : people.get(r.personId)?.rnokpp || '';
-            income.set(r.personId, { personId: r.personId, name: r.name, rnokpp, kind: r.kind, sign: INCOME_SIGN[r.kind] || '101',
-                grossKop: 0, paidKop: 0, pdfoKop: 0, pdfoPaidKop: 0, vzKop: 0, vzPaidKop: 0, pspCode: '', pspKop: 0, vacationKop: 0, sickKop: 0, earlierKop: 0 });
-        }
-        return income.get(r.personId);
-    };
-    // Нараховане за цей місяць.
-    for (const r of rows) {
-        Object.assign(rowOf(r), { grossKop: r.grossKop, pdfoKop: r.pdfoKop, vzKop: r.vzKop,
-            // Ознака ПСП (ст. 169.1 ПКУ) і сума пільги; відпускні й лікарняні — у складі доходу з ознакою 101.
-            pspCode: r.pspCode || '', pspKop: r.pspKop || 0, vacationKop: r.vacationKop || 0, sickKop: (r.sickKop || 0) + (r.fundSickKop || 0) });
-    }
-    // Виплачене цього місяця — за відомістю місяця нарахування.
-    const months = [...new Set([period, ...paidHere.map(monthOf)])].sort();
-    for (const q of months) {
-        const st = q === period ? stored : runs.get(q);
-        const qRows = st?.status === 'approved' ? st.run?.rows || [] : [];
-        const forRun = paidHere.filter(p => monthOf(p) === q);
-        if (q !== period && forRun.length && !qRows.length) checks.push({ level: 'block', text: `Виплати за ${q} цього місяця: відомість за ${q} не затверджена — виплачений дохід не визначити` });
-        // Без авансу остаточний розрахунок платить усе нараховане за місяць.
-        const withAdvance = Boolean(st?.stages?.advance) || payments.some(p => monthOf(p) === q && p.stage === 'advance' && ['paid', 'sent', 'sending', 'unknown'].includes(p.status));
-        const part = (row, stage, field) => (withAdvance ? row?.[stage]?.[field] || 0
-            : stage === 'final' ? (row?.advance?.[field] || 0) + (row?.final?.[field] || 0) : 0);
-        const shares = {};
-        for (const stage of stages) for (const [key, field] of [['pdfo', 'pdfoKop'], ['vz', 'vzKop']]) {
-            shares[`${stage}:${key}`] = distribute(paidAmount(forRun, stage, key), qRows.map(r => part(r, stage, field)));
-        }
-        qRows.forEach((r, index) => {
-            const x = rowOf(r);
-            let gross = 0;
-            for (const stage of stages) {
-                const actual = paidAmount(forRun, stage, r.personId), expected = part(r, stage, 'netKop');
-                if (actual && actual !== expected) checks.push({ level: 'block', text: `${r.name}: проведена виплата не відповідає відомості; виплачений дохід треба уточнити` });
-                if (actual && actual === expected) gross += part(r, stage, 'grossKop');
-                x.pdfoPaidKop += shares[`${stage}:pdfo`][index];
-                x.vzPaidKop += shares[`${stage}:vz`][index];
-            }
-            x.paidKop += gross;
-            if (q !== period) x.earlierKop += gross;
+        const rnokpp = r.payee ? r.payee.rnokpp || '' : people.get(r.personId)?.rnokpp || '';
+        const sign = INCOME_SIGN[r.kind] || '101', key = `${rnokpp || r.personId}|${sign}|${r.pspCode || ''}`;
+        if (!incomeByKey.has(key)) incomeByKey.set(key, {
+            personId: r.personId, name: r.name, rnokpp, kind: r.kind, sign,
+            grossKop: 0, paidKop: 0, pdfoKop: 0, pdfoPaidKop: 0, vzKop: 0, vzPaidKop: 0,
+            pspCode: r.pspCode || '', pspKop: 0, vacationKop: 0, sickKop: 0, earlierKop: 0
         });
+        return incomeByKey.get(key);
+    };
+    for (const r of rows) {
+        const x = rowOf(r);
+        for (const f of ['grossKop', 'pdfoKop', 'vzKop', 'pspKop', 'vacationKop']) x[f] += r[f] || 0;
+        x.sickKop += (r.sickKop || 0) + (r.fundSickKop || 0);
     }
-    for (const f of fop) {
-        income.set(`fop-${f.supplierId}`, { personId: `fop-${f.supplierId}`, name: f.name, rnokpp: f.rnokpp, kind: 'fop', sign: '157',
-            grossKop: f.amountKop, paidKop: f.amountKop, pdfoKop: 0, pdfoPaidKop: 0, vzKop: 0, vzPaidKop: 0, pspCode: '', pspKop: 0, vacationKop: 0, sickKop: 0, earlierKop: 0 });
+    const relevant = payments.filter(p => monthOf(p) === period || String(p.paidOn || '').slice(0, 7) === period);
+    for (const q of [...new Set(relevant.map(monthOf))].sort()) {
+        const source = q === period ? stored : runs.get(q);
+        const qRows = source?.status === 'approved' && Array.isArray(source.run?.rows) ? source.run.rows : [];
+        const qPays = payments.filter(p => monthOf(p) === q);
+        const paid = qPays.filter(p => p.status === 'paid' && Number.isSafeInteger(p.amountKop) && p.amountKop > 0);
+        if (paid.length && (!source || source.status !== 'approved' || !Array.isArray(source.run?.rows))) {
+            checks.push({ level: 'block', text: `Виплати за ${q}: відомість за ${q} не затверджена — виплачений дохід не визначити` });
+            continue;
+        }
+        const withAdvance = Boolean(source?.stages?.advance) || qPays.some(p => p.stage === 'advance' && ['paid', 'sent', 'sending', 'unknown'].includes(p.status));
+        const part = (r, stage, f) => withAdvance ? r?.[stage]?.[f] || 0 : stage === 'final' ? (r?.advance?.[f] || 0) + (r?.final?.[f] || 0) : 0;
+        const timelyWage = (r, stage) => {
+            const wages = paid.filter(p => p.stage === stage && p.key === r.personId);
+            return r.kind === 'employee' && stage === 'final' && wages.length > 0
+                && wages.reduce((s, p) => s + p.amountKop, 0) === part(r, stage, 'netKop')
+                && wages.every(p => !p.paidOn || String(p.paidOn).slice(0, 7) === q || (String(p.paidOn).slice(0, 7) === shift(q, 1) && Number(String(p.paidOn).slice(8)) <= 7));
+        };
+        const reportPeriod = (p, r) => {
+            const month = p.paidOn ? String(p.paidOn).slice(0, 7) : q;
+            return month === shift(q, 1) && Number(String(p.paidOn).slice(8)) <= 7 && timelyWage(r, p.stage) ? q : month;
+        };
+        for (const p of paid) if (!stages.includes(p.stage) || !['pdfo', 'vz', 'esv', ...qRows.map(r => r.personId)].includes(p.key)) {
+            checks.push({ level: 'block', text: 'Проведений платіж не відповідає етапу чи отримувачу відомості — звірте його перед звітом' });
+        }
+        for (const r of qRows) for (const stage of stages) {
+            const wages = paid.filter(p => p.stage === stage && p.key === r.personId);
+            const actual = wages.reduce((s, p) => s + p.amountKop, 0), expected = part(r, stage, 'netKop');
+            if (actual && actual !== expected) checks.push({ level: 'block', text: `${r.name}: проведена виплата не відповідає відомості; виплачений дохід треба уточнити` });
+            if (!actual || actual !== expected) continue;
+            // Штатний цикл має один платіж на етап. При розділенні за
+            // датами нетто недостатньо для достовірного визначення gross.
+            if (wages.length !== 1) {
+                checks.push({ level: 'block', text: `${r.name}: етап виплачено кількома платежами — уточніть розподіл доходу за датами для 4ДФ` });
+                continue;
+            }
+            if (reportPeriod(wages[0], r) === period) {
+                const x = rowOf(r), amount = part(r, stage, 'grossKop');
+                x.paidKop += amount;
+                if (q !== period) x.earlierKop += amount;
+            }
+        }
+        for (const p of paid.filter(p => ['pdfo', 'vz'].includes(p.key) && stages.includes(p.stage))) {
+            const f = `${p.key}Kop`, weights = qRows.map(r => part(r, p.stage, f));
+            if (p.amountKop > weights.reduce((s, k) => s + k, 0)) checks.push({ level: 'block', text: `${q}: перерахований податок перевищує відомість — уточніть персональний розподіл переплати` });
+            const shares = distribute(p.amountKop, weights);
+            qRows.forEach((r, i) => { if (shares[i] && reportPeriod(p, r) === period) rowOf(r)[`${p.key}PaidKop`] += shares[i]; });
+        }
     }
+    const income = [...incomeByKey.values()];
+    income.push(...otherIncome);
     const esv = rows.map(r => {
         const person = r.relationship || people.get(r.personId) || {};
         if (!r.relationship) checks.push({ level: 'warn', text: `${r.name}: у старій відомості немає збережених дат відносин; дані Д1/Д5 треба звірити` });
@@ -177,42 +166,40 @@ function payrollReport({ period, stored, people = new Map(), payments = [], runs
         if (p.active === false && !p.to) continue;
         for (const [field, what] of [['from', 'start'], ['to', 'end']]) {
             if (String(p[field] || '').slice(0, 7) === period) {
-                relations.push({ personId: p.id, name: p.name, rnokpp: p.rnokpp || '', kind: p.kind, event: what, date: p[field], position: p.position || '' });
+                relations.push({ personId: p.id, name: p.name, rnokpp: p.rnokpp || '', kind: p.kind, event: what, date: p[field], position: p.position || '',
+                    ...(p.mainJob !== undefined ? { mainJob: p.mainJob } : {}), reporting: p.reporting || {} });
             }
         }
     }
     relations.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'uk'));
 
-    const incomeRows = [...income.values()];
-    for (const r of incomeRows) if (!payroll.validRnokpp(r.rnokpp)) checks.push({ level: 'block', text: r.kind === 'fop' ? `${r.name}: у картці ФОП немає правильного РНОКПП (код) — для 4ДФ` : `${r.name}: немає правильного РНОКПП` });
+    for (const r of income) if (!payroll.validRnokpp(r.rnokpp)) checks.push({ level: 'block', text: `${r.name}: немає правильного РНОКПП` });
+    for (const r of relations) if (!payroll.validRnokpp(r.rnokpp)) checks.push({ level: 'block', text: `${r.name}: немає правильного РНОКПП для події Д5` });
     for (const r of esv) if (r.days === null) checks.push({ level: 'block', text: `${r.name}: немає дати початку договору ЦПД для календарних днів Д1; уточніть період договору` });
     const sum = (list, k) => list.reduce((s, r) => s + (r[k] || 0), 0);
     const summary = {
-        people: rows.length, employees: rows.filter(r => r.kind === 'employee').length, gph: rows.filter(r => r.kind === 'gph').length, fop: fop.length,
-        grossKop: sum(incomeRows, 'grossKop'), paidKop: sum(incomeRows, 'paidKop'),
-        pdfoKop: sum(incomeRows, 'pdfoKop'), pdfoPaidKop: sum(incomeRows, 'pdfoPaidKop'),
-        vzKop: sum(incomeRows, 'vzKop'), vzPaidKop: sum(incomeRows, 'vzPaidKop'),
+        people: rows.length, employees: rows.filter(r => r.kind === 'employee').length, gph: rows.filter(r => r.kind === 'gph').length,
+        fop: otherIncome.filter(r => r.kind === 'fop').length,
+        grossKop: sum(income, 'grossKop'), paidKop: sum(income, 'paidKop'),
+        pdfoKop: sum(income, 'pdfoKop'), pdfoPaidKop: sum(income, 'pdfoPaidKop'),
+        vzKop: sum(income, 'vzKop'), vzPaidKop: sum(income, 'vzPaidKop'),
         esvBaseKop: sum(esv, 'baseKop'), esvKop: sum(esv, 'esvKop'),
         esvPaidKop: stages.reduce((s, st) => s + paidAmount(own, st, 'esv'), 0),
-        earlierKop: sum(incomeRows, 'earlierKop'), fopKop: sum(fop, 'amountKop'),
+        earlierKop: sum(income, 'earlierKop'), fopKop: sum(otherIncome, 'grossKop'),
         due: dueDate(period)
     };
     if (rows.length) {
-        // Контроль сплати — за відомістю цього місяця, хоч би коли платили.
-        const paidFor = key => stages.reduce((s, st) => s + paidAmount(own, st, key), 0);
         for (const [key, field] of [['pdfo', 'pdfoKop'], ['vz', 'vzKop'], ['esv', 'esvKop']]) {
-            if (paidFor(key) > summary[field]) checks.push({ level: 'warn', text: `${key.toUpperCase()}: сплачено більше за нарахування; переплату треба звірити окремо` });
+            if (stages.reduce((s, st) => s + paidAmount(own, st, key), 0) > run.totals[field]) checks.push({ level: 'warn', text: `${key.toUpperCase()}: сплачено більше за нарахування; переплату треба звірити окремо` });
         }
-        if (paidFor('pdfo') < summary.pdfoKop || paidFor('vz') < summary.vzKop) {
+        if (stages.reduce((s, st) => s + paidAmount(own, st, 'pdfo'), 0) < run.totals.pdfoKop || stages.reduce((s, st) => s + paidAmount(own, st, 'vz'), 0) < run.totals.vzKop) {
             checks.push({ level: 'warn', text: 'Не всі ПДФО й військовий збір сплачено (видно за проведеними платежами відомості)' });
         }
         if (summary.esvPaidKop < summary.esvKop) checks.push({ level: 'warn', text: `ЄСВ сплачено не повністю — строк ${summary.due.split('-').reverse().join('.')}` });
-        const paidOwn = sum(incomeRows, 'paidKop') - summary.earlierKop - summary.fopKop;
-        if (paidOwn < sum(rows, 'grossKop')) checks.push({ level: 'info', text: 'Частину зарплати за місяць ще не виплачено: у 4ДФ «виплачено» — лише те, що банк провів цього місяця; решта потрапить у розрахунок місяця виплати' });
+        if (summary.paidKop < summary.grossKop) checks.push({ level: 'info', text: 'Частину зарплати ще не виплачено — у розрахунку показуються нараховані суми' });
     }
-    if (summary.earlierKop) checks.push({ level: 'info', text: 'Цього місяця виплачено зарплату за попередній місяць — вона у графі «виплачено» 4ДФ' });
-    if (!rows.length && status === 'approved') checks.push({ level: 'info', text: 'Нарахувань фізособам немає' });
-    return { period, status, summary, income: incomeRows, esv, relations, checks };
+    if (!income.length && status === 'approved') checks.push({ level: 'info', text: 'Нарахувань фізособам немає' });
+    return { period, status, summary, income, esv, relations, checks };
 }
 
-module.exports = { KEY_RE, STATUSES, INCOME_SIGN, validKey, periodOf, keyFor, dueDate, fopIncome, payrollReport };
+module.exports = { KEY_RE, STATUSES, INCOME_SIGN, validKey, allowedStatus, periodOf, keyFor, dueDate, payrollReport };

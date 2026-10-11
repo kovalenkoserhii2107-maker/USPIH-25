@@ -48,14 +48,18 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
     }
     // Повернення списаного: оригінал є, знає про повернення, повернено не більше, ніж списано.
     const refunds = new Map();
-    for (const tx of bankTx.filter(t => managed(t.period) && t.kind === 'refund' && t.status === 'done')) {
+    // Метадані оригіналу зберігають УСІ повернення, також пізніших місяців.
+    // Звіряємо повний ланцюжок, тоді пізнє повернення не псує перевірку минулого місяця.
+    for (const tx of bankTx.filter(t => t.period >= START_PERIOD && t.kind === 'refund' && t.status === 'done')) {
         const o = txMap.get(tx.refundOf);
-        if (!o || o.direction !== 'out' || tx.direction !== 'in' || !(o.refundTxIds || []).includes(tx.id)) block(`Повернення ${tx.id}: немає відповідного списання`);
+        if (!o || o.direction !== 'out' || o.kind !== 'expense' || o.status !== 'done' || tx.direction !== 'in' || !positive(tx.amountKop)
+            || tx.period < o.period || !(o.refundTxIds || []).includes(tx.id)) block(`Повернення ${tx.id}: немає відповідного списання`);
         refunds.set(tx.refundOf, (refunds.get(tx.refundOf) || 0) + tx.amountKop);
     }
-    for (const [id, kop] of refunds) {
-        const o = txMap.get(id);
-        if (o && (kop > o.amountKop || kop !== (o.refundedKop || 0))) block(`Списання ${id}: сума повернень не відповідає виписці`);
+    for (const o of bankTx.filter(t => t.direction === 'out' && t.period >= START_PERIOD)) {
+        const kop = refunds.get(o.id) || 0, ids = o.refundTxIds || [];
+        if (kop > o.amountKop || kop !== (o.refundedKop || 0) || new Set(ids).size !== ids.length
+            || ids.some(id => txMap.get(id)?.refundOf !== o.id || txMap.get(id)?.status !== 'done')) block(`Списання ${o.id}: сума повернень не відповідає виписці`);
     }
     // Повернення переплати співвласнику: запис історії підтверджено списанням.
     const refundEntries = new Set();
@@ -70,7 +74,8 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
             if ((p.run?.rows || []).reduce((s, r) => s + (r[field] || 0), 0) !== p.run?.totals?.[field]) block(`Відомість зарплати ${p.period}: підсумки не відповідають нарахуванням за людьми`);
         }
     }
-    for (const tx of bankTx.filter(t => managed(t.period) && t.direction === 'in' && t.kind === 'payment' && t.status === 'done')) {
+    for (const tx of bankTx.filter(t => managed(t.period) && t.direction === 'in' && t.status === 'done'
+        && (t.kind === 'payment' || (t.kind === 'refund' && txMap.get(t.refundOf)?.category === 'resident_refund')))) {
         const list = tx.allocations || [];
         if (!positive(tx.amountKop) || !list.length || list.some(a => !positive(a.amountKop)) || list.reduce((s, a) => s + a.amountKop, 0) !== tx.amountKop) {
             block(`Оплата ${tx.id}: сума розносу не відповідає сумі виписки`);

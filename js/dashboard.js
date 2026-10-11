@@ -116,7 +116,7 @@ export async function loadDashboard() {
         const income = money(finance.income);
         const spent = (finance.items || []).reduce((sum, item) => sum + parseMoney(item.amount), 0);
         const funds = money(finance.funds);
-        const spentShare = income && income > 0 ? Math.min(100, Math.round(spent / income * 100)) : 0;
+        const spentShare = income > 0 && spent >= 0 ? Math.round(spent / income * 100) : null;
         const moneyText = (value) => value === null ? '—' : `${num(Math.round(value))} грн`;
 
         const current = activeMeetings[0] || null;
@@ -193,7 +193,7 @@ export async function loadDashboard() {
                 <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Надходження${finance.period ? ` · ${escapeHtml(finance.period)}` : ''}</span><b class="td-mid">${moneyText(income)}</b>
                     <span class="td-small">внески й інші доходи</span></button>
                 <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Витрати</span><b class="td-mid">${moneyText(financeReady ? spent : null)}</b>
-                    ${income !== null ? `<span class="sv-meter" aria-hidden="true"><i style="width:${spentShare}%"></i></span><span class="td-small">витрачено ${spentShare}% надходжень</span>` : '<span class="td-small">за звітом</span>'}</button>
+                    ${spentShare !== null ? `<span class="sv-meter" aria-hidden="true"><i style="width:${Math.min(100, spentShare)}%"></i></span><span class="td-small">витрачено ${spentShare}% надходжень</span>` : '<span class="td-small">за звітом</span>'}</button>
                 <button type="button" class="sv-card" ${go('directory')}><span class="td-label">Борг мешканців</span><b class="td-mid">${moneyText(directoryReady ? debtSum : null)}</b>
                     <span class="td-small${debtors.length ? ' is-bad' : ''}">${directoryReady ? `${debtors.length} ${plural(debtors.length, 'квартира', 'квартири', 'квартир')} ›` : 'дані оновлюються'}</span></button>
             </div>`;
