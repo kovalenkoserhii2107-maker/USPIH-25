@@ -21,12 +21,14 @@ const half = { id: 'e2', name: 'Прибиральниця Тестова', kind
 const gph = { id: 'g1', name: 'Виконавець Тестовий', kind: 'gph', position: 'прибирання території', rnokpp: '3124567809', iban: 'UA223052990000026001234567890',
     from: '2026-10-01', to: '2026-10-31', gender: 'Ч', contract: 'Договір № 5 від 01.10.2026' };
 
+const fop = [{ supplierId: 's1', name: 'ФОП Тестовий', rnokpp: '3124567809', amountKop: 1500000 }];
+
 function pack() {
     const people = [emp, half, gph];
     const run = payroll.buildRun({ people, period: '2026-10',
         inputs: { g1: { actKop: 800000 }, e2: { absences: [{ type: 'sick', from: '2026-10-05', to: '2026-10-07', avgDailyKop: 14000 }] } } });
     const stored = { status: 'approved', run };
-    const report = reports.payrollReport({ period: '2026-10', stored, people: new Map(people.map(p => [p.id, p])), payments: [] });
+    const report = reports.payrollReport({ period: '2026-10', stored, people: new Map(people.map(p => [p.id, p])), payments: [], fop });
     return { run, report, out: dps.buildPackage({ period: '2026-10', org, report, run, people: new Map(people.map(p => [p.id, p])), fillDate: '2026-11-12' }) };
 }
 
@@ -75,12 +77,22 @@ test('суми: розділ I розрахунку, Д1 і 4ДФ збігают
     // Лікарняний — окремим рядком категорії 29 з днями непрацездатності.
     assert.match(d1, /<T1RXXXXG8 ROWNUM="3">29<\/T1RXXXXG8>/);
     assert.match(d1, /<T1RXXXXG12 ROWNUM="3">3<\/T1RXXXXG12>/);
+    // ЦПД — категорія 26, з днями договору, без ознаки неповного часу.
+    assert.match(d1, /<T1RXXXXG8 ROWNUM="4">26<\/T1RXXXXG8>/);
+    assert.match(d1, /<T1RXXXXG14 ROWNUM="4">31<\/T1RXXXXG14>/);
+    assert.doesNotMatch(d1, /<T1RXXXXG22 ROWNUM="4">/);
+    assert.match(d1, /<T1RXXXXG22 ROWNUM="2">1<\/T1RXXXXG22>/);
     // 4ДФ: ознаки 101/102, ПСП 01 у півставки, дата прийому.
     assert.equal(Math.round(val(df4, 'R01G04A') * 100), report.income.reduce((s, x) => s + x.pdfoKop, 0));
     assert.match(df4, /<T1RXXXXG05 ROWNUM="3">102<\/T1RXXXXG05>/);
     assert.match(df4, /<T1RXXXXG08 ROWNUM="2">01<\/T1RXXXXG08>/);
     assert.match(df4, /<T1RXXXXG06D ROWNUM="1">16102026<\/T1RXXXXG06D>/);
     assert.match(df4, /<R00G01I>2<\/R00G01I><R00G02I>1<\/R00G02I>/);
+    // Виплата ФОП — ознака 157, без ПДФО й ВЗ; у розділ I розрахунку не входить.
+    assert.match(df4, /<T1RXXXXG05 ROWNUM="4">157<\/T1RXXXXG05>/);
+    assert.match(df4, /<T1RXXXXG03 ROWNUM="4">15000\.00<\/T1RXXXXG03>/);
+    assert.match(df4, /<T1RXXXXG04 ROWNUM="4">0\.00<\/T1RXXXXG04>/);
+    assert.equal(Math.round(val(df4, 'R01G03A') * 100), run.totals.grossKop + 1500000);
     // Д5: прийом працівника з кодом КП і договір ЦПД (категорія 3) з початком і кінцем.
     const d5 = out.files[3].xml;
     assert.match(d5, /<T1RXXXXG14S ROWNUM="\d">9141<\/T1RXXXXG14S>/);

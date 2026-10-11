@@ -74,7 +74,7 @@ function checkAbsences(list, period) {
 }
 
 /**
- * Середньоденна з історії: месяці перед period (до 12), з відомостей
+ * Середньоденна з історії: місяці перед period (до 12), з відомостей
  * застосунку або з заробітку до застосунку (картка людини).
  * history: [{ period, regularKop, vacationKop, sickKop, vacationDays, sickDays, calendarDays }]
  * prior: { 'РРРР-ММ': { kop, days } } — заробіток і календарні дні до застосунку.
@@ -86,8 +86,11 @@ function averageDaily({ mode, period, history = [], prior = {} }) {
         const p = shift(period, -i);
         const h = byPeriod.get(p);
         if (h) {
-            const excluded = mode === 'vacation' ? (h.vacationDays || 0) + (h.sickDays || 0) : (h.sickDays || 0);
-            const kop = (h.regularKop || 0) + (mode === 'sick' ? h.vacationKop || 0 : 0);
+            // Порядок № 100, п. 4 і 7: дні попередньої відпустки (середній заробіток збережено) лишаються
+            // в періоді разом із відпускними — і для відпускних, і для лікарняних; дні лікарняного
+            // (заробіток збережено частково) виключаються разом із сумами.
+            const excluded = h.sickDays || 0;
+            const kop = (h.regularKop || 0) + (h.vacationKop || 0);
             const d = Math.max(0, (h.calendarDays ?? daysInMonth(p)) - excluded);
             if (d > 0 || kop) { earnings += kop; days += d; months += 1; }
         } else if (prior[p] && Number.isSafeInteger(prior[p].kop)) {

@@ -355,7 +355,7 @@ export async function loadExpensesView() {
     const target = wanted && ctx.expenses.find(x => x.id === wanted);
     if (target) { segment = bucketOf(target); selected = target.id; form = null; }
     wanted = null;
-    paying = new Set(outgoing.filter(p => p.expenseId && ['sending', 'sent'].includes(p.status)).map(p => p.expenseId));
+    paying = new Set(outgoing.filter(p => p.expenseId && ['sending', 'unknown', 'sent'].includes(p.status)).map(p => p.expenseId));
     const host = document.getElementById('viewExpenses');
     const docs = segment === 'work' || segment === 'archive';
     const counts = { ...docCounts(ctx.expenses), contracts: ctx.contracts.length, suppliers: ctx.suppliers.length };

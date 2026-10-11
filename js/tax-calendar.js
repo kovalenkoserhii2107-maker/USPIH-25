@@ -63,19 +63,19 @@ export function deadlines(from, to, flags = { payroll: true, land: false }) {
             out.push({ date: payBy(twentieth), key: `esv-${y}-${m + 1}`, kind: 'payment',
                 title: `Сплатити ЄСВ за ${month}`, detail: '22 % нарахованих виплат' });
         }
-        if (m === 11) {
-            out.push({ date: day(y, 11, 31), key: `budget-${y + 1}`, kind: 'decision',
-                title: `Кошторис на ${y + 1} рік`, detail: 'Затверджують загальні збори до 01 січня (п. 4.12.2 статуту)' });
-        }
-        if (m === 0) {
-            const prev = y - 1;
-            out.push({ date: payBy(day(y, 1, 28)), key: `fs-stat-${prev}`, kind: 'report',
-                title: `Фінансова звітність за ${prev} рік`, detail: 'Баланс і звіт про фінансові результати у форматі «S» — ДПС і Держстат' });
-            out.push({ date: fileBy(sixtyDaysAfter(prev)), key: `npo-${prev}`, kind: 'report',
-                title: `Звіт неприбуткової організації за ${prev} рік`, detail: 'Звіт про використання доходів (J0101911) разом із фінзвітністю' });
-            if (flags.land) out.push({ date: fileBy(day(y, 1, 20)), key: `land-${y}`, kind: 'report',
-                title: `Декларація з плати за землю на ${y} рік`, detail: 'Якщо ділянка оформлена на ОСББ' });
-        }
+    }
+    // Річні події — за роками, незалежно від того, з якого місяця починається вікно:
+    // звіт неприбуткової за 2025 рік (строк 02.03.2026) видно й у вікні з березня.
+    for (let y = from.getUTCFullYear() - 1; y <= to.getUTCFullYear(); y++) {
+        out.push({ date: day(y, 11, 31), key: `budget-${y + 1}`, kind: 'decision',
+            title: `Кошторис на ${y + 1} рік`, detail: 'Затверджують загальні збори до 01 січня (п. 4.12.2 статуту)' });
+        const prev = y - 1;
+        out.push({ date: payBy(day(y, 1, 28)), key: `fs-stat-${prev}`, kind: 'report',
+            title: `Фінансова звітність за ${prev} рік`, detail: 'Баланс і звіт про фінансові результати у форматі «S» — ДПС і Держстат' });
+        out.push({ date: fileBy(sixtyDaysAfter(prev)), key: `npo-${prev}`, kind: 'report',
+            title: `Звіт неприбуткової організації за ${prev} рік`, detail: 'Звіт про використання доходів (J0101911) разом із фінзвітністю' });
+        if (flags.land) out.push({ date: fileBy(day(y, 1, 20)), key: `land-${y}`, kind: 'report',
+            title: `Декларація з плати за землю на ${y} рік`, detail: 'Якщо ділянка оформлена на ОСББ' });
     }
     return out.filter(e => e.date >= from && e.date <= to).sort((a, b) => a.date - b.date || a.key.localeCompare(b.key));
 }

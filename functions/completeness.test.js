@@ -54,7 +54,7 @@ test('повернення переплати співвласнику: бала
 });
 
 test('проводки: сторно червоним, повернення — на рахунок оплати, переплата — 377', () => {
-    const expenses = [doc({ id: 'e1', status: 'paid', paidKop: 500000, txIds: ['o1'], stornoKop: 100000 }),
+    const expenses = [doc({ id: 'e1', status: 'paid', paidKop: 400000, txIds: ['o1'], stornoKop: 100000, refundTxIds: ['r1'] }),
         { ...doc({ id: 'st', status: 'storno', amountKop: -100000, stornoOf: 'e1', number: 'КА-1', date: '2026-10-30' }) }];
     const bankTx = [
         { id: 'o1', account: OWN, period: '2026-10', at: new Date('2026-10-10T10:00:00Z'), direction: 'out', kind: 'expense', status: 'done', category: 'supplier', expenseId: 'e1', amountKop: 500000, counterparty: { name: 'ТОВ ТЕСТ' }, refundedKop: 100000, refundTxIds: ['r1'] },

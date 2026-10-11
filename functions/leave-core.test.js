@@ -12,9 +12,12 @@ const history = [['2026-07', 31], ['2026-08', 31], ['2026-09', 30]].map(([period
 
 test('середньоденна: історія застосунку, заробіток до застосунку, виключення днів', () => {
     assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history }).avgKop, Math.round(864700 * 3 / 92));
-    // Відпустка у вересні: для відпускних її дні й суми виключаються, для лікарняних — враховуються.
+    // Відпустка у вересні: її дні й відпускні лишаються в періоді (Порядок № 100, п. 4) — і для відпускних, і для лікарняних.
     const withVacation = [...history.slice(0, 2), { period: '2026-09', regularKop: 500000, vacationKop: 400000, vacationDays: 14, calendarDays: 30 }];
-    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withVacation }).avgKop, Math.round((864700 * 2 + 500000) / (62 + 16)));
+    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withVacation }).avgKop, Math.round((864700 * 2 + 500000 + 400000) / (62 + 30)));
+    // Лікарняний виключається разом із днями.
+    const withSick = [...history.slice(0, 2), { period: '2026-09', regularKop: 600000, sickKop: 100000, sickDays: 9, calendarDays: 30 }];
+    assert.equal(leave.averageDaily({ mode: 'vacation', period: '2026-10', history: withSick }).avgKop, Math.round((864700 * 2 + 600000) / (62 + 21)));
     assert.equal(leave.averageDaily({ mode: 'sick', period: '2026-10', history: withVacation }).avgKop, Math.round((864700 * 2 + 900000) / 92));
     const prior = { '2026-06': { kop: 800000, days: 30 } };
     assert.deepEqual(leave.averageDaily({ mode: 'vacation', period: '2026-10', history, prior }).months, 4);

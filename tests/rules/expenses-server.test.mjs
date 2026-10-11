@@ -14,13 +14,14 @@ const bankFunctions = require('./bank.js');
 
 const OWN = 'UA213052990000026001234567890';
 const LIFT_IBAN = 'UA906543210000000260323012024';
-let app, db, ex, bank, notified;
+let app, db, ex, bank, pays, notified;
 before(() => {
     app = initializeApp({ projectId: 'uspih-25-rules-test' }, 'expenses-server-test');
     db = getFirestore(app);
     notified = [];
     const deps = { db, FieldValue, Timestamp, requireAdmin: async () => '900', staffRole: async () => 'accountant', notify: async m => { notified.push(m); } };
     const payments = paymentFunctions(deps);
+    pays = payments;
     ex = expenseFunctions({ ...deps, payments });
     bank = bankFunctions({ ...deps, expenses: ex });
 });
@@ -105,6 +106,9 @@ test('оплата документа через API, виписка закри�
     try {
         ({ id: paymentId } = await a().pay(...A, { id, account: OWN }));
         await assert.rejects(a().pay(...A, { id, account: OWN }), /уже відправлено/);
+        // Той самий документ із форми «Платежі» (інший ключ) — другого платежу в дорозі не буде.
+        await assert.rejects(pays.actions.create(...A, { kind: 'supplier', recipient: { name: 'ТОВ Ліфт-Сервіс', iban: LIFT_IBAN, code: '14360570' }, amountKop: 425000,
+            purpose: 'Оплата за актом № 101', account: OWN, proposalKey: 'manual:x', expenseId: id }), /уже є платіж/);
     } finally { global.fetch = real; }
     assert.equal(body.payment_destination, 'Оплата за актом № 101 від 31.10.2026, Обслуговування ліфтів за жовтень 2026, без ПДВ');
     assert.equal(body.recipient_nceo, '14360570');

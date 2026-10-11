@@ -68,20 +68,54 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         };
     }
 
-    /** Податковий розрахунок за місяць: суми за людьми з затвердженої відомості. */
-    async function payrollData({ period }) {
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) fail('invalid-argument', 'Невідомий місяць');
-        const [run, people, pays, saved] = await Promise.all([
+    const kyivDay = v => {
+        const d = v?.toDate?.() || null;
+        return d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d) : '';
+    };
+
+    /**
+     * Дані розрахунку за місяць: відомість, платежі за нею й виплачені цього
+     * місяця за попередні місяці (4ДФ — за датою виплати), виплати ФОП.
+     */
+    async function reportInput(period) {
+        const [y, m] = period.split('-').map(Number);
+        // Із запасом на добу з кожного боку: точний місяць — за київською датою.
+        const from = new Date(Date.UTC(y, m - 1, 1) - 86400000), to = new Date(Date.UTC(y, m, 1) + 86400000);
+        const [run, people, accrued, paidIn, tx, suppliers] = await Promise.all([
             db.doc(`payroll_runs/${period}`).get(),
             db.collection('payroll_people').get(),
             db.collection('payments').where('payroll.period', '==', period).get(),
-            db.doc(`reports/${core.keyFor('j0500111', period)}`).get()
+            db.collection('payments').where('paidAt', '>=', from).where('paidAt', '<', to).get(),
+            db.collection('bank_tx').where('period', '==', period).get(),
+            db.collection('suppliers').get()
         ]);
-        const report = core.payrollReport({
-            period, stored: run.exists ? run.data() : null,
-            people: new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }])),
-            payments: pays.docs.map(d => ({ stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status, amountKop: d.data().amountKop - (d.data().returnedKop || 0) }))
-        });
+        const seen = new Map();
+        for (const d of [...accrued.docs, ...paidIn.docs]) {
+            const p = d.data();
+            if (!p.payroll || seen.has(d.id)) continue;
+            seen.set(d.id, { period: p.payroll.period, stage: p.payroll.stage, key: p.payroll.key, status: p.status,
+                amountKop: p.amountKop - (p.returnedKop || 0), paidOn: kyivDay(p.paidAt) });
+        }
+        const payments = [...seen.values()];
+        const others = [...new Set(payments.filter(p => p.status === 'paid' && p.paidOn.startsWith(period) && p.period !== period).map(p => p.period))];
+        const runSnaps = others.length ? await db.getAll(...others.map(q => db.doc(`payroll_runs/${q}`))) : [];
+        const txList = tx.docs.map(d => ({ id: d.id, ...d.data() }));
+        const exIds = [...new Set(txList.map(t => t.expenseId).filter(Boolean))];
+        const exSnaps = exIds.length ? await db.getAll(...exIds.map(id => db.doc(`expenses/${id}`))) : [];
+        const stored = run.exists ? run.data() : null;
+        return {
+            period, stored, people: new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }])), payments,
+            runs: new Map(runSnaps.filter(d => d.exists).map(d => [d.id, d.data()])),
+            fop: core.fopIncome({ tx: txList, expenses: new Map(exSnaps.filter(d => d.exists).map(d => [d.id, d.data()])),
+                suppliers: new Map(suppliers.docs.map(d => [d.id, d.data()])) })
+        };
+    }
+
+    /** Податковий розрахунок за місяць: суми за людьми з затвердженої відомості. */
+    async function payrollData({ period }) {
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) fail('invalid-argument', 'Невідомий місяць');
+        const [input, saved] = await Promise.all([reportInput(period), db.doc(`reports/${core.keyFor('j0500111', period)}`).get()]);
+        const report = core.payrollReport(input);
         const settings = (await db.doc('osbb_settings/finance').get()).data() || {};
         return { ...report, key: core.keyFor('j0500111', period), edrpou: settings.edrpou || '', saved: saved.exists ? plain(saved) : null };
     }
@@ -128,18 +162,9 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         if (period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
         const kind = [1, 2, 3].includes(Number(stan)) ? Number(stan) : 1;
         const number = Math.max(1, Math.min(9999, Math.round(Number(num) || 1)));
-        const [run, people, pays, cfg] = await Promise.all([
-            db.doc(`payroll_runs/${period}`).get(),
-            db.collection('payroll_people').get(),
-            db.collection('payments').where('payroll.period', '==', period).get(),
-            xmlSettings()
-        ]);
-        const stored = run.exists ? run.data() : null;
-        const cards = new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-        const report = core.payrollReport({
-            period, stored, people: cards,
-            payments: pays.docs.map(d => ({ stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status, amountKop: d.data().amountKop - (d.data().returnedKop || 0) }))
-        });
+        const [input, cfg] = await Promise.all([reportInput(period), xmlSettings()]);
+        const { stored, people: cards } = input;
+        const report = core.payrollReport(input);
         const s = cfg.settings;
         const office = STI.find(x => x.sti === Number(s.sti));
         const org = { ...cfg.org, ...s, sti: office ? { reg: office.reg, raj: office.raj, code: office.sti, name: office.name } : null };
@@ -150,7 +175,12 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     }
 
     /** Позначка звіту: подано, прийнято (квитанція № 2), відхилено, не потрібно; «open» — зняти позначку. */
-    async function mark(actor, role, { key, status, regNumber, date, note, files }) {
+    /**
+     * files — повний перелік файлів (заміна); addFiles — лише нові: сервер
+     * додає їх до збережених, тож квитанції з двох вкладок не губляться.
+     * seenAt — коли кабінет бачив позначку: знімаємо лише ту, яку бачили.
+     */
+    async function mark(actor, role, { key, status, regNumber, date, note, files, addFiles, seenAt }) {
         if (!core.validKey(key)) fail('invalid-argument', 'Невідомий звіт');
         const period = core.periodOf(key);
         if (period && period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
@@ -160,6 +190,8 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
                 const snap = await t.get(ref);
                 if (!snap.exists) return null;
                 if (role !== 'chair' && snap.data().status === 'accepted') fail('permission-denied', 'Позначку прийнятого звіту знімає лише голова');
+                const at = snap.data().at?.toDate?.()?.toISOString() || null;
+                if (seenAt !== undefined && seenAt !== at) fail('aborted', 'Позначку щойно змінили в іншій вкладці чи іншим користувачем — оновіть сторінку');
                 t.delete(ref);
                 return snap;
             });
@@ -171,17 +203,20 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         if (status === 'paid' && !key.startsWith('esv-')) fail('invalid-argument', '«Сплачено» — лише для платежів');
         const day = String(date || '') || today();
         if (!validDate(day) || day > today()) fail('invalid-argument', 'Вкажіть правильну дату подання — не пізніше сьогодні');
-        if (files !== undefined && (!Array.isArray(files) || files.length > 12)) fail('invalid-argument', 'Додайте не більше 12 файлів');
-        const list = (Array.isArray(files) ? files : []).map(f => ({
+        for (const v of [files, addFiles]) if (v !== undefined && (!Array.isArray(v) || v.length > 12)) fail('invalid-argument', 'Додайте не більше 12 файлів');
+        const clean = v => (Array.isArray(v) ? v : []).map(f => ({
             name: text(f?.name, 120), path: String(f?.path || ''), kind: FILE_KINDS[f?.kind] ? f.kind : 'other'
         }));
-        for (const f of list) {
+        const list = clean(files), added = clean(addFiles);
+        for (const f of [...list, ...added]) {
             if (!f.path.startsWith(`reports/${key}/`) || f.path.includes('..')) fail('invalid-argument', 'Файл має бути в теці цього звіту');
         }
         const doc = await db.runTransaction(async t => {
             const before = (await t.get(ref)).data();
             if (before?.status === 'accepted' && status !== 'accepted' && role !== 'chair') fail('permission-denied', 'Стан прийнятого звіту змінює лише голова');
-            const keptFiles = files === undefined ? before?.files || [] : list;
+            const base = files === undefined ? before?.files || [] : list;
+            const keptFiles = [...base, ...added.filter(f => !base.some(b => b.path === f.path))];
+            if (keptFiles.length > 24) fail('invalid-argument', 'У звіті вже забагато файлів (до 24)');
             const number = regNumber === undefined ? before?.regNumber || '' : text(regNumber, 40);
             if (status === 'accepted' && !keptFiles.some(f => f.kind === 'receipt2') && !number) fail('invalid-argument', 'Для «прийнято» додайте квитанцію № 2 або реєстраційний номер документа');
             const value = { key, status, regNumber: number, date: day, note: note === undefined ? before?.note || '' : text(note, 300), files: keptFiles, by: actor, at: FieldValue.serverTimestamp() };

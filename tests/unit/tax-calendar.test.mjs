@@ -36,3 +36,14 @@ test('без працівників — без розрахунку й ЄСВ; �
 test('відлік днів', () => {
     assert.equal(daysLeft(new Date('2026-10-20'), new Date(2026, 9, 9)), 11);
 });
+
+test('річні строки — і коли вікно починається не з січня', () => {
+    // 60-й день після 31.12.2025 — 01.03.2026 (неділя) → понеділок 02.03.2026.
+    const list = deadlines(new Date('2026-03-01'), new Date('2026-04-30'));
+    assert.equal(iso(find(list, 'npo-2025').date), '2026-03-02');
+    assert.equal(list.filter(e => e.key === 'npo-2025').length, 1);
+    // Вікно на два роки — кожна річна подія один раз.
+    const wide = deadlines(new Date('2026-01-01'), new Date('2027-12-31'));
+    assert.deepEqual(wide.filter(e => e.key.startsWith('npo-')).map(e => e.key), ['npo-2025', 'npo-2026']);
+    assert.deepEqual(wide.filter(e => e.key.startsWith('budget-')).map(e => e.key), ['budget-2027', 'budget-2028']);
+});

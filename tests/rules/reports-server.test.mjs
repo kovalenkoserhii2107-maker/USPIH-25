@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp, deleteApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const payroll = require('./payroll-core.js');
 
 let app, db, reports;
@@ -16,7 +16,7 @@ before(() => {
     reports = require('./reports.js')({ db, FieldValue, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
 });
 const wipe = async () => {
-    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings']) {
+    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings', 'bank_tx', 'suppliers', 'expenses']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -74,6 +74,48 @@ test('позначки: подано, прийнято з квитанцією, 
     assert.equal((await db.doc(`reports/${key}`).get()).exists, false);
     const log = (await db.collection('audit_log').get()).docs.map(x => x.data().action).sort();
     assert.deepEqual(log, ['reports.mark', 'reports.mark', 'reports.reopen']);
+});
+
+test('квитанції з двох вкладок: сервер додає нові файли до збережених; застарілу позначку не знято', async () => {
+    const key = 'j0500111-2026-11';
+    await a().mark(...A, { key, status: 'submitted', date: '2026-10-10', addFiles: [{ name: 'xml.zip', path: `reports/${key}/1_xml.zip`, kind: 'report' }] });
+    const seen = (await a().context()).statuses[key];
+    // Дві вкладки з тим самим станом додають кожна свою квитанцію.
+    await a().mark(...A, { key, status: 'submitted', date: '2026-10-10', addFiles: [{ name: 'kv1.pdf', path: `reports/${key}/2_kv1.pdf`, kind: 'receipt1' }] });
+    await a().mark(...A, { key, status: 'accepted', date: '2026-10-10', addFiles: [{ name: 'kv2.pdf', path: `reports/${key}/3_kv2.pdf`, kind: 'receipt2' }] });
+    const saved = (await a().context()).statuses[key];
+    assert.deepEqual(saved.files.map(f => f.kind), ['report', 'receipt1', 'receipt2']);
+    // Вкладка, що бачила стару позначку, не знімає нову.
+    await assert.rejects(a().mark(...C, { key, status: 'open', seenAt: seen.at }), /іншій вкладці/);
+    await a().mark(...C, { key, status: 'open', seenAt: saved.at });
+    assert.equal((await db.doc(`reports/${key}`).get()).exists, false);
+});
+
+test('4ДФ: виплачене — за датою банку (остаточний розрахунок жовтня в листопаді), виплати ФОП — ознака 157', async () => {
+    const person = { name: 'Працівник Тестовий', kind: 'employee', salaryKop: 864700, fte: 1, mainJob: true, rnokpp: '3124567809',
+        iban: 'UA213052990000026001234567891', taxNotified: true, from: '2026-01-01', active: true };
+    await db.doc('payroll_people/e1').set(person);
+    const runs = {};
+    for (const period of ['2026-10', '2026-11']) {
+        runs[period] = payroll.buildRun({ people: [{ id: 'e1', ...person }], period });
+        await db.doc(`payroll_runs/${period}`).set({ period, status: 'approved', stages: { advance: true }, run: JSON.parse(JSON.stringify(runs[period])) });
+    }
+    const at = s => Timestamp.fromDate(new Date(s));
+    const oct = runs['2026-10'].rows[0], nov = runs['2026-11'].rows[0];
+    await db.collection('payments').add({ status: 'paid', amountKop: oct.advance.netKop, paidAt: at('2026-10-20T10:00:00Z'), payroll: { period: '2026-10', stage: 'advance', key: 'e1' } });
+    await db.collection('payments').add({ status: 'paid', amountKop: oct.final.netKop, paidAt: at('2026-11-05T08:00:00Z'), payroll: { period: '2026-10', stage: 'final', key: 'e1' } });
+    await db.collection('payments').add({ status: 'paid', amountKop: nov.advance.netKop, paidAt: at('2026-11-20T08:00:00Z'), payroll: { period: '2026-11', stage: 'advance', key: 'e1' } });
+    await db.doc('suppliers/s1').set({ name: 'ФОП Тестовий', kind: 'fop', code: '3124567809', iban: 'UA213052990000026001234567892' });
+    await db.doc('expenses/x1').set({ supplierId: 's1', amountKop: 150000, status: 'paid' });
+    await db.doc('bank_tx/t1').set({ period: '2026-11', direction: 'out', kind: 'expense', status: 'done', category: 'supplier', expenseId: 'x1', amountKop: 150000, counterparty: {} });
+
+    const o = await a().payrollData({ period: '2026-10' });
+    assert.equal(o.income[0].paidKop, oct.advance.grossKop);
+    const n = await a().payrollData({ period: '2026-11' });
+    const e = n.income.find(r => r.personId === 'e1'), f = n.income.find(r => r.sign === '157');
+    assert.equal(e.grossKop, nov.grossKop);
+    assert.equal(e.paidKop, oct.final.grossKop + nov.advance.grossKop);
+    assert.deepEqual([f.rnokpp, f.paidKop, f.pdfoKop], ['3124567809', 150000, 0]);
 });
 
 test('XML для Електронного кабінету: реквізити, перелік відсутнього, пакет у windows-1251', async () => {
