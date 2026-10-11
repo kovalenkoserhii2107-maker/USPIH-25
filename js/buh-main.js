@@ -97,27 +97,59 @@ async function refreshBadge() {
 // ------------------------------------------------------------
 // ВХІД
 // ------------------------------------------------------------
+/** Іконки меню — лінійні, в одному стилі з нижньою панеллю. */
+const ICON = {
+    flats: '<path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/>',
+    expenses: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
+    payroll: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+    reports: '<path d="M5 3h14v18H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+    inbox: '<path d="M4 13l3-8h10l3 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/>',
+    charges: '<path d="M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"/>',
+    budget: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',
+    journal: '<path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    board: '<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-4h6v4"/>',
+    home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
+    finance: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+    logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>'
+};
+const icon = k => `<svg class="mn-ico-svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ''}</svg>`;
+
 function renderAccount(apartment) {
     const name = session.staffName || (session.serviceAccount ? 'Бухгалтер' : `Квартира ${session.apt}`);
     const initial = name.trim().charAt(0).toUpperCase() || 'Б';
     document.getElementById('buhAccountBtn').textContent = initial;
+    // Плитки основних розділів — лише на телефоні (на компʼютері вони вгорі).
+    const tile = (v, t, sub) => `<button class="mn-tile buh-nav-item" data-view="${v}" type="button"><span class="mn-ico">${icon(v)}</span><b>${t}</b><small>${sub}</small></button>`;
+    // Рядок меню: іконка, назва, підпис, стрілка; бейдж — для «Рішень».
+    const row = (attrs, ico, t, sub, extra = '') => `<${attrs.startsWith('href') ? 'a' : 'button type="button"'} class="mn-row${attrs.startsWith('href') ? '' : ' buh-nav-item'}" ${attrs}>
+        <span class="mn-ico">${icon(ico)}</span><span class="mn-copy"><b>${t}</b><small>${sub}</small></span>${extra}<span class="mn-chev" aria-hidden="true">›</span></${attrs.startsWith('href') ? 'a' : 'button'}>`;
     const links = [];
-    if (hasRight(session.role, 'manage')) links.push('<a class="buh-more-item" href="admin.html" data-mode="staff">Панель правління</a>');
-    if (!session.serviceAccount && apartment) links.push('<a class="buh-more-item" href="index.html" data-mode="home">Мій кабінет</a>');
-    // Рідше потрібне — у меню профілю; на телефоні тут і решта розділів.
-    const item = (v, t) => `<button class="buh-more-item buh-nav-item" data-view="${v}" type="button">${t}</button>`;
+    if (hasRight(session.role, 'manage')) links.push(row('href="admin.html" data-mode="staff"', 'board', 'Панель правління', 'збори, мешканці, звернення'));
+    if (!session.serviceAccount && apartment) links.push(row('href="index.html" data-mode="home"', 'home', 'Мій кабінет', `квартира ${escapeHtml(String(session.apt))}`));
     document.getElementById('buhMoreBody').innerHTML = `
-        <div class="buh-more-account"><span class="buh-avatar">${escapeHtml(initial)}</span>
-            <span><b>${escapeHtml(name)}</b><small>${escapeHtml(ROLE_LABELS[session.role] || '')}</small></span></div>
-        <nav class="buh-more-nav buh-more-mobile" aria-label="Розділи">
-            ${item('flats', 'Квартири')}${item('expenses', 'Документи')}${item('payroll', 'Зарплата')}${item('reports', 'Звіти')}
+        <section class="mn-profile">
+            <span class="mn-avatar">${escapeHtml(initial)}</span>
+            <span class="mn-copy"><b>${escapeHtml(name)}</b><small>${escapeHtml(ROLE_LABELS[session.role] || '')}</small></span>
+            <button type="button" class="mn-logout" data-act="logout">${icon('logout')}<span>Вийти</span></button>
+        </section>
+        <nav class="mn-tiles" aria-label="Розділи">
+            ${tile('flats', 'Квартири', 'борги й історія')}${tile('expenses', 'Документи', 'рахунки й акти')}
+            ${tile('payroll', 'Зарплата', 'відомість')}${tile('reports', 'Звіти', 'строки ДПС')}
         </nav>
-        <nav class="buh-more-nav" aria-label="Інші розділи">
-            ${item('inbox', 'Рішення — усі по черзі')}${item('charges', 'Нарахування й тарифи')}${item('budget', 'Кошторис')}${item('journal', 'Проводки й ОСВ')}${item('settings', 'Налаштування')}
-            <a class="buh-more-item" href="admin.html?tab=finance">Фінанси: попередні розділи</a>
+        <h5 class="mn-h">Облік</h5>
+        <nav class="mn-group" aria-label="Облік">
+            ${row('data-view="inbox"', 'inbox', 'Рішення', 'усе, що чекає вас, — по черзі', '<span class="mn-badge" id="buhInboxBadgeMenu" hidden></span>')}
+            ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки')}
+            ${row('data-view="budget"', 'budget', 'Кошторис', 'план і виконання за рік')}
+            ${row('data-view="journal"', 'journal', 'Проводки й ОСВ', 'журнал, закриття місяця')}
+        </nav>
+        <h5 class="mn-h">Налаштування й переходи</h5>
+        <nav class="mn-group" aria-label="Налаштування й переходи">
+            ${row('data-view="settings"', 'settings', 'Налаштування', 'банк, реквізити, правила, демо')}
             ${links.join('')}
-        </nav>
-        <button type="button" class="menu-logout" data-act="logout">Вийти</button>`;
+            ${row('href="admin.html?tab=finance"', 'finance', 'Фінанси: попередні розділи', 'старий вигляд у панелі правління')}
+        </nav>`;
 }
 
 async function openCabinet(apt) {
