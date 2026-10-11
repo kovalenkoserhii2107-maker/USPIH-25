@@ -73,6 +73,17 @@
 /* Щоб щілина над зсунутим вмістом мала колір тла, а не білий. */
 html { background: var(--bg); }
 
+/*
+ * Застосунок на телефоні не масштабується: без збільшення подвійним
+ * дотиком, без «роздування» тексту при повороті, а поля введення не
+ * менші за 16px — інакше iPhone збільшує сторінку, щойно торкнутися поля,
+ * і вона лишається збільшеною. Щипок у iOS блокує скрипт у <head>.
+ */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
+@media (max-width: 900px), (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: max(16px, 1em) !important; }
+}
+
 body {
     font-family: var(--font);
     background: var(--bg);

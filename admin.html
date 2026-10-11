@@ -3,6 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <script>
+    // iOS Safari ігнорує user-scalable=no: щипок блокуємо тут, щоб застосунок
+    // завжди виглядав так, як задумано (подвійний дотик вимкнено в style.css).
+    (function () {
+        var stop = function (e) { e.preventDefault(); };
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+            document.addEventListener(type, stop, { passive: false });
+        });
+    })();
+    </script>
     <title>Панель правління — ОСББ «Успіх-25»</title>
 
     <!-- PWA: встановлення на головний екран -->
@@ -14,13 +24,13 @@
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=152">
-    <link rel="stylesheet" href="style-chat.css?v=152">
-    <link rel="stylesheet" href="style-admin.css?v=152">
+    <link rel="stylesheet" href="style.css?v=153">
+    <link rel="stylesheet" href="style-chat.css?v=153">
+    <link rel="stylesheet" href="style-admin.css?v=153">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=152">
+    <link rel="modulepreload" href="js/admin-main.js?v=153">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -1385,7 +1395,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=152' : './js/admin-main.js?v=152').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=153' : './js/admin-main.js?v=153').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

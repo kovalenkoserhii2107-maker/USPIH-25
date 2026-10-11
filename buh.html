@@ -2,7 +2,17 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <script>
+    // iOS Safari ігнорує user-scalable=no: щипок блокуємо тут, щоб застосунок
+    // завжди виглядав так, як задумано (подвійний дотик вимкнено в style.css).
+    (function () {
+        var stop = function (e) { e.preventDefault(); };
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+            document.addEventListener(type, stop, { passive: false });
+        });
+    })();
+    </script>
     <title>Бухгалтерія — ОСББ «Успіх-25»</title>
 
     <link rel="manifest" href="manifest.json">
@@ -16,10 +26,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=152">
-    <link rel="stylesheet" href="style-buh.css?v=152">
+    <link rel="stylesheet" href="style.css?v=153">
+    <link rel="stylesheet" href="style-buh.css?v=153">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=152">
+    <link rel="modulepreload" href="js/buh-main.js?v=153">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -131,7 +141,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=152').catch(error => {
+    import('./js/buh-main.js?v=153').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
