@@ -14,6 +14,7 @@ import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { loadPayroll, payrollAct, maskIban } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
 import { initials, personState, payrollTotals } from './payroll-view-core.js';
+import { openPaymentSheet } from './buh-chain.js';
 
 const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 const monthTitle = p => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
@@ -127,7 +128,7 @@ function paymentsHtml() {
     const STAT = { sending: ['надсилається', 'is-work'], sent: ['на підписі', ''], paid: ['проведено', 'is-done'], failed: ['банк не прийняв', 'is-bad'], unknown: ['перевірте у Приват24', 'is-bad'], canceled: ['скасовано', 'is-locked'] };
     return `<section class="py-card pr-payments"><div class="py-card-head"><h2>Платежі за відомістю</h2></div>
         ${ctx.payments.map(p => { const [text, cls] = p.returnedKop ? [`повернено банком${p.repaid ? ' · відправлено знову' : ''}`, 'is-bad'] : STAT[p.status] || [p.status, ''];
-            return `<div class="py-row">
+            return `<div class="py-row is-link" data-pay="${escapeHtml(p.id)}" tabindex="0" role="button">
             <span class="py-main"><b>${escapeHtml(p.recipient)}</b><small class="py-muted">${TAX_NAMES[String(p.key || '').split(':')[1]] ? `${TAX_NAMES[String(p.key).split(':')[1]]}${p.stage === 'advance' ? ' з авансу' : ''}` : p.stage === 'advance' ? 'Аванс' : 'Зарплата'}${p.retry ? ' · повторно' : ''}${p.error ? ` · ${escapeHtml(p.error)}` : ''}</small></span>
             <span class="py-right"><b class="py-sum">${grn(p.amountKop)}</b><span class="sv-chip ${cls}">${escapeHtml(text)}</span></span>
             ${p.status === 'paid' && p.returnedKop >= p.amountKop && !p.repaid ? `<span class="py-actions"><button type="button" class="sv-btn" data-act="repay" data-id="${escapeHtml(p.id)}" title="Спершу виправте IBAN у картці людини чи рахунок податку">Відправити знову</button></span>` : ''}
@@ -365,6 +366,8 @@ export function initPayrollView() {
     host.addEventListener('click', e => {
         const btn = e.target.closest('[data-act]');
         if (btn?.dataset.act === 'pick') { pick(btn.dataset.id); return; }
+        const payRow = !btn && e.target.closest('[data-pay]');
+        if (payRow) { openPaymentSheet(payRow.dataset.pay); return; }
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('change', e => {
