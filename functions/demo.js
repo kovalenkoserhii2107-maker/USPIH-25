@@ -135,35 +135,61 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         await db.collection('audit_log').add({ actor, role, action, target: 'demo/state', summary, details, at: FieldValue.serverTimestamp() });
     }
 
-    /** Що заважає прогону: лише «чистий» облік, щоб не зачепити реальні дані. */
+    const count = async query => (await query.count().get()).data().count;
+    const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many}`;
+
+    /**
+     * Що заважає прогону: лише «чистий» облік, щоб не зачепити реальні дані.
+     * З кількістю й прикладами документів — голова бачить, що саме лишилося.
+     */
     async function blockers() {
         const [state, tx, runs, ex, bud, chargeSettings] = await Promise.all([
-            stateRef.get(), db.collection('bank_tx').limit(1).get(), db.collection('charges_runs').limit(1).get(),
-            db.collection('expenses').limit(1).get(), db.collection('budgets').limit(1).get(), db.doc('charges/settings').get()
+            stateRef.get(), count(db.collection('bank_tx')), count(db.collection('charges_runs')),
+            db.collection('expenses').limit(3).get(), count(db.collection('budgets')), db.doc('charges/settings').get()
         ]);
         const out = [];
         if (state.exists && state.data().status === 'done') out.push('демо вже прогнано — спершу приберіть його');
-        if (!tx.empty) out.push('у банку вже є операції');
-        if (!runs.empty || chargeSettings.data()?.opening?.set) out.push('вже є нарахування або вхідні залишки');
-        if (!ex.empty) out.push('вже є документи витрат');
-        if (!bud.empty) out.push('вже є кошторис');
+        if (tx) out.push(`у банку вже є операції (${plural(tx, 'операція', 'операції', 'операцій')})`);
+        if (runs || chargeSettings.data()?.opening?.set) out.push('вже є нарахування або вхідні залишки');
+        if (!ex.empty) {
+            const total = await count(db.collection('expenses'));
+            const sample = ex.docs.map(d => `${d.data().supplierName || 'без постачальника'} № ${d.data().number || '—'}`).join(', ');
+            out.push(`вже є документи витрат (${plural(total, 'документ', 'документи', 'документів')}: ${sample}${total > 3 ? '…' : ''})`);
+        }
+        if (bud) out.push('вже є кошторис');
         return out;
     }
 
-    /** Чи лишилися сліди демо: операції й платежі з позначкою демо, демо-постачальники, демо-рахунки банку. */
+    /**
+     * Чи лишилися сліди демо: операції й платежі з позначкою демо, демо-постачальники
+     * й документи демо-постачальників (зокрема ті, чий постачальник уже видалений
+     * старим прибиранням), демо-рахунки банку.
+     */
     async function demoTraces() {
-        const [tx, pay, sup, bs] = await Promise.all([db.collection('bank_tx').where('source', '==', 'demo').limit(1).get(),
-            db.collection('payments').where('source', '==', 'demo').limit(1).get(), db.collection('suppliers').get(), db.doc('bank/settings').get()]);
-        return !tx.empty || !pay.empty || sup.docs.some(d => /\(демо\)/i.test(d.data().name || '')) || bs.data()?.demo === true;
+        const [tx, pay, sup, ex, bs] = await Promise.all([db.collection('bank_tx').where('source', '==', 'demo').limit(1).get(),
+            db.collection('payments').where('source', '==', 'demo').limit(1).get(), db.collection('suppliers').get(),
+            db.collection('expenses').select('supplierId', 'supplierName').get(), db.doc('bank/settings').get()]);
+        const demoName = v => /\(демо\)/i.test(v || '');
+        const suppliers = new Set(sup.docs.map(d => d.id));
+        return !tx.empty || !pay.empty || sup.docs.some(d => demoName(d.data().name)) || bs.data()?.demo === true
+            || ex.docs.some(d => demoName(d.data().supplierName) || (d.data().supplierId && !suppliers.has(d.data().supplierId)));
+    }
+
+    /** Справжній банк не підключено, а демо на акаунті вже проганяли — це тестовий облік. */
+    async function testAccount(s) {
+        return ['removed', 'failed'].includes(s?.status) && !(await db.doc('bank_secrets/privat').get()).exists;
     }
 
     async function status() {
         const snap = await stateRef.get();
         const s = snap.exists ? snap.data() : null;
         const blocked = s?.status === 'done' ? [] : await blockers();
-        // Після прибирання лишилися залишки (старий прогін чи збій) — їх можна дочистити.
+        // Після прибирання лишилися залишки (старий прогін чи збій) — їх можна дочистити;
+        // на тестовому обліку без слідів демо — очистити повністю з підтвердженням.
+        const traces = s?.status === 'removed' && blocked.length > 0 && await demoTraces();
+        const canWipe = !traces && blocked.length > 0 && await testAccount(s);
         return { status: s?.status || 'none', steps: s?.steps || [], summary: s?.summary || null, lastError: s?.status === 'failed' ? s.error || '' : '',
-            at: s?.at?.toDate?.()?.toISOString() || null, blockers: blocked, canClean: s?.status === 'removed' && blocked.length > 0 && await demoTraces() };
+            at: s?.at?.toDate?.()?.toISOString() || null, blockers: blocked, canClean: traces, canWipe };
     }
 
     // --------------------------------------------------------
@@ -601,14 +627,22 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         return out;
     }
 
-    async function remove(actor) {
+    /** Слово, яким голова підтверджує повну очистку тестового обліку. */
+    const WIPE_WORD = 'ОЧИСТИТИ';
+
+    async function remove(actor, { wipe, confirm } = {}) {
         const snap = await stateRef.get();
         if (!snap.exists || !['done', 'running', 'failed', 'removed'].includes(snap.data().status)) fail('failed-precondition', 'Демо не прогнано');
         const s = snap.data();
+        // Повна очистка тестового обліку без слідів демо — лише з явним підтвердженням голови
+        // й лише коли справжній банк не підключено.
+        const forced = wipe === true && String(confirm || '').trim().toUpperCase() === WIPE_WORD;
+        if (wipe === true && !forced) fail('invalid-argument', `Щоб очистити облік, введіть слово «${WIPE_WORD}»`);
+        if (forced && !await testAccount(s)) fail('failed-precondition', 'Повна очистка — лише на тестовому обліку: справжній банк не підключено, демо вже прибрано');
         // Прогін не почався (немає резервної копії й нічого не лишилося) — лише скидаємо стан,
         // щоб не видалити справжній звіт мешканцям чи налаштування.
-        if (s.status === 'removed' && !await demoTraces()) fail('failed-precondition', 'Слідів демо не знайдено — облік не чіпаємо');
-        if (!s.backup && s.status !== 'removed') {
+        if (s.status === 'removed' && !forced && !await demoTraces()) fail('failed-precondition', 'Слідів демо не знайдено — облік не чіпаємо');
+        if (!s.backup && s.status !== 'removed' && !forced) {
             await stateRef.set({ status: 'none', error: FieldValue.delete() }, { merge: true });
             return { ok: true };
         }
@@ -636,7 +670,8 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         await stateRef.set({ status: 'removed', removedBy: actor, removedAt: FieldValue.serverTimestamp(), backup: FieldValue.delete(), financeCurrent: FieldValue.delete(),
             bankSettings: FieldValue.delete(), chargeSettings: FieldValue.delete(), publicity: FieldValue.delete(), created: FieldValue.delete(), steps: [], summary: null }, { merge: true });
         const left = await blockers();
-        await audit(actor, 'chair', 'demo.remove', s.backup ? 'Демо-дані бухгалтерії прибрано, квартири повернуто до попереднього стану' : 'Залишки демо дочищено', { removed, left });
+        await audit(actor, 'chair', 'demo.remove', s.backup ? 'Демо-дані бухгалтерії прибрано, квартири повернуто до попереднього стану'
+            : forced ? 'Тестовий облік очищено повністю (підтверджено головою)' : 'Залишки демо дочищено', { removed, left, forced });
         return { ok: true, removed, left };
     }
 
@@ -656,7 +691,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
                 throw e;
             }
         }
-        if (data.action === 'remove') return remove(actor);
+        if (data.action === 'remove') return remove(actor, data);
         fail('invalid-argument', 'Невідома дія');
     }));
 
