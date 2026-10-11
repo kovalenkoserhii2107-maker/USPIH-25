@@ -254,7 +254,7 @@ function cardHtml(item, index, dir) {
 }
 
 function updateBadges() {
-    for (const id of ['buhInboxBadge', 'buhInboxBadgeTab']) {
+    for (const id of ['buhInboxBadge', 'buhInboxBadgeTab', 'buhInboxBadgeMenu']) {
         const el = document.getElementById(id);
         if (!el) continue;
         el.textContent = items.length > 99 ? '99+' : String(items.length);
