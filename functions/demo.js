@@ -15,8 +15,20 @@
 // квартир боржників і назви справжніх контрагентів у код не потрапляють:
 // контрагенти умовні з позначкою «(демо)», борги розподілені випадково.
 //
+// Прогін показує всі види операцій: оплати мешканців (самі й вручну),
+// оренду, обладнання, відсотки банку, переказ у резервний фонд; документи
+// за договорами й без, рахунок і акт однієї послуги, відхилений документ,
+// разовий договір; платежі «на підписі → проведено банком» з повним
+// ланцюжком платіж ↔ документ ↔ списання, платіж на підписі й платіж,
+// який банк не прийняв; сторно з поверненням коштів постачальником,
+// повернення переплати мешканцю; кошторис, зарплату, проводки.
+//
 // «Прибрати демо» повертає все як було: стан до прогону зберігається
-// в demo/state (площі й баланси квартир, налаштування банку, звіт).
+// в demo/state (площі й баланси квартир, налаштування банку, звіт), а
+// облік тестового акаунта вичищається повністю (sweep): операції,
+// платежі, документи, договори, постачальники, нарахування, кошторис,
+// зарплата, закриті місяці, позначки звітів і демо-записи в історії
+// квартир — навіть те, що прогін не встиг записати в demo/state.
 // Прогін можливий лише на «чистому» обліку: без справжньої виписки,
 // нарахувань, документів і кошторису — щоб не зачепити реальні дані.
 // ============================================================
@@ -138,11 +150,20 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         return out;
     }
 
+    /** Чи лишилися сліди демо: операції й платежі з позначкою демо, демо-постачальники, демо-рахунки банку. */
+    async function demoTraces() {
+        const [tx, pay, sup, bs] = await Promise.all([db.collection('bank_tx').where('source', '==', 'demo').limit(1).get(),
+            db.collection('payments').where('source', '==', 'demo').limit(1).get(), db.collection('suppliers').get(), db.doc('bank/settings').get()]);
+        return !tx.empty || !pay.empty || sup.docs.some(d => /\(демо\)/i.test(d.data().name || '')) || bs.data()?.demo === true;
+    }
+
     async function status() {
         const snap = await stateRef.get();
         const s = snap.exists ? snap.data() : null;
+        const blocked = s?.status === 'done' ? [] : await blockers();
+        // Після прибирання лишилися залишки (старий прогін чи збій) — їх можна дочистити.
         return { status: s?.status || 'none', steps: s?.steps || [], summary: s?.summary || null, lastError: s?.status === 'failed' ? s.error || '' : '',
-            at: s?.at?.toDate?.()?.toISOString() || null, blockers: s?.status === 'done' ? [] : await blockers() };
+            at: s?.at?.toDate?.()?.toISOString() || null, blockers: blocked, canClean: s?.status === 'removed' && blocked.length > 0 && await demoTraces() };
     }
 
     // --------------------------------------------------------
@@ -289,6 +310,14 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
             docs[s.key] = r.id;
             created.expenses.push(r.id);
         }
+        // Вивезення: рахунок і акт однієї послуги — одна витрата (акт підтверджує рахунок).
+        const wasteInv = await expenses.actions.saveExpense(...A, { supplierId: sid.waste, contractId: cid.waste, docType: 'invoice', number: 'ЕВ-09-Р',
+            date: '2026-09-30', amountKop: LAST.waste, period: '2026-09', item: 'waste', description: 'Вивезення побутових відходів за вересень 2026', files: [] });
+        docs.waste = wasteInv.id;
+        created.expenses.push(wasteInv.id);
+        const wasteAct = await expenses.actions.saveExpense(...A, { supplierId: sid.waste, contractId: cid.waste, docType: 'act', number: 'ЕВ-09',
+            date: '2026-09-30', amountKop: LAST.waste, period: '2026-09', item: 'waste', description: 'Вивезення побутових відходів за вересень 2026', files: [], linkedTo: wasteInv.id });
+        created.expenses.push(wasteAct.id);
         // Без договору: рахунок водоканалу затверджує голова одразу; ремонт даху — чекає голову.
         const water = await expenses.actions.saveExpense(...A, { supplierId: sid.water, docType: 'invoice', number: 'В-1002', date: '2026-09-29', amountKop: 114452,
             period: '2026-09', item: 'water', description: 'Водопостачання МЗК за вересень 2026', files: [] });
@@ -297,13 +326,48 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         const roof = await expenses.actions.saveExpense(...A, { supplierId: sid.roof, docType: 'act', number: 'Д-17', date: '2026-09-30', amountKop: 279400,
             period: '2026-09', item: 'repair', description: 'Ремонт покрівлі над підʼїздом 2', files: [] });
         created.expenses.push(roof.id);
-        // Резервний фонд: ремонт вхідної групи (як «Резервний фонд → підрядники» у звіті сервісу), голова затверджує.
-        const entrance = await expenses.actions.saveExpense(...A, { supplierId: sid.build, docType: 'act', number: 'БР-31', date: '2026-09-30', amountKop: 1480000,
+        // Огляд покрівлі без акта огляду — голова відхиляє з причиною.
+        const survey = await expenses.actions.saveExpense(...A, { supplierId: sid.roof, docType: 'invoice', number: 'Д-15', date: '2026-09-25', amountKop: 50000,
+            period: '2026-09', item: 'repair', description: 'Огляд покрівлі', files: [] });
+        created.expenses.push(survey.id);
+        if (survey.status === 'pending') await expenses.actions.decideExpense(...C, { id: survey.id, approve: false, comment: 'Немає акта огляду — додайте й подайте знову' });
+        // Резервний фонд: разовий договір на ремонт вхідних груп (лишок суми видно в картці договору) і акт за ним.
+        const buildContract = await expenses.actions.saveContract(...C, { supplierId: sid.build, number: 'БР-2026', date: '2026-09-01', subject: 'Ремонт вхідних груп підʼїздів',
+            type: 'fixed', amountKop: 4500000, validFrom: '2026-09-01', validTo: '2026-12-31', item: 'reserve', boardDecision: 'Протокол правління № 9 від 28.08.2026 (демо)', files: [] });
+        created.contracts.push(buildContract.id);
+        const entrance = await expenses.actions.saveExpense(...A, { supplierId: sid.build, contractId: buildContract.id, docType: 'act', number: 'БР-31', date: '2026-09-30', amountKop: 1480000,
             period: '2026-09', item: 'reserve', description: 'Ремонт вхідної групи підʼїзду 1 (резервний фонд)', files: [] });
         created.expenses.push(entrance.id);
         if (entrance.status === 'pending') await expenses.actions.decideExpense(...C, { id: entrance.id, approve: true });
         await stateRef.set({ created }, { merge: true });
-        step(`Постачальники: ${SUPPLIERS.length}; договори: ${created.contracts.length} (понад 50 000 грн — з протоколом зборів); акти й рахунки: ${created.expenses.length}, один чекає голову`);
+        step(`Постачальники: ${SUPPLIERS.length}; договори: ${created.contracts.length} (щомісячні — з протоколом зборів, разовий на ремонт вхідних груп); документи: ${created.expenses.length} — рахунок і акт вивезення як одна витрата, дах чекає голову, огляд покрівлі відхилено`);
+
+        // 6а. Платежі з кабінету. Банк на тестовому акаунті не підключено, тож платіж записуємо так,
+        // як його записує сервер після відправки в Приват24 («на підписі голови»); далі виписка сама
+        // знаходить списання й проводить платіж — це справжній шлях платіж → документ → банк.
+        const payAt = (day, hh = 9) => Timestamp.fromDate(new Date(Date.UTC(2026, 9, day, hh - 3, 5)));
+        const writePayment = async p => {
+            const ref = db.collection('payments').doc();
+            await ref.set({ source: 'demo', account: OWN, createdBy: A[0], bankRef: `DEMO-PB-${ref.id.slice(0, 6).toUpperCase()}`, ...p });
+            return ref.id;
+        };
+        const payIds = {};
+        for (const key of ['lift', 'power', 'clean']) {
+            const s = SUPPLIERS.find(x => x.key === key);
+            payIds[key] = await writePayment({ kind: 'supplier', recipient: { name: s.name, iban: s.iban, code: s.code }, amountKop: s.monthlyKop,
+                purpose: `Оплата за актом № ${key.toUpperCase()}-09 від 30.09.2026, ${s.subject} за вересень 2026, без ПДВ`, status: 'sent',
+                expenseId: docs[key], proposalKey: `exp-${docs[key]}`, createdAt: payAt(2), sentAt: payAt(2) });
+        }
+        // Вивезення: платіж створено 9-го — ще на підписі голови (у виписці списання немає).
+        const ws = SUPPLIERS.find(x => x.key === 'waste');
+        payIds.waste = await writePayment({ kind: 'supplier', recipient: { name: ws.name, iban: ws.iban, code: ws.code }, amountKop: LAST.waste,
+            purpose: 'Оплата за рахунком № ЕВ-09-Р від 30.09.2026, вивезення побутових відходів за вересень 2026, без ПДВ', status: 'sent',
+            expenseId: docs.waste, proposalKey: `exp-${docs.waste}`, createdAt: payAt(9, 15), sentAt: payAt(9, 15) });
+        // Податок з помилкою в реквізитах — банк не прийняв.
+        await writePayment({ kind: 'tax', recipient: { name: 'ГУ ДПС (демо)', iban: iban('2600100000000079'), code: edrpou('4300001') }, amountKop: 33294,
+            purpose: '*;101;Військовий збір із заробітної плати за вересень 2026', status: 'failed', error: 'Рахунок отримувача закрито (демо)',
+            proposalKey: `manual:demo-failed`, createdAt: payAt(6, 11) });
+        step('Платежі з кабінету: 3 акти — у Приват24 на підписі (виписка проведе їх сама), вивезення — ще на підписі голови, один податковий платіж банк не прийняв');
 
         // 7. Виписка банку за жовтень: оплати мешканців, оренда, обладнання, списання.
         const list = [];
@@ -359,8 +423,23 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         });
         push(5, 'in', month(YEAR_INCOME.equipment), 'Плата за розміщення обладнання звʼязку за жовтень 2026 згідно з договором',
             { name: 'ТОВ «ТЕЛЕКОМ-СЕРВІС» (ДЕМО)', account: iban('2600100000000099'), code: edrpou('3655507') });
+        push(1, 'in', 18734, 'Нарахування відсотків на залишок коштів за вересень 2026', { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' });
+        // Постачальник електроенергії повертає 200 грн після перерахунку (сторно акта — нижче).
+        const power = SUPPLIERS.find(x => x.key === 'power');
+        const refundNo = n + 1;
+        push(8, 'in', 20000, 'Повернення коштів за перерахунком за вересень 2026 згідно з актом коригування № ЕЗ-К1', { name: power.name.toUpperCase(), account: power.iban, code: power.code });
+        // Переплата мешканця, який попросив повернути гроші: за балансом після нарахування за жовтень
+        // (не за вхідним залишком — його вже зменшило нарахування); квартиру-зразок не чіпаємо.
+        const over = (await db.collection('apartments').get()).docs
+            .filter(d => d.data().isAdmin !== true && (!showcase || d.id !== showcase.id) && Number(d.data().balance) > 50)
+            .map(d => ({ apt: cleanApt(d.id), id: d.id, amountKop: Math.min(30000, Math.floor(Number(d.data().balance) * 100)) }))
+            .sort((x, y) => y.amountKop - x.amountKop)[0] || null;
+        const backNo = over ? n + 1 : null;
+        if (over) push(7, 'out', over.amountKop, `Повернення переплати за внесками, кв. ${over.id}, за заявою`, { name: (owners.get(over.id) || 'ПЛАТНИК').toUpperCase(), account: iban('2620100000000555'), code: '' });
         // Списання: оплата актів за вересень (система сама закриє документи), водоканал, дах, банк, зарплата, ЄСВ, резервний фонд.
-        for (const s of SUPPLIERS.filter(x => docs[x.key])) {
+        const outNo = {};
+        for (const s of SUPPLIERS.filter(x => docs[x.key] && x.key !== 'waste')) {
+            outNo[s.key] = n + 1;
             push(3, 'out', s.monthlyKop, `Оплата за актом № ${s.key.toUpperCase()}-09 від 30.09.2026, ${s.subject} за вересень 2026, без ПДВ`, { name: s.name.toUpperCase(), account: s.iban, code: s.code });
         }
         push(2, 'out', 114452, 'Оплата за рахунком № В-1002 від 29.09.2026, водопостачання МЗК', { name: 'ВОДОКАНАЛ (ДЕМО)', account: SUPPLIERS[4].iban, code: SUPPLIERS[4].code });
@@ -388,6 +467,27 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
                 const alloc = (pay?.alloc || []).map(a => `${a.name.toLowerCase()} ${fromKop(a.amountKop).toLocaleString('uk-UA', { minimumFractionDigits: 2 })}`).join('; ');
                 step(`Квартира-зразок ${showcase.id}: оплата 400 грн рознесена сама${pay ? '' : ' (не знайдено)'}${alloc ? ` і розподілена за статтями: ${alloc}` : ''}; «Оплата» 50 грн — бухгалтер розніс вручну й запамʼятав платника; «Поповнення» 25 грн від нього ж система рознесла сама${auto?.method === 'link' ? '' : ' (не вийшло)'} (${r.alsoMatched} шт.)`);
             }
+        }
+        // Платежі з кабінету, які знайшла виписка: платіж → проведено, документ → оплачено, списання → привʼязане.
+        const matchedPays = (await Promise.all(['lift', 'power', 'clean'].map(k => db.doc(`payments/${payIds[k]}`).get()))).filter(d => d.data()?.status === 'paid').length;
+        step(`Виписка знайшла списання за платежами з кабінету: ${matchedPays} з 3 — платіж «проведено», акт «оплачено», ланцюжок платіж ↔ документ ↔ списання видно в картках`);
+        const txId = no => `${OWN}_DEMO-${no}`;
+        const toReview = async id => { const d = (await db.doc(`bank_tx/${id}`).get()).data(); if (d && d.status !== 'review') await bank.actions.unassign(...A, { txId: id }); };
+        // Сторно акта електроенергії на 200 грн і повернення цих коштів постачальником.
+        try {
+            const today = new Date().toISOString().slice(0, 10);
+            await expenses.actions.storno(...A, { id: docs.power, amountKop: 20000, date: today < '2026-10-08' ? today : '2026-10-08', number: 'ЕЗ-К1', reason: 'Перерахунок за вересень: недопостачання електроенергії (демо)', files: [] });
+            await toReview(txId(refundNo));
+            await bank.actions.refund(...A, { txId: txId(refundNo), refundOf: txId(outNo.power), reason: 'supplier' });
+            step('Сторно акта електроенергії на 200 грн (акт коригування ЕЗ-К1) і повернення цих 200 грн постачальником — привʼязано до списання за актом');
+        } catch (e) { step(`Сторно й повернення від постачальника не вийшло: ${e.message}`); }
+        // Повернення переплати мешканцю за заявою — зменшує його переплату в історії квартири.
+        if (over) {
+            try {
+                await toReview(txId(backNo));
+                await bank.actions.refundResident(...A, { txId: txId(backNo), apt: over.apt });
+                step(`Повернення переплати кв. ${over.apt}: ${fromKop(over.amountKop).toLocaleString('uk-UA')} грн — записано в історію квартири`);
+            } catch (e) { step(`Повернення переплати мешканцю не вийшло: ${e.message}`); }
         }
         const queue = (await db.collection('bank_tx').where('source', '==', 'demo').where('status', '==', 'review').get()).size;
         step(`Виписка за жовтень: ${stored.added} операцій, оплат мешканців рознесено автоматично: ${stored.matched}; чекають рішення у «Вхідних»: ${queue}`);
@@ -466,50 +566,78 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         }
     }
 
+    /** Записи історії квартир, які створює облік застосунку (не ручний імпорт історії сервісу). */
+    const APP_LEDGER = /^(opening|charge-\d{4}-\d{2}|bank-|refund-|demo-h-)/;
+
+    /**
+     * Повна чистка обліку тестового акаунта: усе, що створюють прогін і функції
+     * системи під час нього, — навіть те, чого немає в demo/state (збій до запису,
+     * старі прогони). Якщо підключено справжній банк, операції й платежі
+     * прибираємо лише демо, а документи — лише записані в demo/state.
+     */
+    async function sweep(s) {
+        const realBank = (await db.doc('bank_secrets/privat').get()).exists;
+        const out = {};
+        const del = async (name, query) => { out[name] = (out[name] || 0) + await deleteAll(query); };
+        if (realBank) {
+            await del('bank_tx', db.collection('bank_tx').where('source', '==', 'demo'));
+            await del('payments', db.collection('payments').where('source', '==', 'demo'));
+            for (const col of ['suppliers', 'contracts', 'expenses']) for (const id of s.created?.[col] || []) { await db.doc(`${col}/${id}`).delete(); out[col] = (out[col] || 0) + 1; }
+        } else {
+            for (const col of ['bank_tx', 'payments', 'bank_links', 'expenses', 'contracts', 'suppliers']) await del(col, db.collection(col));
+        }
+        for (const col of ['charges_runs', 'budgets', 'finance_ops', 'payroll_people', 'payroll_runs', 'journal_periods', 'reports']) await del(col, db.collection(col));
+        for (const path of ['charges/operation', 'charges/opening_plan', 'finance/2026']) await db.doc(path).delete();
+        // Історія квартир: вхідні залишки, нарахування, оплати й повернення з виписки, демо-історія.
+        const ledger = await db.collectionGroup('ledger').get();
+        let batch = db.batch(), ops = 0, removed = 0;
+        for (const d of ledger.docs) {
+            if (d.ref.parent.parent?.parent?.id !== 'apartments' || !APP_LEDGER.test(d.id)) continue;
+            batch.delete(d.ref); removed++;
+            if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+        }
+        if (ops) await batch.commit();
+        out.ledger = removed;
+        return out;
+    }
+
     async function remove(actor) {
         const snap = await stateRef.get();
-        if (!snap.exists || !['done', 'running', 'failed'].includes(snap.data().status)) fail('failed-precondition', 'Демо не прогнано');
+        if (!snap.exists || !['done', 'running', 'failed', 'removed'].includes(snap.data().status)) fail('failed-precondition', 'Демо не прогнано');
         const s = snap.data();
-        // Прогін не почався (немає резервної копії) — прибирати нічого: лише скидаємо стан,
+        // Прогін не почався (немає резервної копії й нічого не лишилося) — лише скидаємо стан,
         // щоб не видалити справжній звіт мешканцям чи налаштування.
-        if (!s.backup) {
+        if (s.status === 'removed' && !await demoTraces()) fail('failed-precondition', 'Слідів демо не знайдено — облік не чіпаємо');
+        if (!s.backup && s.status !== 'removed') {
             await stateRef.set({ status: 'none', error: FieldValue.delete() }, { merge: true });
             return { ok: true };
         }
-        // Історія квартир: оплати з демо-виписки, нарахування, вхідні залишки.
-        const demoTx = await db.collection('bank_tx').where('source', '==', 'demo').get();
-        let batch = db.batch(), ops = 0;
-        const flush = async () => { if (ops) await batch.commit(); batch = db.batch(); ops = 0; };
-        for (const d of demoTx.docs) {
-            for (const a of d.data().allocations || []) if (a.ledgerId) { batch.delete(db.doc(`apartments/${a.apt}/ledger/${a.ledgerId}`)); if (++ops >= 400) await flush(); }
-            batch.delete(d.ref);
-            if (++ops >= 400) await flush();
+        if (s.backup) {
+            // Квартири — як були до прогону: баланс, площа, проживаючі.
+            let batch = db.batch(), ops = 0;
+            for (const [id, b] of Object.entries(s.backup)) {
+                batch.set(db.doc(`apartments/${id}`), { balance: b.balance, area: b.area, residents: b.residents ?? FieldValue.delete(), balanceSource: b.balanceSource ?? FieldValue.delete() }, { merge: true });
+                if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+            }
+            if (ops) await batch.commit();
+            for (const path of s.created?.history || []) await db.doc(path).delete();
+            for (const key of s.created?.links || []) await db.doc(`bank_links/${key}`).delete();
+            if (s.chargeSettings) await db.doc('charges/settings').set(s.chargeSettings); else await db.doc('charges/settings').delete();
+            if (s.financeCurrent) await db.doc('finance/current').set(s.financeCurrent); else await db.doc('finance/current').delete();
+            if (s.publicity) await db.doc('finance_settings/public').set(s.publicity); else await db.doc('finance_settings/public').delete();
+            if (s.bankSettings) await db.doc('bank/settings').set(s.bankSettings); else await db.doc('bank/settings').delete();
+        } else {
+            // Дочищення після старого прибирання: налаштування вже повернуто; знімаємо лише демо-сліди.
+            const [cs, bs] = await Promise.all([db.doc('charges/settings').get(), db.doc('bank/settings').get()]);
+            if (cs.data()?.opening?.set) await db.doc('charges/settings').set({ opening: FieldValue.delete() }, { merge: true });
+            if (bs.data()?.demo) await db.doc('bank/settings').delete();
         }
-        for (const id of Object.keys(s.backup || {})) {
-            batch.delete(db.doc(`apartments/${id}/ledger/charge-${PERIOD}`));
-            batch.delete(db.doc(`apartments/${id}/ledger/opening`));
-            const b = s.backup[id];
-            batch.set(db.doc(`apartments/${id}`), { balance: b.balance, area: b.area, residents: b.residents ?? FieldValue.delete(), balanceSource: b.balanceSource ?? FieldValue.delete() }, { merge: true });
-            if ((ops += 3) >= 390) await flush();
-        }
-        await flush();
-        for (const col of ['suppliers', 'contracts', 'expenses']) for (const id of s.created?.[col] || []) await db.doc(`${col}/${id}`).delete();
-        for (const path of s.created?.history || []) await db.doc(path).delete();
-        for (const key of s.created?.links || []) await db.doc(`bank_links/${key}`).delete();
-        for (const id of s.created?.people || []) await db.doc(`payroll_people/${id}`).delete();
-        for (const period of s.created?.payrollRuns || []) await db.doc(`payroll_runs/${period}`).delete();
-        await deleteAll(db.collection('charges_runs'));
-        if (s.chargeSettings) await db.doc('charges/settings').set(s.chargeSettings); else await db.doc('charges/settings').delete();
-        await db.doc('budgets/2026').delete();
-        await db.doc('finance/2026').delete();
-        if (s.financeCurrent) await db.doc('finance/current').set(s.financeCurrent); else await db.doc('finance/current').delete();
-        await deleteAll(db.collection('finance_ops'));
-        if (s.publicity) await db.doc('finance_settings/public').set(s.publicity); else await db.doc('finance_settings/public').delete();
-        if (s.bankSettings) await db.doc('bank/settings').set(s.bankSettings); else await db.doc('bank/settings').delete();
+        const removed = await sweep(s);
         await stateRef.set({ status: 'removed', removedBy: actor, removedAt: FieldValue.serverTimestamp(), backup: FieldValue.delete(), financeCurrent: FieldValue.delete(),
-            bankSettings: FieldValue.delete(), chargeSettings: FieldValue.delete(), publicity: FieldValue.delete() }, { merge: true });
-        await audit(actor, 'chair', 'demo.remove', 'Демо-дані бухгалтерії прибрано, квартири повернуто до попереднього стану', { transactions: demoTx.size });
-        return { ok: true };
+            bankSettings: FieldValue.delete(), chargeSettings: FieldValue.delete(), publicity: FieldValue.delete(), created: FieldValue.delete(), steps: [], summary: null }, { merge: true });
+        const left = await blockers();
+        await audit(actor, 'chair', 'demo.remove', s.backup ? 'Демо-дані бухгалтерії прибрано, квартири повернуто до попереднього стану' : 'Залишки демо дочищено', { removed, left });
+        return { ok: true, removed, left };
     }
 
     const demoAction = onCall({ region: REGION, maxInstances: 1, timeoutSeconds: 540, memory: '512MiB' }, callGuard('demoAction', async request => {

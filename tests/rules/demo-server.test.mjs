@@ -10,7 +10,8 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 
 let app, db, demo;
 const COLLECTIONS = ['apartments', 'staff', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'suppliers', 'contracts', 'expenses',
-    'expense_settings', 'budgets', 'finance', 'finance_ops', 'finance_settings', 'charges', 'charges_runs', 'demo', 'payroll_people', 'payroll_runs', 'payroll_settings'];
+    'expense_settings', 'budgets', 'finance', 'finance_ops', 'finance_settings', 'charges', 'charges_runs', 'demo', 'payroll_people', 'payroll_runs', 'payroll_settings',
+    'journal_periods', 'reports', 'bank_secrets'];
 const wipe = async () => {
     for (const name of COLLECTIONS) {
         const snap = await db.collection(name).get();
@@ -44,7 +45,9 @@ test('прогін лишає слід у всіх розділах, «Приб�
 
     assert.deepEqual((await demo.actions.status()).blockers, []);
     const r = await demo.actions.run('10');
-    assert.equal(r.steps.length, 11);
+    for (const re of [/^Платежі з кабінету/, /^Виписка знайшла списання за платежами з кабінету: 3 з 3/, /^Сторно акта електроенергії/, /^Повернення переплати кв\./])
+        assert.ok(r.steps.some(st => re.test(st)), `${re}: ${r.steps.join(' | ')}`);
+    assert.ok(!r.steps.some(st => /не вийшло/.test(st)), r.steps.join(' | '));
     assert.equal(r.summary.apartments, 40);
 
     // Нарахування: 4 складові, сума ~ річні надходження / 12.
@@ -81,6 +84,25 @@ test('прогін лишає слід у всіх розділах, «Приб�
     assert.equal(tx.filter(t => t.category === 'taxes').length, 1);
     assert.ok(tx.filter(t => t.category === 'bank_fee').length >= 8);
     assert.equal(ex.filter(e => e.status === 'pending').length, 1);
+    // Рахунок і акт вивезення — одна витрата; огляд покрівлі відхилено; разовий договір на ремонт вхідних груп.
+    assert.equal(ex.filter(e => e.status === 'linked').length, 1);
+    assert.equal(ex.filter(e => e.status === 'rejected').length, 1);
+    assert.ok((await db.collection('contracts').get()).docs.some(d => d.data().type === 'fixed' && d.data().amountKop === 4500000));
+    // Платежі: 3 проведено з повним ланцюжком, вивезення — на підписі, податок — банк не прийняв.
+    const pays = (await db.collection('payments').get()).docs.map(d => ({ id: d.id, ...d.data() }));
+    const paidPays = pays.filter(p => p.status === 'paid');
+    assert.equal(paidPays.length, 3);
+    for (const p of paidPays) {
+        const t = (await db.doc(`bank_tx/${p.txId}`).get()).data();
+        const e = (await db.doc(`expenses/${p.expenseId}`).get()).data();
+        assert.deepEqual([t.paymentId, t.expenseId, e.status, (e.txIds || []).includes(p.txId)], [p.id, p.expenseId, 'paid', true]);
+    }
+    assert.deepEqual(pays.filter(p => p.status !== 'paid').map(p => p.status).sort(), ['failed', 'sent']);
+    // Сторно й повернення від постачальника; повернення переплати мешканцю.
+    assert.equal(ex.filter(e => e.status === 'storno').length, 1);
+    assert.equal(tx.filter(t => t.kind === 'refund').length, 1);
+    assert.equal(tx.filter(t => t.category === 'resident_refund').length, 1);
+    assert.equal(tx.filter(t => t.kind === 'income' && t.category === 'interest').length, 1);
     // Кошторис затверджено, звіт для мешканців — без прізвищ.
     assert.equal((await db.doc('budgets/2026').get()).data().status, 'approved');
     const pub = (await db.doc('finance/current').get()).data();
@@ -113,6 +135,7 @@ test('прогін лишає слід у всіх розділах, «Приб�
     await assert.rejects(demo.actions.run('10'), /вже прогнано/);
 
     await demo.actions.remove('10');
+    for (const col of ['bank_tx', 'payments', 'suppliers', 'contracts', 'journal_periods']) assert.equal((await db.collection(col).get()).size, 0, col);
     assert.equal((await db.collection('bank_tx').get()).size, 0);
     assert.equal((await db.collection('expenses').get()).size, 0);
     assert.equal((await db.collection('charges_runs').get()).size, 0);
@@ -184,4 +207,36 @@ test('замало квартир — відмова без «збою»; при
     await demo.actions.remove('10');
     assert.equal((await demo.actions.status()).status, 'none');
     assert.equal((await db.doc('finance/current').get()).data().period, 'Вересень');
+});
+
+test('залишки після старого прибирання: дочистити й прогнати знову; без слідів демо облік не чіпаємо', async () => {
+    await wipe();
+    for (let i = 1; i <= 12; i++) await db.doc(`apartments/${i}`).set({ area: 50 + i, balance: 0 });
+    // Як після старої версії: стан «прибрано», а документ демо-постачальника, операція й нарахування лишилися.
+    await db.doc('demo/state').set({ status: 'removed' });
+    await db.doc('suppliers/s1').set({ name: 'ТОВ «Ліфт-Сервіс» (демо)' });
+    await db.doc('expenses/e1').set({ supplierId: 's1', status: 'approved', amountKop: 1000 });
+    await db.doc('bank_tx/t1').set({ source: 'demo', direction: 'in', amountKop: 100, status: 'done' });
+    await db.doc('charges_runs/2026-10').set({ count: 1 });
+    await db.doc('apartments/3/ledger/charge-2026-10').set({ kind: 'charge', amountKop: 100 });
+    await db.doc('apartments/3/ledger/legacy1').set({ kind: 'charge', amountKop: 100, note: 'імпорт з сервісу' });
+    let st = await demo.actions.status();
+    assert.ok(st.blockers.length > 0);
+    assert.equal(st.canClean, true);
+    const r = await demo.actions.remove('10');
+    assert.deepEqual(r.left, []);
+    assert.deepEqual((await demo.actions.status()).blockers, []);
+    // Записи застосунку з історії квартири прибрано, ручний імпорт — ні.
+    assert.equal((await db.doc('apartments/3/ledger/charge-2026-10').get()).exists, false);
+    assert.equal((await db.doc('apartments/3/ledger/legacy1').get()).exists, true);
+    // Тепер прогін можливий (перевіряємо лише, що не заблоковано).
+    assert.deepEqual((await demo.actions.status()).blockers, []);
+
+    // Справжній облік без слідів демо: дочищення недоступне й сервер відмовляє.
+    await db.doc('suppliers/real').set({ name: 'ТОВ Справжній' });
+    await db.doc('expenses/real').set({ supplierId: 'real', status: 'approved', amountKop: 5000 });
+    st = await demo.actions.status();
+    assert.equal(st.canClean, false);
+    await assert.rejects(demo.actions.remove('10'), /Слідів демо не знайдено/);
+    assert.equal((await db.doc('expenses/real').get()).exists, true);
 });
