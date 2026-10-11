@@ -123,9 +123,9 @@ export async function loadToday() {
         <div class="td-row">
             <button type="button" class="sv-card" data-go="charges"><span class="td-label">Нараховано за місяць</span><b class="td-mid">${run ? escapeHtml(money(run.totalKop)) : '—'}</b>
                 <span class="td-small">${run ? `${run.count} квартир` : 'ще не нараховано'}</span></button>
-            <button type="button" class="sv-card" data-go="charges"><span class="td-label">Мешканці сплатили</span><b class="td-mid">${share === null ? escapeHtml(money(paid)) : `${share}%`}</b>
+            <button type="button" class="sv-card" data-go="flats"><span class="td-label">Мешканці сплатили</span><b class="td-mid">${share === null ? escapeHtml(money(paid)) : `${share}%`}</b>
                 ${share === null ? '<span class="td-small">цього місяця</span>' : `<span class="sv-meter" aria-hidden="true"><i style="width:${share}%"></i></span><span class="td-small">${escapeHtml(money(paid))}</span>`}</button>
-            <button type="button" class="sv-card" data-go="charges"><span class="td-label">Борг мешканців</span><b class="td-mid">${charges ? escapeHtml(money(Math.abs(debt))) : '—'}</b>
+            <button type="button" class="sv-card" data-go="flats"><span class="td-label">Борг мешканців</span><b class="td-mid">${charges ? escapeHtml(money(Math.abs(debt))) : '—'}</b>
                 <span class="td-small${debtors.length ? ' is-bad' : ''}">${charges ? `${debtors.length} квартир ›` : ''}</span></button>
         </div>
         <p class="buh-note">Система пропонує — рішення за вами. Платежі підписує голова КЕП у Приват24.</p>`;
