@@ -52,3 +52,22 @@ test('скан: картинка, PDF чи просто файл', () => {
     assert.equal(scanKind({ name: 'dogovir.docx' }), 'file');
     assert.equal(scanKind({ name: 'photo.heic' }), 'file');
 });
+
+test('регулярний платіж не пропонуємо тому, кому платимо за документами', async () => {
+    const { paidByDocuments, coveredByDocuments } = await import('../../js/docs-core.js');
+    const ex = {
+        suppliers: [{ id: 's1', iban: 'UA90 3052 9929 9000 4149 1234 5678 9' }, { id: 's2', iban: 'UA213052990000026001234567890' }, { id: 's3', iban: 'UA563052990000026007012345678' }, { id: 's4', iban: 'UA113005280000026004000000001' }],
+        contracts: [{ supplierId: 's1', status: 'approved', type: 'monthly' }, { supplierId: 's3', status: 'approved', type: 'fixed' }],
+        expenses: [
+            { supplierId: 's2', status: 'approved', amountKop: 1000, paidKop: 0 },
+            { supplierId: 's3', status: 'paid', amountKop: 1000, paidKop: 1000 },
+            { supplierId: 's4', status: 'pending', amountKop: 500 }
+        ]
+    };
+    const set = paidByDocuments(ex);
+    // s1 — щомісячний договір; s2 — неоплачений документ; s4 — документ на затвердженні; s3 — усе оплачено, разовий договір.
+    assert.deepEqual([...set].sort(), ['UA113005280000026004000000001', 'UA213052990000026001234567890', 'UA903052992990004149123456789']);
+    assert.equal(coveredByDocuments({ recipient: { iban: 'ua90 3052992990004149123456789' } }, set), true);
+    assert.equal(coveredByDocuments({ recipient: { iban: 'UA563052990000026007012345678' } }, set), false);
+    assert.equal(paidByDocuments(null).size, 0);
+});

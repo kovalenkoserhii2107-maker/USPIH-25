@@ -80,3 +80,25 @@ export function scanKind(file) {
     if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
     return 'file';
 }
+
+const normIban = v => String(v || '').replace(/\s+/g, '').toUpperCase();
+
+/**
+ * IBAN постачальників, яким платимо за документами: є затверджений
+ * щомісячний договір або документ, ще не оплачений повністю (затверджений
+ * чи на затвердженні, зокрема з платежем у дорозі). Таким отримувачам
+ * регулярний платіж «за історією» не пропонуємо — інакше одну послугу
+ * сплатять двічі: за документом і регулярною пропозицією.
+ */
+export function paidByDocuments(ex) {
+    if (!ex) return new Set();
+    const ibanOf = id => normIban(ex.suppliers?.find(s => s.id === id)?.iban);
+    const ids = new Set([
+        ...(ex.contracts || []).filter(c => c.status === 'approved' && c.type === 'monthly').map(c => c.supplierId),
+        ...(ex.expenses || []).filter(e => ['pending', 'approved'].includes(e.status) && remaining(e) > 0).map(e => e.supplierId)
+    ]);
+    return new Set([...ids].map(ibanOf).filter(Boolean));
+}
+
+/** Чи пропозицію отримувачу закриває оплата за документами. */
+export const coveredByDocuments = (proposal, ibans) => ibans.has(normIban(proposal?.recipient?.iban));
