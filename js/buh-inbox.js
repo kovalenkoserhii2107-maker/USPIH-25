@@ -416,7 +416,11 @@ export function expenseItems(ex, payments, chair) {
 }
 
 let payAccount = '';
-export async function loadInbox() {
+/**
+ * Усі рішення, що чекають людини, і дані, з яких їх зібрано. Спільне
+ * для «Вхідних» і «Сьогодні»: обидва екрани рахують одне й те саме.
+ */
+export async function collectInbox() {
     const thisYear = String(new Date().getFullYear());
     const [queue, dir, pays, charges, ex, payments, budget, journal, payroll, reports] = await Promise.all([loadQueue(), loadDirectory(),
         activeProposals().catch(() => ({ list: [], context: { accounts: [] } })), loadCharges().catch(() => null),
@@ -437,6 +441,11 @@ export async function loadInbox() {
         .concat(expenseItems(ex, payments, session.role === 'chair'))
         .concat(queue.map(tx => ({ tx, proposal: proposalFor(tx) })))
         .concat(payAccount ? pays.list.filter(p => !byDocs.has(p.recipient.iban)).map(p => ({ tx: { id: `pay:${p.proposalKey}` }, proposal: { type: 'pay', payment: p } })) : []);
+    return { items, queue, charges, expenses: ex, payments, budget, journal, payroll, reports };
+}
+
+export async function loadInbox() {
+    const { reports } = await collectInbox();
     const reportBadge = document.getElementById('buhReportBadge');
     if (reportBadge) {
         const urgent = reportTasks(reports).filter(t => !t.done && t.kind === 'report' && t.left <= 10).length;
