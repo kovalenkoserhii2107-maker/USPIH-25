@@ -1623,11 +1623,7 @@
 .admin-nav-group { display: flex; flex-direction: column; gap: 2px; }
 .admin-nav-group + .admin-nav-group { margin-top: 10px; }
 .admin-nav-brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 20px; }
-.admin-brand-mark {
-    display: grid; place-items: center; width: 38px; height: 38px; border-radius: 9px;
-    background: #1679ea; color: white; font-size: 19px; font-weight: 850;
-    box-shadow: 0 6px 14px rgba(22,121,234,.23);
-}
+.admin-brand-mark { width: 38px; height: 38px; box-shadow: 0 6px 14px rgba(28,43,68,.22); }
 .admin-nav-brand > span:last-child { display: flex; flex-direction: column; min-width: 0; }
 .admin-nav-brand b { color: #12203a; font-size: 15px; white-space: nowrap; }
 .admin-nav-brand small { margin-top: 3px; color: #5b6a82; font-size: 11px; }

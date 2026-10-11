@@ -14,7 +14,7 @@ import {
     collection, doc, getDoc, getDocs, query, orderBy, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, parseMoney, formatMoney } from './ui.js';
-import { loadKnownApts } from './finance.js';
+import { loadKnownApts, partsHtml } from './finance.js';
 
 const MONTHS = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
                 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
@@ -349,6 +349,7 @@ function render() {
             <button type="button" class="lg-period${activePeriod === 'all' ? ' active' : ''}" data-p="all">Усі</button>
             ${periods.map(p => `<button type="button" class="lg-period${activePeriod === p ? ' active' : ''}" data-p="${escapeHtml(p)}">${escapeHtml(periodLabel(p))}</button>`).join('')}
         </div>
+        ${partsHtml(session.balanceParts) ? `<details class="lg-parts"><summary>Залишок за статтями</summary>${partsHtml(session.balanceParts)}</details>` : ''}
         ${summaryHtml(list)}
         ${listHtml(list)}`;
 

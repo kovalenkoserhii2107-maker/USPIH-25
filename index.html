@@ -22,14 +22,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=162">
-    <link rel="stylesheet" href="style-chat.css?v=162">
+    <link rel="stylesheet" href="style.css?v=163">
+    <link rel="stylesheet" href="style-chat.css?v=163">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самого app.js: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/app.js?v=162">
+    <link rel="modulepreload" href="js/app.js?v=163">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -42,19 +43,7 @@
 <header id="topNav" class="app-header" style="display: none;">
     <div class="nav-content">
         <div class="nav-brand">
-            <span class="nav-logo-tile">
-                <svg viewBox="0 0 100 100" width="20" height="20">
-                    <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
-                    <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
-                    <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
-                    <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                    <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                    <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
-                    <circle cx="18" cy="55" r="10" fill="#83B799"/>
-                    <circle cx="12" cy="62" r="8" fill="#83B799"/>
-                    <circle cx="24" cy="60" r="7" fill="#83B799"/>
-                </svg>
-            </span>
+            <img class="nav-logo-tile app-icon" src="assets/icons/icon-192x192.png" alt="" width="36" height="36">
             <span class="nav-brand-text">
                 <h2 class="nav-title">ОСББ «Успіх-25»</h2>
             </span>
@@ -312,24 +301,7 @@
     <div id="loginSection" style="display: none;">
         <div class="card central-card">
             <div class="auth-brand">
-                <span class="auth-logo">
-                    <svg viewBox="0 0 100 100" width="66" height="66">
-                        <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
-                        <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
-                        <rect x="50" y="30" width="6" height="60" fill="#BDC4C9"/>
-                        <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
-                        <rect x="25" y="15" width="6" height="75" fill="#CED3D7"/>
-                        <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="58" y="85" width="14" height="5" fill="#5C6B77"/>
-                        <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
-                        <circle cx="18" cy="55" r="10" fill="#83B799"/>
-                        <circle cx="12" cy="62" r="8" fill="#83B799"/>
-                        <circle cx="24" cy="60" r="7" fill="#83B799"/>
-                        <circle cx="15" cy="68" r="7" fill="#83B799"/>
-                        <circle cx="18" cy="48" r="7" fill="#83B799"/>
-                    </svg>
-                </span>
+                <img class="auth-logo app-icon" src="assets/icons/icon-192x192.png" alt="" width="84" height="84">
                 <h1 class="auth-brand-title">ОСББ «Успіх-25»</h1>
                 <p class="auth-brand-sub">вул. Інглезі 3/3, м. Одеса</p>
             </div>
@@ -364,24 +336,7 @@
     <div id="passwordSection" style="display: none;">
         <div class="card central-card">
             <div class="auth-brand">
-                <span class="auth-logo">
-                    <svg viewBox="0 0 100 100" width="66" height="66">
-                        <rect x="5" y="90" width="90" height="3" fill="#9E9E9E"/>
-                        <rect x="50" y="30" width="30" height="60" fill="#CFD4D8"/>
-                        <rect x="50" y="30" width="6" height="60" fill="#BDC4C9"/>
-                        <rect x="25" y="15" width="30" height="75" fill="#E2E5E7"/>
-                        <rect x="25" y="15" width="6" height="75" fill="#CED3D7"/>
-                        <path d="M58 35h6v8h-6zm12 0h6v8h-6z M58 47h6v8h-6zm12 0h6v8h-6z M58 59h6v8h-6zm12 0h6v8h-6z M58 71h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="58" y="85" width="14" height="5" fill="#5C6B77"/>
-                        <path d="M33 20h6v8h-6zm12 0h6v8h-6z M33 32h6v8h-6zm12 0h6v8h-6z M33 44h6v8h-6zm12 0h6v8h-6z M33 56h6v8h-6zm12 0h6v8h-6z M33 68h6v8h-6zm12 0h6v8h-6z" fill="#7A8B99"/>
-                        <rect x="33" y="82" width="14" height="8" fill="#5C6B77"/>
-                        <circle cx="18" cy="55" r="10" fill="#83B799"/>
-                        <circle cx="12" cy="62" r="8" fill="#83B799"/>
-                        <circle cx="24" cy="60" r="7" fill="#83B799"/>
-                        <circle cx="15" cy="68" r="7" fill="#83B799"/>
-                        <circle cx="18" cy="48" r="7" fill="#83B799"/>
-                    </svg>
-                </span>
+                <img class="auth-logo app-icon" src="assets/icons/icon-192x192.png" alt="" width="84" height="84">
                 <h1 class="auth-brand-title">ОСББ «Успіх-25»</h1>
                 <p class="auth-brand-sub">вул. Інглезі 3/3, м. Одеса</p>
             </div>
@@ -950,7 +905,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/app.js?v=162').catch(error => {
+    import('./js/app.js?v=163').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

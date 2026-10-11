@@ -22,15 +22,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Успіх-25">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=162">
-    <link rel="stylesheet" href="style-chat.css?v=162">
-    <link rel="stylesheet" href="style-admin.css?v=162">
+    <link rel="stylesheet" href="style.css?v=163">
+    <link rel="stylesheet" href="style-chat.css?v=163">
+    <link rel="stylesheet" href="style-admin.css?v=163">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=162">
+    <link rel="modulepreload" href="js/admin-main.js?v=163">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -146,7 +147,7 @@
              вкладок і аркуш «Ще» — їх збирає admin-shell.js із цих кнопок. -->
         <nav class="admin-tabs" id="adminTabs" aria-label="Розділи панелі">
             <div class="admin-nav-brand">
-                <span class="admin-brand-mark">У</span>
+                <img class="admin-brand-mark app-icon" src="assets/icons/icon-192x192.png" alt="" width="38" height="38">
                 <span><b>ОСББ Успіх-25</b><small>Панель правління</small></span>
             </div>
             <div class="admin-nav-group">
@@ -1395,7 +1396,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=162' : './js/admin-main.js?v=162').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=163' : './js/admin-main.js?v=163').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
