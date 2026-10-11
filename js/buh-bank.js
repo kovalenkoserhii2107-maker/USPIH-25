@@ -12,6 +12,8 @@ import {
 import { toKop } from './charges-core.js';
 import { registryHtml, saveRegistry } from './buh-registry.js';
 import { TABS, byDay, quickAssign, filterTx } from './bank-view-core.js';
+import { openTxSheet, openPaymentSheet } from './buh-chain.js';
+import { openExpenses } from './buh-expenses.js';
 
 let requisites = {};
 
@@ -56,6 +58,9 @@ function detailHtml(tx) {
     return `<div class="bk-detail"><dl class="dc-fields">${lines.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>
         <div class="bk-detail-actions">
             ${tx.status === 'review' ? '<button type="button" class="sv-btn" data-go="inbox">Розібрати в «Рішеннях»</button>' : ''}
+            ${tx.paymentId ? `<button type="button" class="sv-btn is-soft" data-open="payment" data-id="${escapeHtml(tx.paymentId)}">Платіж із кабінету ›</button>` : ''}
+            ${tx.expenseId ? `<button type="button" class="sv-btn is-soft" data-open="doc" data-id="${escapeHtml(tx.expenseId)}">Документ ›</button>` : ''}
+            <button type="button" class="sv-btn is-soft" data-open="tx" data-id="${escapeHtml(tx.id)}">Усі звʼязки ›</button>
             ${undo ? '<button type="button" class="sv-btn is-soft" data-act="undo">Повернути в «Рішення»</button>' : ''}
         </div></div>`;
 }
@@ -149,6 +154,14 @@ export function initBankView() {
             try { const page = await loadPage(last); rows = rows.concat(page.rows); last = page.last; more = page.full; renderList(); }
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
+            return;
+        }
+        const link = e.target.closest('[data-open]');
+        if (link) {
+            const id = link.dataset.id;
+            if (link.dataset.open === 'payment') openPaymentSheet(id);
+            else if (link.dataset.open === 'doc') openExpenses('docs', null, id);
+            else openTxSheet(id);
             return;
         }
         const quickBtn = e.target.closest('[data-act="quick"]');

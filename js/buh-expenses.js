@@ -12,17 +12,22 @@
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import {
-    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, CONTRACT_STATUS, maskIban
+    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, CONTRACT_STATUS, maskIban, when, dateOnly, loadTx, PAYMENT_STATUS
 } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { periodName, fmtKop, toKop } from './charges-core.js';
 import { TABS, remaining, bucketOf, chipOf, filterDocs, docCounts, mainsFor as mainsOf, twinOf, scanKind } from './docs-core.js';
+import { docPayments } from './chain-core.js';
+import { openPaymentSheet, openTxSheet, openContractSheet } from './buh-chain.js';
+
 
 const LEGACY = { docs: 'work' };
 let segment = 'work';
 let selected = null;      // id документа в картці
 let query = '';
 let paying = new Set();   // документи, платіж за якими вже в Приват24 на підписі
+let allPayments = [];     // платежі — для блоку «Оплата» в картці документа
+let wanted = null;        // документ, який треба показати (з «Рішень» чи картки ланцюжка) — вкладку визначаємо за ним
 let ctx = null;
 let form = null;          // { kind: 'doc'|'contract'|'supplier', data }
 let files = [];           // нові файли форми, ще не завантажені
@@ -43,7 +48,7 @@ const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${esc
 /** Відкрити розділ на потрібній вкладці, за потреби — з готовою формою чи документом. */
 export function openExpenses(seg = 'docs', prefill = null, docId = null) {
     segment = TABS[LEGACY[seg] || seg] ? LEGACY[seg] || seg : 'work';
-    if (docId) { selected = docId; segment = 'work'; }
+    if (docId) { selected = docId; wanted = docId; }
     form = prefill;
     files = [];
     if (location.hash !== '#expenses') location.hash = 'expenses';
@@ -201,6 +206,36 @@ function stornoHtml(e) {
 
 const docTitle = e => e.description || e.supplierName || 'Документ';
 
+/**
+ * «Оплата»: договір, платежі за документом і списання у виписці — кожне
+ * відкривається карткою ланцюжка (buh-chain.js).
+ */
+function chainHtml(e) {
+    const c = e.contractId ? contractOf(e.contractId) : null;
+    const pays = docPayments(e, allPayments);
+    const payTxs = new Set(pays.map(p => p.txId).filter(Boolean));
+    const txs = (e.txIds || []).filter(id => !payTxs.has(id));
+    if (!c && !pays.length && !txs.length) return '';
+    const row = (attrs, label, title, right = '') => `<button type="button" class="chs-link" ${attrs}><span class="chs-link-label">${label}</span>
+        <span class="chs-link-main"><b>${title}</b></span><span class="chs-link-right">${right}<span aria-hidden="true">›</span></span></button>`;
+    const statusChip = p => { const [t, cl] = PAYMENT_STATUS[p.status] || [p.status, '']; return `<span class="sv-chip ${cl === 'is-payment' ? 'is-done' : cl === 'is-error' ? 'is-bad' : cl === 'is-review' ? 'is-work' : ''}">${escapeHtml(t)}</span>`; };
+    return `<div class="dc-chain"><h3 class="chs-h">Договір і оплата</h3><div class="chs-links">
+        ${c ? row(`data-open="contract" data-id="${escapeHtml(c.id)}"`, 'Договір', `№ ${escapeHtml(c.number)} від ${human(c.date)} · ${escapeHtml(c.subject || '')}`) : ''}
+        ${pays.map(p => row(`data-open="payment" data-id="${escapeHtml(p.id)}"`, 'Платіж', `${p.createdAt ? escapeHtml(when(p.createdAt)) : ''} · ${escapeHtml(p.recipient?.name || '')}`, `<b>${fmtKop(p.amountKop)} грн</b>${statusChip(p)}`)).join('')}
+        ${txs.map(id => row(`data-open="tx" data-id="${escapeHtml(id)}" data-fill-tx="${escapeHtml(id)}"`, 'Списання', 'у виписці банку')).join('')}
+    </div></div>`;
+}
+
+/** Підставити дату й суму списань у блоці «Оплата» (операції банку читаємо окремо). */
+function fillTxRows() {
+    document.querySelectorAll('#dcCard [data-fill-tx]').forEach(async b => {
+        const tx = await loadTx(b.dataset.fillTx).catch(() => null);
+        if (!tx || !b.isConnected) return;
+        b.querySelector('.chs-link-main b').textContent = `${dateOnly(tx.at)} · ${tx.counterparty?.name || ''}`;
+        b.querySelector('.chs-link-right').insertAdjacentHTML('afterbegin', `<b>${fmtKop(tx.amountKop)} грн</b>`);
+    });
+}
+
 function scanHtml(e) {
     const [first, ...rest] = e.files || [];
     if (!first) return `<div class="dc-scan is-empty"><b>Скану немає</b><span>${['pending', 'rejected'].includes(e.status) ? 'Додайте файл через «Змінити» — без нього документ важче перевірити' : 'Документ внесено без файлу'}</span></div>`;
@@ -220,7 +255,7 @@ function fieldsHtml(e) {
         ['Документ', docName(e)],
         ['За місяць', e.period ? periodName(e.period) : ''],
         ['Стаття', ctx.items[e.item] || ''],
-        ['Договір', c ? `№ ${c.number} від ${human(c.date)}` : e.contractNumber ? `№ ${e.contractNumber}` : 'без договору'],
+        ['Договір', c ? '' : e.contractNumber ? `№ ${e.contractNumber}` : 'без договору'],
         ['ПДВ', e.vatKop ? `${fmtKop(e.vatKop)} грн` : ''],
         ['Затвердження', [e.approval?.reason, e.approval?.by ? `затвердив ${e.approval.by}` : ''].filter(Boolean).join(' · ')],
         ['Оплата', e.status === 'paid' ? 'оплачено за випискою' : e.paidKop > 0 ? `сплачено ${fmtKop(e.paidKop)} грн, лишилось ${fmtKop(remaining(e))} грн`
@@ -244,6 +279,7 @@ function cardHtml(e, empty) {
         ${twin ? `<div class="dc-hint is-ask">${LINK_ICON}<span>${escapeHtml(ctx.docTypes[twin.docType] || 'Документ')} № ${escapeHtml(twin.number)} того самого постачальника на ту саму суму — схоже, це одна послуга. Обʼєднаємо в одну витрату, щоб вона не порахувалась двічі.</span>
             <button type="button" class="sv-btn" data-act="merge-doc" data-to="${escapeHtml(twin.id)}">Обʼєднати</button></div>` : ''}
         ${relationsHtml(e)}
+        ${chainHtml(e)}
         ${attaching === e.id ? attachHtml(e) : ''}${stornoing === e.id ? stornoHtml(e) : ''}
         <div class="fl-actions">${docActions(e)}</div>`;
 }
@@ -286,6 +322,7 @@ function contractsHtml() {
                     <td class="t-sum">${c.type === 'monthly' ? `${fmtKop(c.monthlyKop)}<small>на місяць</small>` : fmtKop(c.amountKop)}</td>
                     <td class="t-act">${c.status === 'pending' && isChair() ? '<button type="button" class="btn-soft btn-compact" data-act="approve-contract">Затвердити</button> <button type="button" class="btn-ghost-small" data-act="reject-contract">Відхилити</button>' : ''}
                         ${c.status !== 'approved' || isChair() ? '<button type="button" class="btn-ghost-small" data-act="edit-contract">Змінити</button>' : ''}
+                        <button type="button" class="btn-ghost-small" data-open="contract" data-id="${escapeHtml(c.id)}">Деталі й оплати</button>
                         ${c.status === 'approved' ? '<button type="button" class="btn-ghost-small" data-act="end-contract">Завершити</button>' : ''}
                         ${filesHtml(c.files)}</td></tr>`).join('')}</tbody></table>` : '<p class="list-empty">Договорів ще немає</p>'}
         </section>`;
@@ -314,6 +351,10 @@ function suppliersHtml() {
 export async function loadExpensesView() {
     const [data, outgoing] = await Promise.all([loadExpenses(), loadPayments().catch(() => [])]);
     ctx = data;
+    allPayments = outgoing;
+    const target = wanted && ctx.expenses.find(x => x.id === wanted);
+    if (target) { segment = bucketOf(target); selected = target.id; form = null; }
+    wanted = null;
     paying = new Set(outgoing.filter(p => p.expenseId && ['sending', 'sent'].includes(p.status)).map(p => p.expenseId));
     const host = document.getElementById('viewExpenses');
     const docs = segment === 'work' || segment === 'archive';
@@ -328,6 +369,7 @@ export async function loadExpensesView() {
             `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}</div>
         ${formHtml()}${body}`;
     if (form) document.getElementById('exForm')?.querySelector('select, input')?.focus({ preventScroll: true });
+    fillTxRows();
     return ctx.expenses.filter(e => e.status === 'pending').length;
 }
 
@@ -459,6 +501,12 @@ function contractHint() {
 export function initExpensesView() {
     const host = document.getElementById('viewExpenses');
     host.addEventListener('click', async e => {
+        const link = e.target.closest('[data-open]');
+        if (link) {
+            const open = { payment: openPaymentSheet, tx: openTxSheet, contract: openContractSheet }[link.dataset.open];
+            open?.(link.dataset.id);
+            return;
+        }
         const seg = e.target.closest('[data-seg]');
         if (seg) { segment = seg.dataset.seg; form = null; attaching = null; stornoing = null; loadExpensesView(); return; }
         const btn = e.target.closest('[data-act]');

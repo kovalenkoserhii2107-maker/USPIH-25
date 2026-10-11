@@ -95,6 +95,14 @@ export async function loadPage(after = null, size = 80) {
 
 export const loadDirectory = () => once('directory', () => fetchDirectory().catch(() => []));
 
+/** Одна операція банку чи один платіж — для картки ланцюжка (договір → документ → платіж → банк). */
+const one = (col, id) => once(`${col}:${id}`, async () => {
+    const snap = await getDoc(doc(db, col, String(id)));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+});
+export const loadTx = id => one('bank_tx', id);
+export const loadPayment = id => one('payments', id);
+
 /** Імʼя першого власника квартири — для підказок. */
 export async function ownerOf(apt) {
     const dir = await loadDirectory();

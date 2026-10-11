@@ -13,6 +13,7 @@ import {
 } from './buh-data.js';
 import { payExpense, openExpenses } from './buh-expenses.js';
 import { remaining, paidByDocuments, coveredByDocuments } from './docs-core.js';
+import { openPaymentSheet } from './buh-chain.js';
 import { validIban } from './nbu-qr.js';
 import { toKop as kop } from './charges-core.js';
 
@@ -119,7 +120,7 @@ function uncertainActions(p) {
 }
 
 function rowHtml(p, { sub = '', actions = '', chip = true } = {}) {
-    return `<div class="py-row">
+    return `<div class="py-row is-link" data-pay="${escapeHtml(p.id)}" tabindex="0" role="button" aria-label="Деталі платежу: ${escapeHtml(p.recipient?.name || '')}">
         <span class="py-main"><b>${escapeHtml(p.recipient?.name || '')}</b><small>${escapeHtml(p.purpose || '')}</small>
             ${sub ? `<small class="py-muted">${sub}</small>` : ''}</span>
         <span class="py-right"><b class="py-sum">${money(p.amountKop)}</b>${chip ? chipHtml(p) : ''}</span>
@@ -245,7 +246,11 @@ export function initPaymentsView() {
     const host = document.getElementById('viewPayments');
     host.addEventListener('click', async e => {
         const btn = e.target.closest('[data-act]');
-        if (!btn) return;
+        if (!btn) {
+            const row = e.target.closest('[data-pay]');
+            if (row && !e.target.closest('a, input, select, textarea, label')) openPaymentSheet(row.dataset.pay);
+            return;
+        }
         const act = btn.dataset.act;
         const row = btn.closest('[data-key]');
         const proposal = row && ctx.proposals.find(p => p.proposalKey === row.dataset.key);
@@ -300,6 +305,7 @@ export function initPaymentsView() {
         document.getElementById('pfAmount').select();
     });
     host.addEventListener('keydown', e => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-pay]')) { e.preventDefault(); openPaymentSheet(e.target.dataset.pay); return; }
         if (e.key === 'Enter' && e.target.closest('#payForm') && e.target.matches('input')) { e.preventDefault(); submit(host.querySelector('[data-act="submit"]')); }
     });
 }
