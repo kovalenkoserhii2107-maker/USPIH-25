@@ -1,15 +1,16 @@
 // ============================================================
-// Каркас панели правління: заголовок розділу, нижня панель вкладок
-// і аркуш «Ще» на телефоні, підрозділи всередині розділів.
-// Бічне меню (.admin-tab) — єдине джерело правди: решту навігації
-// збираємо з його кнопок, а перехід завжди йде його кліком, тож
-// завантаження вкладок і права ролі живуть в одному місці.
+// Каркас панелі правління — як у бухгалтерії: розділи-«пігулки» вгорі,
+// меню профілю під аватаром, на телефоні — плаваюча нижня панель і
+// «Ще»; підрозділи всередині розділів.
+// Перелік розділів (.admin-tab, на екрані прихований) — єдине джерело
+// правди: решту навігації збираємо з його кнопок, а перехід завжди йде
+// його кліком, тож завантаження вкладок і права ролі живуть в одному місці.
 // ============================================================
 import { openSheet, closeAllSheets } from './ui.js';
 
 /** Заголовок і пояснення в шапці для кожного розділу. */
 export const TAB_META = {
-    overview: ['Головна', 'Стан будинку й справи на сьогодні'],
+    overview: ['Сьогодні', 'Що чекає вашого рішення'],
     directory: ['Власники', 'Квартири, власники та заявки на зміну даних'],
     requests: ['Звернення', 'Питання й заявки мешканців'],
     chat: ['Чат', 'Спільний чат будинку'],
@@ -25,50 +26,52 @@ export const TAB_META = {
     journal: ['Журнал дій', 'Хто, коли й що змінив']
 };
 
-// Чотири вкладки внизу — те, з чим роль працює щодня. Решта в «Ще».
+// Як у бухгалтерії: щоденні розділи — «пігулками» вгорі (на телефоні —
+// чотири з них на нижній панелі), решта — у меню профілю під аватаром.
+const TOP = {
+    accountant: ['overview', 'finance', 'meters', 'requests', 'directory', 'docs'],
+    default: ['overview', 'directory', 'requests', 'chat', 'meetings', 'polls', 'send', 'finance']
+};
 const PRIMARY = {
     accountant: ['overview', 'finance', 'meters', 'requests'],
     default: ['overview', 'requests', 'directory', 'meetings']
 };
 const SHORT = { meetings: 'Збори' };
-// Колір плитки в «Ще» — за групою, як у меню мешканця.
-const GROUP_COLORS = ['mi-blue', 'mi-green', 'mi-indigo', 'mi-orange', 'mi-teal', 'mi-grey'];
-const MORE_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg>';
+const MORE_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg>';
 
 const sideTab = name => document.querySelector(`.admin-tab[data-tab="${name}"]`);
 const tabLabel = tab => tab.querySelector('span:not(.admin-tab-badge)')?.firstChild?.textContent.trim() || '';
 const badgeOf = tab => tab.querySelector('.admin-tab-badge');
 const badgeCount = badge => (badge && badge.style.display !== 'none' && parseInt(badge.textContent, 10)) || 0;
+const el = (tag, className, html = '') => Object.assign(document.createElement(tag), { className, innerHTML: html });
 
+let top = [];
 let primary = [];
-let mirrors = [];          // [{ source, copy }] — значки, які повторюють бічне меню
+let mirrors = [];          // [{ source, copy }] — значки, які повторюють перелік розділів
 
-/** Пункт нижньої панелі або плитка «Ще» з тим самим значком, що в меню. */
-function navItem(tab, className, labelClass) {
-    const name = tab.dataset.tab;
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = className;
-    item.dataset.nav = name;
-    const icon = tab.querySelector('svg').cloneNode(true);
-    const label = document.createElement('span');
-    label.className = labelClass;
-    label.textContent = className === 'admin-tabbar-item' ? (SHORT[name] || tabLabel(tab)) : tabLabel(tab);
+/** Значок кількості, що повторює значок розділу в переліку. */
+function mirror(tab, className) {
+    const badge = el('span', className);
+    badge.hidden = true;
     const source = badgeOf(tab);
-    const badge = document.createElement('span');
-    badge.className = 'menu-badge';
-    badge.style.display = 'none';
     if (source) mirrors.push({ source, copy: badge });
-    return { item, icon, label, badge };
+    return badge;
 }
+const iconOf = tab => {
+    const svg = tab.querySelector('svg').cloneNode(true);
+    svg.setAttribute('width', '22');
+    svg.setAttribute('height', '22');
+    svg.setAttribute('aria-hidden', 'true');
+    return svg;
+};
 
 function syncBadges() {
     for (const { source, copy } of mirrors) {
         const count = badgeCount(source);
         copy.textContent = source.textContent;
-        copy.style.display = count ? 'flex' : 'none';
+        copy.hidden = !count;
     }
-    // «Ще» показує крапку, коли щось нове лежить у розділі поза панеллю.
+    // «Ще» показує крапку, коли щось нове лежить у розділі поза нижньою панеллю.
     const hidden = [...document.querySelectorAll('.admin-tab')]
         .filter(tab => !tab.hidden && !primary.includes(tab.dataset.tab))
         .reduce((sum, tab) => sum + badgeCount(badgeOf(tab)), 0);
@@ -77,90 +80,125 @@ function syncBadges() {
 }
 
 /**
- * Будує навігацію під роль: ховає порожні групи меню, складає нижню
- * панель і плитки «Ще». Викликати після того, як вкладкам без прав
- * поставлено hidden.
+ * Будує навігацію під роль: «пігулки» вгорі, нижню панель на телефоні й
+ * меню профілю. Викликати після того, як вкладкам без прав поставлено hidden.
  */
 export function buildShell(role) {
     mirrors = [];
-    document.querySelectorAll('.admin-nav-group').forEach(group => {
-        group.hidden = ![...group.querySelectorAll('.admin-tab')].some(tab => !tab.hidden);
-    });
     const allowed = name => sideTab(name) && !sideTab(name).hidden;
+    top = (TOP[role] || TOP.default).filter(allowed);
     primary = (PRIMARY[role] || PRIMARY.default).filter(allowed);
+
+    const nav = document.getElementById('adminTopNav');
+    if (nav) {
+        nav.replaceChildren(...top.map(name => {
+            const tab = sideTab(name);
+            const item = el('button', 'buh-nav-item');
+            item.type = 'button';
+            item.dataset.nav = name;
+            item.append(el('span', '', SHORT[name] || tabLabel(tab)), mirror(tab, 'buh-badge'));
+            return item;
+        }));
+    }
 
     const bar = document.getElementById('adminTabbar');
     if (bar) {
-        bar.replaceChildren();
-        for (const name of primary) {
-            const { item, icon, label, badge } = navItem(sideTab(name), 'admin-tabbar-item', 'admin-tabbar-label');
-            const art = document.createElement('span');
-            art.className = 'admin-tabbar-icon';
-            art.append(icon, badge);
-            item.append(art, label);
-            bar.append(item);
-        }
-        const more = document.createElement('button');
+        bar.replaceChildren(...primary.map(name => {
+            const tab = sideTab(name);
+            const item = el('button', 'buh-tab');
+            item.type = 'button';
+            item.dataset.nav = name;
+            const art = el('span', 'buh-tab-icon');
+            art.append(iconOf(tab), mirror(tab, 'buh-badge'));
+            item.append(art, el('span', '', SHORT[name] || tabLabel(tab)));
+            return item;
+        }));
+        const more = el('button', 'buh-tab', `<span class="buh-tab-icon">${MORE_ICON}<span class="admin-tabbar-dot" id="adminMoreDot" hidden></span></span><span>Ще</span>`);
         more.type = 'button';
-        more.className = 'admin-tabbar-item';
         more.dataset.nav = 'more';
-        more.innerHTML = `<span class="admin-tabbar-icon">${MORE_ICON}<span class="admin-tabbar-dot" id="adminMoreDot" hidden></span></span><span class="admin-tabbar-label">Ще</span>`;
         bar.append(more);
     }
 
     const host = document.getElementById('adminMoreGroups');
     if (host) {
-        // У «Ще» — лише те, чого немає на панелі внизу, як в iOS. Одна
-        // сітка, як меню мешканця; колір плитки підказує групу.
-        const grid = document.createElement('div');
-        grid.className = 'menu-grid';
-        document.querySelectorAll('.admin-nav-group').forEach((group, index) => {
-            group.querySelectorAll('.admin-tab').forEach(tab => {
-                if (tab.hidden || primary.includes(tab.dataset.tab)) return;
-                const { item, icon, label, badge } = navItem(tab, 'menu-tile', 'menu-tile-label');
-                const art = document.createElement('span');
-                art.className = 'menu-tile-art';
-                const tile = document.createElement('span');
-                tile.className = `menu-tile-icon ${GROUP_COLORS[index % GROUP_COLORS.length]}`;
-                tile.append(icon);
-                art.append(tile, badge);
-                item.append(art, label);
-                grid.append(item);
-            });
+        const parts = [];
+        // Плитки — лише на телефоні: розділи з «пігулок», яких немає на нижній панелі.
+        const tiles = el('nav', 'mn-tiles');
+        tiles.setAttribute('aria-label', 'Розділи');
+        for (const name of top.filter(n => !primary.includes(n))) {
+            const tab = sideTab(name);
+            const tile = el('button', 'mn-tile');
+            tile.type = 'button';
+            tile.dataset.nav = name;
+            const ico = el('span', 'mn-ico');
+            ico.append(iconOf(tab));
+            tile.append(ico, el('b', '', tabLabel(tab)), el('small', '', TAB_META[name]?.[1] || ''));
+            tiles.append(tile);
+        }
+        if (tiles.children.length) parts.push(tiles);
+        // Решта — рядками за групами переліку (Мешканці, Рішення, Облік…).
+        document.querySelectorAll('.admin-nav-group').forEach(group => {
+            const rows = [...group.querySelectorAll('.admin-tab')].filter(tab => !tab.hidden && !top.includes(tab.dataset.tab));
+            if (!rows.length) return;
+            const title = group.querySelector('.admin-nav-label')?.textContent.trim() || 'Розділи';
+            const list = el('nav', 'mn-group');
+            list.setAttribute('aria-label', title);
+            for (const tab of rows) {
+                const name = tab.dataset.tab;
+                const row = el('button', 'mn-row');
+                row.type = 'button';
+                row.dataset.nav = name;
+                const ico = el('span', 'mn-ico');
+                ico.append(iconOf(tab));
+                const copy = el('span', 'mn-copy');
+                copy.append(el('b', '', tabLabel(tab)), el('small', '', TAB_META[name]?.[1] || ''));
+                row.append(ico, copy, mirror(tab, 'mn-badge'), el('span', 'mn-chev', '›'));
+                list.append(row);
+            }
+            parts.push(el('h5', 'mn-h', title), list);
         });
-        host.replaceChildren(grid);
+        host.replaceChildren(...parts);
     }
     syncBadges();
 }
 
-/** Позначає активний розділ у всій навігації й міняє заголовок шапки. */
+/** Привітання за часом доби — як «Сьогодні» в бухгалтерії. */
+function greeting(now = new Date()) {
+    const h = now.getHours();
+    return h < 5 ? 'Доброї ночі' : h < 12 ? 'Доброго ранку' : h < 18 ? 'Доброго дня' : 'Доброго вечора';
+}
+
+/** Позначає активний розділ у всій навігації й міняє заголовок. */
 export function markActive(name) {
     document.querySelectorAll('.admin-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === name));
     document.querySelectorAll('.admin-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === name));
     const inBar = primary.includes(name);
     document.querySelectorAll('[data-nav]').forEach(item => {
+        if (item.classList.contains('buh-brand')) return;
         const active = item.dataset.nav === name || (item.dataset.nav === 'more' && !inBar);
         item.classList.toggle('active', active);
-        if (item.classList.contains('admin-tabbar-item')) item.setAttribute('aria-current', active ? 'page' : 'false');
+        if (item.classList.contains('buh-tab') || item.classList.contains('buh-nav-item')) item.setAttribute('aria-current', active ? 'page' : 'false');
     });
     const [title, subtitle] = TAB_META[name] || TAB_META.overview;
-    document.getElementById('adminTitle').textContent = title;
-    document.getElementById('adminSubtitle').textContent = subtitle;
+    const today = name === 'overview';
+    document.getElementById('adminTitle').textContent = today ? greeting() : title;
+    document.getElementById('adminSubtitle').textContent = today
+        ? new Date().toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' })
+        : subtitle;
     document.title = `${title} — Панель правління`;
 }
 
-/** Ім'я, роль і дії облікового запису — у шапці й у «Ще». */
+/** Ім'я, роль і дії облікового запису — на аватарі й у меню профілю. */
 export function renderAccount({ name, role, home }) {
     const initial = name.trim().charAt(0).toUpperCase() || 'П';
-    for (const [id, text] of [['adminAccountName', name], ['adminMoreName', name], ['adminAccountRole', role],
-        ['adminMoreRole', role], ['adminAvatar', initial], ['adminMoreAvatar', initial]]) {
-        const el = document.getElementById(id);
-        if (el) el.textContent = text;
+    for (const [id, text] of [['adminMoreName', name], ['adminMoreRole', role], ['adminAvatar', initial], ['adminMoreAvatar', initial]]) {
+        const node = document.getElementById(id);
+        if (node) node.textContent = text;
     }
-    for (const id of ['adminHomeBtn', 'adminMoreHomeBtn']) {
-        const el = document.getElementById(id);
-        if (el) el.hidden = !home;
-    }
+    const btn = document.getElementById('adminMoreHomeBtn');
+    if (btn) btn.hidden = !home;
+    const links = document.getElementById('adminMoreLinks');
+    if (links) links.hidden = !home;
 }
 
 // ------------------------------------------------------------
@@ -277,11 +315,8 @@ export function initShell() {
             sideTab(item.dataset.nav)?.click();
             return;
         }
-        // На телефоні аватар у шапці відкриває «Ще»: там і вихід,
-        // і перехід до власного кабінету.
-        if (event.target.closest('#adminAccountBtn') && window.matchMedia('(max-width: 959px)').matches) {
-            openSheet('adminMoreSheet');
-        }
+        // Аватар відкриває меню профілю: обліковий запис, вихід, решта розділів.
+        if (event.target.closest('#adminAccountBtn')) openSheet('adminMoreSheet');
     });
     document.querySelectorAll('.admin-tab-badge').forEach(badge => {
         new MutationObserver(syncBadges).observe(badge, { attributes: true, childList: true, characterData: true, subtree: true });

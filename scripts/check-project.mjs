@@ -12,7 +12,7 @@ const [html, adminHtml, buhHtml, sw, firebaseJson, firestoreIndexesJson] = await
 
 const swVersion = sw.match(/const VERSION = '(\d+)'/)?.[1];
 for (const [name, page] of [['index.html', html], ['admin.html', adminHtml], ['buh.html', buhHtml]]) {
-    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh)?\.css|js\/(?:app|admin-main|admin-preview|buh-main)\.js)\?v=(\d+)/g)].map(m => m[1]);
+    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh|-sv)?\.css|js\/(?:app|admin-main|admin-preview|buh-main)\.js)\?v=(\d+)/g)].map(m => m[1]);
     if (!swVersion || !versions.length || versions.some(version => version !== swVersion)) {
         errors.push(`Версії ${name} (${versions.join(', ')}) і sw.js (${swVersion || 'немає'}) не збігаються`);
     }

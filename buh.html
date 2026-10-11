@@ -27,10 +27,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=163">
-    <link rel="stylesheet" href="style-buh.css?v=163">
+    <link rel="stylesheet" href="style.css?v=164">
+    <link rel="stylesheet" href="style-sv.css?v=164">
+    <link rel="stylesheet" href="style-buh.css?v=164">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=163">
+    <link rel="modulepreload" href="js/buh-main.js?v=164">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -43,7 +44,7 @@
      Вигляд «Сервіс»: розділи вгорі, одна головна дія на екрані. -->
 <div id="navBackdrop" class="nav-backdrop"></div>
 
-<div id="buhMoreSheet" class="sheet">
+<div id="buhMoreSheet" class="sheet mn-sheet">
     <div class="sheet-grabber"></div>
     <div class="sheet-header">
         <h4 class="sheet-title">Бухгалтерія</h4>
@@ -142,7 +143,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=163').catch(error => {
+    import('./js/buh-main.js?v=164').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

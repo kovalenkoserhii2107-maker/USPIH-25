@@ -159,10 +159,6 @@ async function refreshCurrentScreen() {
 // ВКЛАДКИ
 // ------------------------------------------------------------
 function initAdminTabs() {
-    const today = document.getElementById('adminToday');
-    if (today) today.textContent = new Date().toLocaleDateString('uk-UA', {
-        day: 'numeric', month: 'long', year: 'numeric', weekday: 'short'
-    });
     document.querySelectorAll('.admin-tab').forEach(tab => {
         tab.addEventListener('click', async () => {
             // Чат — окремий екран, а не картка в панелі: у картці
@@ -264,9 +260,7 @@ function init() {
         localStorage.removeItem('session_timestamp');
         await signOut(auth);
     };
-    document.getElementById('adminHomeBtn').addEventListener('click', toHome);
     document.getElementById('adminMoreHomeBtn').addEventListener('click', toHome);
-    document.getElementById('adminLogoutBtn').addEventListener('click', logout);
     document.getElementById('adminMoreLogoutBtn').addEventListener('click', logout);
     document.getElementById('backFromChatBtn')?.addEventListener('click', () => {
         stopChat();

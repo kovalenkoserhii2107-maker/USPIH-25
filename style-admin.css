@@ -1647,35 +1647,6 @@
     border-radius: 9px; background: var(--red); color: #fff; font-size: 10.5px; font-weight: 700;
 }
 
-/* Нижня панель вкладок */
-.admin-tabbar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 120;
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-    border-top: 0.5px solid rgba(60, 60, 67, 0.2);
-    background: rgba(249, 249, 251, 0.9);
-    backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
-}
-.admin-tabbar:empty { display: none; }
-.admin-tabbar-item {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    min-height: 48px; padding: 2px 0 0; border: 0; background: none;
-    color: #8a8a8e; font-family: var(--font); cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-.admin-tabbar-item.active { color: var(--blue-ink); }
-.admin-tabbar-icon { position: relative; display: block; width: 26px; height: 26px; }
-.admin-tabbar-icon svg { width: 26px; height: 26px; }
-.admin-tabbar-icon .menu-badge {
-    position: absolute; top: -4px; left: 17px; height: 17px; min-width: 17px;
-    border: 2px solid rgba(249, 249, 251, 1); font-size: 10.5px;
-}
-.admin-tabbar-dot {
-    position: absolute; top: 0; right: -3px; width: 9px; height: 9px;
-    border: 2px solid rgba(249, 249, 251, 1); border-radius: 50%; background: var(--red);
-}
-.admin-tabbar-label { max-width: 100%; font-size: 10.5px; font-weight: 600; letter-spacing: -0.1px; white-space: nowrap; }
-
 /* «Ще» */
 .admin-more-account {
     display: flex; align-items: center; gap: 12px;
@@ -1718,13 +1689,6 @@
 .meeting-toolbar .admin-page-action { margin-left: auto; }
 
 @media (max-width: 959px) {
-    body.admin-mode #adminDashboardSection { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
-    body.admin-mode .toast-host { bottom: calc(84px + env(safe-area-inset-bottom)); }
-    .admin-today, .admin-account-copy, .admin-home-btn, #adminLogoutBtn { display: none; }
-    .admin-header { align-items: flex-start; padding-top: 10px; }
-    .admin-avatar { width: 38px; height: 38px; font-size: 15px; }
-    .admin-account-btn { margin-top: 2px; }
-    .admin-account-btn:active .admin-avatar { opacity: .7; }
     .meeting-toolbar .admin-subnav { flex: 1 1 auto; }
     .meeting-toolbar .admin-page-action { min-height: 42px; padding-inline: 14px; }
 
@@ -1752,31 +1716,6 @@
 }
 
 @media (min-width: 960px) {
-    .admin-tabbar { display: none; }
-    body.admin-mode { overflow-x: hidden; background: #f7f9fc; }
-    body.admin-mode .container { max-width: none; margin: 0; padding: 0; }
-    body.admin-mode #adminDashboardSection {
-        min-height: 100vh; display: grid !important;
-        grid-template-columns: 252px minmax(0, 1fr);
-        grid-template-rows: auto 1fr; background: #f7f9fc;
-    }
-    #adminDashboardSection > .admin-header {
-        grid-column: 2; grid-row: 1; margin: 0; padding: 22px 28px 18px;
-        border-bottom: 1px solid #e6ebf2; background: rgba(255,255,255,.92);
-    }
-    .admin-title { font-size: 26px; letter-spacing: -.6px; }
-    .admin-account-btn { cursor: default; }
-    #adminDashboardSection > .admin-tabs {
-        grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; align-self: start;
-        display: flex; flex-direction: column; box-sizing: border-box;
-        width: 252px; height: 100vh; margin: 0; padding: 20px 12px 14px;
-        border-right: 1px solid #dce5ef; background: #f1f6fb; overflow-y: auto;
-    }
-    #adminDashboardSection > .admin-panel { grid-column: 2; grid-row: 2; min-width: 0; padding: 20px 28px 40px; }
-    #adminDashboardSection > .admin-panel:not(.admin-overview) { max-width: 1040px; width: calc(100% - 56px); justify-self: center; }
-    #adminDashboardSection > .admin-panel:not(.admin-overview) > .card { border: 1px solid #e3e9f1; box-shadow: 0 5px 20px rgba(35,57,91,.04); }
-    .admin-subnav { width: max-content; max-width: 100%; }
-    .admin-subnav-item { flex: 0 0 auto; padding: 0 16px; }
     .admin-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
     .admin-metric { min-height: 112px; }
     .admin-focus-grid { grid-template-columns: minmax(0, 2.25fr) minmax(270px, .95fr); }
@@ -1787,20 +1726,11 @@
     .admin-house-strip { display: none; }
 }
 
-@media (min-width: 1320px) {
-    #adminDashboardSection > .admin-header { padding-left: 32px; padding-right: 32px; }
-    #adminDashboardSection > .admin-panel { padding: 20px 32px 44px; }
-}
 
 .admin-subnav.fade-end { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent); }
 .admin-subnav.fade-start { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent); }
 .admin-subnav.fade-start.fade-end { -webkit-mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent); }
 
-/* Заголовок «Головна» вже в шапці — у зведенні лишаємо лише час оновлення. */
-.admin-overview-head > div:first-child { display: none; }
-.admin-overview-head { justify-content: flex-end; }
-.admin-more-account .btn-soft { flex: none; width: auto; }
-#adminMoreGroups .menu-grid { padding: 22px 0 6px; }
 .meter-card-head .btn-soft { flex: none; width: auto; }
 
 /* ---------- Квартири: таблиця на ПК ---------- */
@@ -1871,3 +1801,79 @@
 .sign-approve { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #fff7ed; color: #92400e; text-decoration: none; }
 .sign-approve b { font-size: 14px; }
 .sign-approve span { font-size: 12.5px; }
+
+/* ============================================================
+   ВИГЛЯД «СЕРВІС» — як у бухгалтерії (style-sv.css): світло-сіре тло,
+   розділи-«пігулки» вгорі, меню профілю під аватаром, великі
+   заголовки, білі картки з великим заокругленням, чорна головна
+   кнопка; на телефоні — плаваюча нижня панель. Перелік розділів
+   (.admin-tabs) лише джерело для навігації — на екрані його немає.
+   ============================================================ */
+body.admin-sv { overflow-x: hidden; }
+body.admin-sv .container { max-width: none; margin: 0; padding: 0; }
+body.admin-sv #adminDashboardSection > .admin-tabs { display: none !important; }
+body.admin-sv #adminDashboardSection {
+    display: block; min-height: 100vh; background: var(--sv-bg);
+    padding-bottom: 0;
+}
+body.admin-sv #adminDashboardSection > .admin-header.buh-head {
+    flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 4px;
+    box-sizing: border-box; max-width: 1240px; margin: 0 auto; padding: 10px clamp(16px, 3vw, 40px) 22px;
+    border: 0; background: none;
+}
+body.admin-sv .admin-title { margin: 0; color: #000; font-size: clamp(30px, 4vw, 44px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+body.admin-sv .admin-subtitle { margin-top: 4px; color: var(--sv-muted); font-size: 16px; font-weight: 600; }
+body.admin-sv #adminDashboardSection > .admin-panel {
+    box-sizing: border-box; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 clamp(16px, 3vw, 40px) 64px;
+}
+body.admin-sv .admin-avatar, body.admin-sv .buh-avatar span { font-family: var(--font); }
+.admin-tabbar-dot { position: absolute; top: -2px; right: -4px; width: 9px; height: 9px; border: 2px solid #fff; border-radius: 50%; background: var(--sv-red, #B42318); }
+.admin-tabbar-dot[hidden] { display: none; }
+
+/* Картки й кнопки — як у бухгалтерії */
+body.admin-sv .card, body.admin-sv .sign-card, body.admin-sv .admin-metric, body.admin-sv .admin-meeting-card,
+body.admin-sv .admin-tasks-card, body.admin-sv .dash-card, body.admin-sv #adminPowerCard {
+    border: 0 !important; border-radius: 24px; background: #fff; box-shadow: none !important;
+}
+body.admin-sv .sign-card.is-waiting { background: var(--sv-yellow); }
+body.admin-sv .sign-card.is-waiting .sign-how { color: var(--sv-yellow-ink); }
+body.admin-sv .sign-approve { background: rgba(255, 255, 255, .6); color: #000; }
+body.admin-sv .btn-primary { border-radius: 999px; background: #000; box-shadow: none; color: #fff; font-weight: 800; }
+body.admin-sv .btn-primary:hover { background: #262626; }
+body.admin-sv .btn-soft, body.admin-sv .btn-ghost-small { border-radius: 999px; background: var(--sv-soft); color: #000; font-weight: 700; }
+body.admin-sv .btn-ghost-small:hover { background: #E2E7EE; }
+body.admin-sv .field-input { border-radius: 14px; }
+body.admin-sv .admin-card-title, body.admin-sv .am-card-title { color: #000; font-weight: 800; letter-spacing: -.01em; }
+body.admin-sv .admin-card-sub, body.admin-sv .field-hint { color: var(--sv-muted); }
+
+/* Підрозділи — «пігулки» на білій смузі, активний — чорний */
+body.admin-sv .admin-subnav { width: max-content; max-width: 100%; padding: 4px; border-radius: 999px; background: #fff; }
+body.admin-sv .admin-subnav-item { flex: 0 0 auto; min-height: 40px; padding: 0 16px; border-radius: 999px; color: #000; font: 700 14px var(--font); }
+body.admin-sv .admin-subnav-item.active { background: #000; box-shadow: none; color: #fff; }
+body.admin-sv .admin-subnav-count { background: var(--sv-yellow); color: #000; }
+body.admin-sv .admin-subnav-item.active .admin-subnav-count { background: #fff; color: #000; }
+
+/* Чипи-фільтри (Усі / Не звірено …) */
+body.admin-sv .dir-filter, body.admin-sv .chip { border-radius: 999px; }
+
+@media (max-width: 900px) {
+    body.admin-sv #adminDashboardSection > .admin-header.buh-head { padding: 6px 16px 16px; }
+    body.admin-sv .admin-title { font-size: clamp(26px, 7.5vw, 32px); }
+    body.admin-sv .admin-subtitle { font-size: 14.5px; }
+    body.admin-sv #adminDashboardSection > .admin-panel { padding: 0 16px calc(104px + env(safe-area-inset-bottom)); }
+    body.admin-sv .admin-subnav { width: auto; }
+}
+@media (min-width: 901px) {
+    body.admin-sv .admin-tabbar { display: none; }
+}
+/* Заголовок розділу вже над карткою — у зведенні лишаємо лише час оновлення. */
+.admin-overview-head > div:first-child { display: none; }
+.admin-overview-head { justify-content: flex-end; }
+
+/* Акцент «Сервісу» — чорний, як у бухгалтерії (замість синього). */
+body.admin-sv { --blue: #000; --blue-ink: #000; --blue-dark: #262626; }
+body.admin-sv .admin-page-action { border-radius: 999px; background: #000; box-shadow: none; font: 800 14px var(--font); }
+body.admin-sv .dir-apt, body.admin-sv .req-avatar { background: var(--sv-soft); color: #000; font-weight: 800; }
+body.admin-sv .overview-kicker { color: var(--sv-muted); }
+body.admin-sv .sign-card.is-waiting .overview-kicker, body.admin-sv .sign-card.is-waiting .sign-push { color: var(--sv-yellow-ink); }
+body.admin-sv .sign-head h2 { color: #000; font-weight: 800; }
