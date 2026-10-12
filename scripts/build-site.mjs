@@ -6,7 +6,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 // content-hashed chunks, so residents never download the board's features.
 await rm('_site', { recursive: true, force: true });
 await mkdir('_site', { recursive: true });
-for (const path of ['index.html', 'admin.html', 'buh.html', 'style.css', 'style-admin.css', 'style-buh.css', 'style-sv.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
+for (const path of ['index.html', 'admin.html', 'buh.html', 'landing.html', 'style-landing.css', 'style.css', 'style-admin.css', 'style-buh.css', 'style-sv.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
     await cp(path, `_site/${path}`, { recursive: true });
 }
 const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js', 'js/buh-main.js'], outdir: '_site/js', entryNames: '[name]',
