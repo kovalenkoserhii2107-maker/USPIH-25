@@ -2,7 +2,11 @@ import test,{before,after}from'node:test';import assert from'node:assert/strict'
 const require=createRequire(new URL('../../functions/package.json',import.meta.url));const{initializeApp,deleteApp}=require('firebase-admin/app');const{getFirestore,FieldValue,Timestamp}=require('firebase-admin/firestore');
 if(!process.env.FIRESTORE_EMULATOR_HOST)throw new Error('Local emulator only');
 const path=new URL('../../docs/accounting/fixtures/external-export/',import.meta.url),names=readdirSync(path),file=n=>readFileSync(new URL(names.find(x=>x.startsWith(n)),path),'utf8');
-const files={accounts:file('01-'),owners:file('02-'),opening:file('07-'),january:file('05-'),journal:file('06-'),ledger:file('04-'),suppliers:file('09-'),legacyExpenses:file('10-')};const control=JSON.parse(readFileSync(new URL('expected-controls.json',path),'utf8'));
+const csvFiles={accounts:file('01-'),owners:file('02-'),opening:file('07-'),january:file('05-'),journal:file('06-'),ledger:file('04-'),suppliers:file('09-'),legacyExpenses:file('10-')};
+const {default:readExcel}=await import('read-excel-file/node');
+const {suggestAssignments,compileImport}=await import('../../js/migration-import-core.js');
+const sheets=(await readExcel(new URL('test-house-external-export.xlsx',path).pathname,{parseNumber:s=>s})).map((s,i)=>({id:String(i),name:s.sheet,rows:s.data}));
+const compiled=compileImport(sheets,suggestAssignments(sheets),'2026-10-01');assert.deepEqual(compiled.issues,[]);const files=compiled.files;const control=JSON.parse(readFileSync(new URL('expected-controls.json',path),'utf8'));
 const core=require('./migration-core');const privat=require('./privat');const oldCreate=privat.createPayment,oldDate=Date,oldFetch=fetch;
 let app,db,migration,charges,journal,reports,bank,payroll,payments,expenses,budget;
 const C=['298','chair'],A=['900','accountant'];const now=()=>new oldDate('2027-01-04T12:00:00Z');
@@ -15,7 +19,7 @@ const tx=r=>({bankId:core.value(r,'Референс'),account:core.value(r,'IBAN
 let finalAnnual;
 test('external flat exports → all accounts and owners → three months → wages/bank → closing and annual archive',async()=>{
  await db.doc('staff/298').set({active:true,role:'chair'});await db.doc('apartments/298').set({isAdmin:true});
- const p=await migration.actions.inspect({files,startDate:control.startDate});assert.equal(p.summary.premises,302);assert.equal(p.summary.owners,447);
+ const p=await migration.actions.inspect({files,startDate:control.startDate});assert.equal(p.summary.premises,302);assert.equal(p.summary.owners,447);assert.equal(p.hash,core.prepare(csvFiles,control.startDate).hash);
  await assert.rejects(migration.actions.step(...A,{files,startDate:control.startDate,hash:p.hash,basis:'Зовнішня тестова база'}),/голова/);
  let m;do{m=await migration.actions.step(...C,{files,startDate:control.startDate,hash:p.hash,basis:'Зовнішня тестова база'});}while(!m.done);
  assert.equal((await docs('apartments')).filter(a=>!a.isAdmin).length,302);assert.equal((await db.collectionGroup('owners').get()).size,447);

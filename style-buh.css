@@ -1031,3 +1031,30 @@ body.chs-open { overflow: hidden; }
 
 .dr-destructive { background:#b42318; color:#fff; }
 #resetSettings .buh-note input[type="checkbox"] { width:22px; height:22px; vertical-align:middle; margin:8px 8px 8px 0; }
+
+/* Майстер перенесення: поля і перевірка доступні також на телефоні. */
+.mi-wizard > :not(summary) { margin-top:16px; }
+.mi-wizard fieldset { border:0; padding:0; margin:0; min-width:0; display:grid; gap:14px; }
+.mi-wizard .field-input { min-width:0; width:100%; max-width:100%; }
+.mi-steps { display:flex; gap:8px; padding:0; list-style:none; color:var(--sv-muted); font-size:13px; }
+.mi-steps li { flex:1; padding:10px 4px; border-radius:12px; text-align:center; background:var(--sv-soft-2,#f4f6f9); }
+.mi-steps [aria-current] { color:var(--sv-blue,#0068cf); background:#eaf3ff; font-weight:700; }
+.mi-section { min-width:0; padding:14px; border-radius:18px; background:var(--sv-soft-2,#f4f6f9); }
+.mi-section > summary { min-height:44px; cursor:pointer; font-weight:700; }
+.mi-section[open] > :not(summary) { margin-top:12px; }
+.mi-columns,.mi-range { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.mi-columns .py-field,.mi-range .py-field { min-width:0; }
+.mi-source { overflow-wrap:anywhere; }
+.mi-table { max-width:100%; overflow:auto; margin-top:12px; }
+.mi-table table { border-collapse:collapse; font-size:13px; }
+.mi-table td,.mi-table th { border:1px solid #dce2ea; padding:8px; min-width:90px; max-width:220px; overflow-wrap:anywhere; }
+.mi-summary dl { margin:0; }
+.mi-summary dl > div { display:flex; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid #e6e8ed; }
+.mi-summary dd { margin:0; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+.mi-errors,.mi-warnings { padding:16px 16px 16px 28px; border-radius:16px; overflow-wrap:anywhere; }
+.mi-errors { background:#fff0ee; color:#8e2820; }
+.mi-errors li + li { margin-top:12px; }
+.mi-warnings { background:#fff6df; }
+.mi-warnings input { width:22px; height:22px; vertical-align:middle; }
+.mi-fix { min-height:44px; border:0; background:transparent; color:var(--sv-blue,#0068cf); text-decoration:underline; font:inherit; cursor:pointer; }
+@media (max-width:600px) { .mi-columns { grid-template-columns:1fr; } .mi-range { gap:8px; } }

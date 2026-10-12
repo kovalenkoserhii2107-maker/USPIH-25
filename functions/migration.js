@@ -4,7 +4,7 @@ const core=require('./migration-core'),jcore=require('./journal-core'),annual=re
 const guard=require('./call-guard');
 module.exports=function({db,FieldValue,Timestamp,requireAdmin,staffRole,charges,journal,reports}) {
  const fail=message=>{throw new HttpsError('failed-precondition',message);};
- function prepared(data){try{const p=core.prepare(data.files,data.startDate);const error=jcore.checkOpening(p.opening.filter(r=>!['377','631'].includes(r.acc)))||p.history&&annual.historyProblem(p.history,data.startDate.slice(0,4),data.startDate);if(error)fail(error);return p;}catch(e){if(e instanceof HttpsError)throw e;throw new HttpsError('invalid-argument',e.message);}}
+ function prepared(data){try{const p=core.prepare(data.files,data.startDate);const error=jcore.checkOpening(p.opening.filter(r=>!['377','631'].includes(r.acc)))||p.history&&annual.historyProblem(p.history,data.startDate.slice(0,4),data.startDate);if(error)fail(error);return p;}catch(e){if(e instanceof HttpsError)throw e;throw new HttpsError('invalid-argument',e.message,{issues:e.issues||[]});}}
  async function inspect(data){const p=prepared(data);return{hash:p.hash,summary:p.summary,bankRows:p.bankRows,startDate:p.startDate,unverifiedOwners:true};}
  async function step(actor,role,data){
   if(role!=='chair')throw new HttpsError('permission-denied','Початок обліку погоджує голова');
@@ -27,7 +27,7 @@ module.exports=function({db,FieldValue,Timestamp,requireAdmin,staffRole,charges,
     job.phase='apartments';
    }else if(job.phase==='apartments'){
     const reset=(await db.doc('_maintenance/reset').get()).data();
-    const batch=db.batch();const rows=p.apartments.slice(job.cursor,job.cursor+60);
+    const batch=db.batch();const rows=[];let writes=0;for(const a of p.apartments.slice(job.cursor,job.cursor+60)){if(writes+1+a.owners.length>450)break;rows.push(a);writes+=1+a.owners.length;}
     for(const a of rows){const r=db.doc(`apartments/${a.apt}`);batch.set(r,{area:a.area,residents:a.residents,entrance:a.entrance,personalAccount:a.account,balance:a.balanceKop/100,isAdmin:false,ownersStatus:'pending',migrationId:p.hash,authAfter:reset?.authCutoff||0,authKeeperUid:reset?.actor===a.apt?reset.keeperUid:''});
      for(let i=0;i<a.owners.length;i++)batch.set(r.collection('owners').doc(`import-${i}`),{...a.owners[i],source:'migration',status:'pending'});
     }
