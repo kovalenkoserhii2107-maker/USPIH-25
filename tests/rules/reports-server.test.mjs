@@ -3,6 +3,7 @@
 import test, { after, afterEach, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { clearAccounting } from './accounting-fixture.mjs';
 
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp, deleteApp } = require('firebase-admin/app');
@@ -10,17 +11,19 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 const payroll = require('./payroll-core.js');
 
 let app, db, reports;
-before(() => {
+before(async () => {
     app = initializeApp({ projectId: 'uspih-25-rules-test' }, 'reports-server-test');
     db = getFirestore(app);
     reports = require('./reports.js')({ db, FieldValue, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
+    await wipe();
 });
-const wipe = async () => {
+async function wipe() {
+    await clearAccounting(db);
     for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings', 'bank_tx', 'suppliers', 'expenses', 'report_packages']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
-};
+}
 afterEach(wipe);
 after(async () => { await wipe(); await deleteApp(app); });
 
@@ -63,7 +66,7 @@ test('розрахунок за жовтень: суми за людьми, сп
 test('позначки: подано, прийнято з квитанцією, перевірки й зняття', async () => {
     const key = 'j0500111-2026-10';
     await assert.rejects(a().mark(...A, { key: '../x', status: 'submitted' }), /Невідомий звіт/);
-    await assert.rejects(a().mark(...A, { key: 'j0500111-2026-9', status: 'submitted' }), /сервіс бухгалтера/);
+    await assert.rejects(a().mark(...A, { key: 'j0500111-2026-9', status: 'submitted' }), /дати переходу/);
     await assert.rejects(a().mark(...A, { key, status: 'paid' }), /лише для платежів/);
     await assert.rejects(a().mark(...A, { key, status: 'submitted', date: '2999-01-01' }), /не пізніше/);
     await assert.rejects(a().mark(...A, { key, status: 'submitted', files: [{ name: 'x', path: 'reports/npo-2026/x.pdf' }] }), /теці цього звіту/);
@@ -168,7 +171,7 @@ test('XML для Електронного кабінету: реквізити, 
     await db.doc('payroll_runs/2026-10').update({ status: 'draft' });
     out = await a().xml(...A, { period: '2026-10' });
     assert.ok(out.problems.some(p => /не затверджено/.test(p)));
-    await assert.rejects(a().xml(...A, { period: '2026-09' }), /сервіс бухгалтера/);
+    await assert.rejects(a().xml(...A, { period: '2026-09' }), /дати переходу/);
     const log = (await db.collection('audit_log').get()).docs.map(x => x.data());
     assert.deepEqual(log.map(x => x.action).sort(), ['reports.settings', 'reports.xml']);
     assert.ok(!JSON.stringify(log).includes('3124567809'));

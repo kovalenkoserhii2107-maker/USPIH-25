@@ -17,6 +17,8 @@ const tax = n => ({ name: 'ГУК Тест', iban: iban(n), code: '37607526' });
 const A = ['900', 'accountant'], C = ['901', 'chair'];
 const originalFetch = globalThis.fetch;
 const originals = Object.fromEntries(['createPayment','deletePayment','fetchBalances','fetchTransactions','isReady'].map(k => [k, privat[k]]));
+const projectApi = require('./privat-payroll-api');
+const projectOriginals={...projectApi};
 let app, db, payments, payroll, bank, reports, journal, calls;
 before(async () => {
     app = initializeApp({ projectId: 'uspih-25-rules-test' }, 'bank-payroll-regressions');
@@ -33,8 +35,9 @@ before(async () => {
 });
 async function wipe() {
     Object.assign(privat, originals); globalThis.fetch = originalFetch;
+    Object.assign(projectApi,projectOriginals);
     for (const col of ['apartments','bank','bank_secrets','bank_tx','bank_links','payments','payroll_people','payroll_runs','payroll_settings','osbb_settings','audit_log','journal_periods',
-        'journal_opening','charges','charges_runs','reports','expenses','suppliers']) {
+        'journal_opening','charges','charges_runs','reports','expenses','suppliers','payroll_project_receivers']) {
         const snap = await db.collection(col).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -68,6 +71,135 @@ async function seedPayroll(personId = 'e1') {
     await payroll.actions.approve(...C, { period: '2026-10' });
 }
 function deferred() { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; }
+
+async function seedProject() {
+    await seedPayroll();
+    const project=require('./payroll-project')({db,FieldValue,lock:require('./period-lock')(db)});
+    await db.doc('payroll_project_receivers/SALARY').set({rows:[{id:'REC-1',group:'SALARY',inn:'3124567809',tabn:'1',fio:'Працівник Тестовий',pan:'0000 **** **** 1111'}]});
+    await project.linkReceiver(...A,{personId:'e1',group:'SALARY',receiverId:'REC-1'});
+    let header,rows=[],adds=0;
+    projectApi.create=async(_,group,packetName)=>{header={reference:'MAS-1',system:'maspay',group,packetName,status:'N',revision:1};return header;};
+    projectApi.receivers=async()=>[{id:'REC-1',inn:'3124567809',tabn:'1',group:'SALARY'}];
+    projectApi.header=async()=>header;
+    projectApi.content=async()=>rows;
+    projectApi.add=async(_,ref,receiver,purpose,amountKop)=>{adds++;rows.push({ref:`ROW-${adds}`,inn:'3124567809',tabNo:'1',comment:purpose,amount:amountKop/100,status:'N'});return {ref:`ROW-${adds}`};};
+    projectApi.validate=async()=>({...header,status:'P'});
+    return {project,getAdds:()=>adds,getRows:()=>rows};
+}
+test('salary project prepares a maspay packet; tax transfers and statement settle exactly once',async()=>{
+    const {project,getAdds}=await seedProject();
+    assert.equal((await project.prepare(...A,{period:'2026-10',stage:'final',group:'SALARY'})).prepared,true);
+    assert.equal(getAdds(),1);
+    assert.equal((await docs('payments'))[0].status,'sent');
+    assert.equal((await journal.actions.context({period:'2026-10'})).tb.rows.find(r=>r.acc==='661').closeCr,665819);
+    assert.equal((await payroll.actions.pay(...A,{period:'2026-10',stage:'final'})).ok,true);
+    assert.equal(calls.length,3);assert.ok(calls.every(p=>p.kind==='tax'));
+    for(const p of await docs('payments')) await bank.storeTransactions([tx(`project-${p.id}`,{at:new Date('2026-10-30T12:00:00Z'),direction:'out',amountKop:p.amountKop,purpose:p.purpose,
+        counterparty:{account:p.recipient.iban,code:p.recipient.code}})],'mock',await bank.loadContext());
+    assert.ok((await docs('payments')).every(p=>p.status==='paid'),JSON.stringify((await docs('payments')).map(p=>({id:p.id,status:p.status}))));
+    const report=await reports.actions.payrollData({period:'2026-10'});
+    assert.equal(report.summary.paidKop,864700);assert.equal(report.checks.filter(c=>c.level==='block').length,0);
+});
+test('lost salary project response is reconciled by content before another receiver is added',async()=>{
+    const {project,getAdds}=await seedProject();
+    const add=projectApi.add;let lost=true;
+    projectApi.add=async(...args)=>{const r=await add(...args);if(lost){lost=false;throw new Error('Response lost');}return r;};
+    await assert.rejects(project.prepare(...A,{period:'2026-10',stage:'final',group:'SALARY'}),/Response lost/);
+    await assert.rejects(project.prepare(...A,{period:'2026-10',stage:'final',group:'SALARY'}),/невідомий/);
+    const result=await project.prepare(...C,{period:'2026-10',stage:'final',group:'SALARY',reference:'MAS-1'});
+    assert.equal(result.prepared,true);assert.equal(getAdds(),1);assert.equal((await docs('payments')).length,1);
+    const base=projectApi.header;projectApi.header=async()=>({...await base(),system:'reqpay'});
+    await assert.rejects(project.prepare(...A,{period:'2026-10',stage:'final',group:'SALARY'}),/підсистема/);
+});
+
+test('outside bank payroll payments settle liabilities without adding a second expense and reach 4DF', async () => {
+    await seedPayroll();
+    const stored = await snapshot('payroll_runs/2026-10');
+    const expected = [{ key: 'e1', recipientType: 'person', amountKop: stored.run.totals.netKop, account: PAYEE, code: '3124567809' },
+        ...['pdfo','vz','esv'].map((key, i) => ({ key, recipientType: 'tax', amountKop: stored.run.totals[`${key}Kop`], account: iban(i+3), code: '37607526' }))];
+    for (const [i, e] of expected.entries()) {
+        await bank.storeTransactions([tx(`outside-${i}`, { direction:'out', amountKop:e.amountKop, purpose:'Зарплата за жовтень', counterparty:{account:e.account,code:e.code,name:'Тест'} })], 'mock', await bank.loadContext());
+        const row = (await docs('bank_tx')).find(t => t.bankId === `outside-${i}`);
+        const result = await action({ action:'matchPayroll', txId:row.id, period:'2026-10', stage:'final', key:e.key, recipientType:e.recipientType });
+        assert.equal(result.ok,true);
+        assert.equal((await action({ action:'matchPayroll', txId:row.id, period:'2026-10', stage:'final', key:e.key, recipientType:e.recipientType })).id,result.id);
+    }
+    assert.equal(calls.length,0);
+    assert.equal((await snapshot('payroll_runs/2026-10')).stages.final.complete,true);
+    const j = await journal.actions.context({period:'2026-10'});
+    for (const acc of ['661','641','651']) {
+        const r=j.tb.rows.find(r=>r.acc===acc); assert.equal(r.closeDr+r.closeCr,0,acc);
+    }
+    assert.equal(j.entries.filter(e=>e.dr==='92').reduce((s,e)=>s+e.kop,0),stored.run.totals.costKop);
+    const report=await reports.actions.payrollData({period:'2026-10'});
+    assert.equal(report.summary.paidKop,stored.run.totals.grossKop);
+    assert.equal(report.summary.esvPaidKop,stored.run.totals.esvKop);
+    assert.equal(report.checks.filter(c=>c.level==='block').length,0);
+    await assert.rejects(payroll.actions.pay(...A,{period:'2026-10',stage:'final'}),/вручну/);
+});
+test('a generic salary draft already paid in the bank can be linked to the run using the same payment record',async()=>{
+    await seedPayroll();
+    await db.doc('payments/generic-salary').set({kind:'salary',status:'sent',account:OWN,amountKop:665819,recipient:{name:'Працівник Тестовий',iban:PAYEE,code:'3124567809'},sentAt:Timestamp.fromDate(new Date('2026-10-10T12:00:00Z'))});
+    await bank.storeTransactions([tx('generic-paid',{direction:'out',amountKop:665819,purpose:'Заробітна плата',counterparty:{account:PAYEE,code:'3124567809'}})],'mock',await bank.loadContext());
+    const row=(await docs('bank_tx'))[0];assert.equal(row.status,'review');
+    assert.ok((await action({action:'payrollCandidates',txId:row.id})).length>0);
+    const result=await action({action:'matchPayroll',txId:row.id,period:'2026-10',stage:'final',key:'e1',recipientType:'person'});
+    assert.equal(result.id,'generic-salary');assert.equal((await docs('payments')).length,1);
+    const posting=(await journal.actions.context({period:'2026-10'})).entries.find(e=>e.src==='bank');assert.equal(posting.dr,'661');
+});
+
+test('outside partial wage needs an explicit gross allocation and cannot be sent again through API', async () => {
+    await seedPayroll();
+    await bank.storeTransactions([tx('partial',{direction:'out',amountKop:300000,counterparty:{account:PAYEE,code:'3124567809'},purpose:'Часткова зарплата'})],'mock',await bank.loadContext());
+    const row=(await docs('bank_tx'))[0];
+    const data={action:'matchPayroll',txId:row.id,period:'2026-10',stage:'final',key:'e1',recipientType:'person'};
+    await assert.rejects(action(data),/дохід/);
+    await assert.rejects(action({...data,paidGrossKop:400000,withheldPdfoKop:100,withheldVzKop:200,note:'Хибний розподіл'}),/має дорівнювати/);
+    await action({...data,paidGrossKop:400000,withheldPdfoKop:80000,withheldVzKop:20000,note:'Перша частина нарахованої зарплати, утримання підтверджені реєстром'});
+    const report=await reports.actions.payrollData({period:'2026-10'});
+    assert.equal(report.summary.paidKop,400000);
+    assert.equal(report.checks.filter(c=>c.level==='block').length,0);
+    await assert.rejects(payroll.actions.pay(...A,{period:'2026-10',stage:'final'}),/вручну/);
+    assert.equal(calls.length,0);
+});
+
+test('payroll preflight prevents a missing tax code from stranding a sent wage', async () => {
+    await seedPayroll();
+    await db.doc('payroll_settings/main').update({'taxes.pdfo.code':''});
+    await assert.rejects(payroll.actions.pay(...A,{period:'2026-10',stage:'final'}),/Код отримувача/);
+    assert.equal(calls.length,0); assert.equal((await snapshot('payroll_runs/2026-10')).stages,undefined);
+});
+
+test('a later manual bank wage settles an already closed payroll month without changing its accrual',async()=>{
+    await seedPayroll();const before=(await snapshot('payroll_runs/2026-10')).run;
+    await db.doc('journal_periods/2026-10').set({status:'closed'});
+    await bank.storeTransactions([tx('late-wage',{direction:'out',amountKop:665819,at:new Date('2026-11-05T12:00:00Z'),counterparty:{account:PAYEE,code:'3124567809'},purpose:'Зарплата за жовтень'})],'mock',await bank.loadContext());
+    const row=(await docs('bank_tx'))[0];
+    await action({action:'matchPayroll',txId:row.id,period:'2026-10',stage:'final',key:'e1',recipientType:'person'});
+    assert.deepEqual((await snapshot('payroll_runs/2026-10')).run,before);
+    const report=await reports.actions.payrollData({period:'2026-10'});assert.equal(report.summary.paidKop,864700);
+    const november=await journal.actions.context({period:'2026-11'});
+    assert.ok(november.entries.some(e=>e.src==='bank'&&e.dr==='661'&&e.kop===665819));
+});
+
+test('recipient recovery updates only unsent rows and resumes without duplicating the wage', async () => {
+    await seedPayroll();
+    let rejected=false;
+    privat.createPayment=async(_,p)=>{calls.push(p);if(p.kind==='tax'&&!rejected){rejected=true;const e=new Error('Mock bank rejection');e.bankRejected=true;throw e;}
+        return {bankRef:`B${calls.length}`,paymentRef:`R${calls.length}`,status:'new'};};
+    const first=await payroll.actions.pay(...A,{period:'2026-10',stage:'final'});
+    assert.equal(first.ok,false);
+    await db.doc('payroll_settings/main').update({'taxes.pdfo.iban':iban(8)});
+    await db.doc('payroll_people/e1').update({iban:iban(7)});
+    const changed=await payroll.actions.refreshRecipients(...A,{period:'2026-10',stage:'final'});
+    assert.equal(changed.changed,1);
+    const stage=(await snapshot('payroll_runs/2026-10')).stages.final;
+    assert.equal(stage.plan[0].recipient.iban,PAYEE);
+    assert.equal(stage.plan.find(p=>p.taxKey==='pdfo').recipient.iban,iban(8));
+    assert.equal((await payroll.actions.pay(...A,{period:'2026-10',stage:'final'})).ok,true);
+    assert.equal(calls.filter(p=>p.kind==='salary').length,1);
+    assert.equal((await docs('payments')).filter(p=>p.status==='sent').length,4);
+});
 
 test('token rotation keeps historical accounts but only imports accounts accessible to the new token', async () => {
     await seedBank();

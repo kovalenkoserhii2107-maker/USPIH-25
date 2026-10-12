@@ -1,3 +1,4 @@
+import { completeClosingPrerequisites, clearAccounting } from './accounting-fixture.mjs';
 // Проводки й закриття місяця на емуляторі Firestore: оборотно-сальдова з
 // реальних операцій, перевірки, закриття, блокування змін у закритому
 // місяці й повторне відкриття головою.
@@ -25,6 +26,7 @@ before(() => {
     journal = journalFunctions({ ...deps, now: () => clock });
 });
 const wipe = async () => {
+    await clearAccounting(db);
     for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'charges', 'charges_runs', 'journal_periods', 'expenses', 'suppliers']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
@@ -66,6 +68,7 @@ test('оборотно-сальдова з операцій, перевірки 
     await assert.rejects(journal.actions.close(...A, { period: '2026-10' }), /чекають рішення/);
     const review = (await db.collection('bank_tx').where('status', '==', 'review').get()).docs[0];
     await bank.actions.assign(...A, { txId: review.id, allocations: [{ apt: '10', amountKop: 5000 }] });
+    await completeClosingPrerequisites(journal,db);
     ctx = await journal.actions.context({});
     assert.equal(ctx.period, '2026-10');
     assert.equal(ctx.canClose, true, JSON.stringify(ctx.checks));

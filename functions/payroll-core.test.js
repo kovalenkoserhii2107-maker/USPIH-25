@@ -9,6 +9,7 @@ const emp = (extra = {}) => ({ id: 'e1', name: 'Працівник Тестов�
 test('ставки й норма днів', () => {
     assert.deepEqual([rate.pdfo, rate.vz, rate.esv, rate.minWageKop], [1800, 500, 2200, 864700]);
     assert.equal(p.rateFor('2025-12'), null);
+    assert.equal(p.rateFor('2027-01'), null);
     assert.deepEqual([p.workingDays('2026-09'), p.workingDays('2026-10'), p.workingDays('2026-11')], [22, 22, 21]);
 });
 
@@ -60,7 +61,7 @@ test('відомість місяця, платежі етапів і перев
     const fin = p.stagePayments(run, 'final', { code: '40562894', taxes, people: map });
     assert.deepEqual(fin.map(x => x.key), ['final:person:e1', 'final:person:g1', 'final:tax:pdfo', 'final:tax:vz', 'final:tax:esv']);
     assert.equal(fin.find(x => x.key === 'final:tax:esv').amountKop, 271117);
-    assert.deepEqual(p.paymentProblems(fin), []);
+    assert.match(p.paymentProblems(fin)[0], /Код отримувача/); // ЦПД без РНОКПП не можна відправити.
     // Аванс + решта = усе нараховане до виплати й утримане.
     const total = k => adv.concat(fin).filter(x => x.key.endsWith(k)).reduce((s, x) => s + x.amountKop, 0);
     assert.equal(total(':pdfo'), run.totals.pdfoKop);
@@ -73,4 +74,29 @@ test('картка людини', () => {
     assert.match(p.checkPerson(emp({ rnokpp: '1234567890' })), /контрольна/);
     assert.match(p.checkPerson(emp({ salaryKop: 0 })), /оклад/);
     assert.equal(p.checkPerson({ name: 'Виконавець Тестовий', kind: 'gph' }), null);
+});
+
+test('ЄСВ: спільна межа і мінімальна база за трудовим договором та ЦПД однієї фізособи', () => {
+    const gph = { ...emp({ id: 'g1' }), kind: 'gph' };
+    const large = p.buildRun({ people: [emp({ salaryKop: 20000000 }), gph], inputs: { g1: { actKop: 5000000 } }, period: '2026-10' });
+    assert.equal(large.rows.reduce((s, r) => s + r.esvBaseKop, 0), rate.minWageKop * rate.maxBaseMult);
+    assert.equal(large.rows[1].esvBaseKop, 0);
+    assert.equal(large.totals.esvKop, Math.round(rate.minWageKop * rate.maxBaseMult * .22));
+    const small = p.buildRun({ people: [emp({ salaryKop: 200000 }), gph], inputs: { g1: { actKop: 300000 } }, period: '2026-10' });
+    assert.equal(small.rows.reduce((s, r) => s + r.esvBaseKop, 0), rate.minWageKop);
+    assert.equal(small.rows.reduce((s, r) => s + r.esvParts.filter(p => p.kind === 'topup').reduce((n, p) => n + p.baseKop, 0), 0), 364700);
+    for (const r of small.rows) assert.equal(r.advance.esvKop + r.final.esvKop, r.esvKop);
+});
+
+test('перед виплатою перевіряються всі реквізити, не лише IBAN', () => {
+    const list = p.stagePayments(p.buildRun({ people: [emp()], period: '2026-10' }), 'final', { code: '40562894', taxes: {
+        pdfo: { iban: 'UA653052990000026001234567892' }, vz: { iban: 'UA383052990000026001234567893', name: 'ГУК', code: '' },
+        esv: { iban: 'UA906543210000000260323012024', name: 'ГУК', code: '37607526' }
+    } });
+    assert.ok(p.paymentProblems(list).some(s => /ПДФО|PDFO/.test(s) && /отримувача/.test(s)));
+    assert.ok(p.paymentProblems(list).some(s => /VZ/.test(s) && /Код/.test(s)));
+});
+test('дві трудові картки однієї фізособи не допускають подвійної ПСП або неузгодженого табеля',()=>{
+    const run=p.buildRun({people:[emp(),emp({id:'internal'})],period:'2026-10'});
+    assert.match(run.error,/однієї фізособи в одну картку/);
 });

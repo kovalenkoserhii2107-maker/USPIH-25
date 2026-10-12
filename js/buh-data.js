@@ -76,7 +76,7 @@ export const loadSettings = () => once('settings', async () => {
 export const loadQueue = () => once('queue', async () => {
     const snaps = await Promise.all([
         getDocs(query(collection(db, 'bank_tx'), where('status', '==', 'review'))),
-        getDocs(query(collection(db, 'bank_tx'), where('bankConflict', '==', 'void')))
+        getDocs(query(collection(db, 'bank_tx'), where('bankConflict', 'in', ['void','changed'])))
     ]);
     return [...new Map(snaps.flatMap(s => s.docs).map(d => [d.id, { id: d.id, ...d.data() }])).values()]
         .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
@@ -256,7 +256,7 @@ export const loadPayroll = period => once(`payroll:${period || ''}`, () => callB
 
 export async function payrollAct(payload) {
     try {
-        return await callBackend('payrollAction', payload, 120000);
+        return await callBackend('payrollAction', payload, payload.action === 'projectPrepare' ? 540000 : 120000);
     } finally {
         invalidate();
     }

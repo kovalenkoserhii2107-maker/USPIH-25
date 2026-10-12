@@ -3,7 +3,7 @@
 // не виявляє пропущене нарахування або загублений рознос оплати.
 const { entryKop, balanceFromLedger, START_PERIOD } = require('./charges-core');
 
-function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartments = [], openingSet = false, openingPending = false, expenses = [], payments = [], payrollRuns = [] }) {
+function reconcile({ period, start = START_PERIOD, startDate, runs = [], bankTx = [], ledgers = new Map(), apartments = [], openingSet = false, openingPending = false, expenses = [], payments = [], payrollRuns = [] }) {
     const issues = new Set();
     const block = text => issues.add(text);
     // Перервана масова операція: записи історії неповні, поки її не завершено.
@@ -11,7 +11,10 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
         block(`${run.status === 'writing' ? 'Нарахування' : 'Скасування нарахування'} за ${run.period} перервано посередині — «Нарахування» → «Завершити операцію»`);
     }
     if (openingPending) block('Внесення вхідних залишків квартир перервано посередині — «Нарахування» → «Завершити операцію»');
-    const managed = p => p >= START_PERIOD && p <= period;
+    const managed = p => p >= start && p <= period;
+    const originalLedgers=ledgers;
+    bankTx=bankTx.filter(t=>!startDate || !t.at || new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(t.at.toDate?.() || new Date(t.at))>=startDate);
+    if(startDate)ledgers=new Map([...ledgers].map(([apt,entries])=>[apt,entries.filter(e=>e.kind==='opening'||!e.at||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate?.() || new Date(e.at))>=startDate)]));
     const positive = n => Number.isSafeInteger(n) && n > 0;
     const expected = new Map();
     for (const run of runs.filter(r => managed(r.period))) {
@@ -22,6 +25,13 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
         if (Object.keys(amounts).length !== run.count || Object.values(amounts).reduce((s, k) => s + k, 0) !== run.totalKop) block(`Підсумок нарахування за ${run.period} не відповідає списку квартир`);
         for (const [apt, kop] of Object.entries(amounts)) {
             const entries = (ledgers.get(apt) || []).filter(e => e.kind === 'charge' && e.period === run.period && (e.source === 'charges' || e._id === `charge-${run.period}`));
+            if(run.source==='migration') {
+                const ids=run.importedRecordIds?.[apt] || [];
+                const old=(originalLedgers.get(apt)||[]).filter(e=>ids.includes(e._id)&&e.kind==='charge'&&e.source==='historical'&&e.period===run.period
+                    &&startDate&&e.at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate?.() || new Date(e.at))<startDate);
+                if(run.period!==start||kop!==0||entries.length||!ids.length||old.length!==ids.length||old.reduce((s,e)=>s+entryKop(e),0)!==run.importedAmounts?.[apt])block(`Прим. ${apt}: перенесене нарахування місяця переходу не відповідає збереженій історії`);
+                continue;
+            }
             if (entries.length !== 1 || entryKop(entries[0]) !== kop) block(`Нарахування ${run.period}, прим. ${apt}: сума в історії не відповідає відомості`);
         }
     }
@@ -79,7 +89,7 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
             if ((p.run?.rows || []).reduce((s, r) => s + (r[field] || 0), 0) !== p.run?.totals?.[field]) block(`Відомість зарплати ${p.period}: підсумки не відповідають нарахуванням за людьми`);
         }
     }
-    for (const tx of bankTx.filter(t => managed(t.period) && t.bankConflict)) block(`Операція банку ${tx.id}: банк повідомив про сторно. Відкрийте її місяць і повторіть синхронізацію або виправте повʼязані повернення`);
+    for (const tx of bankTx.filter(t => managed(t.period) && t.bankConflict)) block(`Операція банку ${tx.id}: банк повідомив про ${tx.bankConflict==='changed'?'зміну проведених даних':'сторно'}. Звірте її місяць і повʼязані операції`);
     for (const tx of bankTx.filter(t => managed(t.period) && t.direction === 'in' && t.status === 'done'
         && (t.kind === 'payment' || (t.kind === 'refund' && txMap.get(t.refundOf)?.category === 'resident_refund')))) {
         const list = tx.allocations || [];
@@ -113,7 +123,7 @@ function reconcile({ period, runs = [], bankTx = [], ledgers = new Map(), apartm
         if (opening[0]?.parts && Object.values(opening[0].parts).reduce((s, p) => s + p, 0) !== entryKop(opening[0])) block(`Прим. ${apt.apt}: складові вхідного залишку не відповідають його сумі`);
         // Баланс — стан на сьогодні, тому включаємо також пізніші місяці.
         const balance = Math.round(Number(apt.balance) * 100);
-        if (!Number.isSafeInteger(balance) || balance !== balanceFromLedger(entries)) block(`Прим. ${apt.apt}: збережений баланс не відповідає історії; перерахуйте баланси`);
+        if (!Number.isSafeInteger(balance) || balance !== balanceFromLedger(entries,start,startDate)) block(`Прим. ${apt.apt}: збережений баланс не відповідає історії; перерахуйте баланси`);
     }
     return [...issues].map(text => ({ level: 'block', text }));
 }

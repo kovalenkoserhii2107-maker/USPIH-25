@@ -5,9 +5,10 @@ const calls = new Map();
 
 /** Єдина обгортка для захищених серверних операцій правління. */
 export async function callBackend(name, payload, timeoutMs = 45000) {
-    if (!calls.has(name)) calls.set(name, httpsCallable(functions, name, { timeout: timeoutMs }));
+    const key = `${name}:${timeoutMs}`;
+    if (!calls.has(key)) calls.set(key, httpsCallable(functions, name, { timeout: timeoutMs }));
     try {
-        const result = await calls.get(name)(payload);
+        const result = await calls.get(key)(payload);
         return result.data;
     } catch (error) {
         const code = String(error?.code || '').replace('functions/', '');

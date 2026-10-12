@@ -86,6 +86,11 @@ function docFormHtml(d = {}) {
             <label class="field"><span class="field-label">Сума, грн</span><input id="dfAmount" class="field-input" inputmode="decimal" placeholder="0,00" value="${money2(d.amountKop)}"></label>
             <label class="field"><span class="field-label">У т.ч. ПДВ, грн</span><input id="dfVat" class="field-input" inputmode="decimal" placeholder="без ПДВ" value="${money2(d.vatKop)}"></label>
             <label class="field pay-wide"><span class="field-label">Стаття витрат</span><select id="dfItem" class="field-input field-select">${options(ctx.items, d.item || 'other')}</select></label>
+            <label class="field pay-wide"><span class="field-label">Джерело фінансування</span><select id="dfFund" class="field-input field-select">${options({...Object.fromEntries((ctx.funds || [{id:'main',name:'Основний фонд'}]).map(f=>[f.id,f.name])),...(ctx.ownIncome?{own:'Власний дохід (без використання 48)'}:{})},d.fundId || ctx.defaultFund || 'main')}</select></label>
+            <details class="pay-wide"><summary>Придбання активу ОСББ або запасів</summary><p class="buh-note">Послуги й ремонт спільного майна — поточні витрати. Тут виділяють тільки майно, яке належить саме ОСББ.</p>
+                <label class="field"><span class="field-label">Вид операції</span><select id="dfPosting" class="field-input field-select">${options({'92':'Поточні витрати / послуги','10':'Основний засіб ОСББ','11':'Необоротний матеріальний актив ОСББ','20':'Виробничі запаси','22':'Малоцінні предмети'},d.postingAcc || '92')}</select></label>
+                <label class="field"><span class="field-label">Інвентарний код</span><input id="dfAsset" class="field-input" maxlength="80" value="${escapeHtml(d.assetId || '')}"></label>
+                <label class="am-check"><input id="dfOwned" type="checkbox"${d.ownedByOsbb?' checked':''}><span>Майно належить саме ОСББ</span></label></details>
             <label class="field pay-wide"><span class="field-label">За що</span><input id="dfDesc" class="field-input" maxlength="300" placeholder="Послуга чи товар, період" value="${escapeHtml(d.description || '')}"></label>
             ${!d.id && supplierId ? `<label class="field pay-wide"><span class="field-label">Підтверджує документ тієї самої послуги</span>
                 <select id="dfLinked" class="field-input field-select"><option value="">Ні — це окрема витрата</option>${mainsFor({ supplierId, amountKop: 0 }).map(x =>
@@ -420,7 +425,8 @@ async function saveDoc(btn) {
         files = [];
         const payload = { action: 'saveExpense', id: form.data.id || null, supplierId: form.data.supplierId, contractId: form.data.contractId || null,
             docType: form.data.docType, number: form.data.number, date: form.data.date, period: form.data.period, amountKop, vatKop: vat,
-            item: form.data.item, description: form.data.description, files: form.data.files, linkedTo: form.data.linkedTo || null };
+            item: form.data.item, description: form.data.description, files: form.data.files, linkedTo: form.data.linkedTo || null,
+            postingAcc:form.data.postingAcc || '92',assetId:form.data.assetId || '',ownedByOsbb:form.data.ownedByOsbb===true,fundId:form.data.fundId || ctx.defaultFund || 'main' };
         let r;
         try {
             r = await expAct(payload);
@@ -478,7 +484,8 @@ function snapshotForm() {
     if (form?.kind === 'supplier') return { ...form, data: { ...form.data, name: val('sfName'), kind: val('sfKind'), code: val('sfCode'), iban: val('sfIban'),
         fopChecked: document.getElementById('sfFop')?.checked === true, note: val('sfNote') } };
     if (form?.kind === 'doc') return { ...form, data: { ...form.data, supplierId: val('dfSupplier'), contractId: val('dfContract'), docType: val('dfType'), number: val('dfNumber'), date: val('dfDate'),
-        period: val('dfPeriod'), amountKop: toKop(val('dfAmount')) || null, vatKop: toKop(val('dfVat')) || 0, item: val('dfItem'), description: val('dfDesc'), linkedTo: val('dfLinked') || form.data.linkedTo || '' } };
+        period: val('dfPeriod'), amountKop: toKop(val('dfAmount')) || null, vatKop: toKop(val('dfVat')) || 0, item: val('dfItem'), description: val('dfDesc'), linkedTo: val('dfLinked') || form.data.linkedTo || '',
+        postingAcc:val('dfPosting') || '92',assetId:val('dfAsset'),ownedByOsbb:document.getElementById('dfOwned')?.checked===true,fundId:val('dfFund') || ctx.defaultFund || 'main' } };
     if (form?.kind === 'contract') return { ...form, data: { ...form.data, supplierId: val('cfSupplier'), number: val('cfNumber'), date: val('cfDate'), subject: val('cfSubject'), type: val('cfType'),
         monthlyKop: toKop(val('cfAmount')), amountKop: toKop(val('cfAmount')), validFrom: val('cfFrom'), validTo: val('cfTo'), item: val('cfItem'),
         boardDecision: val('cfBoard'), meetingDecision: val('cfMeeting') } };

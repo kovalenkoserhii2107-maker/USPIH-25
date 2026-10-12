@@ -75,6 +75,9 @@ function payrollReport({ period, stored, people = new Map(), payments = [], runs
         }
     }
     for (const r of rows) if (r.grossKop !== r.netKop + r.pdfoKop + r.vzKop) checks.push({ level: 'block', text: `${r.name}: нараховано не дорівнює виплаті та утриманим податкам` });
+    const physical=new Map();
+    for(const r of rows)if(r.payee?.rnokpp){const list=physical.get(r.payee.rnokpp)||[];list.push(r);physical.set(r.payee.rnokpp,list);}
+    for(const group of physical.values())if(group.length>1&&group.some(r=>!r.esvConsolidated))checks.push({level:'block',text:`${group[0].name}: старі рядки за кількома договорами потребують звірки спільної бази ЄСВ до подання Д1`});
     if (status === 'approved' && run && !Array.isArray(run.peopleSnapshot)) checks.push({ level: 'warn', text: 'Стара відомість не зберігає склад людей і дати відносин: звірте Д1/Д5 з кадровими документами' });
 
     const stages = ['advance', 'final'];
@@ -125,6 +128,21 @@ function payrollReport({ period, stored, people = new Map(), payments = [], runs
         for (const r of qRows) for (const stage of stages) {
             const wages = paid.filter(p => recipientType(p) === 'person' && p.stage === stage && p.key === r.personId);
             const actual = wages.reduce((s, p) => s + p.amountKop, 0), expected = part(r, stage, 'netKop');
+            const declared = wages.length > 0 && wages.every(p => Number.isSafeInteger(p.paidGrossKop) && p.paidGrossKop >= p.amountKop);
+            if (declared) {
+                const gross = wages.reduce((s, p) => s + p.paidGrossKop, 0);
+                const expectedGross = part(r, stage, 'grossKop');
+                if (actual > expected || gross > expectedGross || (actual === expected && gross !== expectedGross)) {
+                    checks.push({ level: 'block', text: `${r.name}: розподіл часткових виплат не відповідає відомості` });
+                    continue;
+                }
+                for (const p of wages) if (reportPeriod(p, r) === period) {
+                    const x = rowOf(r);
+                    x.paidKop += p.paidGrossKop;
+                    if (q !== period) x.earlierKop += p.paidGrossKop;
+                }
+                continue;
+            }
             if (actual && actual !== expected) checks.push({ level: 'block', text: `${r.name}: проведена виплата не відповідає відомості; виплачений дохід треба уточнити` });
             if (!actual || actual !== expected) continue;
             // Штатний цикл має один платіж на етап. При розділенні за

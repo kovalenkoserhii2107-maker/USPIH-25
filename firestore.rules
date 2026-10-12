@@ -209,8 +209,9 @@ service cloud.firestore {
         function legacyEntry(d) {
           return d.keys().hasOnly(['at', 'period', 'kind', 'amount', 'note', 'updatedAt'])
             && d.kind in ['charge', 'payment']
-            && d.period is string && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])') && d.period < '2026-10'
-            && d.at is timestamp && d.at < timestamp.date(2026, 10, 1)
+            && d.period is string && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])')
+            && d.period < (exists(/databases/$(database)/documents/accounting_settings/main) ? get(/databases/$(database)/documents/accounting_settings/main).data.startPeriod : '2026-10')
+            && d.at is timestamp && d.at < (exists(/databases/$(database)/documents/accounting_settings/main) ? get(/databases/$(database)/documents/accounting_settings/main).data.startAt : timestamp.date(2026, 10, 1))
             && d.amount is number && d.amount > 0 && d.amount <= 1000000000;
         }
         // From October 2026, only server operations may change money.
@@ -635,6 +636,10 @@ service cloud.firestore {
       allow read: if canAccount();
       allow write: if false;
     }
+    match /payroll_project_receivers/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
 
     // Звітність ДПС: позначки «подано / прийнято» й квитанції пише сервер (reports.js).
     match /reports/{docId} {
@@ -647,6 +652,27 @@ service cloud.firestore {
       allow read: if canAccount();
       allow write: if false;
     }
+    match /accounting_settings/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /journal_snapshots/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /journal_bank_checks/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /accounting_notes/{docId} {
+      allow read: if canAccount();
+      allow write: if false;
+    }
+    match /annual_history/{docId} { allow read: if canAccount(); allow write: if false; }
+    match /annual_history_versions/{docId} { allow read: if canAccount(); allow write: if false; }
+    match /annual_history_parts/{docId} { allow read: if canAccount(); allow write: if false; }
+    match /annual_package_parts/{docId} { allow read: if canAccount(); allow write: if false; }
+    match /annual_comparatives/{docId} { allow read: if canAccount(); allow write: if false; }
 
     // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
     // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.

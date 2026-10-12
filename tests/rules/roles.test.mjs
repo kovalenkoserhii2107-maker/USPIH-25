@@ -317,6 +317,24 @@ test('позначки звітів ДПС читають голова й бух
     for (const login of ['11', '45']) await assertFails(getDoc(doc(as(login).firestore(), 'reports/j0500111-2026-10')));
 });
 
+test('архіви, перенос, політика та зарплатні отримувачі приватні й доступні для запису лише серверу', async () => {
+    await seed();
+    const names=['accounting_settings','accounting_notes','journal_snapshots','journal_bank_checks','annual_history','annual_history_versions','annual_history_parts','annual_package_parts','annual_comparatives','payroll_project_receivers'];
+    await env.withSecurityRulesDisabled(async context => {
+        for(const name of names)await setDoc(doc(context.firestore(),`${name}/test`),{private:true});
+    });
+    for(const name of names) {
+        for(const login of ['10','900']) {
+            const ref=doc(as(login).firestore(),`${name}/test`);
+            await assertSucceeds(getDoc(ref));
+            await assertFails(updateDoc(ref,{private:false}));
+            await assertFails(deleteDoc(ref));
+            await assertFails(setDoc(doc(as(login).firestore(),`${name}/new`),{private:false}));
+        }
+        for(const login of ['11','45','13'])await assertFails(getDoc(doc(as(login).firestore(),`${name}/test`)));
+    }
+});
+
 test('закриті місяці читають голова й бухгалтер, пише лише сервер', async () => {
     await seed();
     await env.withSecurityRulesDisabled(async context => {

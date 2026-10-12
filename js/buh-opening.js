@@ -101,10 +101,10 @@ export async function openingAction(btn, host) {
         if (a === 'bank') {
             sync(host);
             const b = octx.banks.find(x => x.iban === btn.dataset.iban);
-            const row = rows.find(l => l.acc === '311' && l.a === b.iban);
+            const row = rows.find(l => l.acc === (b.acc || '311') && l.a === b.iban);
             const side = b.suggestKop >= 0 ? 'dr' : 'cr';
             if (row) Object.assign(row, { side, kop: Math.abs(b.suggestKop) });
-            else rows.push({ acc: '311', a: b.iban, side, kop: Math.abs(b.suggestKop), memo: `Залишок за випискою …${b.iban.slice(-4)}` });
+            else rows.push({ acc: b.acc || '311', a: b.iban, side, kop: Math.abs(b.suggestKop), memo: `Залишок за випискою …${b.iban.slice(-4)}` });
             render(host);
             return false;
         }

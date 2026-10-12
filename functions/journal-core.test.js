@@ -51,14 +51,14 @@ test('проводки з операцій: Дт = Кт, 377 = баланс сп
     assert.equal(acc('685').closeCr, 5000);
     assert.equal(acc('631').byA.find(x => x.a === 'ТОВ АВАНС').closeDr, 100000);
     // Внески за складовими — Кт 48.
-    assert.deepEqual(acc('48').byA.filter(x => x.cr).map(x => x.a).sort(), ['lift', 'light', 'main', 'rent', 'waste']);
+    assert.deepEqual(acc('48').byA.filter(x => x.cr).map(x => x.a).sort(), ['lift', 'light', 'main', 'waste']);
     // Документ: акт вересня — у вхідному сальдо 92→ закрито; ремонт жовтня — Дт 92 Кт 631, затверджений, ще не сплачений.
     assert.equal(acc('631').byA.find(x => x.a === 'ТОВ ДАХ').closeCr, 279400);
     // Кінець місяця: 92 і 79 закрито, витрати покрито з 48; оренда — теж цільове (Кт 48), результат 0 — як у звітності ОСББ.
     assert.equal(acc('92').closeDr + acc('92').closeCr, 0);
     assert.equal(acc('79').closeDr + acc('79').closeCr, 0);
     assert.equal(acc('44'), undefined);
-    assert.equal(acc('48').byA.find(x => x.a === 'rent').cr, 36000);
+    assert.ok(acc('48').byA.find(x => x.a === 'main').cr >= 36000);
     assert.ok(!entries.some(e => e.ref === 'old' || e.ref === 'i2' || e.ref === 'e3'));
 });
 
@@ -102,16 +102,17 @@ test('перевірки перед закриттям', () => {
     const tb = j.trialBalance(j.journal(data, '2026-10'), '2026-10');
     const checks = j.closeChecks({ period: '2026-10', today: '2026-10-20', bankTx: data.bankTx, expenses: data.expenses, chargedPeriods: new Set(['2026-10']), closed: [], tb });
     const blocks = checks.filter(c => c.level === 'block').map(c => c.text);
-    assert.equal(blocks.length, 3);
+    assert.equal(blocks.length, 4);
     assert.match(blocks[0], /ще не скінчився/);
     assert.match(blocks[1], /чекають рішення.*1/);
     assert.match(blocks[2], /Документи чекають затвердження/);
+    assert.match(blocks[3], /Вхідну оборотно-сальдову/);
     assert.ok(checks.some(c => c.level === 'warn' && /ТОВ АВАНС/.test(c.text)));
     data.bankTx = data.bankTx.filter(t => t.status !== 'review');
     data.expenses = data.expenses.filter(e => e.status !== 'pending');
-    const ok = j.closeChecks({ period: '2026-10', today: '2026-11-01', bankTx: data.bankTx, expenses: data.expenses, chargedPeriods: new Set(['2026-10']), closed: [], tb });
+    const ok = j.closeChecks({ period: '2026-10', today: '2026-11-01', bankTx: data.bankTx, expenses: data.expenses, chargedPeriods: new Set(['2026-10']), closed: [], tb, strictOpening:false });
     assert.equal(ok.at(-1).level, 'ok');
-    const nov = j.closeChecks({ period: '2026-11', today: '2026-12-01', bankTx: [], expenses: [], chargedPeriods: new Set(), closed: [], tb });
+    const nov = j.closeChecks({ period: '2026-11', today: '2026-12-01', bankTx: [], expenses: [], chargedPeriods: new Set(), closed: [], tb, strictOpening:false });
     assert.deepEqual(nov.filter(c => c.level === 'block').map(c => c.text.slice(0, 20)), ['Спершу закрийте попе', 'Внески за цей місяць']);
 });
 

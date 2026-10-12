@@ -83,7 +83,7 @@ test('historical payroll still accrues an employee terminated in that month and 
 });
 
 test('actual tax payments are allocated in whole kopecks, canceled advances do not reduce final reporting', () => {
-    const run = payroll.buildRun({ people: [employee, { ...employee, id: 'e2', name: 'Другий Працівник', salaryKop: 1010000 }], period: '2026-10' });
+    const run = payroll.buildRun({ people: [employee, { ...employee, id: 'e2', name: 'Другий Працівник', rnokpp:'1234567899', salaryKop: 1010000 }], period: '2026-10' });
     const payments = [{ stage: 'advance', key: 'pdfo', status: 'canceled', amountKop: 100 }, { stage: 'final', key: 'pdfo', status: 'paid', amountKop: 11111 }];
     const report = reports.payrollReport({ period: '2026-10', stored: { status: 'approved', run }, payments });
     assert.equal(report.income.reduce((s, p) => s + p.pdfoPaidKop, 0), 11111);

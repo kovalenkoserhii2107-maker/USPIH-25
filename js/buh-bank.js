@@ -14,6 +14,7 @@ import { registryHtml, saveRegistry } from './buh-registry.js';
 import { TABS, byDay, quickAssign, filterTx } from './bank-view-core.js';
 import { openTxSheet, openPaymentSheet } from './buh-chain.js';
 import { openExpenses } from './buh-expenses.js';
+import { loadAccountingSettings } from './buh-accounting-settings.js';
 
 let requisites = {};
 
@@ -284,6 +285,7 @@ export async function loadSettingsView() {
             <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно.</p>
         </section>
         ${registryHtml(requisites.registry, requisites.houseAddress)}
+        <div id="accountingSettings"><p class="buh-note">Завантаження параметрів обліку…</p></div>
         ${accounts.length ? `<section class="buh-card">
             <div class="buh-card-head"><h2>Рахунки</h2></div>
             <table class="buh-table"><tbody>${accounts.map(([iban, a]) => `<tr data-iban="${escapeHtml(iban)}">
@@ -304,6 +306,7 @@ export async function loadSettingsView() {
             </div>
             <p class="buh-note">Облік у застосунку ведеться з ${escapeHtml(settings.startDate || '2026-10-01')}: раніші операції лише показуються.</p>
         </section>`;
+    loadAccountingSettings(document.getElementById('accountingSettings'),accounts).catch(err=>{document.getElementById('accountingSettings').textContent=err.message;});
 }
 
 export function initSettingsView() {

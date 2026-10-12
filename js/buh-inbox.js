@@ -70,7 +70,7 @@ function linkLevel(item) {
 
 function proposalHtml(item, dir) {
     const p = item.proposal;
-    if (p.type === 'bank-conflict') return `<p class="inbox-proposal is-ask">Банк повідомив про сторно. Відкрийте ${escapeHtml(item.tx.period)} у журналі та повторіть синхронізацію. Якщо є повʼязані повернення, спершу звірте їх.</p>`;
+    if (p.type === 'bank-conflict') return `<p class="inbox-proposal is-ask">${item.tx.bankConflict==='changed'?`Банк змінив дані проведеної операції: було ${money(item.tx.amountKop)}, у новій виписці ${money(item.tx.bankObserved?.amountKop || 0)}. Голова звіряє зміну.`:'Банк повідомив про сторно.'} Відкрийте ${escapeHtml(item.tx.period)} у журналі та звірте повʼязані операції.</p>`;
     if (item.tx.reason === 'possible-refund') return '<p class="inbox-proposal is-ask">Можливе повернення раніше списаних коштів. Знайдіть відповідне списання перед рознесенням.</p>';
     if (p.type === 'payment-link') return '<p class="inbox-proposal is-ask">Кілька платежів з однаковою сумою. Виберіть платіж за реквізитами банку.</p>';
     if (p.type === 'link') {
@@ -93,11 +93,23 @@ function refundHtml(item) {
     if (item.tx.direction === 'in') {
         return `<div class="inbox-refund"><button type="button" class="btn-ghost-small" data-act="refund-find">Це повернення списаних коштів…</button><div class="inbox-refund-list"></div></div>`;
     }
-    return `<div class="inbox-refund"><input class="field-input inbox-ref-apt" inputmode="numeric" maxlength="6" placeholder="Кв." aria-label="Квартира, якій повертаємо переплату">
+    return `<div class="inbox-refund"><button type="button" class="btn-ghost-small" data-act="payroll-find">Оплачено зарплату чи податки у банку…</button><div class="inbox-payroll-list"></div></div>
+        <div class="inbox-refund"><input class="field-input inbox-ref-apt" inputmode="numeric" maxlength="6" placeholder="Кв." aria-label="Квартира, якій повертаємо переплату">
         <button type="button" class="btn-ghost-small" data-act="refund-resident">Повернення переплати співвласнику</button></div>`;
 }
 
 const refundCandidates = txId => bankQuery({ action: 'refundCandidates', txId });
+const settlementOptions = new Map();
+function settlementHtml(txId, list) {
+    settlementOptions.set(txId, list);
+    if (!list.length) return '<p class="buh-note">Немає відповідного залишку у затверджених відомостях. Перевірте IBAN отримувача та стан інших платежів.</p>';
+    return `<label class="field"><span class="field-label">Відомість і отримувач</span><select class="field-input field-select inbox-payroll-choice">
+        ${list.map((p, i) => `<option value="${i}">${escapeHtml(p.period)} · ${p.stage === 'advance' ? 'аванс' : 'розрахунок'} · ${escapeHtml(p.name)} · залишок ${money(p.leftKop)}</option>`).join('')}</select></label>
+        <label class="field"><span class="field-label">Нарахований дохід цієї виплати, грн (лише для людини)</span><input class="field-input inbox-payroll-gross" inputmode="decimal" placeholder="До утримання ПДФО та ВЗ" value="${list[0].requiresGross ? '' : list[0].grossKop ? (list[0].grossKop / 100).toFixed(2) : ''}"></label>
+        <label class="field"><span class="field-label">Пояснення розподілу (для часткової виплати)</span><input class="field-input inbox-payroll-note" maxlength="300"></label>
+        <div class="py-pair"><label class="field"><span class="field-label">ПДФО цієї частини, грн</span><input class="field-input inbox-payroll-pdfo" inputmode="decimal" placeholder="Для часткової зарплати"></label><label class="field"><span class="field-label">ВЗ цієї частини, грн</span><input class="field-input inbox-payroll-vz" inputmode="decimal" placeholder="Для часткової зарплати"></label></div>
+        <button type="button" class="btn-primary btn-compact" data-act="payroll-match">Привʼязати списання до відомості</button>`;
+}
 
 function refundListHtml(list) {
     if (!list.length) return '<p class="buh-note">Схожих списань за пів року не знайдено: перевірте контрагента й суму або рознесіть як інше надходження.</p>';
@@ -110,9 +122,9 @@ function refundListHtml(list) {
 }
 
 function formHtml(item, dir) {
-    if (item.proposal.type === 'bank-conflict') return '<button type="button" class="btn-primary btn-compact" data-act="edit">Переглянути місяць у журналі</button>';
+    if (item.proposal.type === 'bank-conflict') return `<button type="button" class="btn-primary btn-compact" data-act="edit">Переглянути місяць у журналі</button>${item.tx.bankConflict==='changed'&&session.role==='chair'?'<button type="button" class="btn-ghost-small" data-act="accept-changed">Звірено: прийняти нові дані й рознести повторно</button>':''}`;
     if (item.proposal.type === 'payment-link') return '<button type="button" class="btn-primary btn-compact" data-act="edit">Вибрати платіж за випискою</button>';
-    return `${decisionHtml(item, dir)}${refundHtml(item)}`;
+    return `${decisionHtml(item, dir)}${refundHtml(item)}<div class="inbox-refund"><button type="button" class="btn-ghost-small" data-act="note-find">Оплачено нарахування за бухгалтерською довідкою…</button><div class="inbox-note-list"></div></div>`;
 }
 
 function decisionHtml(item, dir) {
@@ -639,6 +651,28 @@ export function initInbox(isActive) {
                 .catch(err => { host.innerHTML = ''; toast(err.message, 'error'); });
             return;
         }
+        if(act==='accept-changed'){run(item,{action:'acceptChanged'},'Нові дані прийнято; рознесіть операцію повторно');return;}
+        if (act === 'payroll-find') {
+            const target = card.querySelector('.inbox-payroll-list');
+            target.innerHTML = '<p class="buh-note">Звіряю відомості…</p>';
+            bankQuery({ action: 'payrollCandidates', txId: item.tx.id }).then(list => { target.innerHTML = settlementHtml(item.tx.id, list); })
+                .catch(err => { target.innerHTML = ''; toast(err.message, 'error'); });
+            return;
+        }
+        if(act==='note-find') {
+            const target=card.querySelector('.inbox-note-list');target.innerHTML='<p class="buh-note">Звіряю нарахування…</p>';
+            bankQuery({action:'noteCandidates',txId:item.tx.id}).then(list=>{target.innerHTML=list.length?`<div class="inbox-chips">${list.map(n=>`<button type="button" class="inbox-chip" data-note-match="${escapeHtml(n.id)}">${escapeHtml(n.date)} · ${escapeHtml(n.analytic)} · залишок ${money(n.leftKop)}<small>${escapeHtml(n.note)}</small></button>`).join('')}</div>`:'<p class="buh-note">Немає відповідного погодженого нарахування.</p>';}).catch(err=>{target.innerHTML='';toast(err.message,'error');});return;
+        }
+        const noteId=e.target.closest('[data-note-match]')?.dataset.noteMatch;
+        if(noteId){run(item,{action:'matchNote',noteId},'Оплата погасила нараховану заборгованість');return;}
+        if (act === 'payroll-match') {
+            const selected = settlementOptions.get(item.tx.id)?.[Number(card.querySelector('.inbox-payroll-choice')?.value)];
+            if (!selected) return;
+            run(item, { action: 'matchPayroll', ...selected, paidGrossKop: toKop(card.querySelector('.inbox-payroll-gross')?.value || '0'),
+                withheldPdfoKop:toKop(card.querySelector('.inbox-payroll-pdfo')?.value || '0'),withheldVzKop:toKop(card.querySelector('.inbox-payroll-vz')?.value || '0'),
+                note: card.querySelector('.inbox-payroll-note')?.value || '' }, 'Списання погасило борг за відомістю');
+            return;
+        }
         if (act === 'refund-resident') {
             const apt = card.querySelector('.inbox-ref-apt')?.value.trim();
             if (!apt) { toast('Вкажіть квартиру', 'error'); card.querySelector('.inbox-ref-apt')?.focus(); return; }
@@ -665,6 +699,14 @@ export function initInbox(isActive) {
     });
 
     host.addEventListener('change', e => {
+        if (e.target.matches('.inbox-payroll-choice')) {
+            const card = e.target.closest('.inbox-card'), item = items[Number(card.dataset.index)];
+            const selected = settlementOptions.get(item.tx.id)?.[Number(e.target.value)];
+            const field = card.querySelector('.inbox-payroll-gross');
+            field.value = selected?.requiresGross ? '' : selected?.grossKop ? (selected.grossKop / 100).toFixed(2) : '';
+            field.disabled = selected?.recipientType === 'tax';
+            return;
+        }
         const select = e.target.closest('.inbox-other');
         const card = select?.closest('.inbox-card');
         const item = card && items[Number(card.dataset.index)];

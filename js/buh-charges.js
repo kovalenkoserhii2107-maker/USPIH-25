@@ -6,7 +6,8 @@
 // одним Enter. Усі записи робить сервер (chargesAction): він же
 // перераховує баланси квартир і пише журнал дій.
 // ============================================================
-import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
+import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
+import { session } from './firebase.js';
 import { loadCharges, loadStatement, loadRequisites, chargeAct, dateOnly } from './buh-data.js';
 import {
     periodName, periodStart, periodsBetween, fmtKop, parseOpeningLines, openingSummary, statementCsv, receiptPurpose
@@ -262,12 +263,13 @@ function openingPreview() {
 
 function openingHtml() {
     const o = ctx.opening;
-    return `<section class="buh-card">
-            <div class="buh-card-head"><h2>Вхідні залишки на 30.09.2026</h2>${o?.set ? `<span class="buh-tag is-payment">внесено</span>` : '<span class="buh-tag is-review">не внесено</span>'}</div>
+    const date=new Date(Date.parse(`${ctx.startDate || `${ctx.startPeriod}-01`}T12:00:00Z`)-86400000).toISOString().slice(0,10).split('-').reverse().join('.');
+    return `${ctx.startDate && !ctx.startDate.endsWith('-01') && session.role==='chair'?`<section class="buh-card"><h3>Місяць переходу вже нараховано раніше?</h3><p class="buh-note">Завантажте його історію по всіх приміщеннях і підтвердьте перенос. Нові дублікати нарахувань не створюються.</p><button type="button" class="sv-btn is-soft" data-act="imported-month">Підтвердити перенесене нарахування</button></section>`:''}<section class="buh-card">
+            <div class="buh-card-head"><h2>Вхідні залишки на ${date}</h2>${o?.set ? `<span class="buh-tag is-payment">внесено</span>` : '<span class="buh-tag is-review">не внесено</span>'}</div>
             ${o?.set ? `<p class="buh-note">${o.count} кв. · борг ${fmtKop(o.debtKop)} · переплата ${fmtKop(o.overpaidKop)} грн · ${escapeHtml(o.by || '')}${o.at ? `, ${escapeHtml(dateOnly(o.at))}` : ''}.
                 Баланс у кабінетах мешканців рахує система: залишок + оплати − нарахування.</p>
                 <div class="inbox-actions"><button type="button" class="btn-ghost-small" data-act="recompute">Перерахувати баланси з історії</button></div>`
-            : '<p class="buh-note">Борги й переплати кожної квартири на кінець 30.09.2026 — з сервісу бухгалтера. З ними система почне рахувати баланс мешканців сама. Доти баланс веде бухгалтер вручну, як раніше.</p>'}
+            : `<p class="buh-note">Борги й переплати кожної квартири на кінець ${date} — з попереднього обліку. З ними система почне рахувати баланс мешканців сама.</p>`}
             <h3 class="ch-sub">${o?.set ? 'Виправити залишки' : 'Внести залишки'}</h3>
             <p class="buh-note">Рядок — «квартира;сума» (можна вставити два стовпці з Excel). Приміщення без рядка отримає 0. Повторне збереження замінює весь список.</p>
             <div class="buh-seg ch-sign">
@@ -425,6 +427,9 @@ async function onAction(btn) {
         if (a === 'resume') {
             setBusy(btn, true, 'Дописую…');
             await resumeCharges();
+        } else if(a==='imported-month') {
+            const note=await promptDialog('Підтвердити вже нарахований місяць?', 'Потрібна повна історія по всіх приміщеннях. Суми вже включені у вхідні залишки; повторного нарахування не буде.',{confirmLabel:'Підтвердити',placeholder:'Попередня система та підстава звірки'});
+            if(!note)return;await chargeAct({action:'confirmImportedStartMonth',note});toast('Повний перенос місяця підтверджено','success');
         } else if (a === 'run') {
             setBusy(btn, true, 'Нараховую…');
             await runCharges(period, ctx.preview.period === period ? ctx.preview.totalKop : undefined);

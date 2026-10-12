@@ -26,6 +26,7 @@ const paymentIdentity = require('./payroll-payment-core');
 const REGION = 'europe-central2';
 
 module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staffRole, payments, lock }) {
+    const project = require('./payroll-project')({ db, FieldValue, lock });
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const text = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
@@ -42,7 +43,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
     }
     async function loadSettings() {
         const s = (await settingsRef.get()).data() || {};
-        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: s.taxes || {} };
+        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: s.taxes || {}, rates:s.rates?.length?s.rates:core.DEFAULT_RATES };
     }
 
     /** Розрахунок місяця з урахуванням уже виплаченого авансу (його суми не змінюються). */
@@ -70,7 +71,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     function compute(people, stored, period, settings, history = new Map()) {
-        const run = core.buildRun({ people, inputs: stored?.inputs || {}, period, advancePct: settings.advancePct, history });
+        const run = core.buildRun({ people, inputs: stored?.inputs || {}, period, advancePct: settings.advancePct, history, rates:settings.rates });
         if (run.error) fail('failed-precondition', run.error);
         const paid = stored?.paidAdvance || {};
         if (Object.keys(paid).some(id => !run.rows.some(r => r.personId === id))) {
@@ -97,7 +98,9 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             db.collection('payments').where('payroll.period', '==', p).get()
         ]);
         const stored = runSnap.exists ? runSnap.data() : null;
-        const run = stored?.run || compute(people, stored, p, settings, await loadHistory(p));
+        const run = stored?.run || (core.rateFor(p,settings.rates) ? compute(people, stored, p, settings, await loadHistory(p)) : {
+            period:p,rate:settings.rates[0],rows:[],totals:{grossKop:0,pdfoKop:0,vzKop:0,netKop:0,esvKop:0,costKop:0,advance:{netKop:0},final:{netKop:0}},
+            rateError:`Немає підтверджених параметрів для ${p}. Внесіть ставки й межі з датами дії; значення попереднього року автоматично не застосовуються` });
         const paymentsList = sent.docs.map(d => ({ id: d.id, stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status,
             kind: d.data().kind, recipientType: paymentIdentity.recipientType(d.data()), canceling: Boolean(d.data().canceling),
             amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null,
@@ -153,6 +156,21 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         await settingsRef.set({ ...out, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         await audit(actor, role, 'payroll.settings', 'payroll_settings/main', `Зарплата: аванс ${out.advancePct} %, рахунки податків`, out);
         return { ok: true };
+    }
+
+    async function saveRates(actor,role,{rates,basis}) {
+        if(role!=='chair')fail('permission-denied','Параметри зарплатного розрахунку погоджує голова');
+        if(!Array.isArray(rates)||!rates.length||rates.length>50||text(basis,300).length<5)fail('invalid-argument','Потрібні датовані ставки та підстава їх перевірки');
+        const clean=rates.map(r=>Object.fromEntries(['from','to','pdfo','vz','esv','minWageKop','maxBaseMult','subsistenceKop'].map(k=>[k,['from','to'].includes(k)?String(r[k]):Number(r[k])]))).sort((a,b)=>a.from.localeCompare(b.from));
+        for(let i=0;i<clean.length;i++) {
+            const r=clean[i];
+            if(!validPeriod(r.from)||!validPeriod(r.to)||r.to<r.from||i>0&&clean[i-1].to>=r.from)fail('invalid-argument','Періоди дії не повинні перетинатися; кожна ставка має початок і кінець');
+            if(['pdfo','vz','esv'].some(k=>!Number.isSafeInteger(r[k])||r[k]<0||r[k]>10000)||!Number.isSafeInteger(r.minWageKop)||r.minWageKop<=0||r.minWageKop>100000000
+                ||!Number.isInteger(r.maxBaseMult)||r.maxBaseMult<1||r.maxBaseMult>100||!Number.isSafeInteger(r.subsistenceKop)||r.subsistenceKop<=0||r.subsistenceKop>100000000)fail('invalid-argument','Перевірте відсотки, мінімальну зарплату та межі ЄСВ / ПСП');
+        }
+        await settingsRef.set({rates:clean,ratesBasis:text(basis,300),ratesBy:actor,ratesAt:FieldValue.serverTimestamp()},{merge:true});
+        await audit(actor,role,'payroll.rates','payroll_settings/main','Датовані параметри зарплати перевірено; затверджені відомості не змінено',{from:clean[0].from,to:clean.at(-1).to,basis:text(basis,300)});
+        return {ok:true};
     }
 
     /** Табель і акти місяця. Змінена відомість знову чекає затвердження голови. */
@@ -250,6 +268,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const snap = await ref.get();
         if (!snap.exists || snap.data().status !== 'approved') fail('failed-precondition', 'Спершу голова має затвердити відомість');
         const stored = snap.data();
+        if (stored.stages?.[stage]?.external) fail('failed-precondition', 'Цей етап оплачують у банку вручну. Привʼяжіть решту списань до відомості у «Рішеннях»');
+        if (stored.stages?.[stage]?.project && stored.stages[stage].project.status !== 'prepared') fail('failed-precondition', 'Спершу завершіть підготовку зарплатного проекту');
         if (stored.canceling) fail('failed-precondition', 'Зачекайте завершення скасування зарплатного платежу');
         if (stored.stages?.[stage] && stored.stages[stage].complete !== false) fail('failed-precondition', stage === 'advance' ? 'Аванс уже відправлено' : 'Зарплату вже відправлено');
         if (stage === 'final' && stored.stages?.advance?.complete === false) fail('failed-precondition', 'Спершу завершіть відправку авансу');
@@ -279,7 +299,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (!payable(Object.fromEntries(accounts)[stored.stages?.[stage]?.account || account])) fail('failed-precondition', 'Рахунок цього етапу недоступний або має іншу валюту. Перевірте гривневий рахунок ОСББ');
         const list = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
         if (!list.length) fail('failed-precondition', 'Немає що виплачувати');
-        const problems = core.paymentProblems(list);
+        const problems = core.paymentProblems(list, stored.stages?.[stage]?.account || account);
         if (problems.length) fail('failed-precondition', problems.join('; '));
         const attempt = randomUUID();
         await db.runTransaction(async t => {
@@ -321,6 +341,41 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         return { ok: complete, created: created.length, errors };
     }
 
+    /** Виправляємо лише ще не відправлені реквізити; затверджені суми й проведені платежі незмінні. */
+    async function refreshRecipients(actor, role, { period, stage }) {
+        if (!validPeriod(period) || !['advance', 'final'].includes(stage)) fail('invalid-argument', 'Оберіть місяць та етап');
+        const [people, settings] = await Promise.all([loadPeople(), loadSettings()]);
+        const ref = db.doc(`payroll_runs/${period}`);
+        const changed = await db.runTransaction(async t => {
+            const snap = await t.get(ref);
+            const stored = snap.data(), s = stored?.stages?.[stage];
+            await lock?.assertOpen(period, 'Реквізити зарплатної відомості', t);
+            if (stored?.status !== 'approved' || !s?.plan) fail('failed-precondition', 'Немає незавершеного плану виплат');
+            if (stored.sending || stored.canceling) fail('failed-precondition', 'Дочекайтесь завершення відправки чи скасування');
+            const pay = (await t.get(db.collection('payments').where('payroll.period', '==', period))).docs.map(d => d.data());
+            let count = 0;
+            const plan = s.plan.map(row => {
+                const who = paymentIdentity.planRecipient(row);
+                const related = pay.filter(p => p.payroll.stage === stage && paymentIdentity.recipientType(p) === who.recipientType && p.payroll.key === who.key);
+                if (related.some(p => p.canceling || ['sending', 'unknown', 'sent', 'paid'].includes(p.status))) return row;
+                const current = who.recipientType === 'tax' ? settings.taxes[who.key] : people.find(p => p.id === who.key);
+                const recipient = who.recipientType === 'tax'
+                    ? { name: current?.name || '', iban: current?.iban || '', code: current?.code || '' }
+                    : { ...row.recipient, iban: current?.iban || '' };
+                if (JSON.stringify(recipient) === JSON.stringify(row.recipient)) return row;
+                count++;
+                return { ...row, recipient };
+            });
+            const problems = core.paymentProblems(plan, s.account);
+            if (problems.length) fail('failed-precondition', problems.join('; '));
+            t.update(ref, { [`stages.${stage}.plan`]: plan, [`stages.${stage}.recipientRevision`]: (s.recipientRevision || 0) + 1 });
+            t.create(db.collection('audit_log').doc(), { actor, role, action: 'payroll.recipients', target: ref.path,
+                summary: `Оновлено реквізити ${count} невідправлених платежів; суми не змінено`, details: { stage, count }, at: FieldValue.serverTimestamp() });
+            return count;
+        });
+        return { ok: true, changed };
+    }
+
     /**
      * Повторна виплата, яку банк повернув (неправильний IBAN, закритий
      * рахунок): новий платіж на ту саму суму за поточною карткою людини
@@ -354,7 +409,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         return { id: r.id };
     }
 
-    const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('payrollAction', async request => {
+    const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 540 }, callGuard('payrollAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -366,9 +421,16 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             case 'approve': return approve(actor, role, data);
             case 'pay': return pay(actor, role, data);
             case 'repay': return repay(actor, role, data);
+            case 'refreshRecipients': return refreshRecipients(actor, role, data);
+            case 'projectContext': return project.context(data);
+            case 'projectReceiver': return project.linkReceiver(actor, role, data);
+            case 'projectPrepare': return project.prepare(actor, role, data);
+            case 'projectFind': return project.find(data);
+            case 'projectStatus': return project.status(data);
+            case 'rates': return saveRates(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay, repay } };
+    return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay, repay, refreshRecipients, saveRates } };
 };

@@ -47,6 +47,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
     const sameRecipient = (a, b) => ['name', 'iban', 'code'].every(k => String(a?.[k] || '') === String(b?.[k] || ''));
     function approvedPlan(stored, payment, accounts) {
         const stage = stored?.stages?.[payment.payroll.stage];
+        if (stage?.project && payment.kind === 'salary') fail('failed-precondition', 'Цей етап виплачується зарплатним проектом; окремий переказ дублює виплату');
         const plan = identity.findPlan(stage, payment.payroll);
         const account = stage?.account || Object.entries(accounts).find(([, a]) => payable(a) && (a.purpose || 'current') === 'current')?.[0];
         if (stored?.status !== 'approved' || !plan || plan.amountKop !== payment.amountKop || !sameRecipient(plan.recipient, payment.recipient)
@@ -243,6 +244,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             if (!snap.exists) fail('not-found', 'Платіж не знайдено');
             const data = snap.data();
             if (!['sent', 'failed'].includes(data.status) || data.canceling) fail('failed-precondition', 'Платіж уже проведено, скасовується або його результат потребує перевірки');
+            if (data.source === 'salaryProject') fail('failed-precondition', 'Скасування зарплатного проекту виконується у Приват24. Окремий платіж цього пакета не видаляють через API платежів');
             const payrollRef = data.payroll && !data.payroll.repayOf ? db.doc(`payroll_runs/${data.payroll.period}`) : null;
             const run = payrollRef ? (await t.get(payrollRef)).data() : null;
             if (data.payroll) await lock?.assertOpen(data.payroll.period, 'Скасування зарплатного платежу', t);

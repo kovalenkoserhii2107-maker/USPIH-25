@@ -1,3 +1,4 @@
+import { completeClosingPrerequisites, clearAccounting } from './accounting-fixture.mjs';
 import test, { before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -23,6 +24,7 @@ before(() => {
     reports = reportsModule(deps);
 });
 async function wipe() {
+    await clearAccounting(db);
     for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'charges', 'charges_runs', 'journal_periods', 'payroll_people', 'payroll_runs', 'payments', 'reports', 'expenses', 'suppliers']) {
         for (const d of (await db.collection(name).get()).docs) await db.recursiveDelete(d.ref);
     }
@@ -64,6 +66,7 @@ test('balanced trial balance cannot close a period with a missing charge or paym
     await seed();
     await charges.actions.run(...A, { period: '2026-10' });
     await bank.storeTransactions([tx('one')], 'mock', await bank.loadContext());
+    await completeClosingPrerequisites(journal,db);
     assert.equal((await journal.actions.context({ period: '2026-10' })).canClose, true);
     await db.doc('apartments/45/ledger/charge-2026-10').delete();
     let ctx = await journal.actions.context({ period: '2026-10' });
@@ -166,6 +169,7 @@ test('missing payroll accrual blocks closure for a historically active employee,
     await db.doc('payroll_people/e1').set({ name: 'Звільнений Працівник', kind: 'employee', active: false, from: '2026-01-01', to: '2026-10-16' });
     await assert.rejects(journal.actions.close(...A, { period: '2026-10' }), /Відомість зарплати за місяць не затверджено/);
     await db.doc('payroll_people/e1').update({ from: '2026-11-01', to: '2026-11-16' });
+    await completeClosingPrerequisites(journal,db);
     assert.equal((await journal.actions.context({ period: '2026-10' })).canClose, true);
 });
 
@@ -179,6 +183,8 @@ test('a pending expense prevents incomplete closure; an expired closure reservat
     await db.doc('expenses/pending').update({ status: 'rejected' });
     await db.doc('journal_periods/2026-10').set({ status: 'closing', closingToken: 'interrupted', closingUntil: Date.now() - 1000 });
     ctx = await journal.actions.context({ period: '2026-10' });
+    await completeClosingPrerequisites(journal,db);
+    ctx = await journal.actions.context({period:'2026-10'});
     assert.equal(ctx.canClose, true);
     await journal.actions.close(...A, { period: '2026-10' });
     assert.equal((await get('journal_periods/2026-10')).status, 'closed');
@@ -201,6 +207,7 @@ test('overlapping accrual batches and month closure are blocked while a house-wi
     } finally { release(); }
     await running;
     assert.equal((await get('charges_runs/2026-10')).totalKop, 11000);
+    await completeClosingPrerequisites(journal,db);
     assert.equal((await journal.actions.context({ period: '2026-10' })).canClose, true);
 });
 
@@ -221,6 +228,7 @@ test('closing reserves the period before reading source data; new bank operation
         };
         const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
     } });
+    await completeClosingPrerequisites(journal,db);
     const closing = journalModule({ ...deps, db: held, now: () => new Date('2026-11-02T10:00:00Z') }).actions.close(...A, { period: '2026-10' });
     // Attach the rejection handler while the delayed source query is pending.
     const outcome = assert.rejects(closing, /чекають рішення/);

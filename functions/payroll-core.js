@@ -20,11 +20,11 @@
 /** Ставки: відсотки в базисних пунктах (1800 = 18 %), гроші в копійках. */
 // subsistenceKop — прожитковий мінімум для працездатних на 1 січня (для ПСП).
 const DEFAULT_RATES = [
-    { from: '2026-01', pdfo: 1800, vz: 500, esv: 2200, minWageKop: 864700, maxBaseMult: 20, subsistenceKop: 332800 }
+    { from: '2026-01', to: '2026-12', pdfo: 1800, vz: 500, esv: 2200, minWageKop: 864700, maxBaseMult: 20, subsistenceKop: 332800 }
 ];
 
 const KINDS = { employee: 'Трудовий договір', gph: 'Договір ЦПД' };
-const { validIban } = require('./payments-core');
+const { validIban, checkPayment } = require('./payments-core');
 const { validDate } = require('./expenses-core');
 const leave = require('./leave-core');
 const { esvParts } = require('./esv-core');
@@ -35,7 +35,7 @@ const uah = kop => (Math.round(kop) / 100).toFixed(2).replace('.', ',').replace(
 
 /** Чинні на місяць ставки: останні з датою дії не пізніше місяця. */
 function rateFor(period, rates = DEFAULT_RATES) {
-    const list = [...rates].filter(r => r.from <= period).sort((a, b) => (a.from < b.from ? 1 : -1));
+    const list = [...rates].filter(r => r.from <= period && (!r.to || r.to >= period)).sort((a, b) => (a.from < b.from ? 1 : -1));
     return list[0] || null;
 }
 
@@ -221,6 +221,9 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
             bonusKop: Math.round(Number(input.bonusKop) || 0), actKop: p.kind === 'gph' ? Math.round(Number(input.actKop) || 0) : null,
             ...r, problems };
     });
+    consolidateEsv(rows, rate, period);
+    const incompatible = rows.find(r=>r.problems.some(p=>p.startsWith('Кілька трудових карток')));
+    if(incompatible)return {error:`${incompatible.name}: обʼєднайте трудові нарахування однієї фізособи в одну картку для правильного табеля й ПСП`};
     const sum = key => rows.reduce((s, r) => s + r[key], 0);
     const sumIn = (stage, key) => rows.reduce((s, r) => s + r[stage][key], 0);
     return {
@@ -232,6 +235,57 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
             final: { grossKop: sumIn('final', 'grossKop'), pdfoKop: sumIn('final', 'pdfoKop'), vzKop: sumIn('final', 'vzKop'), netKop: sumIn('final', 'netKop'), esvKop: sumIn('final', 'esvKop') },
             costKop: sum('grossKop') + sum('esvKop') }
     };
+}
+
+/** Один платник ЄСВ, одна максимальна база на фізособу, незалежно від кількості договорів. */
+function consolidateEsv(rows, rate, period) {
+    const groups = new Map();
+    for (const row of rows) {
+        const key = row.payee.rnokpp || `card:${row.personId}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+    }
+    for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        const employees = group.filter(r => r.kind === 'employee');
+        if (employees.length > 1) for (const r of employees) r.problems.push('Кілька трудових карток з одним РНОКПП: обʼєднайте табель і ПСП в одну картку');
+        const cap = rate.minWageKop * rate.maxBaseMult;
+        let left = cap;
+        const items = group.flatMap(row => esvParts({ ...row, esvBaseKop: Math.max(0, row.grossKop) }, { ...rate, maxBaseMult: Number.MAX_SAFE_INTEGER / rate.minWageKop })
+            .filter(p => p.kind !== 'topup').map(part => ({ row, part })));
+        const priority = ({ row, part }) => part.kind === 'sick' ? 3 : row.kind === 'gph' ? 2 : part.kind === 'vacation' ? 1 : 0;
+        items.sort((a, b) => priority(a) - priority(b) || a.row.personId.localeCompare(b.row.personId));
+        for (const row of group) row.esvParts = [];
+        for (const { row, part } of items) {
+            const baseKop = Math.min(Math.max(0, part.grossKop), left);
+            left -= baseKop;
+            row.esvParts.push({ ...part, baseKop, esvKop: pct(baseKop, rate.esv) });
+        }
+        const income = group.reduce((s, r) => s + Math.max(0, r.grossKop), 0);
+        const main = employees.find(r => r.relationship.mainJob && r.calendarDays === leave.daysInMonth(period));
+        if (main && income > 0 && income < rate.minWageKop) {
+            const baseKop = rate.minWageKop - income;
+            main.esvParts.push({ kind: 'topup', grossKop: 0, baseKop, esvKop: pct(baseKop, rate.esv) });
+        }
+        for (const row of group) {
+            row.esvConsolidated = true;
+            row.esvBaseKop = row.esvParts.reduce((s, p) => s + p.baseKop, 0);
+            row.esvKop = row.esvParts.reduce((s, p) => s + p.esvKop, 0);
+            row.advance.esvKop = Math.min(row.esvKop, pct(Math.min(row.advance.grossKop, row.esvBaseKop), rate.esv));
+            row.final.esvKop = row.esvKop - row.advance.esvKop;
+            row.warnings = row.warnings.filter(w => !w.startsWith('ЄСВ — з мінімальної бази'));
+            row.warnings.push('База ЄСВ визначена разом за всіма договорами цієї фізособи; різниця до МЗП нарахована один раз');
+        }
+    }
+}
+
+/** Незмінні суми затвердженої відомості, з урахуванням фактично підготовленого авансу. */
+function paymentRun(stored) {
+    const run = JSON.parse(JSON.stringify(stored.run));
+    if (!stored.stages?.advance) for (const r of run.rows) {
+        r.final = Object.fromEntries(['grossKop', 'pdfoKop', 'vzKop', 'netKop', 'esvKop'].map(k => [k, r[k]]));
+    }
+    return run;
 }
 
 function reportingDetails(p) {
@@ -272,15 +326,18 @@ function stagePayments(run, stage, { code, taxes = {}, people = new Map() }) {
 }
 
 /** Що заважає створити платежі етапу. */
-function paymentProblems(payments) {
-    const problems = payments.filter(p => !validIban(p.recipient.iban)).map(p => (p.kind === 'tax'
-        ? `немає рахунку для «${String(p.taxKey || p.key.split(':').at(-1)).toUpperCase()}» — внесіть у «Зарплата → Податки»`
-        : `${p.recipient.name}: немає IBAN`));
+function paymentProblems(payments, account) {
+    const problems = [];
+    for (const p of payments) {
+        const own = new Set([account || 'UA000000000000000000000000000']);
+        const error = checkPayment({ ...p, account: [...own][0] }, own);
+        if (error) problems.push(`${p.kind === 'tax' ? String(p.taxKey || p.key.split(':').at(-1)).toUpperCase() : p.recipient?.name || p.key}: ${error}`);
+    }
     if (new Set(payments.map(p => p.key)).size !== payments.length) problems.push('Ключі отримувачів у плані виплати повторюються — відомість потребує виправлення');
     return problems;
 }
 
 module.exports = {
     DEFAULT_RATES, KINDS, rateFor, workingDays, validRnokpp, validIban, checkPerson, calcRow, activeIn, buildRun,
-    stagePayments, paymentProblems, monthName, employmentDays, calendarDays
+    stagePayments, paymentProblems, paymentRun, consolidateEsv, monthName, employmentDays, calendarDays
 };

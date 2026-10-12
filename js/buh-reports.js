@@ -15,6 +15,7 @@ import { zip, saveBlob } from './xlsx-write.js';
 import { fmtKop } from './charges-core.js';
 import { humanDate } from './tax-calendar.js';
 import { reportSteps, nextAction, pickFocus, reportTasks, periodOfKey } from './reports-view-core.js';
+import { loadAnnualReports, downloadAnnualPackage } from './buh-annual-reports.js';
 
 export { reportTasks, periodOfKey };
 
@@ -191,8 +192,8 @@ function otherHtml(t) {
         return `<p class="buh-note">Кошторис на рік затверджують загальні збори (п. 4.12.2 статуту). Номер протоколу — у позначці нижче.</p><button type="button" class="btn-soft btn-compact" data-go="budget">Відкрити «Кошторис»</button>`;
     }
     if (t.key.startsWith('npo-') || t.key.startsWith('fs-stat-')) {
-        return `<p class="buh-note">Річні звіти складаються з оборотно-сальдової відомості за рік («Проводки»). Облік у застосунку почався з жовтня 2026 р.: січень–вересень — дані сервісу бухгалтера, їх буде імпортовано (частина 10). Форму заповнює й перевіряє бухгалтер, подає голова в Електронному кабінеті.</p>
-            <div class="rp-actions"><button type="button" class="btn-soft btn-compact" data-go="journal">Відкрити «Проводки»</button><a class="btn-soft btn-compact" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a></div>`;
+        return `<p class="buh-note">Річний комплект вище містить ОСВ, фінрезультати, залишки, фонди й проводки. Офіційну форму перевірте, підпишіть та подайте у кабінеті ДПС.</p>
+            <div class="rp-actions"><button type="button" class="btn-soft btn-compact" data-act="annual-open" data-year="${t.key.slice(-4)}">Відкрити річний комплект</button><a class="btn-soft btn-compact" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a></div>`;
     }
     return '';
 }
@@ -206,9 +207,9 @@ function markHtml(t) {
     const chosen = mark?.packageId || packs[0]?.id || '';
     return `<form class="rp-mark" data-key="${escapeHtml(t.key)}" onsubmit="return false">
         <h3 class="rp-h">${t.key.startsWith('j0500111-') ? '<span class="rp-num">3</span>Подано й прийнято' : 'Позначка'}</h3>
-        ${packs.length ? `<div class="rp-versions"><span class="bk-label">Версії пакета XML</span><ul class="rp-files">${packs.map(p => `<li>
+        ${packs.length ? `<div class="rp-versions"><span class="bk-label">${t.key.startsWith('j0500111-')?'Версії пакета XML':'Версії річних робочих даних'}</span><ul class="rp-files">${packs.map(p => `<li>
             <button type="button" class="btn-ghost-small" data-act="pkg" data-id="${escapeHtml(p.id)}">Версія ${p.version}</button>
-            <small>${escapeHtml(stamp(p.at))}${mark?.packageId === p.id ? ` · ${escapeHtml(STATUS[mark.status]?.[0] || mark.status)}` : p === packs[0] && !mark ? ' · готова до підпису' : ''}</small></li>`).join('')}</ul></div>` : ''}
+            <small>${escapeHtml(stamp(p.at))}${mark?.packageId === p.id ? ` · ${escapeHtml(STATUS[mark.status]?.[0] || mark.status)}` : p === packs[0] && !mark ? (t.key.startsWith('j0500111-')?' · готова до підпису':' · робочий комплект') : ''}</small></li>`).join('')}</ul></div>` : ''}
         ${files.length ? `<ul class="rp-files">${files.map(f => `<li><button type="button" class="btn-ghost-small" data-act="file" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</button><small>${escapeHtml(ctx.fileKinds[f.kind] || '')}${f.packageId ? ` · версія ${versionOf(f.packageId)}` : ''}</small></li>`).join('')}</ul>` : ''}
         <div class="rp-form">
             ${packs.length ? `<label class="field"><span>Яку версію подано</span><select class="field-input field-select" name="packageId">${packs.map(p => `<option value="${escapeHtml(p.id)}"${p.id === chosen ? ' selected' : ''}>Версія ${p.version} · ${escapeHtml(stamp(p.at))}</option>`).join('')}</select></label>` : ''}
@@ -313,7 +314,10 @@ export async function loadReportsView() {
         ${waiting.length ? group('Подано — чекаємо квитанцію № 2', waiting, '') : ''}
         ${later.length ? group('Далі', later, '') : ''}
         ${group('Виконано', done, 'Позначок ще немає')}
-        <p class="buh-note">Строки — за правилами ПКУ (docs/accounting/LEGAL.md, розділ 11); з вихідного строк подання переноситься на понеділок. Звіти до ${escapeHtml(monthName(ctx.start))} подає сервіс бухгалтера. Пряме подання з підписом КЕП у браузері — наступний етап.</p>`;
+        <div id="annualReports"><p class="buh-note">Річні дані завантажуються…</p></div>
+        <p class="buh-note">Строки — за правилами ПКУ (docs/accounting/LEGAL.md, розділ 11); з вихідного строк подання переноситься на понеділок. Зарплатні звіти до ${escapeHtml(monthName(ctx.start))} потребують переносу зарплатної бази.</p>`;
+    const annualHost=document.getElementById('annualReports');
+    loadAnnualReports(annualHost,ctx.start).catch(err=>{if(annualHost.isConnected)annualHost.textContent=err.message;});
     return attention.filter(t => t.left <= 10).length;
 }
 
@@ -350,6 +354,7 @@ async function onAction(btn) {
             return;
         }
         if (a === 'csv' && detail) { csv(); return; }
+        if(a==='annual-open'){const host=document.getElementById('annualReports');await loadAnnualReports(host,ctx.start,btn.dataset.year);host.scrollIntoView({behavior:'smooth',block:'start'});return;}
         if (a === 'xml' && detail) { await buildXml(btn); return; }
         if (a === 'xml-settings') { xmlState = { settings: await reportsQuery({ action: 'xmlSettings' }) }; showXml(); return; }
         if (a === 'xml-close') { xmlState = null; showXml(); return; }
@@ -361,6 +366,7 @@ async function onAction(btn) {
         }
         if (a === 'pkg') {
             setBusy(btn, true, 'Завантажую…');
+            if (/^(npo|fs-stat)-/.test(btn.dataset.id)) { await downloadAnnualPackage(btn.dataset.id); return; }
             const p = await reportsQuery({ action: 'package', id: btn.dataset.id });
             saveBlob(zip(p.files.map(f => ({ name: f.name, data: fileBytes(f) })), 'application/zip'), `J0500111-${periodOfKey(p.key)}-v${p.version}.zip`);
             return;

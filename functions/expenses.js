@@ -142,6 +142,15 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             number: text(data.number, 60), date: String(data.date || ''), amountKop: kop(data.amountKop), vatKop: data.vatKop === undefined || data.vatKop === null || data.vatKop === '' ? 0 : kop(data.vatKop),
             period: String(data.period || ''), item: String(data.item || ''), description: text(data.description, 300), files: cleanFiles(data.files)
         };
+        e.postingAcc = String(data.postingAcc || '92');
+        if (!['92','10','11','20','22'].includes(e.postingAcc)) fail('invalid-argument','Оберіть вид придбання');
+        if (e.postingAcc !== '92') {
+            if (data.ownedByOsbb !== true || text(data.assetId,80).length < 2) fail('invalid-argument','Для активу підтвердіть власність саме ОСББ і вкажіть інвентарний код');
+            e.ownedByOsbb = true; e.assetId = text(data.assetId,80);
+        }
+        const policy = require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
+        e.fundId = String(data.fundId || policy.defaultFund);
+        if (!policy.funds.some(f=>f.id===e.fundId) && !(e.fundId==='own'&&Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)))) fail('invalid-argument','Невідоме джерело фінансування');
         const error = core.checkExpense(e);
         if (error) fail('invalid-argument', error);
         if (data.linkedTo && !data.id) return saveLinked(actor, role, e, id(data.linkedTo));
@@ -277,6 +286,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             t.set(ref, { supplierId: o.supplierId, supplierName: o.supplierName, contractId: o.contractId || null, contractNumber: o.contractNumber || null,
                 ...(o.supplierSnapshot ? { supplierSnapshot: o.supplierSnapshot } : {}),
                 docType: o.docType, number: s.number, date: s.date, amountKop: -s.amountKop, vatKop: 0, period, item: o.item,
+                postingAcc:o.postingAcc || '92',fundId:o.fundId || 'main',...(o.assetId?{assetId:o.assetId,ownedByOsbb:o.ownedByOsbb===true}:{}),
                 description: `Сторно № ${o.number} від ${core.humanDate(o.date)}: ${s.reason}`, files: cleanFiles(files), status: 'storno', stornoOf: o.id,
                 approval: { level: role, reason: s.reason, by: actor, at: FieldValue.serverTimestamp() }, paidKop: 0, txIds: [],
                 createdBy: actor, createdAt: FieldValue.serverTimestamp(), updatedBy: actor, updatedAt: FieldValue.serverTimestamp() });
@@ -426,7 +436,8 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         };
         const list = { suppliers: suppliers.docs.map(plain), contracts: contracts.docs.map(plain), expenses: expenses.docs.map(plain) };
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
-        return { ...list, settings: { smallKop: settings.data()?.smallKop || 0 }, today,
+        const policy=require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
+        return { ...list, funds:policy.funds,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0 }, today,
             missing: core.missingDocs(list.contracts, list.expenses, today), items: core.ITEMS, docTypes: core.DOC_TYPES, kinds: core.SUPPLIER_KINDS,
             limitKop: core.CONTRACT_LIMIT_KOP };
     }

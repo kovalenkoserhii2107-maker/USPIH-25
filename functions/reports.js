@@ -34,7 +34,10 @@ const FILE_KINDS = { report: 'звіт', receipt1: 'квитанція № 1', r
 const DEFAULT_STI = 1553;
 const XML_FIELDS = { katottg: 19, zip: 5, address: 250, phone: 40, email: 80, headName: 120, headTin: 10, accName: 120, accTin: 10 };
 
-module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffRole }) {
+module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffRole, journal }) {
+    const journalAdapter = journal || require('./journal')({ db, FieldValue, requireAdmin, staffRole });
+    const annualReports = require('./annual-reports')({ db, FieldValue, journal:journalAdapter });
+    const startPeriod = async () => (await journalAdapter.actions.policy()).startDate.slice(0,7);
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const text = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
@@ -53,7 +56,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     /** Версія пакета без самих файлів — для переліку в кабінеті. */
     const packageInfo = d => {
         const r = d.data();
-        return { id: d.id, key: r.key, version: r.version, stan: r.stan, num: r.num, hash: r.hash, by: r.by || null,
+        return { id: d.id, key: r.key, version: r.version, stan: r.stan ?? null, num: r.num ?? null, type:r.type || 'xml', complete:r.complete ?? true, hash: r.hash, by: r.by || null,
             at: r.at?.toDate?.()?.toISOString() || null, files: (r.files || []).map(f => ({ name: f.name, size: f.size, sha256: f.sha256 })) };
     };
 
@@ -84,7 +87,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             if (run.data().status === 'approved' && expected > 0 && (esv.get(period) || 0) >= expected && !statuses[key]) statuses[key] = { key, status: 'paid', auto: true, regNumber: '', date: '', note: 'сума проведених платежів покриває місячне нарахування', files: [] };
         }
         return {
-            today: today(), start: START_PERIOD, statuses, packages, fileKinds: FILE_KINDS,
+            today: today(), start: await startPeriod(), statuses, packages, fileKinds: FILE_KINDS,
             payrollMonths: runs.docs.map(d => ({ period: d.id, status: d.data().status, grossKop: d.data().run?.totals?.grossKop || 0 }))
                 .sort((a, b) => b.period.localeCompare(a.period)),
             hasPeople: people.docs.some(d => d.data().active !== false), hasFop: !fops.empty
@@ -99,7 +102,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             db.collection('payments').get(),
             db.collection('expenses').get(),
             db.collection('suppliers').get(),
-            db.collection('bank_tx').where('period', '>=', START_PERIOD).get()
+            db.collection('bank_tx').get()
         ]);
         const stored = runs.docs.find(d => d.id === period)?.data() || null;
         const cards = new Map(people.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
@@ -108,7 +111,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         const fop = fopReport({ period, expenses: expenses.docs.map(d => ({ id: d.id, ...d.data() })),
             suppliers: new Map(suppliers.docs.map(d => [d.id, { id: d.id, ...d.data() }])), bankTx: txs });
         const checks = [...fop.checks], payments = [];
-        for (const t of txs.filter(t => t.bankConflict && t.period <= period)) checks.push({ level: 'block', text: `Операція банку ${t.id}: сторно ще не узгоджене з обліком — звітність потребує звірки` });
+        for (const t of txs.filter(t => t.bankConflict && t.period <= period)) checks.push({ level: 'block', text: `Операція банку ${t.id}: ${t.bankConflict==='changed'?'зміна даних':'сторно'} ще не узгоджене з обліком — звітність потребує звірки` });
         for (const t of txs.filter(t => t.reason === 'possible-refund' && t.status === 'review' && t.period <= period)) checks.push({ level: 'block', text: `Операція банку ${t.id}: можливе повернення ще не розібране — спершу звірте його зі списанням` });
         // Для виплати старої відомості потрібні також її аванс і податки:
         // інакше остаточний платіж у наступному місяці порівнюється з усією зарплатою.
@@ -124,6 +127,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             const tx = byTx.get(p.txId);
             if (!sourcePeriods.has(pr.period)) continue;
             if (p.status === 'paid') {
+                if(p.paidGrossKop!==undefined && (!Number.isSafeInteger(p.withheldPdfoKop)||!Number.isSafeInteger(p.withheldVzKop)||p.paidGrossKop!==p.amountKop+p.withheldPdfoKop+p.withheldVzKop))checks.push({level:'block',text:'Розподіл часткової зарплати не збігається: нараховано = на руки + ПДФО + ВЗ'});
                 if (!tx || tx.direction !== 'out' || tx.status !== 'done' || tx.paymentId !== d.id || tx.amountKop !== p.amountKop) {
                     checks.push({ level: 'block', text: 'Виплата за відомістю не має узгодженого підтвердження випискою — звірте платіж перед 4ДФ' });
                 }
@@ -137,6 +141,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
                 }
             }
             payments.push({ period: pr.period, stage: pr.stage, key: pr.key, recipientType: recipientType(p), paidOn: kyivDate(tx?.at),
+                ...(p.paidGrossKop !== undefined && !p.returnedKop ? { paidGrossKop: p.paidGrossKop } : {}),
                 status: p.status === 'paid' && p.amountKop > 0 && p.returnedKop === p.amountKop ? 'returned' : p.status,
                 amountKop: p.amountKop - (p.returnedKop || 0) });
         }
@@ -194,7 +199,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     /** Пакет XML (розрахунок + Д1, 4ДФ, Д5) з затвердженої відомості; файли — base64 у windows-1251. */
     async function xml(actor, role, { period, stan, num }) {
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) fail('invalid-argument', 'Невідомий місяць');
-        if (period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
+        if (period < await startPeriod()) fail('failed-precondition', 'Для звітів до дати переходу потрібна перенесена зарплатна база');
         const kind = stan === undefined ? 1 : Number(stan);
         const number = num === undefined ? 1 : Number(num);
         const [{ stored, cards, report }, cfg] = await Promise.all([reportSource(period), xmlSettings()]);
@@ -230,7 +235,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     async function mark(actor, role, { key, status, regNumber, date, note, files, addFiles, seenAt, packageId }) {
         if (!core.validKey(key)) fail('invalid-argument', 'Невідомий звіт');
         const period = core.periodOf(key);
-        if (period && period < START_PERIOD) fail('failed-precondition', 'Звіти до початку обліку в застосунку подає сервіс бухгалтера');
+        if (period && period < await startPeriod()) fail('failed-precondition', 'Для звітів до дати переходу потрібна перенесена зарплатна база');
         const ref = db.doc(`reports/${key}`);
         if (status === 'open') {
             const before = await db.runTransaction(async t => {
@@ -261,7 +266,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         }
         // Подано / прийнято / відхилено — яку саме версію пакета (типово — останню завантажену).
         let pack = null;
-        if (['submitted', 'accepted', 'rejected'].includes(status) && key.startsWith('j0500111-')) {
+        if (['submitted', 'accepted', 'rejected'].includes(status) && /^(j0500111|npo|fs-stat)-/.test(key)) {
             const wanted = packageId ? await db.doc(`report_packages/${String(packageId).replace(/[^\w-]/g, '')}`).get() : null;
             if (wanted && (!wanted.exists || wanted.data().key !== key)) fail('invalid-argument', 'Ця версія пакета не належить до цього звіту');
             const latest = wanted ? null : (await db.collection('report_packages').where('key', '==', key).select('version').get()).docs
@@ -304,9 +309,15 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             case 'saveXmlSettings': return saveXmlSettings(actor, role, data);
             case 'xml': return xml(actor, role, data);
             case 'package': return packageFiles(data);
+            case 'annual': return annualReports.data(data);
+            case 'importAnnualHistory': return annualReports.importHistory(actor, role, data);
+            case 'approveAnnualHistory': return annualReports.approveHistory(actor, role, data);
+            case 'annualSnapshot': return annualReports.snapshot(actor, role, data);
+            case 'annualPackage': return annualReports.packageData(data);
+            case 'annualComparative': return annualReports.saveComparative(actor,role,data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { reportsAction, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml, packageFiles } };
+    return { reportsAction, annualReports, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml, packageFiles } };
 };

@@ -46,6 +46,8 @@ const DEFAULT_START = '2026-10-01';
 const OVERLAP_DAYS = 3;
 
 module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses, lock }) {
+    const settlement = require('./payroll-settlement')({ db, FieldValue, lock });
+    const noteSettlement = require('./accounting-note-settlement')({ db, FieldValue, lock });
     // Баланс квартири з історії (charges.js): після кожної рознесеної оплати.
     const recompute = async apts => {
         const result = apts.length && balances ? await balances.recompute(apts) : null;
@@ -130,20 +132,25 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     // --------------------------------------------------------
     // ЗБЕРЕЖЕННЯ ОПЕРАЦІЙ ВИПИСКИ
     // --------------------------------------------------------
-    async function voidTransaction(ref) {
+    async function voidTransaction(ref, replacement = false, actor = null, role = null) {
         return db.runTransaction(async t => {
             const snap = await t.get(ref);
             if (!snap.exists || snap.data().bankVoided) return { voided: false, apts: [] };
             const old = snap.data();
+            const newer = replacement ? old.bankObserved : null;
+            if (replacement && (!newer || old.bankConflict!=='changed' || role!=='chair')) fail('failed-precondition','Потрібна зміна, підтверджена новою випискою; її звіряє голова');
             const payRef = old.paymentId ? db.doc(`payments/${old.paymentId}`) : null;
             const exRef = old.expenseId ? db.doc(`expenses/${old.expenseId}`) : null;
             const [period, pay, expense] = await Promise.all([t.get(db.doc(`journal_periods/${old.period}`)), payRef ? t.get(payRef) : null, exRef ? t.get(exRef) : null]);
             const payrollRef = pay?.data()?.payroll ? db.doc(`payroll_runs/${pay.data().payroll.period}`) : null;
             const payroll = payrollRef ? await t.get(payrollRef) : null;
+            const nextPeriod = newer ? core.periodOf(newer.at.toDate?.() || new Date(newer.at)) : old.period;
+            const nextClosed = newer && nextPeriod!==old.period ? (await t.get(db.doc(`journal_periods/${nextPeriod}`))).data()?.status : null;
             // Не переписуємо закритий місяць або ланцюг повернень. Цей
             // конфлікт видно в черзі та він блокує закриття/звітність.
             if (['closed', 'closing'].includes(period.data()?.status) || (old.refundTxIds || []).length || old.kind === 'refund'
-                || payroll?.data()?.sending || payroll?.data()?.canceling) {
+                || ['closed','closing'].includes(nextClosed) || payroll?.data()?.sending || payroll?.data()?.canceling) {
+                if(replacement) fail('failed-precondition','Спершу відкрийте період і звірте повʼязані повернення або відправку зарплати');
                 t.update(ref, { bankConflict: 'void', bankStateAt: FieldValue.serverTimestamp() });
                 return { conflict: true, apts: [] };
             }
@@ -168,7 +175,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 t.update(exRef, { paidKop: paid, txIds: FieldValue.arrayRemove(ref.id),
                     status: paid >= e.amountKop - (e.stornoKop || 0) ? 'paid' : 'approved', paidAt: null });
             }
-            t.update(ref, { bankVoided: true, bankConflict: FieldValue.delete(), voidedAt: FieldValue.serverTimestamp(),
+            if(newer) {
+                if(newer.currency!=='UAH')fail('failed-precondition','Зміну валюти потрібно узгодити окремо: гривневий облік не конвертує її автоматично');
+                t.set(ref,{...newer,period:nextPeriod,payerKey:core.payerKey(newer.counterparty?.name,newer.counterparty?.account),kind:newer.direction==='in'?'payment':'expense',status:'review',
+                    source:old.source,allocations:[],suggestions:[],auto:false,reason:'changed-bank-data',bankRevision:(old.bankRevision||0)+1,resolvedBy:actor,importedAt:FieldValue.serverTimestamp()});
+                t.create(db.collection('audit_log').doc(),{actor,role,action:'bank.changed',target:ref.path,summary:'Зміну проведеної операції з нової виписки звірено; рознесення потрібно повторити',
+                    details:{oldAmountKop:old.amountKop,newAmountKop:newer.amountKop,oldPeriod:old.period,newPeriod:nextPeriod},at:FieldValue.serverTimestamp()});
+            } else t.update(ref, { bankVoided: true, bankConflict: FieldValue.delete(), voidedAt: FieldValue.serverTimestamp(),
                 voidedKind: old.kind, voidedCategory: old.category || null, kind: 'void', status: 'done', category: FieldValue.delete(), allocations: [] });
             return { voided: true, apts: aptIds };
         });
@@ -184,10 +197,12 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (!fresh.length) return { added: 0, matched: 0 };
         const ids = fresh.map(t => core.safeId(`${t.account}_${t.bankId}`));
         const existing = new Set();
+        const previousRows = new Map();
         const touched = new Set();
         for (let i = 0; i < ids.length; i += 300) {
             const refs = ids.slice(i, i + 300).map(id => db.doc(`bank_tx/${id}`));
             (await db.getAll(...refs)).forEach(s => {
+                if(s.exists)previousRows.set(s.id,s.data());
                 if (s.exists && !(s.data().reason === 'closed-period' && s.data().status === 'review' && !s.data().resolvedBy)) existing.add(s.id);
                 for (const a of s.data()?.allocations || []) if (a.ledgerId) touched.add(a.aptId || ctx.known.ids?.get(a.apt) || a.apt);
             });
@@ -202,7 +217,19 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 result.apts.forEach(apt => touched.add(apt));
                 continue;
             }
-            if (existing.has(id)) continue;
+            if (existing.has(id)) {
+                const raw=fresh[i],old=previousRows.get(id);
+                const signature = tx => JSON.stringify([tx.amountKop,tx.direction,tx.currency||'UAH',core.normIban(tx.account),core.periodOf(tx.at.toDate?.() || new Date(tx.at)),
+                    new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(tx.at.toDate?.() || new Date(tx.at)),
+                    core.normIban(tx.counterparty?.account),String(tx.counterparty?.code||''),String(tx.purpose||'').trim()]);
+                if(old && signature(old)!==signature(raw)) {
+                    await db.doc(`bank_tx/${id}`).update({bankConflict:'changed',bankObserved:{bankId:raw.bankId,account:raw.account,at:Timestamp.fromDate(raw.at),direction:raw.direction,
+                        amountKop:raw.amountKop,currency:raw.currency||'UAH',purpose:raw.purpose||'',counterparty:raw.counterparty||{},dlr:raw.dlr||null,
+                        statementRef:raw.statementRef||null,statementRefn:raw.statementRefn||null},bankStateAt:FieldValue.serverTimestamp()});
+                    conflicts++;
+                } else if(raw.statementRef && !old?.statementRef) await db.doc(`bank_tx/${id}`).update({statementRef:raw.statementRef,statementRefn:raw.statementRefn||'0'});
+                continue;
+            }
             const raw = fresh[i];
             if ((raw.currency && raw.currency !== 'UAH') || !['in', 'out'].includes(raw.direction)) continue;
             const ref = db.doc(`bank_tx/${id}`);
@@ -235,9 +262,10 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                     purpose: String(raw.purpose || '').slice(0, 500),
                     counterparty: { name: String(raw.counterparty?.name || '').slice(0, 200), account: core.normIban(raw.counterparty?.account).slice(0, 40), code: String(raw.counterparty?.code || '').slice(0, 20) },
                     payerKey: core.payerKey(raw.counterparty?.name, raw.counterparty?.account),
+                    statementRef:raw.statementRef || null, statementRefn:raw.statementRefn || null,
                     suggestions: decision.suggestions || [], allocations: [], source, auto: true, importedAt: FieldValue.serverTimestamp()
                 };
-                const beforeStart = period < ctx.startDate.slice(0, 7) || raw.at < new Date(`${ctx.startDate}T00:00:00+03:00`);
+                const beforeStart = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(raw.at) < ctx.startDate;
                 if (closed) {
                     Object.assign(doc, { kind: raw.direction === 'in' ? 'payment' : 'expense', status: 'review', reason: 'closed-period' });
                     if (decision.apt) doc.suggestions = [{ apt: decision.apt, reason: 'призначення' }];
@@ -251,11 +279,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                     Object.assign(doc, { kind: 'expense', status: 'review', reason: 'ambiguous-payment', paymentSuggestions: live.map(p => p.id) });
                 } else if (paid) {
                     Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(raw.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : 'supplier', status: 'done', paymentId: paid.id });
+                    if(['salary','tax'].includes(paid.kind)&&!paid.payroll)Object.assign(doc,{status:'review',reason:'payroll-unlinked'});
                     t.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
                 } else if (byDoc?.auto && canSettle) {
                     Object.assign(doc, { kind: 'expense', category: 'supplier', status: 'done', method: 'document' });
                 } else if (decision.status === 'expense') {
-                    Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category ? 'done' : 'review' });
+                    const payrollUnlinked=['salary','taxes','esv'].includes(decision.category);
+                    Object.assign(doc, { kind: 'expense', category: decision.category || null, status: decision.category&&!payrollUnlinked ? 'done' : 'review',...(payrollUnlinked?{reason:'payroll-unlinked'}:{}) });
                 } else if (decision.status === 'other') {
                     Object.assign(doc, { kind: 'income', category: decision.category || null, status: decision.category ? 'done' : 'review', ...(decision.relatedApt ? { relatedApt: decision.relatedApt } : {}) });
                 } else {
@@ -426,7 +456,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
             const data = snap.data();
             await lock?.assertOpen(data.period, 'Операція банку', t);
-            if (data.expenseId || data.paymentId) fail('failed-precondition', 'Операцію привʼязано до документа або платежу. Спершу поверніть її у «Вхідні».');
+            if (data.expenseId || data.paymentId || data.notePaymentId) fail('failed-precondition', 'Операцію привʼязано до документа або платежу. Спершу поверніть її у «Вхідні».');
             if ((data.allocations || []).some(a => a.ledgerId)) fail('failed-precondition', 'Спершу поверніть оплату в «Розібрати»');
             if (kind === 'income' && data.direction !== 'in') fail('invalid-argument', 'Це списання, а не надходження');
             if (kind === 'expense' && data.direction !== 'out') fail('invalid-argument', 'Це надходження, а не витрата');
@@ -563,7 +593,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             await lock?.assertOpen(data.period, 'Операція банку', t);
             if (data.direction !== 'out') fail('invalid-argument', 'Повернення співвласнику — це списання');
             if (data.status !== 'review' || data.expenseId || data.paymentId) fail('failed-precondition', 'Операцію вже розібрано. Спершу поверніть її у «Вхідні».');
-            const overpaid = settings.data()?.opening?.set ? balanceFromLedger(ledgerSnap.docs.map(d => d.data())) : Math.round(Number(aptSnap.data().balance || 0) * 100);
+            const overpaid = settings.data()?.opening?.set ? balanceFromLedger(ledgerSnap.docs.map(d => d.data()),settings.data().startPeriod,settings.data().startDate) : Math.round(Number(aptSnap.data().balance || 0) * 100);
             if (!Number.isSafeInteger(data.amountKop) || data.amountKop <= 0 || !Number.isSafeInteger(overpaid)) fail('failed-precondition', 'Некоректна сума списання або переплати');
             if (data.amountKop > overpaid) fail('failed-precondition', `Переплата прим. ${clean} — ${core.fromKop(Math.max(0, overpaid))} грн: повернути більше не можна`);
             // Зменшуємо збережену переплату в тій самій транзакції: два одночасні повернення
@@ -625,7 +655,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             }
             t.update(ref, {
                 kind: data.direction === 'in' ? 'payment' : 'expense', status: 'review', allocations: [],
-                category: null, method: null, expenseId: null, paymentId: null, refundOf: null, refundReason: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
+                category: null, method: null, expenseId: null, paymentId: null, notePaymentId:null, refundOf: null, refundReason: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
             });
             return data;
         });
@@ -682,6 +712,15 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             case 'assign': return assign(actor, role, data);
             case 'classify': return classifyTx(actor, role, data);
             case 'matchPayment': return matchPayment(actor, role, data);
+            case 'payrollCandidates': return settlement.candidates(data);
+            case 'matchPayroll': return settlement.link(actor, role, data);
+            case 'noteCandidates': return noteSettlement.candidates(data);
+            case 'matchNote': return noteSettlement.link(actor, role, data);
+            case 'acceptChanged': {
+                if(role!=='chair')fail('permission-denied','Зміну проведеної операції звіряє голова');
+                const result=await voidTransaction(db.doc(`bank_tx/${core.safeId(data.txId)}`),true,actor,role);
+                await recompute(result.apts);return {ok:true};
+            }
             case 'unassign': return unassign(actor, role, data);
             case 'refund': return refund(actor, role, data);
             case 'refundCandidates': return refundCandidates(data);

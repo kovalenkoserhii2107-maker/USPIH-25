@@ -55,9 +55,11 @@ function normalizeTransaction(raw) {
     const amountKop = Math.abs(toKop(raw.SUM));
     const at = parseBankDate(raw.DATE_TIME_DAT_OD_TIM_P, raw.DAT_OD || raw.DAT_KL, raw.TIM_P);
     const bankId = raw.REF ? `${raw.REF}_${raw.REFN || 0}` : (raw.ID || null);
-    if (!direction || !Number.isInteger(amountKop) || !amountKop || !at || !bankId) return null;
+    if (!direction || !Number.isSafeInteger(amountKop) || !amountKop || !at || !bankId) return null;
     return {
         bankId: String(bankId),
+        statementRef:raw.REF ? String(raw.REF) : null,
+        statementRefn:raw.REF ? String(raw.REFN || 0) : null,
         account: normIban(raw.AUT_MY_ACC),
         at, direction, amountKop,
         currency: raw.CCY || 'UAH',

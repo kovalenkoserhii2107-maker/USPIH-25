@@ -100,6 +100,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             tariffs: data.tariffs || [],
             premises: data.premises || {},
             startPeriod: data.startPeriod || core.START_PERIOD,
+            startDate: data.startDate || `${data.startPeriod || core.START_PERIOD}-01`,
             opening: data.opening || null
         };
     }
@@ -156,12 +157,12 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
                 const currentNames = new Map(currentComponents.map(c => [c.id, c.name]));
                 const currentNamed = parts => Object.entries(parts).filter(([, v]) => v).map(([component, amountKop]) => ({ component, name: currentNames.get(component) || 'Інше', amountKop }));
                 const entries = ledger.docs.map(d => ({ _id: d.id, ...d.data() }));
-                const { balances, steps } = core.replay(entries, { startPeriod: current.startPeriod || core.START_PERIOD, order: currentComponents.map(c => c.id) });
+                const { balances, steps } = core.replay(entries, { startPeriod: current.startPeriod || core.START_PERIOD, startDate:current.startDate, order: currentComponents.map(c => c.id) });
                 for (const { entry, parts } of steps) {
                     if (entry.kind !== 'payment' || !entry._id || same(entry.alloc, currentNamed(parts))) continue;
                     t.update(db.doc(`apartments/${apt}/ledger/${entry._id}`), { alloc: currentNamed(parts) });
                 }
-                const balance = fromKop(core.balanceFromLedger(entries, current.startPeriod || core.START_PERIOD));
+                const balance = fromKop(core.balanceFromLedger(entries, current.startPeriod || core.START_PERIOD, current.startDate));
                 if (snap.data().balance === balance && snap.data().balanceSource === 'ledger' && same(snap.data().balanceParts, currentNamed(balances))) return false;
                 t.set(ref, { balance, balanceParts: currentNamed(balances), balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
                 return true;
@@ -200,7 +201,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const preview = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period });
         return {
             groups: settings.groups, components: settings.components, tariffs: settings.tariffs, premises: settings.premises,
-            startPeriod: settings.startPeriod, opening: settings.opening ? { ...settings.opening, at: settings.opening.at?.toDate?.()?.toISOString() || null } : null,
+            startPeriod: settings.startPeriod, startDate:settings.startDate, opening: settings.opening ? { ...settings.opening, at: settings.opening.at?.toDate?.()?.toISOString() || null } : null,
             apartments: apartments.map(a => ({ apt: a.apt, area: a.area, residents: a.residents, balance: a.balance, personalAccount: a.personalAccount })),
             runs, due, current, unfinished: await unfinished(),
             preview: { period, done: done.has(period), ...preview }
@@ -211,6 +212,25 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         const [settings, apartments] = await Promise.all([loadSettings(), loadApartments()]);
         return { period, ...core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period }) };
+    }
+
+    async function confirmImportedStartMonth(actor,role,{note}) {
+        if(role!=='chair')fail('permission-denied','Повноту нарахування місяця переходу підтверджує голова');
+        if(String(note||'').trim().length<5)fail('invalid-argument','Укажіть підставу: місяць уже повністю нараховано в попередній системі');
+        const [settings,apartments,ledgers]=await Promise.all([loadSettings(),loadApartments(),allLedgers()]);
+        const period=settings.startPeriod,amounts={},importedAmounts={},importedRecordIds={};
+        await lock?.assertOpen(period,'Підтвердження перенесеного місяця');
+        if((await db.doc(`charges_runs/${period}`).get()).exists)fail('failed-precondition','Місяць уже має відомість нарахування');
+        for(const apt of apartments) {
+            const entries=(ledgers.get(apt.id)||[]).filter(e=>e.kind==='charge'&&e.period===period);
+            const before=entries.filter(e=>e.source==='historical'&&e.at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate())<settings.startDate);
+            if(!before.length||before.length!==entries.length)fail('failed-precondition',`Прим. ${apt.apt}: потрібна повна історія нарахування місяця до дати переходу без нового дубля`);
+            amounts[apt.apt]=0;importedAmounts[apt.apt]=before.reduce((s,e)=>s+core.entryKop(e),0);importedRecordIds[apt.apt]=before.map(e=>e._id);
+        }
+        await db.doc(`charges_runs/${period}`).create({period,complete:true,source:'migration',count:apartments.length,expectedApts:apartments.map(a=>a.apt),totalKop:0,amounts,importedAmounts,importedRecordIds,
+            note:String(note).trim().slice(0,300),by:actor,at:FieldValue.serverTimestamp()});
+        await audit(actor,role,'charges.importedMonth',`charges_runs/${period}`,'Місяць уже нараховано до переходу; повторного нарахування не створено',{period,count:apartments.length});
+        return {ok:true};
     }
 
     // --------------------------------------------------------
@@ -225,6 +245,12 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
      */
     async function run(actor, role, { period, expectTotalKop, allowPartial }) {
         const settings = await loadSettings();
+        const previousRun=(await db.doc(`charges_runs/${period}`).get()).data();
+        if(previousRun?.source==='migration')fail('failed-precondition','Місяць переходу вже нарахований у попередній системі — повторне нарахування не потрібне');
+        if(period===settings.startPeriod && !settings.startDate.endsWith('-01')) {
+            const ledgers=await allLedgers();
+            if([...ledgers.values()].some(list=>list.some(e=>e.kind==='charge'&&e.period===period&&e.at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate())<settings.startDate)))fail('failed-precondition','За місяць переходу є попередні нарахування. Голова має підтвердити повний перенос місяця, щоб не нарахувати його двічі');
+        }
         if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
         if (period < settings.startPeriod) fail('failed-precondition', `Облік у застосунку починається з ${core.periodName(settings.startPeriod)}`);
         if (period > core.currentPeriod()) fail('failed-precondition', 'Нараховувати наперед не можна');
@@ -308,10 +334,11 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function finishOpening(actor) {
         const plan = (await openingPlanRef.get()).data();
         if (!plan) return;
-        const at = Timestamp.fromDate(core.openingDate());
+        const settings = await loadSettings();
+        const at = Timestamp.fromDate(core.openingDate(settings.startDate));
         await writeAll(plan.rows.map(r => ({ ref: db.doc(`apartments/${r.id}/ledger/${core.OPENING_ID}`), data: {
-            at, period: core.OPENING_PERIOD, kind: 'opening', amount: fromKop(r.kop), amountKop: r.kop,
-            ...(r.parts ? { parts: r.parts } : {}), note: core.openingNote(r.kop), source: 'opening'
+            at, period: new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(at.toDate()).slice(0,7),cutoffDate:settings.startDate, kind: 'opening', amount: fromKop(r.kop), amountKop: r.kop,
+            ...(r.parts ? { parts: r.parts } : {}), note: core.openingNote(r.kop,settings.startDate), source: 'opening'
         } })), actor);
         await settingsRef.set({ opening: { ...plan.summary, set: true, by: plan.by, at: FieldValue.serverTimestamp() } }, { merge: true });
         await openingPlanRef.delete();
@@ -498,10 +525,35 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const [apartments, ledgers] = await Promise.all([loadApartments(), allLedgers()]);
         const byApt = new Map(apartments.map(a => [a.apt, ledgers.get(a.id) || []]));
         return { period, opening: Boolean(settings.opening?.set), components: settings.components.map(c => ({ id: c.id, name: c.name })),
-            ...core.statement(byApt, period, settings.startPeriod, settings.components.map(c => c.id)) };
+            ...core.statement(byApt, period, settings.startPeriod, settings.components.map(c => c.id),settings.startDate) };
     }
 
-    const changes = { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, recompute, resume };
+    async function importHistory(actor,role,{rows}) {
+        if(!Array.isArray(rows)||rows.length>400)fail('invalid-argument','Історію переносять частинами до 400 записів');
+        const [settings,apartments]=await Promise.all([loadSettings(),loadApartments()]);
+        const ids=new Map(apartments.map(a=>[a.apt,a.id]));
+        const clean=rows.map(r=>{
+            const apt=cleanApt(r.apt),at=new Date(r.at),entryId=String(r.entryId||'');
+            if(!ids.has(apt)||!['charge','payment'].includes(r.kind)||!Number.isSafeInteger(r.amountKop)||r.amountKop<=0||r.amountKop>100000000000
+                ||!Number.isFinite(at.getTime())||!/^[\w.-]{1,160}$/.test(entryId))fail('invalid-argument','У файлі історії неправильне приміщення, дата, вид чи сума');
+            const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(at);
+            if(day>=settings.startDate||day.slice(0,7)!==r.period)fail('invalid-argument','Історичний запис має передувати даті переходу й відповідати своєму місяцю');
+            return{ref:db.doc(`apartments/${ids.get(apt)}/ledger/${entryId}`),data:{at:Timestamp.fromDate(at),period:r.period,kind:r.kind,amount:fromKop(r.amountKop),amountKop:r.amountKop,note:String(r.note||'').slice(0,500),source:'historical'}};
+        });
+        if(new Set(clean.map(r=>r.ref.path)).size!==clean.length)fail('invalid-argument','Ідентифікатори записів історії повторюються');
+        await db.runTransaction(async t=>{
+            const old=await Promise.all(clean.map(r=>t.get(r.ref)));
+            for(let i=0;i<clean.length;i++) {
+                const previous=old[i].data(),next=clean[i].data;
+                if(previous&&(previous.kind!==next.kind||previous.period!==next.period||core.entryKop(previous)!==next.amountKop||previous.at?.toMillis?.()!==next.at.toMillis()))fail('failed-precondition','Запис з цим ключем уже має інші дані. Історію не переписують іншим змістом');
+                t.set(clean[i].ref,{...next,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+            }
+            t.create(db.collection('audit_log').doc(),{actor,role,action:'charges.history',target:'apartments/ledger',summary:'Перенесено історію до дати переходу; поточні залишки не змінено',details:{count:clean.length,startDate:settings.startDate},at:FieldValue.serverTimestamp()});
+        });
+        return{written:clean.length};
+    }
+
+    const changes = { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, recompute, resume, importHistory, confirmImportedStartMonth };
     const actions = { context, preview, getStatement, ...Object.fromEntries(Object.entries(changes).map(([name, fn]) =>
         [name, (...args) => withOperation(name, () => fn(...args), args[2]?.period)])) };
 
@@ -511,6 +563,8 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const data = request.data || {};
         switch (data.action) {
             case 'context': return context();
+            case 'importHistory': return actions.importHistory(actor,role,data);
+            case 'confirmImportedStartMonth': return actions.confirmImportedStartMonth(actor,role,data);
             case 'preview': return preview(data);
             case 'statement': return getStatement(data);
             case 'run': case 'revert': case 'addTariff': case 'removeTariff': case 'addGroup': case 'addComponent':

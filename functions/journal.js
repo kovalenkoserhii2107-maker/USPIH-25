@@ -32,6 +32,9 @@ const { activeIn } = require('./payroll-core');
 const REGION = 'europe-central2';
 
 module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staffRole, lock, now: clock = () => new Date() }) {
+    const policyStore = require('./accounting-policy').create({ db, FieldValue });
+    const policyCore = require('./accounting-policy');
+    const notes = require('./accounting-notes')({ db, FieldValue, lock, load });
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const text = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(clock());
@@ -45,9 +48,10 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     /** Усе, з чого будуються проводки. */
     async function load(transaction = null) {
         const get = ref => transaction ? transaction.get(ref) : ref.get();
+        const policy = await policyStore.context(transaction);
         const [ledgerSnap, txSnap, exSnap, supSnap, runSnap, periodSnap, aptSnap, chargeSettings, payrollSnap, payrollPaySnap, payrollPeople, openingSnap, bankSnap, openingPlanSnap] = await Promise.all([
             get(db.collectionGroup('ledger').where('kind', 'in', ['charge', 'opening', 'payment', 'refund'])),
-            get(db.collection('bank_tx').where('period', '>=', core.START_PERIOD)),
+            get(db.collection('bank_tx').where('period', '>=', policy.startDate.slice(0, 7))),
             get(db.collection('expenses')),
             get(db.collection('suppliers')),
             get(db.collection('charges_runs')),
@@ -65,6 +69,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         // Платежі за відомістю зарплати: { paymentId → { key, name } } для погашення 661/641/651.
         const payrollPayments = new Map(payrollPaySnap.docs.filter(d => d.data().payroll?.period)
             .map(d => [d.id, { key: d.data().payroll.key, kind: d.data().kind, recipientType: d.data().payroll.recipientType,
+                personAccount: require('./payroll-payment-core').personAccount(payrollSnap.docs.find(s=>s.id===d.data().payroll.period)?.data().run?.rows?.find(r=>r.personId===d.data().payroll.key)),
                 name: d.data().recipient?.name || '', period: d.data().payroll.period }]));
         const ledgers = new Map();
         ledgerSnap.forEach(d => {
@@ -74,8 +79,18 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             ledgers.get(apt).push({ _id: d.id, ...d.data() });
         });
         const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
+        const [notes, snapshots, cuts] = await Promise.all([get(db.collection('accounting_notes')), get(db.collection('journal_snapshots')), get(db.collection('journal_bank_checks'))]);
+        const closedSnapshots = new Map();
+        for (const [p, d] of periods) if (d.status === 'closed' && d.archiveVersion === 1) {
+            const parts = snapshots.docs.filter(s => s.data().period === p).sort((a,b) => a.data().index - b.data().index);
+            if (parts.length === d.archiveParts && parts.every((s,i)=>s.data().index===i) && parts.reduce((n,s)=>n+s.data().entries.length,0)===d.entries) closedSnapshots.set(p, parts.flatMap(s => s.data().entries));
+        }
         return {
+            policy,
+            bankCuts: new Map(cuts.docs.map(d => [d.id,d.data()])),
             input: {
+                start: policy.startDate.slice(0, 7), startDate: policy.startDate, policy, closedSnapshots,
+                adjustments: notes.docs.map(d => ({ id:d.id, ...d.data() })),
                 ledgers,
                 bankTx: txSnap.docs.map(d => ({ id: d.id, ...d.data() })),
                 expenses: exSnap.docs.map(d => ({ id: d.id, ...d.data() })),
@@ -100,9 +115,9 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     /** Місяць за замовчуванням — перший незакритий, що вже скінчився, або поточний. */
-    function defaultPeriod(closed, now) {
+    function defaultPeriod(closed, now, start) {
         const current = now.slice(0, 7);
-        for (const p of core.periodsUpTo(current)) if (!closed.includes(p)) return p;
+        for (const p of core.periodsUpTo(current, start)) if (!closed.includes(p)) return p;
         return current;
     }
 
@@ -122,19 +137,27 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     async function context({ period } = {}, transaction = null) {
         const now = today();
         const data = await load(transaction);
-        const p = validPeriod(period) ? period : defaultPeriod(data.closed, now);
+        const p = validPeriod(period) ? period : defaultPeriod(data.closed, now, data.input.start);
         const entries = core.journal(data.input, p);
         const tb = core.trialBalance(entries, p);
         const stored = data.periods.get(p);
         const isClosed = stored?.status === 'closed';
         const isClosing = stored?.status === 'closing' && stored.closingUntil > Date.now();
         const key = sha(core.entriesKey(entries, p));
+        const liveKey = sha(core.entriesKey(core.journal({ ...data.input, closedSnapshots: null }, p), p));
         const checks = isClosed
-            ? [stored.key === key
+            ? [stored.key === liveKey
                 ? { level: 'ok', text: 'Місяць закрито; операції відтоді не змінювались' }
                 : { level: 'warn', text: 'Після закриття змінились операції цього місяця (наприклад, пізня виписка банку). Голова може відкрити місяць, щоб розібратися' }]
-            : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb, openingStatus: data.opening?.status || 'none' });
-        checks.push(...reconcile({ period: p, runs: data.runs, bankTx: data.input.bankTx, ledgers: data.input.ledgers,
+            : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb, openingStatus: data.opening?.status || 'none', start: data.input.start });
+        if (!isClosed && data.policy.status !== 'approved') checks.push({ level:'block', text:'Параметри обліку ще не погоджені головою: дата початку, фонди та схема доходів («Налаштування»)' });
+        if(!isClosed && data.bankAccounts.some(a=>a.purpose==='deposit' && policyCore.bankAccount(a.iban,data.policy)==='311'))checks.push({level:'block',text:'Для депозитного рахунку оберіть субрахунок за його договором у налаштуваннях обліку'});
+        if (isClosed && stored.archiveVersion === 1 && !data.input.closedSnapshots.has(p)) checks.push({level:'block',text:'Архів проводок цього періоду неповний; відновіть його перед подальшим обліком'});
+        const bankRows = tb.rows.filter(r=>['311','313','351','143'].includes(r.acc)).flatMap(r=>r.byA.map(a=>({acc:r.acc,iban:a.a,balanceKop:a.closeDr-a.closeCr})));
+        if(!isClosed && data.input.adjustments.some(n=>n.period===p&&n.status==='draft'))checks.push({level:'block',text:'Бухгалтерські довідки цього місяця ще не погоджені'});
+        const cut = data.bankCuts.get(p);
+        if (!isClosed && bankRows.length && (!cut || cut.key !== key || cut.rows.length !== bankRows.length || bankRows.some(r=>!cut.rows.some(c=>c.iban===r.iban&&c.acc===r.acc&&c.balanceKop===r.balanceKop)))) checks.push({level:'block',text:'Звірте залишки поточного і депозитного рахунків з випискою на кінець саме цього місяця'});
+        checks.push(...reconcile({ period: p, start:data.input.start, startDate:data.policy.startDate, runs: data.runs, bankTx: data.input.bankTx, ledgers: data.input.ledgers,
             apartments: data.apartments, openingSet: data.openingSet, openingPending: data.openingPending, expenses: data.input.expenses, payments: data.payments, payrollRuns: data.input.payrollRuns }));
         // Є працівники, а відомість місяця не затверджено — зарплата не потрапить у проводки місяця.
         if (!isClosed && activeIn(data.people, p).length && data.input.payrollRuns.find(r => r.period === p)?.status !== 'approved') {
@@ -143,7 +166,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         }
         const payroll = data.input.payrollRuns.find(r => r.period === p);
         const payrollSent = [...data.input.payrollPayments.values()].some(payment => payment.period === p);
-        if (!isClosed && ((payrollSent && payroll?.status !== 'approved') || Object.values(payroll?.stages || {}).some(stage => stage.complete === false))) {
+        if (!isClosed && ((payrollSent && payroll?.status !== 'approved') || Object.values(payroll?.stages || {}).some(stage => !stage.external && stage.complete === false))) {
             checks.push({ level: 'block', text: 'Виплату зарплати розпочато, але відомість не затверджена або відправку платежів не завершено' });
         }
         // Порівняння з балансами квартир має сенс для останнього місяця обліку.
@@ -162,8 +185,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             if (ready >= 0) checks.splice(ready, 1);
         }
         return {
-            period: p, today: now, start: core.START_PERIOD,
-            periods: core.periodsUpTo(now.slice(0, 7)).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
+            period: p, today: now, start: data.input.start, startDate: data.policy.startDate, policy: data.policy, bankRows, bankCut: cut ? {note:cut.note, date:cut.date, key:cut.key} : null,
+            periods: core.periodsUpTo(now.slice(0, 7), data.input.start).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
             status: isClosed ? 'closed' : isClosing ? 'closing' : 'open', key,
             closedAt: stored?.closedAt?.toDate?.()?.toISOString() || null, closedBy: stored?.closedBy || null,
             history: (stored?.history || []).map(h => ({ ...h, at: h.at?.toDate?.()?.toISOString?.() || h.at || null })),
@@ -171,7 +194,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             canReopen: isClosed && lastClosed === p,
             accounts: core.ACCOUNTS,
             // Назви для аналітики: статті витрат (92), складові внеску (48), джерела доходу.
-            labels: { 92: ITEMS, 641: { pdfo: 'ПДФО', vz: 'Військовий збір' }, 48: { ...Object.fromEntries(data.components.map(c => [c.id, c.name])), grant: INCOME_SOURCES.grant }, 703: INCOME_SOURCES, 719: INCOME_SOURCES, 733: INCOME_SOURCES },
+            labels: { 92: ITEMS, 641: { pdfo: 'ПДФО', vz: 'Військовий збір' }, 651: {esv:'ЄСВ'},661:Object.fromEntries(data.input.payrollRuns.flatMap(p=>p.run?.rows || []).map(r=>[require('./payroll-payment-core').personAccount(r),r.name])),
+                48: Object.fromEntries(data.policy.funds.map(f=>[f.id,f.name])), 703: INCOME_SOURCES, 719: INCOME_SOURCES, 733: INCOME_SOURCES },
             opening: { status: data.opening?.status || 'none', lines: data.opening?.lines?.length || 0 },
             tb,
             entries: entries.filter(e => e.period === p).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
@@ -182,7 +206,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     /** 311 за кожним рахунком (з вхідним залишком) проти останнього залишку з банку. */
     function bankCheck(tb, accounts) {
         const r311 = tb.rows.find(r => r.acc === '311');
-        const byIban = new Map((r311?.byA || []).map(x => [String(x.a), x.closeDr - x.closeCr]));
+        const byIban = new Map(tb.rows.filter(r=>['311','313','351','143'].includes(r.acc)).flatMap(r=>(r.byA || []).map(x => [String(x.a), x.closeDr - x.closeCr])));
         const off = accounts.filter(a => (!a.currency || a.currency === 'UAH') && Number.isSafeInteger(a.balanceKop) && (byIban.get(a.iban) || 0) !== a.balanceKop);
         if (!accounts.length) return null;
         return off.length
@@ -191,8 +215,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     /** Чистий рух за рахунком банку з початку обліку (без вхідного залишку). */
-    function turnover311(entries, iban) {
-        return entries.filter(e => e.src !== 'opening').reduce((s, e) => s + (e.dr === '311' && e.dA === iban ? e.kop : 0) - (e.cr === '311' && e.cA === iban ? e.kop : 0), 0);
+    function turnover311(entries, iban, acc = '311') {
+        return entries.filter(e => e.src !== 'opening').reduce((s, e) => s + (e.dr === acc && e.dA === iban ? e.kop : 0) - (e.cr === acc && e.cA === iban ? e.kop : 0), 0);
     }
 
     /** Вхідна ОСВ: рядки, автоматичні залишки, підказки для банку, підсумки. */
@@ -212,13 +236,13 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const lines = doc?.lines || [];
         const all = core.journal(data.input, now.slice(0, 7));
         const banks = data.bankAccounts.filter(a => !a.currency || a.currency === 'UAH').map(a => {
-            const moved = turnover311(all, a.iban);
-            return { iban: a.iban, name: a.name || '', purpose: a.purpose || 'current', balanceKop: a.balanceKop ?? null,
+            const acc=policyCore.bankAccount(a.iban,data.policy), moved = turnover311(all, a.iban,acc);
+            return { iban: a.iban, acc, name: a.name || '', purpose: a.purpose || 'current', balanceKop: a.balanceKop ?? null,
                 balanceAt: a.balanceAt?.toDate?.()?.toISOString() || null, turnoverKop: moved,
                 suggestKop: Number.isSafeInteger(a.balanceKop) ? a.balanceKop - moved : null };
         });
         return {
-            date: core.lastDay(core.shift(core.START_PERIOD, -1)), status: doc?.status || 'none', lines, auto: autoLines,
+            date: policyCore.previousDay(data.policy.startDate), status: doc?.status || 'none', lines, auto: autoLines,
             totals: core.openingTotals(auto, lines), accounts: Object.fromEntries(core.OPENING_ACCOUNTS.map(a => [a, core.ACCOUNTS[a]])),
             needsA: core.OPENING_NEEDS_A, banks, suppliers: [...data.input.suppliers.values()].map(s => s.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'uk')),
             savedBy: doc?.savedBy || null, savedAt: doc?.savedAt?.toDate?.()?.toISOString() || null,
@@ -260,7 +284,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             t.update(ref, { status: 'approved', approvedBy: actor, approvedAt: FieldValue.serverTimestamp() });
             return sums;
         });
-        await audit(actor, role, 'journal.opening.approve', 'journal_opening/main', `Вхідну ОСВ на 30.09.2026 затверджено: дебет = кредит = ${(totals.dr / 100).toFixed(2)} грн`, totals);
+        await audit(actor, role, 'journal.opening.approve', 'journal_opening/main', `Вхідну ОСВ затверджено: дебет = кредит = ${(totals.dr / 100).toFixed(2)} грн`, totals);
         return { ok: true };
     }
 
@@ -285,9 +309,13 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 const fresh = await context({ period }, t);
                 const blocks = fresh.checks.filter(c => c.level === 'block');
                 if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
+                const archiveParts = Math.ceil(fresh.entries.length / 250);
+                for(let i=archiveParts;i<(current.data().archiveParts || 0);i++)t.delete(db.doc(`journal_snapshots/${period}-${i}`));
+                for (let i = 0; i < archiveParts; i++) t.set(db.doc(`journal_snapshots/${period}-${i}`), { period,index:i,entries:fresh.entries.slice(i*250,(i+1)*250),version:1 });
                 t.set(ref, {
                     status: 'closed', key: fresh.key, totals: fresh.tb.totals,
                     tb: fresh.tb.rows, entries: fresh.entries.length,
+                    archiveVersion: 1, archiveParts, rulesVersion: 2, policy: JSON.parse(JSON.stringify(fresh.policy)), startDate: fresh.startDate,
                     closedBy: actor, closedAt: FieldValue.serverTimestamp(),
                     history: FieldValue.arrayUnion({ action: 'close', by: actor, at }),
                     closingToken: FieldValue.delete(), closingUntil: FieldValue.delete()
@@ -323,6 +351,21 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         return { ok: true };
     }
 
+    async function bankCut(actor, role, { period, rows, note }) {
+        if (!validPeriod(period) || text(note, 300).length < 5 || !Array.isArray(rows)) fail('invalid-argument', 'Укажіть період, залишки з виписки та її реквізити');
+        await db.runTransaction(async t => {
+            const current = await context({ period }, t);
+            if (current.status !== 'open') fail('failed-precondition', 'Місяць уже закрито або закривається');
+            if(current.today<core.lastDay(period))fail('failed-precondition','Залишок на кінець місяця звіряють після настання цієї дати');
+            const clean = rows.map(r => ({ acc:String(r.acc), iban:String(r.iban), balanceKop:Number(r.balanceKop) }));
+            if (clean.length !== current.bankRows.length || new Set(clean.map(r=>`${r.acc}:${r.iban}`)).size !== clean.length || clean.some(r=>!Number.isSafeInteger(r.balanceKop)
+                || !current.bankRows.some(x=>x.acc===r.acc && x.iban===r.iban && x.balanceKop===r.balanceKop))) fail('failed-precondition', 'Залишки виписки не збігаються з обліком. Знайдіть пропущені операції або виправте вхідну ОСВ');
+            t.set(db.doc(`journal_bank_checks/${period}`), { period,date:core.lastDay(period),key:current.key,rows:clean,note:text(note,300),by:actor,at:FieldValue.serverTimestamp() });
+            t.create(db.collection('audit_log').doc(),{actor,role,action:'journal.bankCut',target:`journal_bank_checks/${period}`,summary:'Банк звірено з обліком на кінець періоду',details:{period,note:text(note,300)},at:FieldValue.serverTimestamp()});
+        });
+        return {ok:true};
+    }
+
     const journalAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120, memory: '512MiB' }, callGuard('journalAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
@@ -334,9 +377,15 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             case 'opening': return openingContext();
             case 'saveOpening': return saveOpening(actor, role, data);
             case 'approveOpening': return approveOpening(actor, role);
+            case 'policy': return policyStore.context();
+            case 'savePolicy': return policyStore.save(actor, role, data);
+            case 'bankCut': return bankCut(actor, role, data);
+            case 'notes': return notes.context();
+            case 'saveNote': return notes.save(actor, role, data);
+            case 'approveNote': return notes.approve(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { journalAction, actions: { context, close, reopen, openingContext, saveOpening, approveOpening } };
+    return { journalAction, load, notes, actions: { context, close, reopen, openingContext, saveOpening, approveOpening, bankCut, policy:policyStore.context, savePolicy:policyStore.save } };
 };

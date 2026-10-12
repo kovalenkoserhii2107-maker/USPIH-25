@@ -11,10 +11,11 @@
 import { db, session } from './firebase.js';
 import { audit } from './audit.js';
 import {
-    collection, doc, getDoc, getDocs, query, orderBy, writeBatch, serverTimestamp
+    collection, doc, getDoc, getDocs, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { escapeHtml, toast, setBusy, parseMoney, formatMoney } from './ui.js';
 import { loadKnownApts, partsHtml } from './finance.js';
+import { callBackend } from './backend.js';
 
 const MONTHS = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
                 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
@@ -147,7 +148,9 @@ export function parseLedgerLines(text) {
  */
 export function summarizeLedger(entries) {
     const opening = entries.find(e => e.kind === 'opening');
-    const counted = opening ? entries.filter(e => e.at > opening.at) : entries;
+    const openingDay=opening?new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(opening.at):null;
+    const cutoff=opening?.cutoffDate || (openingDay?new Date(Date.parse(`${openingDay}T12:00:00Z`)+86400000).toISOString().slice(0,10):null);
+    const counted = opening ? entries.filter(e => e.kind!=='opening' && new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at)>=cutoff) : entries;
     const charged = counted.filter(e => e.kind === 'charge')
                            .reduce((s, e) => s + e.amount, 0);
     const paid = counted.filter(e => e.kind === 'payment')
@@ -190,14 +193,17 @@ function ledgerId(row, seen) {
 /** Історичний імпорт — лише до початку серверного обліку (01.10.2026). */
 export async function saveLedger(rows) {
     const known = await loadKnownApts();
-    const systemStart = '2026-10';
+    const policy = await getDoc(doc(db,'accounting_settings','main'));
+    const systemStart = policy.data()?.startPeriod || '2026-10';
+    const startDate=policy.data()?.startDate || `${systemStart}-01`;
 
     const skipped = new Set();
     let bankPayments = 0, systemCharges = 0;
     const usable = rows.filter(r => {
         if (known.size && !known.has(r.apt)) { skipped.add(r.apt); return false; }
-        if (r.period >= systemStart && r.kind === 'payment') { bankPayments += 1; return false; }
-        if (r.period >= systemStart && r.kind === 'charge') { systemCharges += 1; return false; }
+        const active=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(r.at)>=startDate;
+        if (active && r.kind === 'payment') { bankPayments += 1; return false; }
+        if (active && r.kind === 'charge') { systemCharges += 1; return false; }
         return true;
     });
 
@@ -213,15 +219,11 @@ export async function saveLedger(rows) {
     // Firestore не приймає більше 500 дій в одній пачці
     const items = [...seen.entries()];
     for (let i = 0; i < items.length; i += 400) {
-        const batch = writeBatch(db);
-        items.slice(i, i + 400).forEach(([key, r]) => {
+        const payload=items.slice(i, i + 400).map(([key, r]) => {
             const [apt, id] = key.split('/');
-            batch.set(doc(db, 'apartments', apt, 'ledger', id), {
-                at: r.at, period: r.period, kind: r.kind,
-                amount: r.amount, note: r.note, updatedAt: serverTimestamp()
-            });
+            return{apt,entryId:id,at:r.at.toISOString(),period:r.period,kind:r.kind,amountKop:Math.round(r.amount*100),note:r.note};
         });
-        await batch.commit();
+        await callBackend('chargesAction',{action:'importHistory',rows:payload},120000);
     }
     return { written: items.length, skipped: [...skipped], bankPayments, systemCharges };
 }
@@ -240,7 +242,8 @@ export async function fetchLedger(apt) {
             note: e.note || '', period: e.period || '',
             // Розподіл оплати за статтями (рахує сервер, як у сервісі бухгалтера).
             alloc: Array.isArray(e.alloc) ? e.alloc : [],
-            at: e.at?.toDate ? e.at.toDate() : null
+            at: e.at?.toDate ? e.at.toDate() : null,
+            cutoffDate:e.cutoffDate || null
         };
     }).filter(e => e.at);
 }

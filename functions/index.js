@@ -431,7 +431,7 @@ const journal = require('./journal')({ db, FieldValue, requireAdmin, staffRole, 
 exports.journalAction = journal.journalAction;
 
 // Звітність: строки, дані для форм ДПС, позначки й квитанції (див. reports.js).
-const reports = require('./reports')({ db, FieldValue, requireAdmin, staffRole });
+const reports = require('./reports')({ db, FieldValue, requireAdmin, staffRole, journal });
 exports.reportsAction = reports.reportsAction;
 
 // Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).

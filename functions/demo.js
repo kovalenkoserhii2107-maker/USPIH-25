@@ -476,6 +476,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         push(1, 'out', LAST.salary, 'Заробітна плата за другу половину вересня 2026', { name: 'ПРАЦІВНИК ОСББ (ДЕМО)', account: iban('2600100000000077'), code: '' });
         push(1, 'out', LAST.salaryTaxes, '*;101;ПДФО та військовий збір із заробітної плати за вересень 2026', dps);
         push(1, 'out', LAST.esv, '*;101;ЄСВ за вересень 2026', dps);
+        step('Вереснева зарплата і податки залишаться у «Вхідних»: спочатку потрібні перенесена зарплатна база та звірка виплат; сама виписка не замінює нарахування');
         // Банк: 5 грн за кожен платіж і плата за РКО за місяць.
         const paid = list.filter(t => t.direction === 'out');
         paid.forEach(t => push(Math.min(9, t.at.getUTCDate()), 'out', LAST.feeKop, `Комісія за платіж на ${fromKop(t.amountKop).toLocaleString('uk-UA', { minimumFractionDigits: 2 })} грн`, { name: 'АТ КБ «ПРИВАТБАНК»', account: '', code: '14360570' }, t.account));

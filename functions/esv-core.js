@@ -4,6 +4,7 @@
 // Округлення — за кожним рядком Д1. Ті самі копійки йдуть у відомість
 // і платіж ЄСВ; XML не перераховує затверджену суму.
 function esvParts(row, rate) {
+    if (row.esvConsolidated && Array.isArray(row.esvParts)) return row.esvParts;
     let left = rate.minWageKop * rate.maxBaseMult;
     const sick = (row.sickKop || 0) + (row.fundSickKop || 0);
     const vacation = row.vacationKop || 0;

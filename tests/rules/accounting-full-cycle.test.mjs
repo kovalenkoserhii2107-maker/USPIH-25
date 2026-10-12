@@ -1,3 +1,4 @@
+import { completeClosingPrerequisites, clearAccounting } from './accounting-fixture.mjs';
 // Сквозная сверка реальных серверных модулей. Подменён только внешний
 // ответ ПриватБанка: реальных денег, токенов и подачи в ДПС здесь нет.
 import test, { before, after, afterEach } from 'node:test';
@@ -25,6 +26,7 @@ const names = ['apartments', 'staff', 'charges', 'charges_runs', 'bank', 'bank_t
     'payroll_people', 'payroll_runs', 'payroll_settings', 'reports', 'report_settings', 'osbb_settings'];
 let app, db, env, charges, bank, payments, expenses, budget, payroll, journal, reports, apiCalls;
 async function wipe() {
+    await clearAccounting(db);
     for (const name of names) await Promise.all((await db.collection(name).get()).docs.map(d => db.recursiveDelete(d.ref)));
     apiCalls = [];
 }
@@ -175,6 +177,7 @@ test('полный месяц: начисления → банк → все пр
     for (const [iban, kop] of [[OWN, 960048], [RESERVE, 50000]]) await db.doc('bank/settings').update({ [`accounts.${iban}.balanceKop`]: kop, [`accounts.${iban}.balanceAt`]: at('2026-10-30') });
     await journal.actions.saveOpening(...A, { lines: [{ acc: '311', a: OWN, side: 'dr', kop: 2000000 }, { acc: '48', a: 'Вхідний залишок', side: 'cr', kop: 1990000 }] });
     await journal.actions.approveOpening(...C);
+    await completeClosingPrerequisites(journal, db, PERIOD);
     const j = await journal.actions.context({ period: PERIOD });
     assert.ok(j.tb.balanced);
     assert.ok(!j.checks.some(c => ['block', 'warn'].includes(c.level)), JSON.stringify(j.checks));
@@ -242,6 +245,7 @@ test('полный месяц: начисления → банк → все пр
     await assertFails(getDocs(collection(resident, 'bank_tx')));
     await assertFails(getDoc(doc(resident, `reports/${report.key}`)));
     await assertFails(getDoc(doc(board, 'bank_secrets/privat')));
+    await completeClosingPrerequisites(journal,db,PERIOD);
     await journal.actions.close(...A, { period: PERIOD });
     assert.equal((await journal.actions.context({ period: PERIOD })).status, 'closed');
     await assert.rejects(charges.actions.run(...A, { period: PERIOD, expectTotalKop: 117660 }), /закрит|Закрит/);

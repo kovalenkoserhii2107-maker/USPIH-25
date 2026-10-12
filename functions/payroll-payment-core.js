@@ -31,4 +31,5 @@ function withoutCompleted(completed, paymentId) {
     return Object.fromEntries(Object.entries(completed || {}).filter(([, id]) => id !== paymentId));
 }
 
-module.exports = { TAX_KEYS, recipientType, planRecipient, findPlan, withoutCompleted };
+const personAccount = row => row?.payee?.rnokpp ? `person:${row.payee.rnokpp}` : row?.name || '';
+module.exports = { TAX_KEYS, recipientType, planRecipient, findPlan, withoutCompleted, personAccount };

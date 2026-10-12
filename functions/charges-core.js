@@ -138,7 +138,10 @@ function chargeDate(period) {
 }
 
 /** Вхідний залишок — 30.09.2026: раніше за будь-яке нарахування. */
-const openingDate = () => kyivDate(2026, 9, 30, 12);
+const openingDate = (startDate = '2026-10-01') => {
+    const [year,month,day]=startDate.split('-').map(Number);
+    return new Date(kyivDate(year,month,day,0).getTime()-1);
+};
 
 /** Місяці, за які ще не нараховано: від початку обліку до поточного включно. */
 /**
@@ -273,18 +276,20 @@ function checkOpening(rows, knownApts) {
     return null;
 }
 
-const openingNote = kop => kop < 0 ? 'Борг на 30.09.2026 (вхідний залишок)'
-    : kop > 0 ? 'Переплата на 30.09.2026 (вхідний залишок)' : 'Розраховано на 30.09.2026';
+const openingNote = (kop, startDate = '2026-10-01') => {
+    const date = new Date(Date.parse(`${startDate}T12:00:00Z`)-86400000).toISOString().slice(0,10).split('-').reverse().join('.');
+    return kop < 0 ? `Борг на ${date} (вхідний залишок)` : kop > 0 ? `Переплата на ${date} (вхідний залишок)` : `Розраховано на ${date}`;
+};
 
 // ------------------------------------------------------------
 // БАЛАНС І ВІДОМІСТЬ
 // ------------------------------------------------------------
 /** Баланс квартири з її історії, у копійках. */
-function balanceFromLedger(entries, startPeriod = START_PERIOD) {
+function balanceFromLedger(entries, startPeriod = START_PERIOD, startDate) {
     let kop = 0;
     for (const e of entries) {
         if (e.kind === 'opening') kop += entryKop(e);
-        else if (String(e.period || '') < startPeriod) continue;
+        else if (String(e.period || '') < startPeriod || startDate && e.at && new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate?.() || new Date(e.at)) < startDate) continue;
         else if (e.kind === 'charge') kop -= entryKop(e);
         else if (e.kind === 'payment') kop += entryKop(e);
         else if (e.kind === 'refund') kop -= entryKop(e);     // повернення переплати співвласнику
@@ -346,9 +351,10 @@ function allocatePayment(kop, balances, order) {
  * order — порядок складових (з налаштувань). Записи до початку обліку
  * не беруться: вони вже у вхідному залишку.
  */
-function replay(entries, { startPeriod = START_PERIOD, order = ['main'] } = {}) {
+function replay(entries, { startPeriod = START_PERIOD, startDate, order = ['main'] } = {}) {
     const list = entries.map((e, i) => ({ e, i }))
-        .filter(({ e }) => e.kind === 'opening' || (['charge', 'payment', 'refund'].includes(e.kind) && String(e.period || '') >= startPeriod))
+        .filter(({ e }) => e.kind === 'opening' || (['charge', 'payment', 'refund'].includes(e.kind) && String(e.period || '') >= startPeriod
+            && (!startDate || !e.at || new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(new Date(msOf(e.at))) >= startDate)))
         .sort((a, b) => (msOf(a.e.at) - msOf(b.e.at)) || (KIND_ORDER[a.e.kind] - KIND_ORDER[b.e.kind]) || a.i - b.i);
     const balances = {};
     const add = (c, v) => { balances[c] = (balances[c] || 0) + v; };
@@ -417,10 +423,11 @@ function paymentOps(ledgers, year, opts = {}) {
  * нараховано, сплачено, залишок на кінець — по кожній квартирі.
  * ledgers: Map<apt, entries[]>.
  */
-function statement(ledgers, period, startPeriod = START_PERIOD, order = ['main']) {
+function statement(ledgers, period, startPeriod = START_PERIOD, order = ['main'], startDate) {
     const rows = [];
     const byComponent = {};
-    for (const [apt, entries] of ledgers) {
+    for (const [apt, original] of ledgers) {
+        const entries=original.filter(e=>e.kind==='opening'||!startDate||!e.at||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(new Date(msOf(e.at)))>=startDate);
         const before = entries.filter(e => e.kind === 'opening' || String(e.period || '') < period);
         const during = entries.filter(e => e.kind !== 'opening' && e.period === period && period >= startPeriod);
         const opening = balanceFromLedger(before, startPeriod);

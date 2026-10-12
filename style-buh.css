@@ -1021,3 +1021,10 @@ body.chs-open { overflow: hidden; }
 .rp-fold[open] > summary::after { transform: rotate(90deg); }
 .rp-fold > summary small { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: #fff; font-size: 12px; font-weight: 800; }
 .rp-fold > :not(summary) { margin: 0 12px 12px; }
+
+/* Датовані параметри й довідки використовують ті самі картки та поля. */
+.pr-rate-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line, #e6e8ed); }
+.pr-rate-row .py-field, .ap-bank .py-field { min-width: 0; }
+.ap-bank { padding: 16px 0; border-bottom: 1px solid var(--line, #e6e8ed); }
+#accountingSettings details > :not(summary), #jrNotes details > :not(summary), #annualReports details > :not(summary) { margin-top: 12px; }
+#accountingSettings .field-input, #jrNotes .field-input, #annualReports .field-input { min-width: 0; max-width: 100%; }

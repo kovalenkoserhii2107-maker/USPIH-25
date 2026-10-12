@@ -9,8 +9,9 @@
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { loadJournal, journalAct, maskIban } from './buh-data.js';
-import { fmtKop } from './charges-core.js';
+import { fmtKop, toKop } from './charges-core.js';
 import { loadOpening, openingAction, openingInput } from './buh-opening.js';
+import { loadNotes } from './buh-accounting-notes.js';
 
 const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 const monthTitle = p => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
@@ -133,12 +134,17 @@ export async function loadJournalView() {
         <div class="kpi-grid">
             <div class="kpi"><span>Обороти за місяць</span><b>${fmtKop(ctx.tb.totals.dr)}</b><small>дебет = кредит${ctx.tb.balanced ? '' : ' — НІ'}</small></div>
             <div class="kpi"><span>Проводок</span><b>${ctx.entries.length}</b><small>з операцій місяця</small></div>
-            <div class="kpi"><span>Гроші на рахунках (311)</span><b>${fmtKop((ctx.tb.rows.find(r => r.acc === '311')?.closeDr || 0) - (ctx.tb.rows.find(r => r.acc === '311')?.closeCr || 0))}</b><small>${ctx.opening?.status === 'approved' ? 'з вхідним залишком на 30.09.2026' : 'рух з 01.10.2026, без вхідного залишку'}</small></div>
+            <div class="kpi"><span>Поточні та депозитні рахунки</span><b>${fmtKop(ctx.tb.rows.filter(r=>['311','313','351','143'].includes(r.acc)).reduce((s,r)=>s+r.closeDr-r.closeCr,0))}</b><small>${ctx.opening?.status === 'approved' ? 'з погодженими вхідними залишками' : `рух з ${escapeHtml(ctx.startDate || ctx.start)}, без вхідних залишків`}</small></div>
             <div class="kpi"><span>Борг співвласників (377)</span><b class="is-out">${fmtKop(ctx.tb.rows.find(r => r.acc === '377')?.byA.reduce((s, x) => s + x.closeDr, 0) || 0)}</b><small>переплати — ${fmtKop(ctx.tb.rows.find(r => r.acc === '377')?.byA.reduce((s, x) => s + x.closeCr, 0) || 0)}</small></div>
         </div>
+        ${!closed && ctx.bankRows?.length ? `<details class="buh-card"${ctx.bankCut?.key===ctx.key?'':' open'}><summary>Звірка з банком на кінець місяця</summary><p class="buh-note">Внесіть залишки з виписки на останній день цього місяця. Поточний залишок банку може належати іншій даті.</p>
+            ${ctx.bankRows.map((r,i)=>`<label class="py-field"><span>…${escapeHtml(r.iban.slice(-4))} · ${r.acc} · в обліку ${fmtKop(r.balanceKop)} грн</span><input class="field-input" inputmode="decimal" data-jr-cut="${i}" placeholder="Залишок у виписці, грн" value="${ctx.bankCut?.key===ctx.key?(r.balanceKop/100).toFixed(2):''}"></label>`).join('')}
+            <label class="py-field"><span>Реквізити виписки / підтвердження</span><input id="jrCutNote" class="field-input" maxlength="300" value="${escapeHtml(ctx.bankCut?.note || '')}"></label><button type="button" class="sv-btn is-soft" data-act="bank-cut">Звірити залишки</button></details>`:''}
         ${openingShown() ? '<div id="jrOpening"><section class="buh-card"><p class="list-empty">Завантаження вхідної ОСВ…</p></section></div>' : ''}
         <section class="buh-card"><div class="buh-card-head"><h2>${closed ? 'Стан' : 'Перед закриттям'}</h2></div>${checksHtml()}</section>
-        ${tbHtml()}`;
+        ${tbHtml()}<div id="jrNotes"></div>`;
+    const notesHost=document.getElementById('jrNotes');
+    loadNotes(notesHost,ctx.period,ctx.policy?.funds || [{id:'main',name:'Основний фонд'}]).catch(err=>{if(notesHost.isConnected)notesHost.textContent=err.message;});
     if (openingShown()) loadOpening(document.getElementById('jrOpening')).catch(e => toast(e.message, 'error'));
     return 0;
 }
@@ -155,6 +161,11 @@ async function onAction(btn) {
         else if (a === 'opening') { showOpening = !openingShown(); await loadJournalView(); }
         else if (a === 'csv-tb') csvTb();
         else if (a === 'csv-journal') csvJournal();
+        else if (a === 'bank-cut') {
+            const rows=ctx.bankRows.map((r,i)=>({...r,balanceKop:toKop(document.querySelector(`[data-jr-cut="${i}"]`).value)}));
+            await journalAct({action:'bankCut',period:ctx.period,rows,note:document.getElementById('jrCutNote').value});
+            toast('Залишки банку звірено','success');
+        }
         else if (a === 'close') {
             if (!await confirmDialog(`Закрити ${monthTitle(ctx.period).toLowerCase()}?`,
                 'Після закриття операції цього місяця (нарахування, документи, рознесення виписки) змінити не можна. Відкрити знову може лише голова, з причиною.', 'Закрити')) return;
