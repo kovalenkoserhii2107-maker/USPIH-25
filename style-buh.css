@@ -1028,3 +1028,6 @@ body.chs-open { overflow: hidden; }
 .ap-bank { padding: 16px 0; border-bottom: 1px solid var(--line, #e6e8ed); }
 #accountingSettings details > :not(summary), #jrNotes details > :not(summary), #annualReports details > :not(summary) { margin-top: 12px; }
 #accountingSettings .field-input, #jrNotes .field-input, #annualReports .field-input { min-width: 0; max-width: 100%; }
+
+.dr-destructive { background:#b42318; color:#fff; }
+#resetSettings .buh-note input[type="checkbox"] { width:22px; height:22px; vertical-align:middle; margin:8px 8px 8px 0; }

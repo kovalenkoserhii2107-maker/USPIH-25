@@ -17,9 +17,27 @@ service cloud.firestore {
       return request.auth.token.email.split('@')[0];
     }
 
-    function isSignedIn() {
-      return request.auth != null;
+    function maintenanceActive() {
+      return exists(/databases/$(database)/documents/_maintenance/reset)
+        && get(/databases/$(database)/documents/_maintenance/reset).data.get('active', false);
     }
+    function validSession() {
+      return request.auth == null
+        || !exists(/databases/$(database)/documents/_maintenance/reset)
+        || !('authCutoff' in get(/databases/$(database)/documents/_maintenance/reset).data)
+        || request.auth.uid == get(/databases/$(database)/documents/_maintenance/reset).data.keeperUid
+        || request.auth.token.get('auth_time', 0) > get(/databases/$(database)/documents/_maintenance/reset).data.authCutoff;
+    }
+    function isSignedIn() {
+      return request.auth != null && validSession();
+    }
+
+    match /_maintenance/{id} {
+      allow read: if isChair() && request.auth.token.email.matches('.*@uspih-25[.]com');
+      allow write: if false;
+      match /{nested=**} { allow read, write: if false; }
+    }
+    match /migration_jobs/{id} { allow read: if isChair() && request.auth.token.email.matches('.*@uspih-25[.]com'); allow write: if false; }
 
     // ---------- РОЛІ ПРАВЛІННЯ ----------
     // Права має людина, а не спільний логін: staff/{номер входу} зберігає
@@ -145,7 +163,7 @@ service cloud.firestore {
     // ---------- КВАРТИРИ ----------
     // Мешканець бачить і редагує ТІЛЬКИ свою квартиру.
     match /apartments/{apt} {
-      allow read: if isSignedIn() && (apt == myApt() || isStaff());
+      allow read: if validSession() && (isSignedIn() && (apt == myApt() || isStaff()));
 
       // Мешканець змінює у своїй квартирі рівно те, що є його власною
       // дією: пароль змінено, список власників підтверджено, тур пройдено.
@@ -153,7 +171,7 @@ service cloud.firestore {
       // Раніше тут дозволялося все, крім isAdmin. Тобто мешканець міг
       // виправити собі площу — а вона входить у кворум за площею — або
       // обнулити власний борг. Ці поля веде бухгалтерія, не мешканець.
-      allow update: if isSignedIn() && apt == myApt()
+      allow update: if !maintenanceActive() && validSession() && (isSignedIn() && apt == myApt()
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['passwordChanged', 'ownersStatus', 'ownersConfirmedAt',
                        'ownersConfirmedBy', 'tutorialAt', 'termsAcceptedAt'])
@@ -161,14 +179,14 @@ service cloud.firestore {
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersConfirmedBy'])
             || request.resource.data.ownersConfirmedBy == 'apt')
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersStatus'])
-            || request.resource.data.ownersStatus in ['confirmed', 'review']);
+            || request.resource.data.ownersStatus in ['confirmed', 'review']));
 
-      allow create: if isSignedIn() && apt == myApt()
-                    && request.resource.data.isAdmin == false;
+      allow create: if !maintenanceActive() && validSession() && (isSignedIn() && apt == myApt()
+                    && request.resource.data.isAdmin == false);
       // Правління веде дані квартири, бухгалтер — гроші, а позначку
       // службового запису (isAdmin) змінює лише голова.
-      allow create, update: if staffMayWriteApartment();
-      allow delete: if canManage();
+      allow create, update: if !maintenanceActive() && validSession() && (staffMayWriteApartment());
+      allow delete: if !maintenanceActive() && validSession() && (canManage());
 
       // Список співвласників мешканець тільки читає.
       //
@@ -176,25 +194,25 @@ service cloud.firestore {
       // а отже й голос: кворум рахує унікальних власників. Тепер будь-яка
       // правка йде заявкою в owner_changes, і її розглядає правління.
       match /owners/{ownerId} {
-        allow read: if isSignedIn() && (apt == myApt() || isStaff());
-        allow write: if canManage();
+        allow read: if validSession() && (isSignedIn() && (apt == myApt() || isStaff()));
+        allow write: if !maintenanceActive() && validSession() && (canManage());
       }
 
       // Заявка на зміну списку власників.
       match /owner_changes/{changeId} {
-        allow read: if isSignedIn() && (apt == myApt() || isStaff());
-        allow create: if isSignedIn() && apt == myApt()
+        allow read: if validSession() && (isSignedIn() && (apt == myApt() || isStaff()));
+        allow create: if !maintenanceActive() && validSession() && (isSignedIn() && apt == myApt()
                       && request.resource.data.status == 'pending'
                       && request.resource.data.reason is string
-                      && request.resource.data.reason.size() <= 1000;
+                      && request.resource.data.reason.size() <= 1000);
         // Рішення за заявкою ухвалює лише правління
-        allow update, delete: if canManage();
+        allow update, delete: if !maintenanceActive() && validSession() && (canManage());
       }
 
       // Квитанції: мешканець бачить лише свої, виставляє їх бухгалтер
       match /receipts/{receiptId} {
-        allow read: if isSignedIn() && (apt == myApt() || isStaff());
-        allow write: if canAccount();
+        allow read: if validSession() && (isSignedIn() && (apt == myApt() || isStaff()));
+        allow write: if !maintenanceActive() && validSession() && (canAccount());
       }
 
       // Історія нарахувань і оплат — те саме право, що й у квитанцій:
@@ -205,7 +223,7 @@ service cloud.firestore {
       // заднім числом не змінити — помилку виправляє нова (сторнувальна)
       // операція. Видалити помилково завантажений запис може лише голова.
       match /ledger/{entryId} {
-        allow read: if isSignedIn() && (apt == myApt() || isStaff());
+        allow read: if validSession() && (isSignedIn() && (apt == myApt() || isStaff()));
         function legacyEntry(d) {
           return d.keys().hasOnly(['at', 'period', 'kind', 'amount', 'note', 'updatedAt'])
             && d.kind in ['charge', 'payment']
@@ -215,31 +233,31 @@ service cloud.firestore {
             && d.amount is number && d.amount > 0 && d.amount <= 1000000000;
         }
         // From October 2026, only server operations may change money.
-        allow create: if canAccount() && legacyEntry(request.resource.data);
-        allow update: if canAccount()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'updatedAt']);
-        allow delete: if isChair() && legacyEntry(resource.data);
+        allow create: if !maintenanceActive() && validSession() && (canAccount() && legacyEntry(request.resource.data));
+        allow update: if !maintenanceActive() && validSession() && (canAccount()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'updatedAt']));
+        allow delete: if !maintenanceActive() && validSession() && (isChair() && legacyEntry(resource.data));
       }
 
       // Версія особистих показників: захищає від паралельного перезапису.
       match /meter_state/{stateId} {
-        allow read: if isSignedIn() && (apt == myApt() || isStaff());
-        allow create, update: if isSignedIn() && apt == myApt() && stateId == 'current'
+        allow read: if validSession() && (isSignedIn() && (apt == myApt() || isStaff()));
+        allow create, update: if !maintenanceActive() && validSession() && (isSignedIn() && apt == myApt() && stateId == 'current'
           && request.resource.data.keys().hasOnly(['revision', 'updatedAt'])
           && request.resource.data.revision is int
           && request.resource.data.revision == (resource == null ? 1 : resource.data.revision + 1)
-          && request.resource.data.updatedAt == request.time;
-        allow write: if canAccount();
+          && request.resource.data.updatedAt == request.time);
+        allow write: if !maintenanceActive() && validSession() && (canAccount());
       }
     }
 
     // Квартирні показники приватні. Загальнобудинковий облік лишається у status.
     match /apartment_meter_readings/{readingId} {
-      allow read: if isStaff() || (isSignedIn() && resource.data.apt == myApt());
-      allow get: if isSignedIn() && resource == null && readingId.split('_').size() == 3
+      allow read: if validSession() && (isStaff() || (isSignedIn() && resource.data.apt == myApt()));
+      allow get: if validSession() && (isSignedIn() && resource == null && readingId.split('_').size() == 3
                  && readingId.split('_')[0] == myApt()
                  && readingId.split('_')[1] in ['electricity', 'water']
-                 && readingId.split('_')[2].matches('[0-9]{4}-(0[1-9]|1[0-2])');
+                 && readingId.split('_')[2].matches('[0-9]{4}-(0[1-9]|1[0-2])'));
       function okMeterChannel(c) {
         // Межа показника перевіряється за сумою в документі.
         return c.keys().hasOnly(['name', 'reading', 'baseline', 'reset', 'note'])
@@ -295,60 +313,60 @@ service cloud.firestore {
           && (resource == null ? d.createdAt == request.time
               : resource.data.apt == apt && d.createdAt == resource.data.createdAt);
       }
-      allow create, update: if isSignedIn() && validApartmentReading();
-      allow write: if canAccount();
+      allow create, update: if !maintenanceActive() && validSession() && (isSignedIn() && validApartmentReading());
+      allow write: if !maintenanceActive() && validSession() && (canAccount());
     }
 
     // Черга заявок на зміну списків власників — теж одним запитом.
     match /{path=**}/owner_changes/{changeId} {
-      allow read: if isStaff();
+      allow read: if validSession() && (isStaff());
     }
 
     // Правління читає всіх співвласників одним collectionGroup-запитом
     // для довідника квартир. Мешканців це не стосується: їхній доступ
     // до власної квартири лишається правилом вище.
     match /{path=**}/owners/{ownerId} {
-      allow read: if isStaff();
+      allow read: if validSession() && (isStaff());
     }
 
     // ---------- ПОВІДОМЛЕННЯ ----------
     // Читати можна лише те, де ти є серед адресатів.
     // Саме тому клієнт робить запит array-contains-any по recipients.
     match /messages/{msgId} {
-      allow read: if isStaff()
+      allow read: if validSession() && (isStaff()
         || (isSignedIn() && (
               'all' in resource.data.recipients
               || ('apt:' + myApt()) in resource.data.recipients
               || resource.data.recipients.hasAny(['ent:' + string(
                    get(/databases/$(database)/documents/apartments/$(myApt())).data.entrance)])
-           ));
+           )));
 
-      allow create, delete: if isStaff();
+      allow create, delete: if !maintenanceActive() && validSession() && (isStaff());
 
       // Мешканець може лише позначити прочитання своєї квартири
-      allow update: if isStaff()
+      allow update: if !maintenanceActive() && validSession() && (isStaff()
         || (isSignedIn()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
             && request.resource.data.readBy.diff(resource.data.readBy)
-                 .affectedKeys().hasOnly([myApt()]));
+                 .affectedKeys().hasOnly([myApt()])));
 
       // Коментарі — лише під оголошеннями для всього будинку.
       // Під адресним повідомленням вони відкрили б чужу переписку
       // тим, кому саме оголошення не призначалося.
       match /comments/{commentId} {
-        allow read: if isSignedIn()
-          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients;
+        allow read: if validSession() && (isSignedIn()
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients);
 
-        allow create: if isSignedIn()
+        allow create: if !maintenanceActive() && validSession() && (isSignedIn()
           && okChatPost(request.resource.data)
           && request.resource.data.get('attachments', []).size() == 0
           && (request.resource.data.isBoard == false || isStaff())
-          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients;
+          && 'all' in get(/databases/$(database)/documents/messages/$(msgId)).data.recipients);
 
         // Видалення тепер мʼяке: документ лишається з міткою, щоб у
         // розмові було видно, що тут щось було. Тому дозволяємо
         // update, але суворо обмежуємо, ЩО саме можна змінити.
-        allow update: if isSignedIn()
+        allow update: if !maintenanceActive() && validSession() && (isSignedIn()
           && resource.data.get('deleted', false) == false
           && (
             // автор виправляє власний текст
@@ -365,19 +383,19 @@ service cloud.firestore {
               && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['deleted', 'deletedAt', 'deletedByBoard', 'text', 'attachments'])
               && request.resource.data.deleted == true)
-          );
+          ));
 
         // Остаточно стерти може лише правління — на випадок,
         // коли навіть мітка недоречна.
-        allow delete: if canManage();
+        allow delete: if !maintenanceActive() && validSession() && (canManage());
       }
     }
 
     // ---------- ЧАТ БУДИНКУ ----------
     match /chat/{msgId} {
-      allow read: if isSignedIn();
+      allow read: if validSession() && (isSignedIn());
 
-      allow create: if isSignedIn()
+      allow create: if !maintenanceActive() && validSession() && (isSignedIn()
         // писати можна лише від своєї квартири, лише відомі поля,
         // вкладення — лише з нашого сховища
         && okChatPost(request.resource.data)
@@ -385,12 +403,12 @@ service cloud.firestore {
         // Записано так, а не через isBoard == isStaff(): у звичайного
         // мешканця перший доданок істинний одразу, і Firestore не
         // читає документ квартири заради кожного повідомлення.
-        && (request.resource.data.isBoard == false || isStaff());
+        && (request.resource.data.isBoard == false || isStaff()));
 
         // Видалення тепер мʼяке: документ лишається з міткою, щоб у
       // розмові було видно, що тут щось було. Тому дозволяємо
       // update, але суворо обмежуємо, ЩО саме можна змінити.
-      allow update: if isSignedIn()
+      allow update: if !maintenanceActive() && validSession() && (isSignedIn()
         && resource.data.get('deleted', false) == false
         && (
           // автор виправляє власний текст
@@ -407,17 +425,17 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['deleted', 'deletedAt', 'deletedByBoard', 'text', 'attachments'])
             && request.resource.data.deleted == true)
-        );
+        ));
 
       // Остаточно стерти може лише правління — на випадок,
       // коли навіть мітка недоречна.
-      allow delete: if canManage();
+      allow delete: if !maintenanceActive() && validSession() && (canManage());
     }
 
     // ---------- ЗВЕРНЕННЯ ----------
     match /requests/{reqId} {
-      allow read: if isStaff() || (isSignedIn() && resource.data.apt == myApt());
-      allow create: if isSignedIn()
+      allow read: if validSession() && (isStaff() || (isSignedIn() && resource.data.apt == myApt()));
+      allow create: if !maintenanceActive() && validSession() && (isSignedIn()
                     && request.resource.data.keys().hasOnly(['apt', 'text', 'attachments', 'status', 'createdAt'])
                     && request.resource.data.apt == myApt()
                     && request.resource.data.status == 'new'
@@ -425,33 +443,33 @@ service cloud.firestore {
                     && request.resource.data.text.size() > 0
                     && request.resource.data.text.size() <= 5000
                     && okAttachments(request.resource.data.get('attachments', []))
-                    && request.resource.data.createdAt == request.time;
+                    && request.resource.data.createdAt == request.time);
       // Відповідати може лише правління
-      allow update, delete: if isStaff();
+      allow update, delete: if !maintenanceActive() && validSession() && (isStaff());
     }
 
     // ---------- БАЗА ДОКУМЕНТІВ ОСББ ----------
     match /osbb_documents/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isStaff();
+      allow read: if validSession() && (isSignedIn());
+      allow write: if !maintenanceActive() && validSession() && (isStaff());
     }
 
     // ---------- СТАТУС СВІТЛА ----------
     match /status/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isHouseMeterDoc(docId) ? canAccount() : canManage();
+      allow read: if validSession() && (isSignedIn());
+      allow write: if !maintenanceActive() && validSession() && (isHouseMeterDoc(docId) ? canAccount() : canManage());
     }
 
     // ---------- ГОЛОСУВАННЯ ----------
     match /polls/{pollId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if canManage();
+      allow read: if validSession() && (isSignedIn());
+      allow create, update, delete: if !maintenanceActive() && validSession() && (canManage());
 
       // Електронний і старий паперовий голос: votes/{номер квартири}.
       // Новий паперовий голос співвласника: votes/owner:{квартира}:{ownerId}
       // (сегменти ID кодуються encodeURIComponent у застосунку).
       match /votes/{voteId} {
-        allow read: if isSignedIn();
+        allow read: if validSession() && (isSignedIn());
 
         function validMeetingAnswers(data) {
           return data.answers is map
@@ -476,8 +494,8 @@ service cloud.firestore {
 
         // Старі голоси квартири лишаються доступними правлінню.
         // Нові індивідуальні документи перевіряються окремо.
-        allow create, update: if canManage()
-          && (!('ownerId' in request.resource.data) || validOwnerPaperVote());
+        allow create, update: if !maintenanceActive() && validSession() && (canManage()
+          && (!('ownerId' in request.resource.data) || validOwnerPaperVote()));
 
         function validResidentVote() {
           let data = request.resource.data;
@@ -501,8 +519,8 @@ service cloud.firestore {
             );
         }
 
-        allow create, update: if isSignedIn() && validResidentVote();
-        allow delete: if canManage();
+        allow create, update: if !maintenanceActive() && validSession() && (isSignedIn() && validResidentVote());
+        allow delete: if !maintenanceActive() && validSession() && (canManage());
       }
     }
 
@@ -511,42 +529,42 @@ service cloud.firestore {
     // не буде з чого рахувати. Правити минуле не можна нікому:
     // журнал лише поповнюється.
     match /power_log/{entryId} {
-      allow read: if isSignedIn();
-      allow create: if canManage();
+      allow read: if validSession() && (isSignedIn());
+      allow create: if !maintenanceActive() && validSession() && (canManage());
       allow update, delete: if false;
     }
 
     // ---------- ПЛАТІЖНІ РЕКВІЗИТИ ОСББ ----------
     // Читають усі мешканці — без реквізитів немає як заплатити.
     match /osbb_settings/{docId} {
-      allow read: if isSignedIn();
-      allow write: if docId == 'finance' ? canAccount() : canManage();
+      allow read: if validSession() && (isSignedIn());
+      allow write: if !maintenanceActive() && validSession() && (docId == 'finance' ? canAccount() : canManage());
     }
 
     // ---------- РЕКВІЗИТИ ЗВІТІВ ДЛЯ ДПС ----------
     // РНОКПП керівника й бухгалтера, КАТОТТГ, податкова — для XML
     // розрахунку. Не для мешканців; пише лише сервер (reportsAction).
     match /report_settings/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
     // ---------- ЗВІТ ПРО ВИТРАТИ ----------
     // Публічний для мешканців: у цьому й сенс прозорості.
     match /finance/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canAccount();
+      allow read: if validSession() && (isSignedIn());
+      allow write: if !maintenanceActive() && validSession() && (canAccount());
     }
 
     // Розшифровка статей звіту (операції за статтею) — пише лише сервер
     // при публікації (budgetAction): прізвищ немає, номери квартир — лише
     // за рішенням правління (finance_settings/public, змінює голова).
     match /finance_ops/{docId} {
-      allow read: if isSignedIn();
+      allow read: if validSession() && (isSignedIn());
       allow write: if false;
     }
     match /finance_settings/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
@@ -556,15 +574,15 @@ service cloud.firestore {
     // ПриватБанком): там перевіряються суми, ролі й пишеться журнал.
     // Читають голова й бухгалтер. Токен банку з застосунку не читає ніхто.
     match /bank/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /bank_tx/{txId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /bank_links/{linkId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /bank_secrets/{docId} {
@@ -574,7 +592,7 @@ service cloud.firestore {
     // ---------- ВИХІДНІ ПЛАТЕЖІ ----------
     // Створює й змінює лише сервер (paymentAction і виписка банку).
     match /payments/{paymentId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
@@ -583,11 +601,11 @@ service cloud.firestore {
     // пише лише сервер (chargesAction): він перевіряє суми, пише
     // історію квартир і журнал дій.
     match /charges/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /charges_runs/{period} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
@@ -596,19 +614,19 @@ service cloud.firestore {
     // (expenseAction): він перевіряє ліміт статуту, визначає, хто
     // затверджує, і пише журнал. Члени правління бухгалтерії не бачать.
     match /suppliers/{supplierId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /contracts/{contractId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /expenses/{expenseId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /expense_settings/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
@@ -617,7 +635,7 @@ service cloud.firestore {
     // (budgetAction). Мешканці бачать не кошторис, а опублікований звіт
     // finance/current — без прізвищ (номери квартир — за рішенням правління).
     match /budgets/{year} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
@@ -625,65 +643,65 @@ service cloud.firestore {
     // відомості й налаштування. Читають голова й бухгалтер, пише лише
     // сервер (payrollAction): затвердження — голова, журнал дій.
     match /payroll_people/{id} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /payroll_runs/{period} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /payroll_settings/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /payroll_project_receivers/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
     // Звітність ДПС: позначки «подано / прийнято» й квитанції пише сервер (reports.js).
     match /reports/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
     // Вхідна оборотно-сальдова на 30.09.2026: пише сервер (journal.js).
     match /journal_opening/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /accounting_settings/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /journal_snapshots/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /journal_bank_checks/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
     match /accounting_notes/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
-    match /annual_history/{docId} { allow read: if canAccount(); allow write: if false; }
-    match /annual_history_versions/{docId} { allow read: if canAccount(); allow write: if false; }
-    match /annual_history_parts/{docId} { allow read: if canAccount(); allow write: if false; }
-    match /annual_package_parts/{docId} { allow read: if canAccount(); allow write: if false; }
-    match /annual_comparatives/{docId} { allow read: if canAccount(); allow write: if false; }
+    match /annual_history/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
+    match /annual_history_versions/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
+    match /annual_history_parts/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
+    match /annual_package_parts/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
+    match /annual_comparatives/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
 
     // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
     // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.
     match /journal_periods/{period} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
     // Демо-прогін на тестовому акаунті: стан і резервна копія — лише сервер.
     match /demo/{docId} {
-      allow read: if canAccount();
+      allow read: if validSession() && (canAccount());
       allow write: if false;
     }
 
@@ -691,22 +709,22 @@ service cloud.firestore {
     // Пристрій записує свій токен під свою квартиру й справжню роль;
     // читає токени лише сервер, коли надсилає сповіщення.
     match /push_tokens/{tokenId} {
-      allow create, update: if isSignedIn()
+      allow create, update: if !maintenanceActive() && validSession() && (isSignedIn()
         && tokenId == request.resource.data.token
         && request.resource.data.keys().hasOnly(['apt', 'role', 'token', 'ua', 'at'])
         && request.resource.data.apt == myApt()
         && request.resource.data.role == role()
         && request.resource.data.token is string && request.resource.data.token.size() < 400
         && request.resource.data.ua is string && request.resource.data.ua.size() <= 200
-        && request.resource.data.at == request.time;
-      allow delete: if isSignedIn() && resource.data.apt == myApt();
+        && request.resource.data.at == request.time);
+      allow delete: if !maintenanceActive() && validSession() && (isSignedIn() && resource.data.apt == myApt());
       allow read: if false;
     }
 
     // ---------- ТЕХНІЧНІ СЛУЖБИ ----------
     match /services/{serviceId} {
-      allow read: if isSignedIn();
-      allow write: if canManage();
+      allow read: if validSession() && (isSignedIn());
+      allow write: if !maintenanceActive() && validSession() && (canManage());
     }
 
     // ---------- КОМАНДА ПРАВЛІННЯ ----------
@@ -714,16 +732,16 @@ service cloud.firestore {
     // підвищить сам себе і не закриє доступ самому собі. Документи не
     // видаляються — вимкнення лишає історію, хто мав доступ.
     match /staff/{id} {
-      allow get: if isSignedIn() && (id == myApt() || isStaff());
-      allow list: if isStaff();
-      allow create, update: if isChair() && id != myApt()
+      allow get: if validSession() && (isSignedIn() && (id == myApt() || isStaff()));
+      allow list: if validSession() && (isStaff());
+      allow create, update: if !maintenanceActive() && validSession() && (isChair() && id != myApt()
         && request.resource.data.keys().hasOnly(['role', 'name', 'active', 'updatedBy', 'updatedAt'])
         && request.resource.data.role in ['chair', 'board', 'accountant']
         && request.resource.data.active is bool
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 100
         && request.resource.data.updatedBy == myApt()
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time);
       allow delete: if false;
     }
 
@@ -731,8 +749,8 @@ service cloud.firestore {
     // Хто, коли й що змінив. Запис лише додається: правити чи стерти
     // минуле не може ніхто, автор і роль — завжди той, хто увійшов.
     match /audit_log/{entryId} {
-      allow read: if isStaff();
-      allow create: if isStaff()
+      allow read: if validSession() && (isStaff());
+      allow create: if !maintenanceActive() && validSession() && (isStaff()
         && request.resource.data.keys().hasOnly(['actor', 'role', 'action', 'target', 'summary', 'details', 'at'])
         && request.resource.data.actor == myApt()
         && request.resource.data.role == role()
@@ -744,14 +762,14 @@ service cloud.firestore {
         && request.resource.data.summary is string
         && request.resource.data.summary.size() <= 500
         && request.resource.data.get('details', {}) is map
-        && request.resource.data.at == request.time;
+        && request.resource.data.at == request.time);
       allow update, delete: if false;
     }
 
     // ---------- КОНТАКТИ ПРАВЛІННЯ ----------
     match /board_members/{memberId} {
-      allow read: if isSignedIn();
-      allow write: if canManage();
+      allow read: if validSession() && (isSignedIn());
+      allow write: if !maintenanceActive() && validSession() && (canManage());
     }
   }
 }

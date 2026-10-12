@@ -126,7 +126,7 @@ export async function openingAction(btn, host) {
             return true;
         }
         if (a === 'approve') {
-            if (!await confirmDialog('Затвердити вхідну оборотно-сальдову?', `Дебет = кредит = ${fmtKop(octx.totals.dr)} грн. Залишки потраплять у проводки на 30.09.2026; після першого закритого місяця їх не змінити.`, 'Затвердити')) return false;
+            if (!await confirmDialog('Затвердити вхідну оборотно-сальдову?', `Дебет = кредит = ${fmtKop(octx.totals.dr)} грн. Залишки потраплять у проводки на ${escapeHtml(octx.date)}; після першого закритого місяця їх не змінити.`, 'Затвердити')) return false;
             setBusy(btn, true, 'Затверджую…');
             await journalAct({ action: 'approveOpening' });
             toast('Вхідну ОСВ затверджено', 'success');

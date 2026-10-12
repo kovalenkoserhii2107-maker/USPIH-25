@@ -1,0 +1,3911 @@
+{
+  "source": "User-provided test CSV, sanitized. Apt 298 synthetic supplement from stated presence and earlier 64 m² example; no live database read.",
+  "premises": [
+    {
+      "apt": "1",
+      "area": "57.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0001",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "2",
+      "area": "75.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0002",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "3",
+      "area": "76.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0003",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0004",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0005",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "4",
+      "area": "49.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0006",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "5",
+      "area": "73.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0007",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "6",
+      "area": "39.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0008",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "7",
+      "area": "53.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0009",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0010",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "8",
+      "area": "38.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0011",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "9",
+      "area": "88.2",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0012",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "10",
+      "area": "34.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0013",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0014",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "11",
+      "area": "49.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0015",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "12",
+      "area": "52.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0016",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "13",
+      "area": "71.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0017",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0018",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "14",
+      "area": "69.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0019",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0020",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "15",
+      "area": "49.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0021",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "16",
+      "area": "38.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0022",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "17",
+      "area": "37.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0023",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "18",
+      "area": "72.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0024",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "19",
+      "area": "37.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0025",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "20",
+      "area": "66.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0026",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "21",
+      "area": "97.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0027",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "22",
+      "area": "51.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0028",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "23",
+      "area": "34.8",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0029",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "24",
+      "area": "39.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0030",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "25",
+      "area": "77.8",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0031",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "26",
+      "area": "75.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0032",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "27",
+      "area": "39.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0033",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0034",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0035",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "28",
+      "area": "72.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0036",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0037",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0038",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "29",
+      "area": "37.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0039",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0040",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "30",
+      "area": "38.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0041",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "31",
+      "area": "88.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0042",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "32",
+      "area": "38.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0043",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "33",
+      "area": "54.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0044",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "34",
+      "area": "55.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0045",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "35",
+      "area": "55.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0046",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0047",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "36",
+      "area": "51.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0048",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "37",
+      "area": "38.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0049",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0050",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "38",
+      "area": "34.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0051",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "39",
+      "area": "76.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0052",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0053",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0054",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "40",
+      "area": "49.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0055",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "41",
+      "area": "52.2",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0056",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "42",
+      "area": "36.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0057",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "43",
+      "area": "51.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0058",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0059",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0060",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "44",
+      "area": "37.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0061",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "45",
+      "area": "51.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0062",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "46",
+      "area": "72.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0063",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "47",
+      "area": "73.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0064",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "48",
+      "area": "77.2",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0065",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0066",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0067",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "49",
+      "area": "53.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0068",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0069",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "50",
+      "area": "73.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0070",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0071",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "51",
+      "area": "39.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0072",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "52",
+      "area": "51.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0073",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "53",
+      "area": "38.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0074",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "54",
+      "area": "94.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0075",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0076",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "55",
+      "area": "71.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0077",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "56",
+      "area": "37.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0078",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0079",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "57",
+      "area": "35.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0080",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "58",
+      "area": "72.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0081",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "59",
+      "area": "52.8",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0082",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "60",
+      "area": "54.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0083",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "61",
+      "area": "48.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0084",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "62",
+      "area": "77.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0085",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "63",
+      "area": "68.8",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0086",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "64",
+      "area": "53.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0087",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "65",
+      "area": "53.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0081",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "66",
+      "area": "37.2",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0088",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "67",
+      "area": "34.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0089",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "68",
+      "area": "53.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0090",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0091",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "69",
+      "area": "70.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0092",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0093",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "70",
+      "area": "37.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0094",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0095",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "71",
+      "area": "37.6",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0096",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "72",
+      "area": "49.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0097",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "73",
+      "area": "77.2",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0098",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0099",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "74",
+      "area": "74.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0100",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0101",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "75",
+      "area": "49.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0102",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "76",
+      "area": "35.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0103",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0104",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "77",
+      "area": "54.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0105",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "78",
+      "area": "72.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0106",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "79",
+      "area": "55.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0107",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "80",
+      "area": "50.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0108",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "81",
+      "area": "91.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0109",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "82",
+      "area": "36.8",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0110",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0111",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "83",
+      "area": "94.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0112",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "84",
+      "area": "35.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0113",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "85",
+      "area": "51.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0114",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "86",
+      "area": "97.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0115",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "87",
+      "area": "74.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0116",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "88",
+      "area": "74.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0117",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0118",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "89",
+      "area": "55.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0119",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "90",
+      "area": "37.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0120",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "91",
+      "area": "49.8",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0121",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "92",
+      "area": "55.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0122",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "93",
+      "area": "76.4",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0123",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "94",
+      "area": "70.9",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0124",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "95",
+      "area": "49.1",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0125",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "96",
+      "area": "57.2",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0126",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "97",
+      "area": "72.7",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0127",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0128",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "98",
+      "area": "77.0",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0129",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0130",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "99",
+      "area": "52.3",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0131",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "100",
+      "area": "70.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0132",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "101",
+      "area": "39.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0133",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "102",
+      "area": "52.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0134",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "103",
+      "area": "57.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0135",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "104",
+      "area": "51.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0136",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "105",
+      "area": "55.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0137",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "106",
+      "area": "54.5",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0138",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "107",
+      "area": "38.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0139",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "108",
+      "area": "38.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0140",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "109",
+      "area": "55.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0141",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "110",
+      "area": "50.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0142",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0143",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0144",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "111",
+      "area": "77.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0145",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "112",
+      "area": "36.2",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0146",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "113",
+      "area": "39.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0002",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0147",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "114",
+      "area": "54.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0042",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0148",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "115",
+      "area": "54.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0149",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0150",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "116",
+      "area": "67.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0151",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "117",
+      "area": "55.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0152",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "118",
+      "area": "88.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0153",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0154",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0155",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "119",
+      "area": "49.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0156",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "120",
+      "area": "38.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0157",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0158",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "121",
+      "area": "52.8",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0159",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0160",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "122",
+      "area": "93.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0161",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0162",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0163",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "123",
+      "area": "52.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0164",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0165",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "124",
+      "area": "74.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0166",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "125",
+      "area": "34.2",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0167",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0168",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0169",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "126",
+      "area": "49.5",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0170",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "127",
+      "area": "39.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0171",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "128",
+      "area": "52.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0172",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "129",
+      "area": "89.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0173",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "130",
+      "area": "49.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0174",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "131",
+      "area": "69.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0175",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0176",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0177",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "132",
+      "area": "48.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0178",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0179",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "133",
+      "area": "53.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0180",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "134",
+      "area": "39.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0181",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0182",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "135",
+      "area": "38.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0183",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0184",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0185",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "136",
+      "area": "49.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0186",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0187",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "137",
+      "area": "55.6",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0188",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "138",
+      "area": "57.8",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0189",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0190",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "139",
+      "area": "53.2",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0191",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "140",
+      "area": "34.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0192",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "141",
+      "area": "55.8",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0193",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0194",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "142",
+      "area": "96.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0195",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "143",
+      "area": "48.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0196",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0197",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0198",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "144",
+      "area": "54.5",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0199",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0200",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "145",
+      "area": "72.6",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0201",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0202",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "146",
+      "area": "72.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0203",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "147",
+      "area": "36.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0204",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0205",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "148",
+      "area": "34.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0206",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "149",
+      "area": "48.5",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0207",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0208",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "150",
+      "area": "51.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0209",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "151",
+      "area": "91.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0210",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0211",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0212",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "152",
+      "area": "36.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0213",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "153",
+      "area": "38.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0214",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0215",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "154",
+      "area": "72.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0216",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "155",
+      "area": "50.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0217",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0218",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "156",
+      "area": "50.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0219",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "157",
+      "area": "48.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0220",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0221",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "158",
+      "area": "53.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0222",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0223",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "159",
+      "area": "66.2",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0224",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "160",
+      "area": "74.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0225",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "161",
+      "area": "49.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0226",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "162",
+      "area": "92.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0227",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "163",
+      "area": "35.8",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0228",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0229",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "164",
+      "area": "54.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0230",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0231",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0232",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "165",
+      "area": "52.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0233",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "166",
+      "area": "39.5",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0234",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "167",
+      "area": "36.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0235",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "168",
+      "area": "77.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0236",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "169",
+      "area": "39.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0237",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0238",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0239",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "170",
+      "area": "35.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0240",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "171",
+      "area": "35.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0241",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "172",
+      "area": "57.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0242",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0243",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0244",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "173",
+      "area": "73.4",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0245",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "174",
+      "area": "51.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0246",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0247",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "175",
+      "area": "36.6",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0248",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0249",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "176",
+      "area": "38.2",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0250",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "177",
+      "area": "95.5",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0251",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0252",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "178",
+      "area": "37.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0253",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "179",
+      "area": "66.8",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0254",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "180",
+      "area": "48.7",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0255",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "181",
+      "area": "91.8",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0256",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0257",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "182",
+      "area": "50.3",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0258",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0259",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0260",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "183",
+      "area": "37.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0261",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0262",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "184",
+      "area": "49.6",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0263",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "185",
+      "area": "52.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0264",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0265",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "186",
+      "area": "56.9",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0266",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "187",
+      "area": "55.2",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0267",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "188",
+      "area": "52.1",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0268",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0269",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0270",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "189",
+      "area": "56.0",
+      "entrance": "2",
+      "owners": [
+        {
+          "alias": "TEST-0271",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "190",
+      "area": "48.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0272",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "191",
+      "area": "48.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0273",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "192",
+      "area": "57.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0274",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "193",
+      "area": "51.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0275",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "194",
+      "area": "73.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0276",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0277",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0278",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "195",
+      "area": "70.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0168",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "196",
+      "area": "57.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0279",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "197",
+      "area": "77.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0280",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "198",
+      "area": "39.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0281",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0282",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "199",
+      "area": "69.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0283",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0284",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "200",
+      "area": "52.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0285",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0286",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "201",
+      "area": "77.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0287",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0288",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0289",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "202",
+      "area": "55.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0290",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "203",
+      "area": "51.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0291",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "204",
+      "area": "76.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0292",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "205",
+      "area": "71.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0293",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "206",
+      "area": "36.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0294",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0295",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "207",
+      "area": "90.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0296",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0297",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "208",
+      "area": "51.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0298",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "209",
+      "area": "48.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0299",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0300",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "210",
+      "area": "95.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0301",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0302",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0303",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "211",
+      "area": "77.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0304",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "212",
+      "area": "76.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0305",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "213",
+      "area": "48.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0306",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "214",
+      "area": "49.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0307",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "215",
+      "area": "51.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0308",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "216",
+      "area": "34.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0309",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "217",
+      "area": "39.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0310",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0311",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "218",
+      "area": "89.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0312",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0313",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "219",
+      "area": "48.1",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0314",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0315",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0316",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "220",
+      "area": "69.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0317",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "221",
+      "area": "50.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0318",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "222",
+      "area": "56.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0319",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0320",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "223",
+      "area": "53.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0321",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "224",
+      "area": "57.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0322",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "225",
+      "area": "49.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0323",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0324",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "226",
+      "area": "88.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0325",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0326",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "227",
+      "area": "34.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0327",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "228",
+      "area": "37.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0328",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0329",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "229",
+      "area": "34.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0330",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0331",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "230",
+      "area": "71.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0332",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "231",
+      "area": "75.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0333",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "232",
+      "area": "97.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0334",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "233",
+      "area": "77.1",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0335",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0336",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "234",
+      "area": "56.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0337",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "235",
+      "area": "53.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0338",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0339",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0340",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "236",
+      "area": "51.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0341",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0342",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "237",
+      "area": "55.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0343",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "238",
+      "area": "36.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0344",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0345",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "239",
+      "area": "93.1",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0346",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "240",
+      "area": "50.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0347",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "241",
+      "area": "77.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0348",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "242",
+      "area": "37.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0349",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "243",
+      "area": "55.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0350",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0351",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0352",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "244",
+      "area": "49.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0353",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "245",
+      "area": "50.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0354",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0355",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "246",
+      "area": "52.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0356",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "247",
+      "area": "39.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0357",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "248",
+      "area": "90.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0358",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "249",
+      "area": "77.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0359",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "250",
+      "area": "71.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0360",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0361",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "251",
+      "area": "34.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0362",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0363",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0364",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "252",
+      "area": "96.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0365",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0366",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "253",
+      "area": "67.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0367",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "254",
+      "area": "68.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0368",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0369",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "255",
+      "area": "68.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0370",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "256",
+      "area": "48.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0371",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0372",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0373",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "257",
+      "area": "67.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0374",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0375",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0376",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "258",
+      "area": "52.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0377",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0378",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "259",
+      "area": "76.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0379",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "260",
+      "area": "76.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0380",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0381",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "261",
+      "area": "37.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0382",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "262",
+      "area": "37.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0383",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0384",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "263",
+      "area": "53.1",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0385",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "264",
+      "area": "34.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0386",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "265",
+      "area": "37.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0387",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "266",
+      "area": "66.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0388",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0389",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "267",
+      "area": "37.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0390",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "268",
+      "area": "38.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0391",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0392",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "269",
+      "area": "89.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0393",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "270",
+      "area": "76.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0394",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "271",
+      "area": "49.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0395",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0396",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "272",
+      "area": "66.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0397",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0398",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0399",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "273",
+      "area": "53.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0400",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "274",
+      "area": "39.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0117",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0401",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "275",
+      "area": "35.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0402",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "276",
+      "area": "66.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0403",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "277",
+      "area": "34.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0404",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "278",
+      "area": "68.1",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0405",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0406",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "279",
+      "area": "68.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0407",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0408",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "280",
+      "area": "38.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0409",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "281",
+      "area": "67.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0410",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "282",
+      "area": "75.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0411",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0412",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "283",
+      "area": "39.4",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0413",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0414",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "284",
+      "area": "38.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0415",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0416",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "285",
+      "area": "37.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0417",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "286",
+      "area": "56.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0418",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0419",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "287",
+      "area": "56.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0420",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "288",
+      "area": "54.9",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0172",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "289",
+      "area": "55.5",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0421",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "290",
+      "area": "54.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0422",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "291",
+      "area": "73.7",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0423",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0424",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "292",
+      "area": "57.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0425",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "293",
+      "area": "76.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0426",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "294",
+      "area": "37.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0427",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0428",
+          "share": "1/3"
+        },
+        {
+          "alias": "TEST-0429",
+          "share": "1/3"
+        }
+      ]
+    },
+    {
+      "apt": "295",
+      "area": "52.3",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0430",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "296",
+      "area": "51.2",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0431",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "297",
+      "area": "38.0",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0432",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0433",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "298",
+      "area": "64",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0298-A",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0298-B",
+          "share": "1/2"
+        }
+      ],
+      "syntheticSupplement": true
+    },
+    {
+      "apt": "299",
+      "area": "89.8",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0434",
+          "share": "1/1"
+        }
+      ]
+    },
+    {
+      "apt": "300",
+      "area": "37.6",
+      "entrance": "3",
+      "owners": [
+        {
+          "alias": "TEST-0435",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0436",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "301",
+      "area": "30.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0437",
+          "share": "1/2"
+        },
+        {
+          "alias": "TEST-0438",
+          "share": "1/2"
+        }
+      ]
+    },
+    {
+      "apt": "302",
+      "area": "30.5",
+      "entrance": "1",
+      "owners": [
+        {
+          "alias": "TEST-0439",
+          "share": "1/1"
+        }
+      ]
+    }
+  ],
+  "sourcePremises": 301,
+  "sourceOwnershipRows": 445,
+  "sourceUniqueNames": 439
+}

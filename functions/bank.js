@@ -317,6 +317,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     // СИНХРОНІЗАЦІЯ З ПРИВАТБАНКОМ
     // --------------------------------------------------------
     async function sync(trigger) {
+        if ((await db.doc('_maintenance/reset').get()).data()?.active) return { skipped:true, added:0 };
         const secret = await secretRef.get();
         if (!secret.exists || !secret.data().token) return { skipped: true, added: 0 };
         const token = secret.data().token;

@@ -15,6 +15,8 @@ import { TABS, byDay, quickAssign, filterTx } from './bank-view-core.js';
 import { openTxSheet, openPaymentSheet } from './buh-chain.js';
 import { openExpenses } from './buh-expenses.js';
 import { loadAccountingSettings } from './buh-accounting-settings.js';
+import { mountMigration } from './buh-migration.js';
+import { mountDatabaseReset, databaseResetStatus } from './buh-database-reset.js';
 
 let requisites = {};
 
@@ -258,6 +260,7 @@ function demoHtml(d, chair) {
 }
 
 export async function loadSettingsView() {
+    if(session.role==='chair'){const reset=await databaseResetStatus().catch(()=>null);if(reset?.job?.active){document.getElementById('viewSettings').innerHTML='<div id="resetSettings"></div>';await mountDatabaseReset(document.getElementById('resetSettings'),reset);return;}}
     const [settings, ex, demo, req] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadDemo(), loadRequisites().catch(() => ({}))]);
     requisites = req || {};
     const small = ex?.settings?.smallKop || 0;
@@ -285,6 +288,7 @@ export async function loadSettingsView() {
             <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно.</p>
         </section>
         ${registryHtml(requisites.registry, requisites.houseAddress)}
+        <div id="migrationSettings"></div><div id="resetSettings"></div>
         <div id="accountingSettings"><p class="buh-note">Завантаження параметрів обліку…</p></div>
         ${accounts.length ? `<section class="buh-card">
             <div class="buh-card-head"><h2>Рахунки</h2></div>
@@ -306,6 +310,8 @@ export async function loadSettingsView() {
             </div>
             <p class="buh-note">Облік у застосунку ведеться з ${escapeHtml(settings.startDate || '2026-10-01')}: раніші операції лише показуються.</p>
         </section>`;
+    mountMigration(document.getElementById('migrationSettings'));
+    mountDatabaseReset(document.getElementById('resetSettings')).catch(err=>{document.getElementById('resetSettings').textContent=err.message;});
     loadAccountingSettings(document.getElementById('accountingSettings'),accounts).catch(err=>{document.getElementById('accountingSettings').textContent=err.message;});
 }
 

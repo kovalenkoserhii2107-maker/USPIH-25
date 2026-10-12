@@ -34,7 +34,8 @@ async function staffRole(apt) {
 }
 
 /** Збори, графік ДТЕК та інші рішення правління — голова й члени правління. */
-async function requireAdmin(request, roles = ['chair', 'board']) {
+async function requireAdmin(request, roles = ['chair', 'board'], {allowDuringReset=false} = {}) {
+    if (!allowDuringReset && (await db.doc('_maintenance/reset').get()).data()?.active) throw new HttpsError('failed-precondition', 'Триває підготовка або очищення бази. Продовжіть її в налаштуваннях');
     const email = request.auth?.token?.email || '';
     const apt = email.split('@')[0];
     if (!apt) throw new HttpsError('unauthenticated', 'Потрібен вхід');
@@ -209,6 +210,7 @@ exports.updatePowerStatus = onRequest(
         maxInstances: 3              // датчик один; обмеження від несподіваних рахунків
     },
     async (req, res) => {
+        if ((await db.doc('_maintenance/reset').get()).data()?.active) { res.status(503).send('Database maintenance'); return; }
         if (req.method !== 'GET' && req.method !== 'POST') {
             return res.status(405).send('method not allowed');
         }
@@ -284,6 +286,7 @@ const { URL_SHUTDOWNS, parseSchedule } = require('./dtek');
 const SCHEDULE_REGION = 'europe-central2';
 
 async function refreshSchedule() {
+    if ((await db.doc('_maintenance/reset').get()).data()?.active) return { skipped:true };
     const cfg = await db.doc('osbb_settings/power').get();
     const group = cfg.exists ? cfg.data().dtekGroup : '';
     if (!group) {
@@ -341,8 +344,10 @@ exports.pullDtekSchedule = onSchedule(
     { schedule: 'every 3 hours', timeZone: 'Europe/Kyiv', region: SCHEDULE_REGION, maxInstances: 1,
       timeoutSeconds: 60, retryCount: 2 },
     async () => {
+        if ((await db.doc('_maintenance/reset').get()).data()?.active) return;
         try {
-            await refreshSchedule();
+            const result = await refreshSchedule();
+            if (result.skipped) return;
             await db.doc('status/schedule').set({
                 lastError: FieldValue.delete(), lastErrorAt: FieldValue.delete()
             }, { merge: true });
@@ -361,6 +366,7 @@ exports.pullDtekSchedule = onSchedule(
 exports.pullDtekScheduleNow = onRequest(
     { region: SCHEDULE_REGION, secrets: [POWER_SECRET], maxInstances: 1 },
     async (req, res) => {
+        if ((await db.doc('_maintenance/reset').get()).data()?.active) { res.status(503).send('Database maintenance'); return; }
         const key = req.get('X-Api-Key') || req.query.key;
         if (key !== POWER_SECRET.value()) {
             res.status(403).json({ error: 'forbidden' });
@@ -437,3 +443,11 @@ exports.reportsAction = reports.reportsAction;
 // Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).
 const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal, payroll });
 exports.demoAction = demo.demoAction;
+
+// Initial accounting exports and full database maintenance are chair-only.
+const migration = require('./migration')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, journal, reports });
+exports.migrationAction = migration.migrationAction;
+const databaseReset = require('./database-reset')({ db, FieldValue, requireAdmin, staffRole,
+    bucket: require('firebase-admin/storage').getStorage().bucket(process.env.STORAGE_BUCKET || 'uspih-25.firebasestorage.app'), auth: require('firebase-admin/auth').getAuth(),
+    projectId: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'uspih-25' });
+exports.databaseReset = databaseReset.databaseReset;

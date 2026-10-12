@@ -361,3 +361,20 @@ test('розшифровку статей читають усі, пише лиш
     }
     await assertFails(getDoc(doc(as('45').firestore(), 'finance_settings/public')));
 });
+
+test('очищення блокує записи, приватні копії та старі сесії; голова зберігає доступ',async()=>{
+ await seed();await env.withSecurityRulesDisabled(async ctx=>{const db=ctx.firestore();await setDoc(doc(db,'_maintenance/reset'),{active:true,keeperUid:'uid-10',authCutoff:100});await updateDoc(doc(db,'apartments/10'),{_resetBlocked:true});await updateDoc(doc(db,'apartments/45'),{_resetBlocked:true});});
+ await assertSucceeds(getDoc(doc(as('10').firestore(),'_maintenance/reset')));
+ await assertFails(getDoc(doc(as('900').firestore(),'_maintenance/reset')));
+ await assertFails(updateDoc(doc(as('10').firestore(),'apartments/45'),{area:70}));
+ await assertFails(setDoc(doc(as('10').firestore(),'_maintenance/reset'),{active:false}));
+ await assertFails(uploadString(ref(as('10').storage(),'polls/test-cleanup.pdf'),'pdf'));
+ await assertFails(uploadString(ref(as('45').storage(),'requests/45/test-cleanup.txt'),'request'));
+ await assertFails(uploadString(ref(as('10').storage(),'system-backups/test/copy.json'),'{}'));
+ await env.withSecurityRulesDisabled(async ctx=>{await updateDoc(doc(ctx.firestore(),'_maintenance/reset'),{active:false});await updateDoc(doc(ctx.firestore(),'apartments/45'),{_resetBlocked:false,authAfter:100});});
+ await assertFails(getDoc(doc(as('45').firestore(),'apartments/45')));
+ const fresh=env.authenticatedContext('uid-45',{email:'45@uspih-25.com',auth_time:101});
+ await assertSucceeds(getDoc(doc(fresh.firestore(),'apartments/45')));
+ await assertFails(uploadString(ref(as('45').storage(),'requests/45/stale.txt'),'request'));
+ await assertSucceeds(uploadString(ref(fresh.storage(),'requests/45/fresh.txt'),'request'));
+});

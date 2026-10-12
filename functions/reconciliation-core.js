@@ -54,10 +54,12 @@ function reconcile({ period, start = START_PERIOD, startDate, runs = [], bankTx 
             if (!p || p.status !== 'paid' || p.txId !== tx.id || p.amountKop !== tx.amountKop || tx.direction !== 'out' || tx.status !== 'done') block(`Платіж ${tx.paymentId}: підтвердження випискою не відповідає платіжному документу`);
         }
     }
-    for (const e of expenses.filter(e => managed(e.period) && ['approved', 'paid'].includes(e.status))) {
+    for (const e of expenses.filter(e => ['approved', 'paid'].includes(e.status) && (managed(e.period) || (e.txIds||[]).some(id=>managed(txMap.get(id)?.period))))) {
         const txIds = e.txIds || [];
         // Оплати за документом мінус повернені банком (повернення «bounce» знову робить документ до сплати).
-        const paid = txIds.reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0) - (e.refundTxIds || []).reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0);
+        const prior = e.migrationId && e.date < (startDate || `${start}-01`) ? e.openingPaidKop || 0 : 0;
+        if(!Number.isSafeInteger(prior)||prior<0||prior>e.amountKop)block(`Документ витрат ${e.id}: некоректна оплата до переходу`);
+        const paid = prior + txIds.reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0) - (e.refundTxIds || []).reduce((s, id) => s + (txMap.get(id)?.amountKop || 0), 0);
         if (new Set(txIds).size !== txIds.length || paid !== (e.paidKop || 0) || paid > e.amountKop || txIds.some(id => txMap.get(id)?.expenseId !== e.id)) block(`Документ витрат ${e.id}: сума оплат або зв'язки не відповідають виписці`);
     }
     // Повернення списаного: оригінал є, знає про повернення, повернено не більше, ніж списано.

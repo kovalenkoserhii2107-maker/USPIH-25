@@ -1,0 +1,6361 @@
+{
+  "synthetic": true,
+  "premises": 302,
+  "apartments": 300,
+  "nonresidential": 2,
+  "owners": 447,
+  "uniqueOwnerAliases": 441,
+  "startDate": "2026-10-01",
+  "bank": "UA163052990000026001234500001",
+  "deposit": "UA863052990000026001234500002",
+  "cutBankKop": 159549753,
+  "cutDepositKop": 50000000,
+  "cutDebtNetKop": -75000,
+  "monthlyChargesKop": 11499753,
+  "priorIncomeKop": 2000000,
+  "priorCostsKop": 2000000,
+  "apartmentsExpected": {
+    "1": {
+      "account": "000700001",
+      "area": "57.3",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 37783,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37783,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 37783,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 37783,
+          "closingKop": 25000
+        }
+      }
+    },
+    "2": {
+      "account": "000700002",
+      "area": "75.1",
+      "residents": 3,
+      "openingKop": 12500,
+      "feeKop": 50056,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50056,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 50056,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 50056,
+          "closingKop": 12500
+        }
+      }
+    },
+    "3": {
+      "account": "000700003",
+      "area": "76.0",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 52020,
+      "months": {
+        "2026-10": {
+          "paymentKop": 52020,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 52020,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 52020,
+          "closingKop": 0
+        }
+      }
+    },
+    "4": {
+      "account": "000700004",
+      "area": "49.0",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 31305,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31305,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 31305,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 31305,
+          "closingKop": -12500
+        }
+      }
+    },
+    "5": {
+      "account": "000700005",
+      "area": "73.4",
+      "residents": 2,
+      "openingKop": -17500,
+      "feeKop": 47604,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47604,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 47604,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 47604,
+          "closingKop": -17500
+        }
+      }
+    },
+    "6": {
+      "account": "000700006",
+      "area": "39.3",
+      "residents": 3,
+      "openingKop": -47500,
+      "feeKop": 28218,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28218,
+          "closingKop": -47500
+        },
+        "2026-11": {
+          "paymentKop": 28218,
+          "closingKop": -47500
+        },
+        "2026-12": {
+          "paymentKop": 28218,
+          "closingKop": -47500
+        }
+      }
+    },
+    "7": {
+      "account": "000700007",
+      "area": "53.6",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 38356,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38356,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 38356,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 38356,
+          "closingKop": 37500
+        }
+      }
+    },
+    "8": {
+      "account": "000700008",
+      "area": "38.9",
+      "residents": 1,
+      "openingKop": 25000,
+      "feeKop": 25144,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25144,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 25144,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 25144,
+          "closingKop": 25000
+        }
+      }
+    },
+    "9": {
+      "account": "000700009",
+      "area": "88.2",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 56632,
+      "months": {
+        "2026-10": {
+          "paymentKop": 56632,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 56632,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 56632,
+          "closingKop": 12500
+        }
+      }
+    },
+    "10": {
+      "account": "000700010",
+      "area": "34.6",
+      "residents": 3,
+      "openingKop": 7500,
+      "feeKop": 25351,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25351,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 25351,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 25351,
+          "closingKop": 7500
+        }
+      }
+    },
+    "11": {
+      "account": "000700011",
+      "area": "49.7",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 35977,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37977,
+          "closingKop": -10500
+        },
+        "2026-11": {
+          "paymentKop": 37977,
+          "closingKop": -8500
+        },
+        "2026-12": {
+          "paymentKop": 37977,
+          "closingKop": -6500
+        }
+      }
+    },
+    "12": {
+      "account": "000700012",
+      "area": "52.7",
+      "residents": 1,
+      "openingKop": -35000,
+      "feeKop": 33562,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33562,
+          "closingKop": -35000
+        },
+        "2026-11": {
+          "paymentKop": 33562,
+          "closingKop": -35000
+        },
+        "2026-12": {
+          "paymentKop": 33562,
+          "closingKop": -35000
+        }
+      }
+    },
+    "13": {
+      "account": "000700013",
+      "area": "71.0",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 46140,
+      "months": {
+        "2026-10": {
+          "paymentKop": 43140,
+          "closingKop": -40500
+        },
+        "2026-11": {
+          "paymentKop": 43140,
+          "closingKop": -43500
+        },
+        "2026-12": {
+          "paymentKop": 43140,
+          "closingKop": -46500
+        }
+      }
+    },
+    "14": {
+      "account": "000700014",
+      "area": "69.1",
+      "residents": 3,
+      "openingKop": 37500,
+      "feeKop": 46396,
+      "months": {
+        "2026-10": {
+          "paymentKop": 46396,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 46396,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 46396,
+          "closingKop": 37500
+        }
+      }
+    },
+    "15": {
+      "account": "000700015",
+      "area": "49.6",
+      "residents": 4,
+      "openingKop": 32500,
+      "feeKop": 35916,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35916,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 35916,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 35916,
+          "closingKop": 32500
+        }
+      }
+    },
+    "16": {
+      "account": "000700016",
+      "area": "38.0",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 24595,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24595,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 24595,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 24595,
+          "closingKop": 12500
+        }
+      }
+    },
+    "17": {
+      "account": "000700017",
+      "area": "37.4",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 25644,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -25644
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -51288
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -76932
+        }
+      }
+    },
+    "18": {
+      "account": "000700018",
+      "area": "72.0",
+      "residents": 3,
+      "openingKop": -22500,
+      "feeKop": 48165,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48165,
+          "closingKop": -22500
+        },
+        "2026-11": {
+          "paymentKop": 48165,
+          "closingKop": -22500
+        },
+        "2026-12": {
+          "paymentKop": 48165,
+          "closingKop": -22500
+        }
+      }
+    },
+    "19": {
+      "account": "000700019",
+      "area": "37.6",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 28596,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28596,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 28596,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 28596,
+          "closingKop": -25000
+        }
+      }
+    },
+    "20": {
+      "account": "000700020",
+      "area": "66.5",
+      "residents": 1,
+      "openingKop": -30000,
+      "feeKop": 41980,
+      "months": {
+        "2026-10": {
+          "paymentKop": 41980,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 41980,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 41980,
+          "closingKop": -30000
+        }
+      }
+    },
+    "21": {
+      "account": "000700021",
+      "area": "97.5",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 62305,
+      "months": {
+        "2026-10": {
+          "paymentKop": 62305,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 62305,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 62305,
+          "closingKop": 37500
+        }
+      }
+    },
+    "22": {
+      "account": "000700022",
+      "area": "51.1",
+      "residents": 3,
+      "openingKop": 25000,
+      "feeKop": 35416,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37416,
+          "closingKop": 27000
+        },
+        "2026-11": {
+          "paymentKop": 37416,
+          "closingKop": 29000
+        },
+        "2026-12": {
+          "paymentKop": 37416,
+          "closingKop": 31000
+        }
+      }
+    },
+    "23": {
+      "account": "000700023",
+      "area": "34.8",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 26888,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26888,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 26888,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 26888,
+          "closingKop": 12500
+        }
+      }
+    },
+    "24": {
+      "account": "000700024",
+      "area": "39.1",
+      "residents": 1,
+      "openingKop": -10000,
+      "feeKop": 25266,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25266,
+          "closingKop": -10000
+        },
+        "2026-11": {
+          "paymentKop": 25266,
+          "closingKop": -10000
+        },
+        "2026-12": {
+          "paymentKop": 25266,
+          "closingKop": -10000
+        }
+      }
+    },
+    "25": {
+      "account": "000700025",
+      "area": "77.8",
+      "residents": 2,
+      "openingKop": -5000,
+      "feeKop": 50288,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50288,
+          "closingKop": -5000
+        },
+        "2026-11": {
+          "paymentKop": 50288,
+          "closingKop": -5000
+        },
+        "2026-12": {
+          "paymentKop": 50288,
+          "closingKop": -5000
+        }
+      }
+    },
+    "26": {
+      "account": "000700026",
+      "area": "75.1",
+      "residents": 3,
+      "openingKop": -25000,
+      "feeKop": 50056,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47056,
+          "closingKop": -28000
+        },
+        "2026-11": {
+          "paymentKop": 47056,
+          "closingKop": -31000
+        },
+        "2026-12": {
+          "paymentKop": 47056,
+          "closingKop": -34000
+        }
+      }
+    },
+    "27": {
+      "account": "000700027",
+      "area": "39.7",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 29877,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29877,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 29877,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 29877,
+          "closingKop": -37500
+        }
+      }
+    },
+    "28": {
+      "account": "000700028",
+      "area": "72.7",
+      "residents": 1,
+      "openingKop": 37500,
+      "feeKop": 45762,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45762,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 45762,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 45762,
+          "closingKop": 37500
+        }
+      }
+    },
+    "29": {
+      "account": "000700029",
+      "area": "37.0",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 25400,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25400,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 25400,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 25400,
+          "closingKop": 25000
+        }
+      }
+    },
+    "30": {
+      "account": "000700030",
+      "area": "38.7",
+      "residents": 3,
+      "openingKop": 20000,
+      "feeKop": 27852,
+      "months": {
+        "2026-10": {
+          "paymentKop": 27852,
+          "closingKop": 20000
+        },
+        "2026-11": {
+          "paymentKop": 27852,
+          "closingKop": 20000
+        },
+        "2026-12": {
+          "paymentKop": 27852,
+          "closingKop": 20000
+        }
+      }
+    },
+    "31": {
+      "account": "000700031",
+      "area": "88.7",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 59767,
+      "months": {
+        "2026-10": {
+          "paymentKop": 59767,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 59767,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 59767,
+          "closingKop": 0
+        }
+      }
+    },
+    "32": {
+      "account": "000700032",
+      "area": "38.5",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 24900,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24900,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 24900,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 24900,
+          "closingKop": -12500
+        }
+      }
+    },
+    "33": {
+      "account": "000700033",
+      "area": "54.1",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 35831,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37831,
+          "closingKop": -23000
+        },
+        "2026-11": {
+          "paymentKop": 37831,
+          "closingKop": -21000
+        },
+        "2026-12": {
+          "paymentKop": 37831,
+          "closingKop": -19000
+        }
+      }
+    },
+    "34": {
+      "account": "000700034",
+      "area": "55.3",
+      "residents": 3,
+      "openingKop": -37500,
+      "feeKop": 37978,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -75478
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -113456
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -151434
+        }
+      }
+    },
+    "35": {
+      "account": "000700035",
+      "area": "55.9",
+      "residents": 4,
+      "openingKop": 45000,
+      "feeKop": 39759,
+      "months": {
+        "2026-10": {
+          "paymentKop": 39759,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 39759,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 39759,
+          "closingKop": 45000
+        }
+      }
+    },
+    "36": {
+      "account": "000700036",
+      "area": "51.1",
+      "residents": 1,
+      "openingKop": 15000,
+      "feeKop": 32586,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32586,
+          "closingKop": 15000
+        },
+        "2026-11": {
+          "paymentKop": 32586,
+          "closingKop": 15000
+        },
+        "2026-12": {
+          "paymentKop": 32586,
+          "closingKop": 15000
+        }
+      }
+    },
+    "37": {
+      "account": "000700037",
+      "area": "38.7",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 26437,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26437,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 26437,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 26437,
+          "closingKop": 12500
+        }
+      }
+    },
+    "38": {
+      "account": "000700038",
+      "area": "34.3",
+      "residents": 3,
+      "openingKop": 0,
+      "feeKop": 25168,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25168,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 25168,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 25168,
+          "closingKop": 0
+        }
+      }
+    },
+    "39": {
+      "account": "000700039",
+      "area": "76.7",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 52447,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49447,
+          "closingKop": -15500
+        },
+        "2026-11": {
+          "paymentKop": 49447,
+          "closingKop": -18500
+        },
+        "2026-12": {
+          "paymentKop": 49447,
+          "closingKop": -21500
+        }
+      }
+    },
+    "40": {
+      "account": "000700040",
+      "area": "49.3",
+      "residents": 1,
+      "openingKop": -17500,
+      "feeKop": 31488,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31488,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 31488,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 31488,
+          "closingKop": -17500
+        }
+      }
+    },
+    "41": {
+      "account": "000700041",
+      "area": "52.2",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 34672,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34672,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 34672,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 34672,
+          "closingKop": -37500
+        }
+      }
+    },
+    "42": {
+      "account": "000700042",
+      "area": "36.0",
+      "residents": 3,
+      "openingKop": 27500,
+      "feeKop": 26205,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26205,
+          "closingKop": 27500
+        },
+        "2026-11": {
+          "paymentKop": 26205,
+          "closingKop": 27500
+        },
+        "2026-12": {
+          "paymentKop": 26205,
+          "closingKop": 27500
+        }
+      }
+    },
+    "43": {
+      "account": "000700043",
+      "area": "51.5",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 37075,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37075,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 37075,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 37075,
+          "closingKop": 25000
+        }
+      }
+    },
+    "44": {
+      "account": "000700044",
+      "area": "37.6",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 24351,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26351,
+          "closingKop": 14500
+        },
+        "2026-11": {
+          "paymentKop": 26351,
+          "closingKop": 16500
+        },
+        "2026-12": {
+          "paymentKop": 26351,
+          "closingKop": 18500
+        }
+      }
+    },
+    "45": {
+      "account": "000700045",
+      "area": "51.4",
+      "residents": 2,
+      "openingKop": 7500,
+      "feeKop": 34184,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34184,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 34184,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 34184,
+          "closingKop": 7500
+        }
+      }
+    },
+    "46": {
+      "account": "000700046",
+      "area": "72.4",
+      "residents": 3,
+      "openingKop": -12500,
+      "feeKop": 48409,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48409,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 48409,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 48409,
+          "closingKop": -12500
+        }
+      }
+    },
+    "47": {
+      "account": "000700047",
+      "area": "73.3",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 50373,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50373,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 50373,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 50373,
+          "closingKop": -25000
+        }
+      }
+    },
+    "48": {
+      "account": "000700048",
+      "area": "77.2",
+      "residents": 1,
+      "openingKop": -47500,
+      "feeKop": 48507,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48507,
+          "closingKop": -47500
+        },
+        "2026-11": {
+          "paymentKop": 48507,
+          "closingKop": -47500
+        },
+        "2026-12": {
+          "paymentKop": 48507,
+          "closingKop": -47500
+        }
+      }
+    },
+    "49": {
+      "account": "000700049",
+      "area": "53.7",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 35587,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35587,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 35587,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 35587,
+          "closingKop": 37500
+        }
+      }
+    },
+    "50": {
+      "account": "000700050",
+      "area": "73.6",
+      "residents": 3,
+      "openingKop": 32500,
+      "feeKop": 49141,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49141,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 49141,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 49141,
+          "closingKop": 32500
+        }
+      }
+    },
+    "51": {
+      "account": "000700051",
+      "area": "39.7",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 29877,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -17377
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -47254
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -77131
+        }
+      }
+    },
+    "52": {
+      "account": "000700052",
+      "area": "51.4",
+      "residents": 1,
+      "openingKop": 0,
+      "feeKop": 32769,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29769,
+          "closingKop": -3000
+        },
+        "2026-11": {
+          "paymentKop": 29769,
+          "closingKop": -6000
+        },
+        "2026-12": {
+          "paymentKop": 29769,
+          "closingKop": -9000
+        }
+      }
+    },
+    "53": {
+      "account": "000700053",
+      "area": "38.0",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 26010,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26010,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 26010,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 26010,
+          "closingKop": -12500
+        }
+      }
+    },
+    "54": {
+      "account": "000700054",
+      "area": "94.1",
+      "residents": 3,
+      "openingKop": -35000,
+      "feeKop": 61646,
+      "months": {
+        "2026-10": {
+          "paymentKop": 61646,
+          "closingKop": -35000
+        },
+        "2026-11": {
+          "paymentKop": 61646,
+          "closingKop": -35000
+        },
+        "2026-12": {
+          "paymentKop": 61646,
+          "closingKop": -35000
+        }
+      }
+    },
+    "55": {
+      "account": "000700055",
+      "area": "71.7",
+      "residents": 4,
+      "openingKop": -30000,
+      "feeKop": 49397,
+      "months": {
+        "2026-10": {
+          "paymentKop": 51397,
+          "closingKop": -28000
+        },
+        "2026-11": {
+          "paymentKop": 51397,
+          "closingKop": -26000
+        },
+        "2026-12": {
+          "paymentKop": 51397,
+          "closingKop": -24000
+        }
+      }
+    },
+    "56": {
+      "account": "000700056",
+      "area": "37.7",
+      "residents": 1,
+      "openingKop": 37500,
+      "feeKop": 24412,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24412,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 24412,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 24412,
+          "closingKop": 37500
+        }
+      }
+    },
+    "57": {
+      "account": "000700057",
+      "area": "35.0",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 24180,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24180,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 24180,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 24180,
+          "closingKop": 25000
+        }
+      }
+    },
+    "58": {
+      "account": "000700058",
+      "area": "72.9",
+      "residents": 3,
+      "openingKop": 12500,
+      "feeKop": 48714,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48714,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 48714,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 48714,
+          "closingKop": 12500
+        }
+      }
+    },
+    "59": {
+      "account": "000700059",
+      "area": "52.8",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 37868,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37868,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 37868,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 37868,
+          "closingKop": 0
+        }
+      }
+    },
+    "60": {
+      "account": "000700060",
+      "area": "54.4",
+      "residents": 1,
+      "openingKop": -5000,
+      "feeKop": 34599,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34599,
+          "closingKop": -5000
+        },
+        "2026-11": {
+          "paymentKop": 34599,
+          "closingKop": -5000
+        },
+        "2026-12": {
+          "paymentKop": 34599,
+          "closingKop": -5000
+        }
+      }
+    },
+    "61": {
+      "account": "000700061",
+      "area": "48.9",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 32659,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32659,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 32659,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 32659,
+          "closingKop": -25000
+        }
+      }
+    },
+    "62": {
+      "account": "000700062",
+      "area": "77.4",
+      "residents": 3,
+      "openingKop": -37500,
+      "feeKop": 51459,
+      "months": {
+        "2026-10": {
+          "paymentKop": 51459,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 51459,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 51459,
+          "closingKop": -37500
+        }
+      }
+    },
+    "63": {
+      "account": "000700063",
+      "area": "68.8",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 47628,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47628,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 47628,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 47628,
+          "closingKop": 37500
+        }
+      }
+    },
+    "64": {
+      "account": "000700064",
+      "area": "53.1",
+      "residents": 1,
+      "openingKop": 25000,
+      "feeKop": 33806,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33806,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 33806,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 33806,
+          "closingKop": 25000
+        }
+      }
+    },
+    "65": {
+      "account": "000700065",
+      "area": "53.6",
+      "residents": 2,
+      "openingKop": 20000,
+      "feeKop": 35526,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32526,
+          "closingKop": 17000
+        },
+        "2026-11": {
+          "paymentKop": 32526,
+          "closingKop": 14000
+        },
+        "2026-12": {
+          "paymentKop": 32526,
+          "closingKop": 11000
+        }
+      }
+    },
+    "66": {
+      "account": "000700066",
+      "area": "37.2",
+      "residents": 3,
+      "openingKop": -10000,
+      "feeKop": 26937,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28937,
+          "closingKop": -8000
+        },
+        "2026-11": {
+          "paymentKop": 28937,
+          "closingKop": -6000
+        },
+        "2026-12": {
+          "paymentKop": 28937,
+          "closingKop": -4000
+        }
+      }
+    },
+    "67": {
+      "account": "000700067",
+      "area": "34.5",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 26705,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26705,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 26705,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 26705,
+          "closingKop": -12500
+        }
+      }
+    },
+    "68": {
+      "account": "000700068",
+      "area": "53.3",
+      "residents": 1,
+      "openingKop": -25000,
+      "feeKop": 33928,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -58928
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -92856
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -126784
+        }
+      }
+    },
+    "69": {
+      "account": "000700069",
+      "area": "70.4",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 45774,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45774,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 45774,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 45774,
+          "closingKop": -37500
+        }
+      }
+    },
+    "70": {
+      "account": "000700070",
+      "area": "37.1",
+      "residents": 3,
+      "openingKop": 45000,
+      "feeKop": 26876,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26876,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 26876,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 26876,
+          "closingKop": 45000
+        }
+      }
+    },
+    "71": {
+      "account": "000700071",
+      "area": "37.6",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 28596,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28596,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 28596,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 28596,
+          "closingKop": 25000
+        }
+      }
+    },
+    "72": {
+      "account": "000700072",
+      "area": "49.7",
+      "residents": 1,
+      "openingKop": 2500,
+      "feeKop": 31732,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31732,
+          "closingKop": 2500
+        },
+        "2026-11": {
+          "paymentKop": 31732,
+          "closingKop": 2500
+        },
+        "2026-12": {
+          "paymentKop": 31732,
+          "closingKop": 2500
+        }
+      }
+    },
+    "73": {
+      "account": "000700073",
+      "area": "77.2",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 49922,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49922,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 49922,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 49922,
+          "closingKop": 0
+        }
+      }
+    },
+    "74": {
+      "account": "000700074",
+      "area": "74.3",
+      "residents": 3,
+      "openingKop": -12500,
+      "feeKop": 49568,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49568,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 49568,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 49568,
+          "closingKop": -12500
+        }
+      }
+    },
+    "75": {
+      "account": "000700075",
+      "area": "49.0",
+      "residents": 4,
+      "openingKop": -17500,
+      "feeKop": 35550,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35550,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 35550,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 35550,
+          "closingKop": -17500
+        }
+      }
+    },
+    "76": {
+      "account": "000700076",
+      "area": "35.1",
+      "residents": 1,
+      "openingKop": -37500,
+      "feeKop": 22826,
+      "months": {
+        "2026-10": {
+          "paymentKop": 22826,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 22826,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 22826,
+          "closingKop": -37500
+        }
+      }
+    },
+    "77": {
+      "account": "000700077",
+      "area": "54.7",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 36197,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38197,
+          "closingKop": 39500
+        },
+        "2026-11": {
+          "paymentKop": 38197,
+          "closingKop": 41500
+        },
+        "2026-12": {
+          "paymentKop": 38197,
+          "closingKop": 43500
+        }
+      }
+    },
+    "78": {
+      "account": "000700078",
+      "area": "72.3",
+      "residents": 3,
+      "openingKop": 15000,
+      "feeKop": 48348,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45348,
+          "closingKop": 12000
+        },
+        "2026-11": {
+          "paymentKop": 45348,
+          "closingKop": 9000
+        },
+        "2026-12": {
+          "paymentKop": 45348,
+          "closingKop": 6000
+        }
+      }
+    },
+    "79": {
+      "account": "000700079",
+      "area": "55.1",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 39271,
+      "months": {
+        "2026-10": {
+          "paymentKop": 39271,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 39271,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 39271,
+          "closingKop": 12500
+        }
+      }
+    },
+    "80": {
+      "account": "000700080",
+      "area": "50.7",
+      "residents": 1,
+      "openingKop": 7500,
+      "feeKop": 32342,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32342,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 32342,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 32342,
+          "closingKop": 7500
+        }
+      }
+    },
+    "81": {
+      "account": "000700081",
+      "area": "91.3",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 58523,
+      "months": {
+        "2026-10": {
+          "paymentKop": 58523,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 58523,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 58523,
+          "closingKop": -12500
+        }
+      }
+    },
+    "82": {
+      "account": "000700082",
+      "area": "36.8",
+      "residents": 3,
+      "openingKop": -25000,
+      "feeKop": 26693,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26693,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 26693,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 26693,
+          "closingKop": -25000
+        }
+      }
+    },
+    "83": {
+      "account": "000700083",
+      "area": "94.5",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 63305,
+      "months": {
+        "2026-10": {
+          "paymentKop": 63305,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 63305,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 63305,
+          "closingKop": -37500
+        }
+      }
+    },
+    "84": {
+      "account": "000700084",
+      "area": "35.9",
+      "residents": 1,
+      "openingKop": 27500,
+      "feeKop": 23314,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23314,
+          "closingKop": 27500
+        },
+        "2026-11": {
+          "paymentKop": 23314,
+          "closingKop": 27500
+        },
+        "2026-12": {
+          "paymentKop": 23314,
+          "closingKop": 27500
+        }
+      }
+    },
+    "85": {
+      "account": "000700085",
+      "area": "51.1",
+      "residents": 2,
+      "openingKop": 32500,
+      "feeKop": 34001,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -1501
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -35502
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -69503
+        }
+      }
+    },
+    "86": {
+      "account": "000700086",
+      "area": "97.9",
+      "residents": 3,
+      "openingKop": 12500,
+      "feeKop": 63964,
+      "months": {
+        "2026-10": {
+          "paymentKop": 63964,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 63964,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 63964,
+          "closingKop": 12500
+        }
+      }
+    },
+    "87": {
+      "account": "000700087",
+      "area": "74.1",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 50861,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50861,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 50861,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 50861,
+          "closingKop": 0
+        }
+      }
+    },
+    "88": {
+      "account": "000700088",
+      "area": "74.3",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 46738,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48738,
+          "closingKop": -10500
+        },
+        "2026-11": {
+          "paymentKop": 48738,
+          "closingKop": -8500
+        },
+        "2026-12": {
+          "paymentKop": 48738,
+          "closingKop": -6500
+        }
+      }
+    },
+    "89": {
+      "account": "000700089",
+      "area": "55.1",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 36441,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36441,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 36441,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 36441,
+          "closingKop": -25000
+        }
+      }
+    },
+    "90": {
+      "account": "000700090",
+      "area": "37.1",
+      "residents": 3,
+      "openingKop": -30000,
+      "feeKop": 26876,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26876,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 26876,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 26876,
+          "closingKop": -30000
+        }
+      }
+    },
+    "91": {
+      "account": "000700091",
+      "area": "49.8",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 36038,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33038,
+          "closingKop": 34500
+        },
+        "2026-11": {
+          "paymentKop": 33038,
+          "closingKop": 31500
+        },
+        "2026-12": {
+          "paymentKop": 33038,
+          "closingKop": 28500
+        }
+      }
+    },
+    "92": {
+      "account": "000700092",
+      "area": "55.1",
+      "residents": 1,
+      "openingKop": 25000,
+      "feeKop": 35026,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35026,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 35026,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 35026,
+          "closingKop": 25000
+        }
+      }
+    },
+    "93": {
+      "account": "000700093",
+      "area": "76.4",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 49434,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49434,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 49434,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 49434,
+          "closingKop": 12500
+        }
+      }
+    },
+    "94": {
+      "account": "000700094",
+      "area": "70.9",
+      "residents": 3,
+      "openingKop": 0,
+      "feeKop": 47494,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47494,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 47494,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 47494,
+          "closingKop": 0
+        }
+      }
+    },
+    "95": {
+      "account": "000700095",
+      "area": "49.1",
+      "residents": 4,
+      "openingKop": -5000,
+      "feeKop": 35611,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35611,
+          "closingKop": -5000
+        },
+        "2026-11": {
+          "paymentKop": 35611,
+          "closingKop": -5000
+        },
+        "2026-12": {
+          "paymentKop": 35611,
+          "closingKop": -5000
+        }
+      }
+    },
+    "96": {
+      "account": "000700096",
+      "area": "57.2",
+      "residents": 1,
+      "openingKop": -35000,
+      "feeKop": 36307,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36307,
+          "closingKop": -35000
+        },
+        "2026-11": {
+          "paymentKop": 36307,
+          "closingKop": -35000
+        },
+        "2026-12": {
+          "paymentKop": 36307,
+          "closingKop": -35000
+        }
+      }
+    },
+    "97": {
+      "account": "000700097",
+      "area": "72.7",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 47177,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47177,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 47177,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 47177,
+          "closingKop": -37500
+        }
+      }
+    },
+    "98": {
+      "account": "000700098",
+      "area": "77.0",
+      "residents": 3,
+      "openingKop": 37500,
+      "feeKop": 51215,
+      "months": {
+        "2026-10": {
+          "paymentKop": 51215,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 51215,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 51215,
+          "closingKop": 37500
+        }
+      }
+    },
+    "99": {
+      "account": "000700099",
+      "area": "52.3",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 37563,
+      "months": {
+        "2026-10": {
+          "paymentKop": 39563,
+          "closingKop": 27000
+        },
+        "2026-11": {
+          "paymentKop": 39563,
+          "closingKop": 29000
+        },
+        "2026-12": {
+          "paymentKop": 39563,
+          "closingKop": 31000
+        }
+      }
+    },
+    "100": {
+      "account": "000700100",
+      "area": "70.4",
+      "residents": 1,
+      "openingKop": 20000,
+      "feeKop": 44359,
+      "months": {
+        "2026-10": {
+          "paymentKop": 44359,
+          "closingKop": 20000
+        },
+        "2026-11": {
+          "paymentKop": 44359,
+          "closingKop": 20000
+        },
+        "2026-12": {
+          "paymentKop": 44359,
+          "closingKop": 20000
+        }
+      }
+    },
+    "101": {
+      "account": "000700101",
+      "area": "39.1",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 26681,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26681,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 26681,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 26681,
+          "closingKop": 0
+        }
+      }
+    },
+    "102": {
+      "account": "000700102",
+      "area": "52.3",
+      "residents": 3,
+      "openingKop": -22500,
+      "feeKop": 36148,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -58648
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -94796
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -130944
+        }
+      }
+    },
+    "103": {
+      "account": "000700103",
+      "area": "57.4",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 40674,
+      "months": {
+        "2026-10": {
+          "paymentKop": 40674,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 40674,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 40674,
+          "closingKop": -25000
+        }
+      }
+    },
+    "104": {
+      "account": "000700104",
+      "area": "51.4",
+      "residents": 1,
+      "openingKop": -37500,
+      "feeKop": 32769,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29769,
+          "closingKop": -40500
+        },
+        "2026-11": {
+          "paymentKop": 29769,
+          "closingKop": -43500
+        },
+        "2026-12": {
+          "paymentKop": 29769,
+          "closingKop": -46500
+        }
+      }
+    },
+    "105": {
+      "account": "000700105",
+      "area": "55.1",
+      "residents": 2,
+      "openingKop": 45000,
+      "feeKop": 36441,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36441,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 36441,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 36441,
+          "closingKop": 45000
+        }
+      }
+    },
+    "106": {
+      "account": "000700106",
+      "area": "54.5",
+      "residents": 3,
+      "openingKop": 25000,
+      "feeKop": 37490,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37490,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 37490,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 37490,
+          "closingKop": 25000
+        }
+      }
+    },
+    "107": {
+      "account": "000700107",
+      "area": "38.9",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 29389,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29389,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 29389,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 29389,
+          "closingKop": 12500
+        }
+      }
+    },
+    "108": {
+      "account": "000700108",
+      "area": "38.7",
+      "residents": 1,
+      "openingKop": -10000,
+      "feeKop": 25022,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25022,
+          "closingKop": -10000
+        },
+        "2026-11": {
+          "paymentKop": 25022,
+          "closingKop": -10000
+        },
+        "2026-12": {
+          "paymentKop": 25022,
+          "closingKop": -10000
+        }
+      }
+    },
+    "109": {
+      "account": "000700109",
+      "area": "55.1",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 36441,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36441,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 36441,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 36441,
+          "closingKop": -12500
+        }
+      }
+    },
+    "110": {
+      "account": "000700110",
+      "area": "50.3",
+      "residents": 3,
+      "openingKop": -17500,
+      "feeKop": 34928,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36928,
+          "closingKop": -15500
+        },
+        "2026-11": {
+          "paymentKop": 36928,
+          "closingKop": -13500
+        },
+        "2026-12": {
+          "paymentKop": 36928,
+          "closingKop": -11500
+        }
+      }
+    },
+    "111": {
+      "account": "000700111",
+      "area": "77.9",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 53179,
+      "months": {
+        "2026-10": {
+          "paymentKop": 53179,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 53179,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 53179,
+          "closingKop": -37500
+        }
+      }
+    },
+    "112": {
+      "account": "000700112",
+      "area": "36.2",
+      "residents": 1,
+      "openingKop": 37500,
+      "feeKop": 23497,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23497,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 23497,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 23497,
+          "closingKop": 37500
+        }
+      }
+    },
+    "113": {
+      "account": "000700113",
+      "area": "39.4",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 26864,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26864,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 26864,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 26864,
+          "closingKop": 25000
+        }
+      }
+    },
+    "114": {
+      "account": "000700114",
+      "area": "54.0",
+      "residents": 3,
+      "openingKop": 2500,
+      "feeKop": 37185,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37185,
+          "closingKop": 2500
+        },
+        "2026-11": {
+          "paymentKop": 37185,
+          "closingKop": 2500
+        },
+        "2026-12": {
+          "paymentKop": 37185,
+          "closingKop": 2500
+        }
+      }
+    },
+    "115": {
+      "account": "000700115",
+      "area": "54.0",
+      "residents": 4,
+      "openingKop": 7500,
+      "feeKop": 38600,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38600,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 38600,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 38600,
+          "closingKop": 7500
+        }
+      }
+    },
+    "116": {
+      "account": "000700116",
+      "area": "67.1",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 42346,
+      "months": {
+        "2026-10": {
+          "paymentKop": 42346,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 42346,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 42346,
+          "closingKop": -12500
+        }
+      }
+    },
+    "117": {
+      "account": "000700117",
+      "area": "55.9",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 36929,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33929,
+          "closingKop": -28000
+        },
+        "2026-11": {
+          "paymentKop": 33929,
+          "closingKop": -31000
+        },
+        "2026-12": {
+          "paymentKop": 33929,
+          "closingKop": -34000
+        }
+      }
+    },
+    "118": {
+      "account": "000700118",
+      "area": "88.4",
+      "residents": 3,
+      "openingKop": -37500,
+      "feeKop": 58169,
+      "months": {
+        "2026-10": {
+          "paymentKop": 58169,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 58169,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 58169,
+          "closingKop": -37500
+        }
+      }
+    },
+    "119": {
+      "account": "000700119",
+      "area": "49.4",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 35794,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": 1706
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -34088
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -69882
+        }
+      }
+    },
+    "120": {
+      "account": "000700120",
+      "area": "38.9",
+      "residents": 1,
+      "openingKop": 32500,
+      "feeKop": 25144,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25144,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 25144,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 25144,
+          "closingKop": 32500
+        }
+      }
+    },
+    "121": {
+      "account": "000700121",
+      "area": "52.8",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 35038,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37038,
+          "closingKop": 14500
+        },
+        "2026-11": {
+          "paymentKop": 37038,
+          "closingKop": 16500
+        },
+        "2026-12": {
+          "paymentKop": 37038,
+          "closingKop": 18500
+        }
+      }
+    },
+    "122": {
+      "account": "000700122",
+      "area": "93.0",
+      "residents": 3,
+      "openingKop": 0,
+      "feeKop": 60975,
+      "months": {
+        "2026-10": {
+          "paymentKop": 60975,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 60975,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 60975,
+          "closingKop": 0
+        }
+      }
+    },
+    "123": {
+      "account": "000700123",
+      "area": "52.3",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 37563,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37563,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 37563,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 37563,
+          "closingKop": -12500
+        }
+      }
+    },
+    "124": {
+      "account": "000700124",
+      "area": "74.4",
+      "residents": 1,
+      "openingKop": -25000,
+      "feeKop": 46799,
+      "months": {
+        "2026-10": {
+          "paymentKop": 46799,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 46799,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 46799,
+          "closingKop": -25000
+        }
+      }
+    },
+    "125": {
+      "account": "000700125",
+      "area": "34.2",
+      "residents": 2,
+      "openingKop": -30000,
+      "feeKop": 23692,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23692,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 23692,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 23692,
+          "closingKop": -30000
+        }
+      }
+    },
+    "126": {
+      "account": "000700126",
+      "area": "49.5",
+      "residents": 3,
+      "openingKop": 27500,
+      "feeKop": 34440,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34440,
+          "closingKop": 27500
+        },
+        "2026-11": {
+          "paymentKop": 34440,
+          "closingKop": 27500
+        },
+        "2026-12": {
+          "paymentKop": 34440,
+          "closingKop": 27500
+        }
+      }
+    },
+    "127": {
+      "account": "000700127",
+      "area": "39.4",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 29694,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29694,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 29694,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 29694,
+          "closingKop": 25000
+        }
+      }
+    },
+    "128": {
+      "account": "000700128",
+      "area": "52.0",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 33135,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33135,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 33135,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 33135,
+          "closingKop": 12500
+        }
+      }
+    },
+    "129": {
+      "account": "000700129",
+      "area": "89.4",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 57364,
+      "months": {
+        "2026-10": {
+          "paymentKop": 57364,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 57364,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 57364,
+          "closingKop": 0
+        }
+      }
+    },
+    "130": {
+      "account": "000700130",
+      "area": "49.0",
+      "residents": 3,
+      "openingKop": -5000,
+      "feeKop": 34135,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31135,
+          "closingKop": -8000
+        },
+        "2026-11": {
+          "paymentKop": 31135,
+          "closingKop": -11000
+        },
+        "2026-12": {
+          "paymentKop": 31135,
+          "closingKop": -14000
+        }
+      }
+    },
+    "131": {
+      "account": "000700131",
+      "area": "69.9",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 48299,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48299,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 48299,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 48299,
+          "closingKop": -25000
+        }
+      }
+    },
+    "132": {
+      "account": "000700132",
+      "area": "48.0",
+      "residents": 1,
+      "openingKop": -47500,
+      "feeKop": 30695,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32695,
+          "closingKop": -45500
+        },
+        "2026-11": {
+          "paymentKop": 32695,
+          "closingKop": -43500
+        },
+        "2026-12": {
+          "paymentKop": 32695,
+          "closingKop": -41500
+        }
+      }
+    },
+    "133": {
+      "account": "000700133",
+      "area": "53.1",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 35221,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35221,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 35221,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 35221,
+          "closingKop": 37500
+        }
+      }
+    },
+    "134": {
+      "account": "000700134",
+      "area": "39.3",
+      "residents": 3,
+      "openingKop": 25000,
+      "feeKop": 28218,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28218,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 28218,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 28218,
+          "closingKop": 25000
+        }
+      }
+    },
+    "135": {
+      "account": "000700135",
+      "area": "38.4",
+      "residents": 4,
+      "openingKop": 20000,
+      "feeKop": 29084,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29084,
+          "closingKop": 20000
+        },
+        "2026-11": {
+          "paymentKop": 29084,
+          "closingKop": 20000
+        },
+        "2026-12": {
+          "paymentKop": 29084,
+          "closingKop": 20000
+        }
+      }
+    },
+    "136": {
+      "account": "000700136",
+      "area": "49.1",
+      "residents": 1,
+      "openingKop": 0,
+      "feeKop": 31366,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -31366
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -62732
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -94098
+        }
+      }
+    },
+    "137": {
+      "account": "000700137",
+      "area": "55.6",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 36746,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36746,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 36746,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 36746,
+          "closingKop": -12500
+        }
+      }
+    },
+    "138": {
+      "account": "000700138",
+      "area": "57.8",
+      "residents": 3,
+      "openingKop": -35000,
+      "feeKop": 39503,
+      "months": {
+        "2026-10": {
+          "paymentKop": 39503,
+          "closingKop": -35000
+        },
+        "2026-11": {
+          "paymentKop": 39503,
+          "closingKop": -35000
+        },
+        "2026-12": {
+          "paymentKop": 39503,
+          "closingKop": -35000
+        }
+      }
+    },
+    "139": {
+      "account": "000700139",
+      "area": "53.2",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 38112,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38112,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 38112,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 38112,
+          "closingKop": -37500
+        }
+      }
+    },
+    "140": {
+      "account": "000700140",
+      "area": "34.9",
+      "residents": 1,
+      "openingKop": 45000,
+      "feeKop": 22704,
+      "months": {
+        "2026-10": {
+          "paymentKop": 22704,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 22704,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 22704,
+          "closingKop": 45000
+        }
+      }
+    },
+    "141": {
+      "account": "000700141",
+      "area": "55.8",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 36868,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36868,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 36868,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 36868,
+          "closingKop": 25000
+        }
+      }
+    },
+    "142": {
+      "account": "000700142",
+      "area": "96.0",
+      "residents": 3,
+      "openingKop": 12500,
+      "feeKop": 62805,
+      "months": {
+        "2026-10": {
+          "paymentKop": 62805,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 62805,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 62805,
+          "closingKop": 12500
+        }
+      }
+    },
+    "143": {
+      "account": "000700143",
+      "area": "48.0",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 34940,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36940,
+          "closingKop": 2000
+        },
+        "2026-11": {
+          "paymentKop": 36940,
+          "closingKop": 4000
+        },
+        "2026-12": {
+          "paymentKop": 36940,
+          "closingKop": 6000
+        }
+      }
+    },
+    "144": {
+      "account": "000700144",
+      "area": "54.5",
+      "residents": 1,
+      "openingKop": -22500,
+      "feeKop": 34660,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34660,
+          "closingKop": -22500
+        },
+        "2026-11": {
+          "paymentKop": 34660,
+          "closingKop": -22500
+        },
+        "2026-12": {
+          "paymentKop": 34660,
+          "closingKop": -22500
+        }
+      }
+    },
+    "145": {
+      "account": "000700145",
+      "area": "72.6",
+      "residents": 2,
+      "openingKop": -17500,
+      "feeKop": 47116,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47116,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 47116,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 47116,
+          "closingKop": -17500
+        }
+      }
+    },
+    "146": {
+      "account": "000700146",
+      "area": "72.0",
+      "residents": 3,
+      "openingKop": -37500,
+      "feeKop": 48165,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48165,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 48165,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 48165,
+          "closingKop": -37500
+        }
+      }
+    },
+    "147": {
+      "account": "000700147",
+      "area": "36.7",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 28047,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28047,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 28047,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 28047,
+          "closingKop": 37500
+        }
+      }
+    },
+    "148": {
+      "account": "000700148",
+      "area": "34.3",
+      "residents": 1,
+      "openingKop": 25000,
+      "feeKop": 22338,
+      "months": {
+        "2026-10": {
+          "paymentKop": 22338,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 22338,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 22338,
+          "closingKop": 25000
+        }
+      }
+    },
+    "149": {
+      "account": "000700149",
+      "area": "48.5",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 32415,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32415,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 32415,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 32415,
+          "closingKop": 12500
+        }
+      }
+    },
+    "150": {
+      "account": "000700150",
+      "area": "51.0",
+      "residents": 3,
+      "openingKop": 7500,
+      "feeKop": 35355,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35355,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 35355,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 35355,
+          "closingKop": 7500
+        }
+      }
+    },
+    "151": {
+      "account": "000700151",
+      "area": "91.0",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 61170,
+      "months": {
+        "2026-10": {
+          "paymentKop": 61170,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 61170,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 61170,
+          "closingKop": -12500
+        }
+      }
+    },
+    "152": {
+      "account": "000700152",
+      "area": "36.0",
+      "residents": 1,
+      "openingKop": -25000,
+      "feeKop": 23375,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23375,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 23375,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 23375,
+          "closingKop": -25000
+        }
+      }
+    },
+    "153": {
+      "account": "000700153",
+      "area": "38.9",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 26559,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -64059
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -90618
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -117177
+        }
+      }
+    },
+    "154": {
+      "account": "000700154",
+      "area": "72.9",
+      "residents": 3,
+      "openingKop": 37500,
+      "feeKop": 48714,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50714,
+          "closingKop": 39500
+        },
+        "2026-11": {
+          "paymentKop": 50714,
+          "closingKop": 41500
+        },
+        "2026-12": {
+          "paymentKop": 50714,
+          "closingKop": 43500
+        }
+      }
+    },
+    "155": {
+      "account": "000700155",
+      "area": "50.4",
+      "residents": 4,
+      "openingKop": 32500,
+      "feeKop": 36404,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36404,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 36404,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 36404,
+          "closingKop": 32500
+        }
+      }
+    },
+    "156": {
+      "account": "000700156",
+      "area": "50.7",
+      "residents": 1,
+      "openingKop": 2500,
+      "feeKop": 32342,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29342,
+          "closingKop": -500
+        },
+        "2026-11": {
+          "paymentKop": 29342,
+          "closingKop": -3500
+        },
+        "2026-12": {
+          "paymentKop": 29342,
+          "closingKop": -6500
+        }
+      }
+    },
+    "157": {
+      "account": "000700157",
+      "area": "48.4",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 32354,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32354,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 32354,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 32354,
+          "closingKop": 0
+        }
+      }
+    },
+    "158": {
+      "account": "000700158",
+      "area": "53.3",
+      "residents": 3,
+      "openingKop": -12500,
+      "feeKop": 36758,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36758,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 36758,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 36758,
+          "closingKop": -12500
+        }
+      }
+    },
+    "159": {
+      "account": "000700159",
+      "area": "66.2",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 46042,
+      "months": {
+        "2026-10": {
+          "paymentKop": 46042,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 46042,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 46042,
+          "closingKop": -25000
+        }
+      }
+    },
+    "160": {
+      "account": "000700160",
+      "area": "74.9",
+      "residents": 1,
+      "openingKop": -30000,
+      "feeKop": 47104,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47104,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 47104,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 47104,
+          "closingKop": -30000
+        }
+      }
+    },
+    "161": {
+      "account": "000700161",
+      "area": "49.4",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 32964,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32964,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 32964,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 32964,
+          "closingKop": 37500
+        }
+      }
+    },
+    "162": {
+      "account": "000700162",
+      "area": "92.1",
+      "residents": 3,
+      "openingKop": 15000,
+      "feeKop": 60426,
+      "months": {
+        "2026-10": {
+          "paymentKop": 60426,
+          "closingKop": 15000
+        },
+        "2026-11": {
+          "paymentKop": 60426,
+          "closingKop": 15000
+        },
+        "2026-12": {
+          "paymentKop": 60426,
+          "closingKop": 15000
+        }
+      }
+    },
+    "163": {
+      "account": "000700163",
+      "area": "35.8",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 27498,
+      "months": {
+        "2026-10": {
+          "paymentKop": 27498,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 27498,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 27498,
+          "closingKop": 12500
+        }
+      }
+    },
+    "164": {
+      "account": "000700164",
+      "area": "54.9",
+      "residents": 1,
+      "openingKop": 0,
+      "feeKop": 34904,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34904,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 34904,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 34904,
+          "closingKop": 0
+        }
+      }
+    },
+    "165": {
+      "account": "000700165",
+      "area": "52.7",
+      "residents": 2,
+      "openingKop": -5000,
+      "feeKop": 34977,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36977,
+          "closingKop": -3000
+        },
+        "2026-11": {
+          "paymentKop": 36977,
+          "closingKop": -1000
+        },
+        "2026-12": {
+          "paymentKop": 36977,
+          "closingKop": 1000
+        }
+      }
+    },
+    "166": {
+      "account": "000700166",
+      "area": "39.5",
+      "residents": 3,
+      "openingKop": -25000,
+      "feeKop": 28340,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28340,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 28340,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 28340,
+          "closingKop": -25000
+        }
+      }
+    },
+    "167": {
+      "account": "000700167",
+      "area": "36.9",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 28169,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28169,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 28169,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 28169,
+          "closingKop": -37500
+        }
+      }
+    },
+    "168": {
+      "account": "000700168",
+      "area": "77.7",
+      "residents": 1,
+      "openingKop": 27500,
+      "feeKop": 48812,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48812,
+          "closingKop": 27500
+        },
+        "2026-11": {
+          "paymentKop": 48812,
+          "closingKop": 27500
+        },
+        "2026-12": {
+          "paymentKop": 48812,
+          "closingKop": 27500
+        }
+      }
+    },
+    "169": {
+      "account": "000700169",
+      "area": "39.0",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 26620,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23620,
+          "closingKop": 22000
+        },
+        "2026-11": {
+          "paymentKop": 23620,
+          "closingKop": 19000
+        },
+        "2026-12": {
+          "paymentKop": 23620,
+          "closingKop": 16000
+        }
+      }
+    },
+    "170": {
+      "account": "000700170",
+      "area": "35.0",
+      "residents": 3,
+      "openingKop": 20000,
+      "feeKop": 25595,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -5595
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -31190
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -56785
+        }
+      }
+    },
+    "171": {
+      "account": "000700171",
+      "area": "35.7",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 27437,
+      "months": {
+        "2026-10": {
+          "paymentKop": 27437,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 27437,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 27437,
+          "closingKop": 0
+        }
+      }
+    },
+    "172": {
+      "account": "000700172",
+      "area": "57.9",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 36734,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36734,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 36734,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 36734,
+          "closingKop": -12500
+        }
+      }
+    },
+    "173": {
+      "account": "000700173",
+      "area": "73.4",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 47604,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47604,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 47604,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 47604,
+          "closingKop": -25000
+        }
+      }
+    },
+    "174": {
+      "account": "000700174",
+      "area": "51.0",
+      "residents": 3,
+      "openingKop": -47500,
+      "feeKop": 35355,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35355,
+          "closingKop": -47500
+        },
+        "2026-11": {
+          "paymentKop": 35355,
+          "closingKop": -47500
+        },
+        "2026-12": {
+          "paymentKop": 35355,
+          "closingKop": -47500
+        }
+      }
+    },
+    "175": {
+      "account": "000700175",
+      "area": "36.6",
+      "residents": 4,
+      "openingKop": 45000,
+      "feeKop": 27986,
+      "months": {
+        "2026-10": {
+          "paymentKop": 27986,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 27986,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 27986,
+          "closingKop": 45000
+        }
+      }
+    },
+    "176": {
+      "account": "000700176",
+      "area": "38.2",
+      "residents": 1,
+      "openingKop": 25000,
+      "feeKop": 24717,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26717,
+          "closingKop": 27000
+        },
+        "2026-11": {
+          "paymentKop": 26717,
+          "closingKop": 29000
+        },
+        "2026-12": {
+          "paymentKop": 26717,
+          "closingKop": 31000
+        }
+      }
+    },
+    "177": {
+      "account": "000700177",
+      "area": "95.5",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 61085,
+      "months": {
+        "2026-10": {
+          "paymentKop": 61085,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 61085,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 61085,
+          "closingKop": 12500
+        }
+      }
+    },
+    "178": {
+      "account": "000700178",
+      "area": "37.3",
+      "residents": 3,
+      "openingKop": 0,
+      "feeKop": 26998,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26998,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 26998,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 26998,
+          "closingKop": 0
+        }
+      }
+    },
+    "179": {
+      "account": "000700179",
+      "area": "66.8",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 46408,
+      "months": {
+        "2026-10": {
+          "paymentKop": 46408,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 46408,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 46408,
+          "closingKop": -12500
+        }
+      }
+    },
+    "180": {
+      "account": "000700180",
+      "area": "48.7",
+      "residents": 1,
+      "openingKop": -17500,
+      "feeKop": 31122,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31122,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 31122,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 31122,
+          "closingKop": -17500
+        }
+      }
+    },
+    "181": {
+      "account": "000700181",
+      "area": "91.8",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 58828,
+      "months": {
+        "2026-10": {
+          "paymentKop": 58828,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 58828,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 58828,
+          "closingKop": -37500
+        }
+      }
+    },
+    "182": {
+      "account": "000700182",
+      "area": "50.3",
+      "residents": 3,
+      "openingKop": 37500,
+      "feeKop": 34928,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31928,
+          "closingKop": 34500
+        },
+        "2026-11": {
+          "paymentKop": 31928,
+          "closingKop": 31500
+        },
+        "2026-12": {
+          "paymentKop": 31928,
+          "closingKop": 28500
+        }
+      }
+    },
+    "183": {
+      "account": "000700183",
+      "area": "37.9",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 28779,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28779,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 28779,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 28779,
+          "closingKop": 25000
+        }
+      }
+    },
+    "184": {
+      "account": "000700184",
+      "area": "49.6",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 31671,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31671,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 31671,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 31671,
+          "closingKop": 12500
+        }
+      }
+    },
+    "185": {
+      "account": "000700185",
+      "area": "52.1",
+      "residents": 2,
+      "openingKop": 7500,
+      "feeKop": 34611,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34611,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 34611,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 34611,
+          "closingKop": 7500
+        }
+      }
+    },
+    "186": {
+      "account": "000700186",
+      "area": "56.9",
+      "residents": 3,
+      "openingKop": -22500,
+      "feeKop": 38954,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38954,
+          "closingKop": -22500
+        },
+        "2026-11": {
+          "paymentKop": 38954,
+          "closingKop": -22500
+        },
+        "2026-12": {
+          "paymentKop": 38954,
+          "closingKop": -22500
+        }
+      }
+    },
+    "187": {
+      "account": "000700187",
+      "area": "55.2",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 39332,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -64332
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -103664
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -142996
+        }
+      }
+    },
+    "188": {
+      "account": "000700188",
+      "area": "52.1",
+      "residents": 1,
+      "openingKop": -37500,
+      "feeKop": 33196,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33196,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 33196,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 33196,
+          "closingKop": -37500
+        }
+      }
+    },
+    "189": {
+      "account": "000700189",
+      "area": "56.0",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 36990,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36990,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 36990,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 36990,
+          "closingKop": 37500
+        }
+      }
+    },
+    "190": {
+      "account": "000700190",
+      "area": "48.7",
+      "residents": 3,
+      "openingKop": 32500,
+      "feeKop": 33952,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33952,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 33952,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 33952,
+          "closingKop": 32500
+        }
+      }
+    },
+    "191": {
+      "account": "000700191",
+      "area": "48.3",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 35123,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35123,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 35123,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 35123,
+          "closingKop": 12500
+        }
+      }
+    },
+    "192": {
+      "account": "000700192",
+      "area": "57.4",
+      "residents": 1,
+      "openingKop": -10000,
+      "feeKop": 36429,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36429,
+          "closingKop": -10000
+        },
+        "2026-11": {
+          "paymentKop": 36429,
+          "closingKop": -10000
+        },
+        "2026-12": {
+          "paymentKop": 36429,
+          "closingKop": -10000
+        }
+      }
+    },
+    "193": {
+      "account": "000700193",
+      "area": "51.0",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 33940,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33940,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 33940,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 33940,
+          "closingKop": -12500
+        }
+      }
+    },
+    "194": {
+      "account": "000700194",
+      "area": "73.4",
+      "residents": 3,
+      "openingKop": -25000,
+      "feeKop": 49019,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49019,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 49019,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 49019,
+          "closingKop": -25000
+        }
+      }
+    },
+    "195": {
+      "account": "000700195",
+      "area": "70.5",
+      "residents": 4,
+      "openingKop": -30000,
+      "feeKop": 48665,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45665,
+          "closingKop": -33000
+        },
+        "2026-11": {
+          "paymentKop": 45665,
+          "closingKop": -36000
+        },
+        "2026-12": {
+          "paymentKop": 45665,
+          "closingKop": -39000
+        }
+      }
+    },
+    "196": {
+      "account": "000700196",
+      "area": "57.6",
+      "residents": 1,
+      "openingKop": 37500,
+      "feeKop": 36551,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36551,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 36551,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 36551,
+          "closingKop": 37500
+        }
+      }
+    },
+    "197": {
+      "account": "000700197",
+      "area": "77.3",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 49983,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49983,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 49983,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 49983,
+          "closingKop": 25000
+        }
+      }
+    },
+    "198": {
+      "account": "000700198",
+      "area": "39.8",
+      "residents": 3,
+      "openingKop": 2500,
+      "feeKop": 28523,
+      "months": {
+        "2026-10": {
+          "paymentKop": 30523,
+          "closingKop": 4500
+        },
+        "2026-11": {
+          "paymentKop": 30523,
+          "closingKop": 6500
+        },
+        "2026-12": {
+          "paymentKop": 30523,
+          "closingKop": 8500
+        }
+      }
+    },
+    "199": {
+      "account": "000700199",
+      "area": "69.2",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 47872,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47872,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 47872,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 47872,
+          "closingKop": 0
+        }
+      }
+    },
+    "200": {
+      "account": "000700200",
+      "area": "52.5",
+      "residents": 1,
+      "openingKop": -5000,
+      "feeKop": 33440,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33440,
+          "closingKop": -5000
+        },
+        "2026-11": {
+          "paymentKop": 33440,
+          "closingKop": -5000
+        },
+        "2026-12": {
+          "paymentKop": 33440,
+          "closingKop": -5000
+        }
+      }
+    },
+    "201": {
+      "account": "000700201",
+      "area": "77.5",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 50105,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50105,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 50105,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 50105,
+          "closingKop": -25000
+        }
+      }
+    },
+    "202": {
+      "account": "000700202",
+      "area": "55.4",
+      "residents": 3,
+      "openingKop": -37500,
+      "feeKop": 38039,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38039,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 38039,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 38039,
+          "closingKop": -37500
+        }
+      }
+    },
+    "203": {
+      "account": "000700203",
+      "area": "51.5",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 37075,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37075,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 37075,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 37075,
+          "closingKop": 37500
+        }
+      }
+    },
+    "204": {
+      "account": "000700204",
+      "area": "76.9",
+      "residents": 1,
+      "openingKop": 15000,
+      "feeKop": 48324,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -33324
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -81648
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -129972
+        }
+      }
+    },
+    "205": {
+      "account": "000700205",
+      "area": "71.7",
+      "residents": 2,
+      "openingKop": 20000,
+      "feeKop": 46567,
+      "months": {
+        "2026-10": {
+          "paymentKop": 46567,
+          "closingKop": 20000
+        },
+        "2026-11": {
+          "paymentKop": 46567,
+          "closingKop": 20000
+        },
+        "2026-12": {
+          "paymentKop": 46567,
+          "closingKop": 20000
+        }
+      }
+    },
+    "206": {
+      "account": "000700206",
+      "area": "36.8",
+      "residents": 3,
+      "openingKop": 0,
+      "feeKop": 26693,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26693,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 26693,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 26693,
+          "closingKop": 0
+        }
+      }
+    },
+    "207": {
+      "account": "000700207",
+      "area": "90.9",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 61109,
+      "months": {
+        "2026-10": {
+          "paymentKop": 61109,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 61109,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 61109,
+          "closingKop": -12500
+        }
+      }
+    },
+    "208": {
+      "account": "000700208",
+      "area": "51.2",
+      "residents": 1,
+      "openingKop": -25000,
+      "feeKop": 32647,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29647,
+          "closingKop": -28000
+        },
+        "2026-11": {
+          "paymentKop": 29647,
+          "closingKop": -31000
+        },
+        "2026-12": {
+          "paymentKop": 29647,
+          "closingKop": -34000
+        }
+      }
+    },
+    "209": {
+      "account": "000700209",
+      "area": "48.7",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 32537,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34537,
+          "closingKop": -35500
+        },
+        "2026-11": {
+          "paymentKop": 34537,
+          "closingKop": -33500
+        },
+        "2026-12": {
+          "paymentKop": 34537,
+          "closingKop": -31500
+        }
+      }
+    },
+    "210": {
+      "account": "000700210",
+      "area": "95.0",
+      "residents": 3,
+      "openingKop": 45000,
+      "feeKop": 62195,
+      "months": {
+        "2026-10": {
+          "paymentKop": 62195,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 62195,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 62195,
+          "closingKop": 45000
+        }
+      }
+    },
+    "211": {
+      "account": "000700211",
+      "area": "77.7",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 53057,
+      "months": {
+        "2026-10": {
+          "paymentKop": 53057,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 53057,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 53057,
+          "closingKop": 25000
+        }
+      }
+    },
+    "212": {
+      "account": "000700212",
+      "area": "76.4",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 48019,
+      "months": {
+        "2026-10": {
+          "paymentKop": 48019,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 48019,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 48019,
+          "closingKop": 12500
+        }
+      }
+    },
+    "213": {
+      "account": "000700213",
+      "area": "48.3",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 32293,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32293,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 32293,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 32293,
+          "closingKop": 0
+        }
+      }
+    },
+    "214": {
+      "account": "000700214",
+      "area": "49.2",
+      "residents": 3,
+      "openingKop": -12500,
+      "feeKop": 34257,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34257,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 34257,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 34257,
+          "closingKop": -12500
+        }
+      }
+    },
+    "215": {
+      "account": "000700215",
+      "area": "51.7",
+      "residents": 4,
+      "openingKop": -17500,
+      "feeKop": 37197,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37197,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 37197,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 37197,
+          "closingKop": -17500
+        }
+      }
+    },
+    "216": {
+      "account": "000700216",
+      "area": "34.5",
+      "residents": 1,
+      "openingKop": -47500,
+      "feeKop": 22460,
+      "months": {
+        "2026-10": {
+          "paymentKop": 22460,
+          "closingKop": -47500
+        },
+        "2026-11": {
+          "paymentKop": 22460,
+          "closingKop": -47500
+        },
+        "2026-12": {
+          "paymentKop": 22460,
+          "closingKop": -47500
+        }
+      }
+    },
+    "217": {
+      "account": "000700217",
+      "area": "39.0",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 26620,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26620,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 26620,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 26620,
+          "closingKop": 37500
+        }
+      }
+    },
+    "218": {
+      "account": "000700218",
+      "area": "89.6",
+      "residents": 3,
+      "openingKop": 25000,
+      "feeKop": 58901,
+      "months": {
+        "2026-10": {
+          "paymentKop": 58901,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 58901,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 58901,
+          "closingKop": 25000
+        }
+      }
+    },
+    "219": {
+      "account": "000700219",
+      "area": "48.1",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 35001,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35001,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 35001,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 35001,
+          "closingKop": 12500
+        }
+      }
+    },
+    "220": {
+      "account": "000700220",
+      "area": "69.3",
+      "residents": 1,
+      "openingKop": 7500,
+      "feeKop": 43688,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45688,
+          "closingKop": 9500
+        },
+        "2026-11": {
+          "paymentKop": 45688,
+          "closingKop": 11500
+        },
+        "2026-12": {
+          "paymentKop": 45688,
+          "closingKop": 13500
+        }
+      }
+    },
+    "221": {
+      "account": "000700221",
+      "area": "50.2",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 33452,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -45952
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -79404
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -112856
+        }
+      }
+    },
+    "222": {
+      "account": "000700222",
+      "area": "56.2",
+      "residents": 3,
+      "openingKop": -35000,
+      "feeKop": 38527,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38527,
+          "closingKop": -35000
+        },
+        "2026-11": {
+          "paymentKop": 38527,
+          "closingKop": -35000
+        },
+        "2026-12": {
+          "paymentKop": 38527,
+          "closingKop": -35000
+        }
+      }
+    },
+    "223": {
+      "account": "000700223",
+      "area": "53.4",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 38234,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38234,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 38234,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 38234,
+          "closingKop": -37500
+        }
+      }
+    },
+    "224": {
+      "account": "000700224",
+      "area": "57.5",
+      "residents": 1,
+      "openingKop": 37500,
+      "feeKop": 36490,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36490,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 36490,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 36490,
+          "closingKop": 37500
+        }
+      }
+    },
+    "225": {
+      "account": "000700225",
+      "area": "49.2",
+      "residents": 2,
+      "openingKop": 32500,
+      "feeKop": 32842,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32842,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 32842,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 32842,
+          "closingKop": 32500
+        }
+      }
+    },
+    "226": {
+      "account": "000700226",
+      "area": "88.7",
+      "residents": 3,
+      "openingKop": 12500,
+      "feeKop": 58352,
+      "months": {
+        "2026-10": {
+          "paymentKop": 58352,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 58352,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 58352,
+          "closingKop": 12500
+        }
+      }
+    },
+    "227": {
+      "account": "000700227",
+      "area": "34.0",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 26400,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26400,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 26400,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 26400,
+          "closingKop": 0
+        }
+      }
+    },
+    "228": {
+      "account": "000700228",
+      "area": "37.9",
+      "residents": 1,
+      "openingKop": -22500,
+      "feeKop": 24534,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24534,
+          "closingKop": -22500
+        },
+        "2026-11": {
+          "paymentKop": 24534,
+          "closingKop": -22500
+        },
+        "2026-12": {
+          "paymentKop": 24534,
+          "closingKop": -22500
+        }
+      }
+    },
+    "229": {
+      "account": "000700229",
+      "area": "34.5",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 23875,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23875,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 23875,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 23875,
+          "closingKop": -25000
+        }
+      }
+    },
+    "230": {
+      "account": "000700230",
+      "area": "71.3",
+      "residents": 3,
+      "openingKop": -30000,
+      "feeKop": 47738,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47738,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 47738,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 47738,
+          "closingKop": -30000
+        }
+      }
+    },
+    "231": {
+      "account": "000700231",
+      "area": "75.6",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 51776,
+      "months": {
+        "2026-10": {
+          "paymentKop": 53776,
+          "closingKop": 39500
+        },
+        "2026-11": {
+          "paymentKop": 53776,
+          "closingKop": 41500
+        },
+        "2026-12": {
+          "paymentKop": 53776,
+          "closingKop": 43500
+        }
+      }
+    },
+    "232": {
+      "account": "000700232",
+      "area": "97.8",
+      "residents": 1,
+      "openingKop": 25000,
+      "feeKop": 61073,
+      "months": {
+        "2026-10": {
+          "paymentKop": 61073,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 61073,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 61073,
+          "closingKop": 25000
+        }
+      }
+    },
+    "233": {
+      "account": "000700233",
+      "area": "77.1",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 49861,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49861,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 49861,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 49861,
+          "closingKop": 12500
+        }
+      }
+    },
+    "234": {
+      "account": "000700234",
+      "area": "56.5",
+      "residents": 3,
+      "openingKop": -10000,
+      "feeKop": 38710,
+      "months": {
+        "2026-10": {
+          "paymentKop": 35710,
+          "closingKop": -13000
+        },
+        "2026-11": {
+          "paymentKop": 35710,
+          "closingKop": -16000
+        },
+        "2026-12": {
+          "paymentKop": 35710,
+          "closingKop": -19000
+        }
+      }
+    },
+    "235": {
+      "account": "000700235",
+      "area": "53.9",
+      "residents": 4,
+      "openingKop": -5000,
+      "feeKop": 38539,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38539,
+          "closingKop": -5000
+        },
+        "2026-11": {
+          "paymentKop": 38539,
+          "closingKop": -5000
+        },
+        "2026-12": {
+          "paymentKop": 38539,
+          "closingKop": -5000
+        }
+      }
+    },
+    "236": {
+      "account": "000700236",
+      "area": "51.0",
+      "residents": 1,
+      "openingKop": -25000,
+      "feeKop": 32525,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32525,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 32525,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 32525,
+          "closingKop": -25000
+        }
+      }
+    },
+    "237": {
+      "account": "000700237",
+      "area": "55.3",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 36563,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36563,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 36563,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 36563,
+          "closingKop": -37500
+        }
+      }
+    },
+    "238": {
+      "account": "000700238",
+      "area": "36.4",
+      "residents": 3,
+      "openingKop": 37500,
+      "feeKop": 26449,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": 11051
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -15398
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -41847
+        }
+      }
+    },
+    "239": {
+      "account": "000700239",
+      "area": "93.1",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 62451,
+      "months": {
+        "2026-10": {
+          "paymentKop": 62451,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 62451,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 62451,
+          "closingKop": 25000
+        }
+      }
+    },
+    "240": {
+      "account": "000700240",
+      "area": "50.4",
+      "residents": 1,
+      "openingKop": 20000,
+      "feeKop": 32159,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32159,
+          "closingKop": 20000
+        },
+        "2026-11": {
+          "paymentKop": 32159,
+          "closingKop": 20000
+        },
+        "2026-12": {
+          "paymentKop": 32159,
+          "closingKop": 20000
+        }
+      }
+    },
+    "241": {
+      "account": "000700241",
+      "area": "77.0",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 49800,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49800,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 49800,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 49800,
+          "closingKop": 0
+        }
+      }
+    },
+    "242": {
+      "account": "000700242",
+      "area": "37.5",
+      "residents": 3,
+      "openingKop": -12500,
+      "feeKop": 27120,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29120,
+          "closingKop": -10500
+        },
+        "2026-11": {
+          "paymentKop": 29120,
+          "closingKop": -8500
+        },
+        "2026-12": {
+          "paymentKop": 29120,
+          "closingKop": -6500
+        }
+      }
+    },
+    "243": {
+      "account": "000700243",
+      "area": "55.9",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 39759,
+      "months": {
+        "2026-10": {
+          "paymentKop": 39759,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 39759,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 39759,
+          "closingKop": -25000
+        }
+      }
+    },
+    "244": {
+      "account": "000700244",
+      "area": "49.4",
+      "residents": 1,
+      "openingKop": -37500,
+      "feeKop": 31549,
+      "months": {
+        "2026-10": {
+          "paymentKop": 31549,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 31549,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 31549,
+          "closingKop": -37500
+        }
+      }
+    },
+    "245": {
+      "account": "000700245",
+      "area": "50.2",
+      "residents": 2,
+      "openingKop": 45000,
+      "feeKop": 33452,
+      "months": {
+        "2026-10": {
+          "paymentKop": 33452,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 33452,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 33452,
+          "closingKop": 45000
+        }
+      }
+    },
+    "246": {
+      "account": "000700246",
+      "area": "52.6",
+      "residents": 3,
+      "openingKop": 15000,
+      "feeKop": 36331,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36331,
+          "closingKop": 15000
+        },
+        "2026-11": {
+          "paymentKop": 36331,
+          "closingKop": 15000
+        },
+        "2026-12": {
+          "paymentKop": 36331,
+          "closingKop": 15000
+        }
+      }
+    },
+    "247": {
+      "account": "000700247",
+      "area": "39.7",
+      "residents": 4,
+      "openingKop": 12500,
+      "feeKop": 29877,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26877,
+          "closingKop": 9500
+        },
+        "2026-11": {
+          "paymentKop": 26877,
+          "closingKop": 6500
+        },
+        "2026-12": {
+          "paymentKop": 26877,
+          "closingKop": 3500
+        }
+      }
+    },
+    "248": {
+      "account": "000700248",
+      "area": "90.8",
+      "residents": 1,
+      "openingKop": 0,
+      "feeKop": 56803,
+      "months": {
+        "2026-10": {
+          "paymentKop": 56803,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 56803,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 56803,
+          "closingKop": 0
+        }
+      }
+    },
+    "249": {
+      "account": "000700249",
+      "area": "77.2",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 49922,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49922,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 49922,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 49922,
+          "closingKop": -12500
+        }
+      }
+    },
+    "250": {
+      "account": "000700250",
+      "area": "71.3",
+      "residents": 3,
+      "openingKop": -17500,
+      "feeKop": 47738,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47738,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 47738,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 47738,
+          "closingKop": -17500
+        }
+      }
+    },
+    "251": {
+      "account": "000700251",
+      "area": "34.8",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 26888,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26888,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 26888,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 26888,
+          "closingKop": -37500
+        }
+      }
+    },
+    "252": {
+      "account": "000700252",
+      "area": "96.5",
+      "residents": 1,
+      "openingKop": 27500,
+      "feeKop": 60280,
+      "months": {
+        "2026-10": {
+          "paymentKop": 60280,
+          "closingKop": 27500
+        },
+        "2026-11": {
+          "paymentKop": 60280,
+          "closingKop": 27500
+        },
+        "2026-12": {
+          "paymentKop": 60280,
+          "closingKop": 27500
+        }
+      }
+    },
+    "253": {
+      "account": "000700253",
+      "area": "67.2",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 43822,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45822,
+          "closingKop": 27000
+        },
+        "2026-11": {
+          "paymentKop": 45822,
+          "closingKop": 29000
+        },
+        "2026-12": {
+          "paymentKop": 45822,
+          "closingKop": 31000
+        }
+      }
+    },
+    "254": {
+      "account": "000700254",
+      "area": "68.8",
+      "residents": 3,
+      "openingKop": 12500,
+      "feeKop": 46213,
+      "months": {
+        "2026-10": {
+          "paymentKop": 46213,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 46213,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 46213,
+          "closingKop": 12500
+        }
+      }
+    },
+    "255": {
+      "account": "000700255",
+      "area": "68.5",
+      "residents": 4,
+      "openingKop": 7500,
+      "feeKop": 47445,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -39945
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -87390
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -134835
+        }
+      }
+    },
+    "256": {
+      "account": "000700256",
+      "area": "48.0",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 30695,
+      "months": {
+        "2026-10": {
+          "paymentKop": 30695,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 30695,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 30695,
+          "closingKop": -12500
+        }
+      }
+    },
+    "257": {
+      "account": "000700257",
+      "area": "67.0",
+      "residents": 2,
+      "openingKop": -25000,
+      "feeKop": 43700,
+      "months": {
+        "2026-10": {
+          "paymentKop": 43700,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 43700,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 43700,
+          "closingKop": -25000
+        }
+      }
+    },
+    "258": {
+      "account": "000700258",
+      "area": "52.2",
+      "residents": 3,
+      "openingKop": -47500,
+      "feeKop": 36087,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36087,
+          "closingKop": -47500
+        },
+        "2026-11": {
+          "paymentKop": 36087,
+          "closingKop": -47500
+        },
+        "2026-12": {
+          "paymentKop": 36087,
+          "closingKop": -47500
+        }
+      }
+    },
+    "259": {
+      "account": "000700259",
+      "area": "76.9",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 52569,
+      "months": {
+        "2026-10": {
+          "paymentKop": 52569,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 52569,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 52569,
+          "closingKop": 37500
+        }
+      }
+    },
+    "260": {
+      "account": "000700260",
+      "area": "76.6",
+      "residents": 1,
+      "openingKop": 32500,
+      "feeKop": 48141,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45141,
+          "closingKop": 29500
+        },
+        "2026-11": {
+          "paymentKop": 45141,
+          "closingKop": 26500
+        },
+        "2026-12": {
+          "paymentKop": 45141,
+          "closingKop": 23500
+        }
+      }
+    },
+    "261": {
+      "account": "000700261",
+      "area": "37.3",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 25583,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25583,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 25583,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 25583,
+          "closingKop": 12500
+        }
+      }
+    },
+    "262": {
+      "account": "000700262",
+      "area": "37.2",
+      "residents": 3,
+      "openingKop": 0,
+      "feeKop": 26937,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26937,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 26937,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 26937,
+          "closingKop": 0
+        }
+      }
+    },
+    "263": {
+      "account": "000700263",
+      "area": "53.1",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 38051,
+      "months": {
+        "2026-10": {
+          "paymentKop": 38051,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 38051,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 38051,
+          "closingKop": -12500
+        }
+      }
+    },
+    "264": {
+      "account": "000700264",
+      "area": "34.3",
+      "residents": 1,
+      "openingKop": -35000,
+      "feeKop": 22338,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24338,
+          "closingKop": -33000
+        },
+        "2026-11": {
+          "paymentKop": 24338,
+          "closingKop": -31000
+        },
+        "2026-12": {
+          "paymentKop": 24338,
+          "closingKop": -29000
+        }
+      }
+    },
+    "265": {
+      "account": "000700265",
+      "area": "37.6",
+      "residents": 2,
+      "openingKop": -30000,
+      "feeKop": 25766,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25766,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 25766,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 25766,
+          "closingKop": -30000
+        }
+      }
+    },
+    "266": {
+      "account": "000700266",
+      "area": "66.2",
+      "residents": 3,
+      "openingKop": 37500,
+      "feeKop": 44627,
+      "months": {
+        "2026-10": {
+          "paymentKop": 44627,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 44627,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 44627,
+          "closingKop": 37500
+        }
+      }
+    },
+    "267": {
+      "account": "000700267",
+      "area": "37.6",
+      "residents": 4,
+      "openingKop": 25000,
+      "feeKop": 28596,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28596,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 28596,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 28596,
+          "closingKop": 25000
+        }
+      }
+    },
+    "268": {
+      "account": "000700268",
+      "area": "38.2",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 24717,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24717,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 24717,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 24717,
+          "closingKop": 12500
+        }
+      }
+    },
+    "269": {
+      "account": "000700269",
+      "area": "89.0",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 57120,
+      "months": {
+        "2026-10": {
+          "paymentKop": 57120,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 57120,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 57120,
+          "closingKop": 0
+        }
+      }
+    },
+    "270": {
+      "account": "000700270",
+      "area": "76.3",
+      "residents": 3,
+      "openingKop": -5000,
+      "feeKop": 50788,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50788,
+          "closingKop": -5000
+        },
+        "2026-11": {
+          "paymentKop": 50788,
+          "closingKop": -5000
+        },
+        "2026-12": {
+          "paymentKop": 50788,
+          "closingKop": -5000
+        }
+      }
+    },
+    "271": {
+      "account": "000700271",
+      "area": "49.9",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 36099,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36099,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 36099,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 36099,
+          "closingKop": -25000
+        }
+      }
+    },
+    "272": {
+      "account": "000700272",
+      "area": "66.7",
+      "residents": 1,
+      "openingKop": -37500,
+      "feeKop": 42102,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -79602
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -121704
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -163806
+        }
+      }
+    },
+    "273": {
+      "account": "000700273",
+      "area": "53.0",
+      "residents": 2,
+      "openingKop": 37500,
+      "feeKop": 35160,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32160,
+          "closingKop": 34500
+        },
+        "2026-11": {
+          "paymentKop": 32160,
+          "closingKop": 31500
+        },
+        "2026-12": {
+          "paymentKop": 32160,
+          "closingKop": 28500
+        }
+      }
+    },
+    "274": {
+      "account": "000700274",
+      "area": "39.3",
+      "residents": 3,
+      "openingKop": 25000,
+      "feeKop": 28218,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28218,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 28218,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 28218,
+          "closingKop": 25000
+        }
+      }
+    },
+    "275": {
+      "account": "000700275",
+      "area": "35.5",
+      "residents": 4,
+      "openingKop": 20000,
+      "feeKop": 27315,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29315,
+          "closingKop": 22000
+        },
+        "2026-11": {
+          "paymentKop": 29315,
+          "closingKop": 24000
+        },
+        "2026-12": {
+          "paymentKop": 29315,
+          "closingKop": 26000
+        }
+      }
+    },
+    "276": {
+      "account": "000700276",
+      "area": "66.7",
+      "residents": 1,
+      "openingKop": -10000,
+      "feeKop": 42102,
+      "months": {
+        "2026-10": {
+          "paymentKop": 42102,
+          "closingKop": -10000
+        },
+        "2026-11": {
+          "paymentKop": 42102,
+          "closingKop": -10000
+        },
+        "2026-12": {
+          "paymentKop": 42102,
+          "closingKop": -10000
+        }
+      }
+    },
+    "277": {
+      "account": "000700277",
+      "area": "34.4",
+      "residents": 2,
+      "openingKop": -12500,
+      "feeKop": 23814,
+      "months": {
+        "2026-10": {
+          "paymentKop": 23814,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 23814,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 23814,
+          "closingKop": -12500
+        }
+      }
+    },
+    "278": {
+      "account": "000700278",
+      "area": "68.1",
+      "residents": 3,
+      "openingKop": -25000,
+      "feeKop": 45786,
+      "months": {
+        "2026-10": {
+          "paymentKop": 45786,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 45786,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 45786,
+          "closingKop": -25000
+        }
+      }
+    },
+    "279": {
+      "account": "000700279",
+      "area": "68.2",
+      "residents": 4,
+      "openingKop": -37500,
+      "feeKop": 47262,
+      "months": {
+        "2026-10": {
+          "paymentKop": 47262,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 47262,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 47262,
+          "closingKop": -37500
+        }
+      }
+    },
+    "280": {
+      "account": "000700280",
+      "area": "38.7",
+      "residents": 1,
+      "openingKop": 45000,
+      "feeKop": 25022,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25022,
+          "closingKop": 45000
+        },
+        "2026-11": {
+          "paymentKop": 25022,
+          "closingKop": 45000
+        },
+        "2026-12": {
+          "paymentKop": 25022,
+          "closingKop": 45000
+        }
+      }
+    },
+    "281": {
+      "account": "000700281",
+      "area": "67.0",
+      "residents": 2,
+      "openingKop": 25000,
+      "feeKop": 43700,
+      "months": {
+        "2026-10": {
+          "paymentKop": 43700,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 43700,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 43700,
+          "closingKop": 25000
+        }
+      }
+    },
+    "282": {
+      "account": "000700282",
+      "area": "75.5",
+      "residents": 3,
+      "openingKop": 2500,
+      "feeKop": 50300,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50300,
+          "closingKop": 2500
+        },
+        "2026-11": {
+          "paymentKop": 50300,
+          "closingKop": 2500
+        },
+        "2026-12": {
+          "paymentKop": 50300,
+          "closingKop": 2500
+        }
+      }
+    },
+    "283": {
+      "account": "000700283",
+      "area": "39.4",
+      "residents": 4,
+      "openingKop": 0,
+      "feeKop": 29694,
+      "months": {
+        "2026-10": {
+          "paymentKop": 29694,
+          "closingKop": 0
+        },
+        "2026-11": {
+          "paymentKop": 29694,
+          "closingKop": 0
+        },
+        "2026-12": {
+          "paymentKop": 29694,
+          "closingKop": 0
+        }
+      }
+    },
+    "284": {
+      "account": "000700284",
+      "area": "38.5",
+      "residents": 1,
+      "openingKop": -12500,
+      "feeKop": 24900,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24900,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 24900,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 24900,
+          "closingKop": -12500
+        }
+      }
+    },
+    "285": {
+      "account": "000700285",
+      "area": "37.6",
+      "residents": 2,
+      "openingKop": -17500,
+      "feeKop": 25766,
+      "months": {
+        "2026-10": {
+          "paymentKop": 25766,
+          "closingKop": -17500
+        },
+        "2026-11": {
+          "paymentKop": 25766,
+          "closingKop": -17500
+        },
+        "2026-12": {
+          "paymentKop": 25766,
+          "closingKop": -17500
+        }
+      }
+    },
+    "286": {
+      "account": "000700286",
+      "area": "56.2",
+      "residents": 3,
+      "openingKop": -37500,
+      "feeKop": 38527,
+      "months": {
+        "2026-10": {
+          "paymentKop": 40527,
+          "closingKop": -35500
+        },
+        "2026-11": {
+          "paymentKop": 40527,
+          "closingKop": -33500
+        },
+        "2026-12": {
+          "paymentKop": 40527,
+          "closingKop": -31500
+        }
+      }
+    },
+    "287": {
+      "account": "000700287",
+      "area": "56.0",
+      "residents": 4,
+      "openingKop": 37500,
+      "feeKop": 39820,
+      "months": {
+        "2026-10": {
+          "paymentKop": 39820,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 39820,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 39820,
+          "closingKop": 37500
+        }
+      }
+    },
+    "288": {
+      "account": "000700288",
+      "area": "54.9",
+      "residents": 1,
+      "openingKop": 15000,
+      "feeKop": 34904,
+      "months": {
+        "2026-10": {
+          "paymentKop": 34904,
+          "closingKop": 15000
+        },
+        "2026-11": {
+          "paymentKop": 34904,
+          "closingKop": 15000
+        },
+        "2026-12": {
+          "paymentKop": 34904,
+          "closingKop": 15000
+        }
+      }
+    },
+    "289": {
+      "account": "000700289",
+      "area": "55.5",
+      "residents": 2,
+      "openingKop": 12500,
+      "feeKop": 36685,
+      "months": {
+        "2026-10": {
+          "paymentKop": 0,
+          "closingKop": -24185
+        },
+        "2026-11": {
+          "paymentKop": 0,
+          "closingKop": -60870
+        },
+        "2026-12": {
+          "paymentKop": 0,
+          "closingKop": -97555
+        }
+      }
+    },
+    "290": {
+      "account": "000700290",
+      "area": "54.3",
+      "residents": 3,
+      "openingKop": 7500,
+      "feeKop": 37368,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37368,
+          "closingKop": 7500
+        },
+        "2026-11": {
+          "paymentKop": 37368,
+          "closingKop": 7500
+        },
+        "2026-12": {
+          "paymentKop": 37368,
+          "closingKop": 7500
+        }
+      }
+    },
+    "291": {
+      "account": "000700291",
+      "area": "73.7",
+      "residents": 4,
+      "openingKop": -12500,
+      "feeKop": 50617,
+      "months": {
+        "2026-10": {
+          "paymentKop": 50617,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 50617,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 50617,
+          "closingKop": -12500
+        }
+      }
+    },
+    "292": {
+      "account": "000700292",
+      "area": "57.0",
+      "residents": 1,
+      "openingKop": -25000,
+      "feeKop": 36185,
+      "months": {
+        "2026-10": {
+          "paymentKop": 36185,
+          "closingKop": -25000
+        },
+        "2026-11": {
+          "paymentKop": 36185,
+          "closingKop": -25000
+        },
+        "2026-12": {
+          "paymentKop": 36185,
+          "closingKop": -25000
+        }
+      }
+    },
+    "293": {
+      "account": "000700293",
+      "area": "76.2",
+      "residents": 2,
+      "openingKop": -37500,
+      "feeKop": 49312,
+      "months": {
+        "2026-10": {
+          "paymentKop": 49312,
+          "closingKop": -37500
+        },
+        "2026-11": {
+          "paymentKop": 49312,
+          "closingKop": -37500
+        },
+        "2026-12": {
+          "paymentKop": 49312,
+          "closingKop": -37500
+        }
+      }
+    },
+    "294": {
+      "account": "000700294",
+      "area": "37.0",
+      "residents": 3,
+      "openingKop": 27500,
+      "feeKop": 26815,
+      "months": {
+        "2026-10": {
+          "paymentKop": 26815,
+          "closingKop": 27500
+        },
+        "2026-11": {
+          "paymentKop": 26815,
+          "closingKop": 27500
+        },
+        "2026-12": {
+          "paymentKop": 26815,
+          "closingKop": 27500
+        }
+      }
+    },
+    "295": {
+      "account": "000700295",
+      "area": "52.3",
+      "residents": 4,
+      "openingKop": 32500,
+      "feeKop": 37563,
+      "months": {
+        "2026-10": {
+          "paymentKop": 37563,
+          "closingKop": 32500
+        },
+        "2026-11": {
+          "paymentKop": 37563,
+          "closingKop": 32500
+        },
+        "2026-12": {
+          "paymentKop": 37563,
+          "closingKop": 32500
+        }
+      }
+    },
+    "296": {
+      "account": "000700296",
+      "area": "51.2",
+      "residents": 1,
+      "openingKop": 12500,
+      "feeKop": 32647,
+      "months": {
+        "2026-10": {
+          "paymentKop": 32647,
+          "closingKop": 12500
+        },
+        "2026-11": {
+          "paymentKop": 32647,
+          "closingKop": 12500
+        },
+        "2026-12": {
+          "paymentKop": 32647,
+          "closingKop": 12500
+        }
+      }
+    },
+    "297": {
+      "account": "000700297",
+      "area": "38.0",
+      "residents": 2,
+      "openingKop": 0,
+      "feeKop": 26010,
+      "months": {
+        "2026-10": {
+          "paymentKop": 28010,
+          "closingKop": 2000
+        },
+        "2026-11": {
+          "paymentKop": 28010,
+          "closingKop": 4000
+        },
+        "2026-12": {
+          "paymentKop": 28010,
+          "closingKop": 6000
+        }
+      }
+    },
+    "298": {
+      "account": "000700298",
+      "area": "64",
+      "residents": 3,
+      "openingKop": -12500,
+      "feeKop": 43285,
+      "months": {
+        "2026-10": {
+          "paymentKop": 43285,
+          "closingKop": -12500
+        },
+        "2026-11": {
+          "paymentKop": 43285,
+          "closingKop": -12500
+        },
+        "2026-12": {
+          "paymentKop": 43285,
+          "closingKop": -12500
+        }
+      }
+    },
+    "299": {
+      "account": "000700299",
+      "area": "89.8",
+      "residents": 4,
+      "openingKop": -25000,
+      "feeKop": 60438,
+      "months": {
+        "2026-10": {
+          "paymentKop": 57438,
+          "closingKop": -28000
+        },
+        "2026-11": {
+          "paymentKop": 57438,
+          "closingKop": -31000
+        },
+        "2026-12": {
+          "paymentKop": 57438,
+          "closingKop": -34000
+        }
+      }
+    },
+    "300": {
+      "account": "000700300",
+      "area": "37.6",
+      "residents": 1,
+      "openingKop": -30000,
+      "feeKop": 24351,
+      "months": {
+        "2026-10": {
+          "paymentKop": 24351,
+          "closingKop": -30000
+        },
+        "2026-11": {
+          "paymentKop": 24351,
+          "closingKop": -30000
+        },
+        "2026-12": {
+          "paymentKop": 24351,
+          "closingKop": -30000
+        }
+      }
+    },
+    "301": {
+      "account": "000700301",
+      "area": "30.5",
+      "residents": 0,
+      "openingKop": 37500,
+      "feeKop": 21960,
+      "months": {
+        "2026-10": {
+          "paymentKop": 21960,
+          "closingKop": 37500
+        },
+        "2026-11": {
+          "paymentKop": 21960,
+          "closingKop": 37500
+        },
+        "2026-12": {
+          "paymentKop": 21960,
+          "closingKop": 37500
+        }
+      }
+    },
+    "302": {
+      "account": "000700302",
+      "area": "30.5",
+      "residents": 0,
+      "openingKop": 25000,
+      "feeKop": 21960,
+      "months": {
+        "2026-10": {
+          "paymentKop": 21960,
+          "closingKop": 25000
+        },
+        "2026-11": {
+          "paymentKop": 21960,
+          "closingKop": 25000
+        },
+        "2026-12": {
+          "paymentKop": 21960,
+          "closingKop": 25000
+        }
+      }
+    }
+  }
+}

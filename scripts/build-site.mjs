@@ -11,6 +11,8 @@ for (const path of ['index.html', 'admin.html', 'buh.html', 'landing.html', 'sty
 }
 await mkdir('_site/docs/accounting', { recursive:true });
 await cp('docs/accounting/MIGRATION.md', '_site/docs/accounting/MIGRATION.md');
+await cp('docs/accounting/IMPORT-AND-RESET.md', '_site/docs/accounting/IMPORT-AND-RESET.md');
+await cp('docs/accounting/fixtures', '_site/docs/accounting/fixtures', {recursive:true});
 const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js', 'js/buh-main.js'], outdir: '_site/js', entryNames: '[name]',
     chunkNames: 'chunks/[name]-[hash]', bundle: true, splitting: true, format: 'esm', target: ['es2020'],
     minify: true, external: ['https://*'], metafile: true });
