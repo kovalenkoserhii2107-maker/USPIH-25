@@ -192,8 +192,10 @@ function otherHtml(t) {
         return `<p class="buh-note">Кошторис на рік затверджують загальні збори (п. 4.12.2 статуту). Номер протоколу — у позначці нижче.</p><button type="button" class="btn-soft btn-compact" data-go="budget">Відкрити «Кошторис»</button>`;
     }
     if (t.key.startsWith('npo-') || t.key.startsWith('fs-stat-')) {
-        return `<p class="buh-note">Річний комплект вище містить ОСВ, фінрезультати, залишки, фонди й проводки. Офіційну форму перевірте, підпишіть та подайте у кабінеті ДПС.</p>
-            <div class="rp-actions"><button type="button" class="btn-soft btn-compact" data-act="annual-open" data-year="${t.key.slice(-4)}">Відкрити річний комплект</button><a class="btn-soft btn-compact" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a></div>`;
+        const parents=packsOf(t.key).filter(p=>p.type==='annual-external-filing');
+        return `<p class="buh-note">Річний комплект містить розрахункові таблиці. Офіційну форму перевірте, підпишіть та подайте у кабінеті ДПС. Тут фіксуються фактичні подання та квитанції.</p>
+            <div class="rp-actions"><button type="button" class="btn-soft btn-compact" data-act="annual-open" data-year="${t.key.slice(-4)}">Відкрити річний комплект</button><a class="btn-soft btn-compact" href="${E_CABINET}" target="_blank" rel="noopener">Електронний кабінет ↗</a></div>
+            <details><summary>Додати перевірений зовнішній звіт</summary><form class="rp-external" data-key="${escapeHtml(t.key)}" onsubmit="return false"><p class="buh-note">XML, PDF або p7s із сервісу, де підготовлено звіт. Програма зберігає версію; перевірка схеми та підписання виконуються у сервісі подання.</p><label class="py-field"><span>Файли звіту</span><input class="field-input" name="files" type="file" multiple accept=".xml,.pdf,.p7s"></label><label class="py-field"><span>Вид подання</span><select class="field-input field-select" name="submissionKind"><option value="initial">Звітний</option><option value="replacement">Звітний новий</option><option value="correction">Уточнюючий</option></select></label><label class="py-field"><span>Попередній звіт для повторного подання</span><select class="field-input field-select" name="previousPackageId"><option value="">Оберіть за потреби</option>${parents.map(p=>`<option value="${escapeHtml(p.id)}">Версія ${p.version}</option>`).join('')}</select></label><label class="py-field"><span>Підстава перевірки / опис виправлення</span><input class="field-input" name="basis" maxlength="500"></label><button class="btn-soft btn-compact" type="button" data-act="external-annual">Зберегти окрему версію</button></form></details>`;
     }
     return '';
 }
@@ -204,18 +206,22 @@ function markHtml(t) {
     const files = mark?.files || [];
     const regLabel = t.kind === 'decision' ? '№ протоколу' : 'Реєстраційний № у ДПС';
     const packs = packsOf(t.key);
-    const chosen = mark?.packageId || packs[0]?.id || '';
+    const filingPacks=packs.filter(p=>p.filingReady!==false&&p.complete!==false);
+    const chosen = mark?.packageId || filingPacks[0]?.id || '';
+    const numberForVersion=chosen&&(mark?.packageId||'')!==chosen?'':mark?.regNumber||'';
+    const history=(ctx.submissionHistory||[]).filter(x=>x.key===t.key);
     return `<form class="rp-mark" data-key="${escapeHtml(t.key)}" onsubmit="return false">
         <h3 class="rp-h">${t.key.startsWith('j0500111-') ? '<span class="rp-num">3</span>Подано й прийнято' : 'Позначка'}</h3>
-        ${packs.length ? `<div class="rp-versions"><span class="bk-label">${t.key.startsWith('j0500111-')?'Версії пакета XML':'Версії річних робочих даних'}</span><ul class="rp-files">${packs.map(p => `<li>
+        ${packs.length ? `<div class="rp-versions"><span class="bk-label">${t.key.startsWith('j0500111-')?'Версії пакета XML':'Версії річних даних і подань'}</span><ul class="rp-files">${packs.map(p => `<li>
             <button type="button" class="btn-ghost-small" data-act="pkg" data-id="${escapeHtml(p.id)}">Версія ${p.version}</button>
-            <small>${escapeHtml(stamp(p.at))}${mark?.packageId === p.id ? ` · ${escapeHtml(STATUS[mark.status]?.[0] || mark.status)}` : p === packs[0] && !mark ? (t.key.startsWith('j0500111-')?' · готова до підпису':' · робочий комплект') : ''}</small></li>`).join('')}</ul></div>` : ''}
+            <small>${escapeHtml(stamp(p.at))} · ${p.type==='annual-external-filing'?'зовнішній звіт':p.filingReady===false?'розрахункові дані':'XML'}${mark?.packageId === p.id ? ` · ${escapeHtml(STATUS[mark.status]?.[0] || mark.status)}` : ''}</small></li>`).join('')}</ul></div>` : ''}
+        ${history.length?`<details><summary>Історія подань і квитанцій (останні ${history.length})</summary><ul class="rp-files">${history.map(h=>`<li><span>${escapeHtml(stamp(h.at))} · ${escapeHtml(STATUS[h.status]?.[0]||(h.status==='open'?'Позначку знято':h.status))}${h.packageVersion?' · версія '+h.packageVersion:''}${h.regNumber?' · № '+escapeHtml(h.regNumber):''}<small>${(h.files||[]).map(f=>`<button type="button" class="btn-ghost-small" data-act="file" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</button>`).join(' ')||'без файлів'}</small></span></li>`).join('')}</ul></details>`:''}
         ${files.length ? `<ul class="rp-files">${files.map(f => `<li><button type="button" class="btn-ghost-small" data-act="file" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</button><small>${escapeHtml(ctx.fileKinds[f.kind] || '')}${f.packageId ? ` · версія ${versionOf(f.packageId)}` : ''}</small></li>`).join('')}</ul>` : ''}
         <div class="rp-form">
-            ${packs.length ? `<label class="field"><span>Яку версію подано</span><select class="field-input field-select" name="packageId">${packs.map(p => `<option value="${escapeHtml(p.id)}"${p.id === chosen ? ' selected' : ''}>Версія ${p.version} · ${escapeHtml(stamp(p.at))}</option>`).join('')}</select></label>` : ''}
+            ${filingPacks.length ? `<label class="field"><span>Яку версію подано</span><select class="field-input field-select" name="packageId">${filingPacks.map(p => `<option value="${escapeHtml(p.id)}"${p.id === chosen ? ' selected' : ''}>Версія ${p.version} · ${escapeHtml(stamp(p.at))}</option>`).join('')}</select></label>` : ''}
             <label class="field"><span>Стан</span><select class="field-input field-select" name="status">${options.map(([v, l]) => `<option value="${v}"${(mark?.status || options[0][0]) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
             <label class="field"><span>Дата</span><input class="field-input" type="date" name="date" value="${escapeHtml(mark?.date || ctx.today)}" max="${ctx.today}"></label>
-            ${t.kind === 'payment' ? '' : `<label class="field"><span>${regLabel}</span><input class="field-input" name="regNumber" maxlength="40" value="${escapeHtml(mark?.regNumber || '')}"></label>`}
+            ${t.kind === 'payment' ? '' : `<label class="field"><span>${regLabel}</span><input class="field-input" name="regNumber" maxlength="40" value="${escapeHtml(numberForVersion)}"></label>`}
             <label class="field rp-wide"><span>Примітка</span><input class="field-input" name="note" maxlength="300" value="${escapeHtml(mark?.note || '')}" placeholder="${t.kind === 'report' ? 'напр. причина відмови' : ''}"></label>
             ${t.kind === 'report' ? `<label class="field"><span>Звіт (XML / PDF)</span><input class="field-input" type="file" data-kind="report" accept=".xml,.pdf,.p7s,application/pdf,text/xml"></label>
             <label class="field"><span>Квитанція № 1</span><input class="field-input" type="file" data-kind="receipt1"></label>
@@ -355,6 +361,13 @@ async function onAction(btn) {
         }
         if (a === 'csv' && detail) { csv(); return; }
         if(a==='annual-open'){const host=document.getElementById('annualReports');await loadAnnualReports(host,ctx.start,btn.dataset.year);host.scrollIntoView({behavior:'smooth',block:'start'});return;}
+        if(a==='external-annual'){
+            setBusy(btn,true,'Зберігаю…');const form=btn.closest('.rp-external'),v=name=>form.elements[name].value.trim(),key=form.dataset.key;
+            const picked=[...form.elements.files.files];if(!picked.length)throw new Error('Оберіть перевірений звіт');
+            const files=await uploadReportFiles(key,picked.map(file=>({file,kind:'report'})));
+            const p=await reportsAct({action:'externalAnnualPackage',key,files,basis:v('basis'),submissionKind:v('submissionKind'),previousPackageId:v('previousPackageId')});
+            toast(`Збережено зовнішній звіт: версія ${p.version}`,'success');await loadReportsView();return;
+        }
         if (a === 'xml' && detail) { await buildXml(btn); return; }
         if (a === 'xml-settings') { xmlState = { settings: await reportsQuery({ action: 'xmlSettings' }) }; showXml(); return; }
         if (a === 'xml-close') { xmlState = null; showXml(); return; }
@@ -384,7 +397,7 @@ async function onAction(btn) {
             const uploaded = picked.length ? await uploadReportFiles(key, picked) : [];
             const v = name => form.elements[name]?.value?.trim() || '';
             // Лише нові файли: сервер додає їх до збережених (квитанції з іншої вкладки не зникнуть).
-            await reportsAct({ action: 'mark', key, status: v('status'), date: v('date'), regNumber: v('regNumber'), note: v('note'), addFiles: uploaded, ...(v('packageId') ? { packageId: v('packageId') } : {}) });
+            await reportsAct({ action: 'mark', key, status: v('status'), date: v('date'), regNumber: v('regNumber'), note: v('note'), addFiles: uploaded,seenAt:ctx.statuses[key]?.at||null, ...(v('packageId') ? { packageId: v('packageId') } : {}) });
             toast('Позначку збережено', 'success');
         }
         await loadReportsView();
@@ -393,6 +406,11 @@ async function onAction(btn) {
 }
 
 export function initReportsView() {
+    document.getElementById('viewReports').addEventListener('change',e=>{
+        if(e.target.name!=='packageId')return;const form=e.target.closest('.rp-mark');if(!form)return;
+        const mark=ctx?.statuses[form.dataset.key];form.elements.regNumber.value=e.target.value===mark?.packageId?mark.regNumber||'':'';
+        if(e.target.value!==mark?.packageId)form.elements.status.value='submitted';
+    });
     document.getElementById('viewReports').addEventListener('click', e => {
         const btn = e.target.closest('[data-act]');
         if (btn && !btn.disabled) onAction(btn);

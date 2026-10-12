@@ -691,6 +691,8 @@ service cloud.firestore {
     match /annual_history_parts/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
     match /annual_package_parts/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
     match /annual_comparatives/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
+    match /annual_form_settings/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
+    match /report_submission_events/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
 
     // Закриті місяці (оборотно-сальдова й відбиток проводок) — пише лише
     // сервер (journalAction): закрити — бухгалтер чи голова, відкрити — голова.

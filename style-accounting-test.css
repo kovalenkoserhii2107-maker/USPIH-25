@@ -38,3 +38,6 @@
 .at-main details > :not(summary) { margin-top:12px; }
 .at-main button:disabled { opacity:.5; cursor:default; }
 @media(max-width:600px) { .at-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .at-actions,.at-fields { grid-template-columns:1fr; } .at-step { gap:8px; } .at-step button { min-width:100px; padding:12px; } .at-main { padding:18px 14px 40px; } }
+.at-annual-forms table { min-width: 600px; }
+.at-annual-forms td:nth-child(2) { min-width: 220px; }
+.at-annual-forms td:nth-child(3), .at-annual-forms td:nth-child(4) { white-space: nowrap; }

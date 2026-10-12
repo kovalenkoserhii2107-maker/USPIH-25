@@ -13,6 +13,7 @@ await mkdir('_site/docs/accounting', { recursive:true });
 await cp('docs/accounting/MIGRATION.md', '_site/docs/accounting/MIGRATION.md');
 await cp('docs/accounting/IMPORT-AND-RESET.md', '_site/docs/accounting/IMPORT-AND-RESET.md');
 await cp('docs/accounting/TEST-MODE.md', '_site/docs/accounting/TEST-MODE.md');
+await cp('docs/accounting/ANNUAL-FORMS.md', '_site/docs/accounting/ANNUAL-FORMS.md');
 await cp('docs/accounting/fixtures', '_site/docs/accounting/fixtures', {recursive:true});
 const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js', 'js/buh-main.js','js/accounting-test.js'], outdir: '_site/js', entryNames: '[name]',
     chunkNames: 'chunks/[name]-[hash]', bundle: true, splitting: true, format: 'esm', target: ['es2020'],

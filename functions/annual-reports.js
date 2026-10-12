@@ -4,6 +4,7 @@ const { createHash,randomUUID }=require('node:crypto');
 const core=require('./annual-report-core');
 const policyCore=require('./accounting-policy');
 const jcore=require('./journal-core');
+const formsCore=require('./annual-forms-core');
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const reportHash=report=>createHash('sha256').update(JSON.stringify(canonical(report))).digest('hex');
 module.exports=function annualReports({db,FieldValue,journal}) {
@@ -58,6 +59,32 @@ module.exports=function annualReports({db,FieldValue,journal}) {
         batch.create(db.collection('audit_log').doc(),{actor,role,action:'annual.comparative',target:`annual_comparatives/${year}`,summary:'Збережено погоджені порівняльні дані попереднього року',details:{year,incomeKop,costKop},at:FieldValue.serverTimestamp()});
         await batch.commit();return{ok:true};
     }
+    async function forms({year},transaction) {
+        if(!valid(year))fail('Оберіть рік');
+        const versionsQuery=db.collection('report_packages').where('key','==',`npo-${year}`).select('version','type','basis');
+        const [report,snap,versions]=await Promise.all([data({year},transaction),transaction?transaction.get(db.doc(`annual_form_settings/${year}`)):db.doc(`annual_form_settings/${year}`).get(),transaction?transaction.get(versionsQuery):versionsQuery.get()]);
+        const settings=snap.data()||{},sourceHash=reportHash(report),calculation=formsCore.build(report,settings);
+        const reviewed=settings.sourceHash===sourceHash;
+        if(!reviewed){calculation.checks.push({level:'block',text:'Погодьте розшифровку для поточного журналу. Після зміни джерел потрібна повторна перевірка'});calculation.reviewReady=false;}
+        return {year:String(year),sourceHash,reviewed,settings,calculation,versions:versions.docs.filter(d=>['annual-working-data','annual-calculation-forms'].includes(d.data().type)).map(d=>({id:d.id,version:d.data().version,basis:d.data().basis||''})).sort((a,b)=>b.version-a.version)};
+    }
+    async function saveForms(actor,role,payload) {
+        const {year,sourceHash}=payload;
+        if(!valid(year)||String(payload.basis||'').trim().length<5)fail('Укажіть рік та джерело / підставу перевірки форм');
+        const p=payload.settings||{},settings={financingTerm:p.financingTerm||'',deposit351:p.deposit351||'',cash313:p.cash313||'',
+            noViolation:p.noViolation===true,noIncomeTax:p.noIncomeTax===true,comparatives:p.comparatives||{},assignments:p.assignments||{}};
+        if(Object.keys(settings.assignments).length>200||JSON.stringify(settings).length>60000)fail('Завелика розшифровка форм');
+        return db.runTransaction(async t=>{
+            const report=await data({year},t);
+            if(sourceHash!==reportHash(report))throw new HttpsError('aborted','Річні джерела змінилися. Оновіть розрахунок перед погодженням');
+            const calculation=formsCore.build(report,settings);
+            const errors=calculation.checks.filter(c=>c.level==='block');
+            if(errors.length)fail(errors.map(c=>c.text).join('; '));
+            t.set(db.doc(`annual_form_settings/${year}`),{...settings,sourceHash,basis:String(payload.basis).trim().slice(0,500),by:actor,role,at:FieldValue.serverTimestamp()});
+            t.create(db.collection('audit_log').doc(),{actor,role,action:'annual.forms.review',target:`annual_form_settings/${year}`,summary:'Перевірено рядки річних розрахункових форм',details:{sourceHash,layoutVersion:calculation.layoutVersion},at:FieldValue.serverTimestamp()});
+            return {ok:true};
+        });
+    }
     async function approveHistory(actor,role,{year}) {
         if(role!=='chair')throw new HttpsError('permission-denied','Перенос обліку погоджує голова');
         if(!valid(year))fail('Оберіть рік');
@@ -77,15 +104,24 @@ module.exports=function annualReports({db,FieldValue,journal}) {
         });
         return {ok:true};
     }
-    async function snapshot(actor,role,{year}) {
+    async function snapshot(actor,role,{year,withForms=false,submissionKind='initial',previousPackageId='',basis=''}) {
         if(!valid(year))fail('Оберіть рік');
         return db.runTransaction(async t=>{
-            const [report,packages]=await Promise.all([data({year},t),t.get(db.collection('report_packages').where('key','==',`npo-${year}`))]);
-            const version=Math.max(0,...packages.docs.map(d=>Number(d.data().version)||0))+1;
+            const [report,packages,financialPackages,prepared]=await Promise.all([data({year},t),t.get(db.collection('report_packages').where('key','==',`npo-${year}`)),t.get(db.collection('report_packages').where('key','==',`fs-stat-${year}`)),withForms?forms({year},t):null]);
+            if(withForms){
+                if(!prepared.calculation.reviewReady)fail('Спочатку погодьте повну розшифровку річних форм');
+                if(prepared.sourceHash!==reportHash(report))fail('Джерела розрахунку змінилися');
+                if(!['initial','replacement','correction'].includes(submissionKind)||String(basis).trim().length<5)fail('Оберіть вид версії й підставу формування');
+                if(submissionKind!=='initial'&&!packages.docs.some(d=>d.id===previousPackageId))fail('Оберіть попередню версію цього року для виправлення');
+                if(submissionKind==='initial'&&previousPackageId)fail('Для первинного розрахунку попередня версія не потрібна');
+                report.forms=prepared.calculation;
+            }
+            const version=Math.max(0,...[...packages.docs,...financialPackages.docs].map(d=>Number(d.data().version)||0))+1;
             const id=`npo-${year}--${version}`,parts=Math.ceil(report.entries.length/250),tables={...report};delete tables.entries;
             const hash=reportHash(report);
             for(let i=0;i<parts;i++)t.create(db.doc(`annual_package_parts/${id}-${i}`),{packageId:id,index:i,entries:report.entries.slice(i*250,(i+1)*250)});
-            for(const key of [`npo-${year}`,`fs-stat-${year}`])t.create(db.doc(`report_packages/${key}--${version}`),{key,version,type:'annual-working-data',archiveId:id,hash,hashFormat:'canonical-json-v1',tables,parts,
+            for(const key of [`npo-${year}`,`fs-stat-${year}`])t.create(db.doc(`report_packages/${key}--${version}`),{key,version,type:withForms?'annual-calculation-forms':'annual-working-data',archiveId:id,hash,hashFormat:'canonical-json-v1',tables,parts,
+                filingReady:false,submissionKind:withForms?submissionKind:null,previousPackageId:withForms?previousPackageId:null,basis:withForms?String(basis).trim().slice(0,500):'',
                 files:[],by:actor,at:FieldValue.serverTimestamp(),complete:report.complete});
             t.create(db.collection('audit_log').doc(),{actor,role,action:'annual.snapshot',target:`report_packages/${id}`,summary:'Збережено незмінну версію річних робочих даних',details:{year,version,hash,complete:report.complete},at:FieldValue.serverTimestamp()});
             return {ok:true,id,version,complete:report.complete};
@@ -94,12 +130,12 @@ module.exports=function annualReports({db,FieldValue,journal}) {
     async function packageData({id}) {
         if(!/^(npo|fs-stat)-20\d{2}--\d+$/.test(String(id)))fail('Невідомий річний пакет');
         const pack=(await db.doc(`report_packages/${id}`).get()).data();
-        if(pack?.type!=='annual-working-data')fail('Річний пакет не знайдено');
+        if(!['annual-working-data','annual-calculation-forms'].includes(pack?.type))fail('Річний пакет не знайдено');
         const parts=(await db.collection('annual_package_parts').where('packageId','==',pack.archiveId).get()).docs.sort((a,b)=>a.data().index-b.data().index);
         if(parts.length!==pack.parts||parts.some((d,i)=>d.data().index!==i||!Array.isArray(d.data().entries)))fail('Архів річного пакета неповний');
         const report={...pack.tables,entries:parts.flatMap(d=>d.data().entries)};
         if(pack.hashFormat==='canonical-json-v1'&&reportHash(report)!==pack.hash)fail('Контрольна сума річного архіву не збігається; звірте резервну копію');
-        return {type:'annual-working-data',id,version:pack.version,hash:pack.hash,report};
+        return {type:pack.type,id,version:pack.version,hash:pack.hash,submissionKind:pack.submissionKind||null,previousPackageId:pack.previousPackageId||null,basis:pack.basis||'',report};
     }
-    return {data,importHistory,approveHistory,snapshot,packageData,saveComparative};
+    return {data,importHistory,approveHistory,snapshot,packageData,saveComparative,forms,saveForms};
 };

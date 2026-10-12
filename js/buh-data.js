@@ -286,7 +286,7 @@ export async function uploadReportFiles(key, files) {
     const out = [];
     for (const { file, kind } of files) {
         if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: файл понад 10 МБ`);
-        const path = `reports/${key}/${Date.now()}_${file.name.replace(/[^\wа-яіїєґ.\-]+/gi, '_').slice(-80)}`;
+        const path = `reports/${key}/${crypto.randomUUID()}_${file.name.replace(/[^\wа-яіїєґ.\-]+/gi, '_').slice(-80)}`;
         await uploadBytes(ref(storage, path), file, { contentType: file.type || 'application/octet-stream' });
         out.push({ name: file.name, path, kind });
     }

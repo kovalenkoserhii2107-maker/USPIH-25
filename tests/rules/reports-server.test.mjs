@@ -19,7 +19,7 @@ before(async () => {
 });
 async function wipe() {
     await clearAccounting(db);
-    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings', 'bank_tx', 'suppliers', 'expenses', 'report_packages']) {
+    for (const name of ['reports', 'payroll_people', 'payroll_runs', 'payments', 'audit_log', 'osbb_settings', 'report_settings', 'bank_tx', 'suppliers', 'expenses', 'report_packages', 'report_submission_events', 'annual_form_settings']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }

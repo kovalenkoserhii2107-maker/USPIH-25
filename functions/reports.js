@@ -34,7 +34,7 @@ const FILE_KINDS = { report: 'звіт', receipt1: 'квитанція № 1', r
 const DEFAULT_STI = 1553;
 const XML_FIELDS = { katottg: 19, zip: 5, address: 250, phone: 40, email: 80, headName: 120, headTin: 10, accName: 120, accTin: 10 };
 
-module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffRole, journal }) {
+module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffRole, journal, reportBucket }) {
     const journalAdapter = journal || require('./journal')({ db, FieldValue, requireAdmin, staffRole });
     const annualReports = require('./annual-reports')({ db, FieldValue, journal:journalAdapter });
     const startPeriod = async () => (await journalAdapter.actions.policy()).startDate.slice(0,7);
@@ -57,18 +57,20 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
     const packageInfo = d => {
         const r = d.data();
         return { id: d.id, key: r.key, version: r.version, stan: r.stan ?? null, num: r.num ?? null, type:r.type || 'xml', complete:r.complete ?? true, hash: r.hash, by: r.by || null,
+            filingReady:r.filingReady ?? (r.type!=='annual-working-data'&&r.type!=='annual-calculation-forms'),submissionKind:r.submissionKind||null,previousPackageId:r.previousPackageId||null,
             at: r.at?.toDate?.()?.toISOString() || null, files: (r.files || []).map(f => ({ name: f.name, size: f.size, sha256: f.sha256 })) };
     };
 
     /** Стан усіх звітів, місяці зарплати й чи є кому платити (тоді щомісячний розрахунок обовʼязковий). */
     async function context() {
-        const [reports, runs, people, esvPaid, fops, packs] = await Promise.all([
+        const [reports, runs, people, esvPaid, fops, packs, events] = await Promise.all([
             db.collection('reports').get(),
             db.collection('payroll_runs').select('status', 'run.totals').get(),
             db.collection('payroll_people').select('active', 'from', 'to').get(),
             db.collection('payments').where('payroll.key', '==', 'esv').get(),
             db.collection('suppliers').where('kind', '==', 'fop').limit(1).get(),
-            db.collection('report_packages').select('key', 'version', 'stan', 'num', 'hash', 'by', 'at', 'files').get()
+            db.collection('report_packages').select('key', 'version', 'stan', 'num', 'hash', 'by', 'at', 'files','type','complete','filingReady','submissionKind','previousPackageId').get(),
+            db.collection('report_submission_events').orderBy('at','desc').limit(100).get()
         ]);
         // Версії пакетів за звітами, новіші вгорі.
         const packages = {};
@@ -87,7 +89,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             if (run.data().status === 'approved' && expected > 0 && (esv.get(period) || 0) >= expected && !statuses[key]) statuses[key] = { key, status: 'paid', auto: true, regNumber: '', date: '', note: 'сума проведених платежів покриває місячне нарахування', files: [] };
         }
         return {
-            today: today(), start: await startPeriod(), statuses, packages, fileKinds: FILE_KINDS,
+            today: today(), start: await startPeriod(), statuses, packages, submissionHistory:events.docs.map(d=>({id:d.id,...plain(d),key:d.data().key})),fileKinds: FILE_KINDS,
             payrollMonths: runs.docs.map(d => ({ period: d.id, status: d.data().status, grossKop: d.data().run?.totals?.grossKop || 0 }))
                 .sort((a, b) => b.period.localeCompare(a.period)),
             hasPeople: people.docs.some(d => d.data().active !== false), hasFop: !fops.empty
@@ -228,7 +230,40 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         const snap = await db.doc(`report_packages/${String(id || '').replace(/[^\w-]/g, '')}`).get();
         if (!snap.exists) fail('not-found', 'Версію пакета не знайдено');
         const r = snap.data();
-        return { ...packageInfo(snap), files: (r.files || []).map(f => ({ name: f.name, data: f.data })) };
+        return { ...packageInfo(snap), files: (r.files || []).map(f => ({ name: f.name, ...(f.path?{path:f.path,generation:f.generation,sha256:f.sha256}:{data:f.data}) })) };
+    }
+
+    // Imported, externally reviewed filings are separate from our worksheets.
+    // Persist content hashes and GCS generations; Storage rules forbid overwrite.
+    async function externalAnnualPackage(actor,role,{key,files,basis,submissionKind='initial',previousPackageId=''}) {
+        if(!/^(npo|fs-stat)-20\d{2}$/.test(String(key)))fail('invalid-argument','Оберіть річний звіт');
+        if(!Array.isArray(files)||!files.length||files.length>6||String(basis||'').trim().length<5||!['initial','replacement','correction'].includes(submissionKind))fail('invalid-argument','Додайте перевірений звіт, вид подання та підставу перевірки');
+        const bucket=reportBucket||require('firebase-admin/storage').getStorage().bucket('uspih-25.firebasestorage.app');
+        const saved=[];let total=0;
+        for(const f of files){
+            if(typeof f.path!=='string'||!f.path.startsWith(`reports/${key}/`)||f.path.includes('..')||!f.name||!/\.(xml|pdf|p7s)$/i.test(f.name))fail('invalid-argument','Потрібен XML, PDF або підписаний p7s у теці цього звіту');
+            const filename=text(f.name,500).replace(/[\\/\x00-\x1f]/g,'_').replace(/^\.+/,'_');
+            const safeName=filename.length>120?filename.slice(0,108)+filename.slice(-12):filename;
+            if(saved.some(x=>x.path===f.path||x.name===safeName))fail('invalid-argument','Файл або його назву додано двічі');
+            const object=bucket.file(f.path);let meta;
+            try{[meta]=await object.getMetadata();}catch(e){if(e.code===404)fail('not-found','Завантажений звіт не знайдено у сховищі');throw e;}
+            const size=Number(meta.size);total+=size;
+            if(!/^\d+$/.test(String(meta.generation)))fail('failed-precondition','Немає версії обʼєкта у сховищі');
+            if(!Number.isSafeInteger(size)||size<=0||size>20*1024*1024||total>20*1024*1024)fail('invalid-argument','Пакет має містити до 20 МБ');
+            const [bytes]=await bucket.file(f.path,{generation:meta.generation}).download();
+            if(bytes.length!==size)fail('failed-precondition','Розмір файлу змінився під час читання');
+            saved.push({name:safeName,path:f.path,generation:String(meta.generation),size,sha256:createHash('sha256').update(bytes).digest('hex')});
+        }
+        return db.runTransaction(async t=>{
+            const old=await t.get(db.collection('report_packages').where('key','==',key));
+            if(submissionKind!=='initial'&&!old.docs.some(d=>d.id===previousPackageId&&d.data().type==='annual-external-filing'))fail('invalid-argument','Для повторного подання оберіть попередній зовнішній звіт цього року');
+            if(submissionKind==='initial'&&previousPackageId)fail('invalid-argument','Первинне подання не посилається на попередній звіт');
+            const version=Math.max(0,...old.docs.map(d=>Number(d.data().version)||0))+1,id=`${key}--${version}`;
+            const hash=createHash('sha256').update(saved.map(f=>`${f.name}:${f.sha256}`).join('\n')).digest('hex');
+            t.create(db.doc(`report_packages/${id}`),{key,version,type:'annual-external-filing',filingReady:true,complete:true,validation:'external-accountant-review',submissionKind,previousPackageId,basis:text(basis,500),files:saved,hash,by:actor,at:FieldValue.serverTimestamp()});
+            t.create(db.collection('audit_log').doc(),{actor,role,action:'reports.external-package',target:`report_packages/${id}`,summary:'Збережено перевірений зовнішній річний звіт для обліку подання',details:{key,version,hash,submissionKind,previousPackageId},at:FieldValue.serverTimestamp()});
+            return {ok:true,id,version,hash};
+        });
     }
 
     /** Позначка звіту: подано, прийнято (квитанція № 2), відхилено, не потрібно; «open» — зняти позначку. */
@@ -246,6 +281,7 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
                 t.set(db.collection('audit_log').doc(), { actor, role, action: 'reports.reopen', target: `reports/${key}`,
                     summary: `Знято позначку «${core.STATUSES[snap.data().status] || snap.data().status}»`, details: { before: snap.data() }, at: FieldValue.serverTimestamp() });
                 t.delete(ref);
+                t.create(db.collection('report_submission_events').doc(),{...snap.data(),key,status:'open',previousStatus:snap.data().status,by:actor,at:FieldValue.serverTimestamp()});
                 return snap;
             });
             if (!before) return { ok: true };
@@ -276,19 +312,32 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         }
         await db.runTransaction(async t => {
             const before = (await t.get(ref)).data();
-            if (before?.status === 'accepted' && status !== 'accepted' && role !== 'chair') fail('permission-denied', 'Стан прийнятого звіту змінює лише голова');
+            if(seenAt!==undefined&&seenAt!==(before?.at?.toDate?.()?.toISOString()||null))fail('aborted','Позначку змінено в іншій вкладці — оновіть сторінку');
             // Паралельні вкладки доповнюють архів; старий список з клієнта
             // не може затерти квитанцію, яку щойно додали в іншій вкладці.
             const keptFiles = [...new Map([...(before?.files || []), ...list].map(f => [f.path, f])).values()];
-            if (keptFiles.length > 12) fail('invalid-argument', 'В архіві вже 12 файлів — нове подання збережіть після зняття позначки головою');
-            const number = regNumber === undefined ? before?.regNumber || '' : text(regNumber, 40);
-            if (status === 'accepted' && !keptFiles.some(f => f.kind === 'receipt2') && !number) fail('invalid-argument', 'Для «прийнято» додайте квитанцію № 2 або реєстраційний номер документа');
             // Версія лишається тією, яку подали: «прийнято» не перескакує на новішу без явного вибору.
             const linked = packageId ? pack : before?.packageId ? { id: before.packageId, version: before.packageVersion } : pack;
+            const changed=(before?.packageId||null)!==(linked?.id||null);
+            if(before?.status==='rejected'&&before.packageId&&['submitted','accepted'].includes(status)&&!changed)fail('failed-precondition','Після відмови сформуйте нову версію подання; квитанція про відмову не підтверджує прийняття');
+            if (before?.status === 'accepted' && status !== 'accepted' && !changed && role !== 'chair') fail('permission-denied', 'Стан прийнятого звіту змінює лише голова');
+            for(const f of list)if(['receipt1','receipt2'].includes(f.kind)&&before?.files?.some(old=>old.path===f.path&&(old.packageId||null)!==(linked?.id||null)))fail('invalid-argument','Стара квитанція належить іншій версії. Додайте квитанцію нового подання');
+            const number = regNumber === undefined ? (changed?'':before?.regNumber || '') : text(regNumber, 40);
+            if(linked&&['submitted','accepted','rejected'].includes(status)){
+                const selected=await t.get(db.doc(`report_packages/${linked.id}`));
+                if(!selected.exists||selected.data().key!==key)fail('invalid-argument','Ця версія пакета не належить до цього звіту');
+                if(selected.data().complete===false||selected.data().filingReady===false||['annual-working-data','annual-calculation-forms'].includes(selected.data().type))fail('failed-precondition','Розрахунковий комплект не є офіційним поданням. Додайте окремий перевірений звіт із кабінету ДПС');
+            }
             const tagged = keptFiles.map(f => (list.includes(f) && linked ? { ...f, packageId: linked.id } : f));
-            const value = { key, status, regNumber: number, date: day, note: note === undefined ? before?.note || '' : text(note, 300), files: tagged,
+            const sameVersion=f=>linked?f.packageId===linked.id:!f.packageId;
+            const currentFiles=changed?tagged.filter(sameVersion):tagged;
+            if (currentFiles.length > 12) fail('invalid-argument', 'В архіві цієї версії вже 12 файлів');
+            if (status === 'accepted' && !tagged.some(f => f.kind === 'receipt2'&&sameVersion(f)) && !number) fail('invalid-argument', 'Для «прийнято» додайте квитанцію № 2 саме цієї версії або її реєстраційний номер документа');
+            const value = { key, status, regNumber: number, date: day, note: note === undefined ? before?.note || '' : text(note, 300), files: currentFiles,
                 packageId: linked?.id || null, packageVersion: linked?.version || null, by: actor, at: FieldValue.serverTimestamp() };
             t.set(ref, value);
+            if(changed&&before)t.create(db.collection('report_submission_events').doc(),{...before,key,at:FieldValue.serverTimestamp()});
+            t.create(db.collection('report_submission_events').doc(),value);
             t.set(db.collection('audit_log').doc(), { actor, role, action: 'reports.mark', target: `reports/${key}`,
                 summary: `Звіт ${key}: ${core.STATUSES[status]}${number ? `, № ${number}` : ''}`,
                 details: { before: before || null, after: { key, status, regNumber: number, date: day, note: value.note, files: tagged, packageVersion: value.packageVersion } }, at: FieldValue.serverTimestamp() });
@@ -315,9 +364,12 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             case 'annualSnapshot': return annualReports.snapshot(actor, role, data);
             case 'annualPackage': return annualReports.packageData(data);
             case 'annualComparative': return annualReports.saveComparative(actor,role,data);
+            case 'annualForms': return annualReports.forms(data);
+            case 'saveAnnualForms': return annualReports.saveForms(actor,role,data);
+            case 'externalAnnualPackage': return externalAnnualPackage(actor,role,data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { reportsAction, annualReports, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml, packageFiles } };
+    return { reportsAction, annualReports, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml, packageFiles, externalAnnualPackage } };
 };

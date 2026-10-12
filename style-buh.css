@@ -1058,3 +1058,11 @@ body.chs-open { overflow: hidden; }
 .mi-warnings input { width:22px; height:22px; vertical-align:middle; }
 .mi-fix { min-height:44px; border:0; background:transparent; color:var(--sv-blue,#0068cf); text-decoration:underline; font:inherit; cursor:pointer; }
 @media (max-width:600px) { .mi-columns { grid-template-columns:1fr; } .mi-range { gap:8px; } }
+
+.annual-forms-review fieldset { min-width: 0; margin: 12px 0; padding: 12px; border: 1px solid #dde3ed; border-radius: 14px; }
+.annual-forms-review legend { max-width: 100%; padding: 0 4px; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+.annual-forms-review input[type=checkbox] { width: 20px; height: 20px; margin: 12px 6px 12px 0; vertical-align: middle; }
+.annual-forms-export { margin-top: 24px; }
+.annual-forms-table { min-width: 640px; }
+.annual-forms-table td:nth-child(2) { min-width: 200px; white-space: normal; }
+.annual-forms-table td:nth-child(3), .annual-forms-table td:nth-child(4) { white-space: nowrap; font-variant-numeric: tabular-nums; }

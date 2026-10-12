@@ -38,6 +38,19 @@ async function seed() {
     });
 }
 
+test('річні розшифровки й історію подань читає лише бухгалтер / голова, клієнт не переписує архів',async()=>{
+    await seed();
+    await env.withSecurityRulesDisabled(async c=>{for(const name of ['annual_form_settings','report_submission_events'])await setDoc(doc(c.firestore(),`${name}/2025`),{year:'2025',basis:'test'});});
+    for(const name of ['annual_form_settings','report_submission_events']){
+        await assertSucceeds(getDoc(doc(as('900').firestore(),`${name}/2025`)));
+        await assertSucceeds(getDoc(doc(as('10').firestore(),`${name}/2025`)));
+        await assertFails(getDoc(doc(as('45').firestore(),`${name}/2025`)));
+        await assertFails(getDoc(doc(as('11').firestore(),`${name}/2025`)));
+        await assertFails(setDoc(doc(as('900').firestore(),`${name}/2025`),{year:'2024'}));
+        await assertFails(deleteDoc(doc(as('10').firestore(),`${name}/2025`)));
+    }
+});
+
 test('член правління веде збори й довідник, але не гроші', async () => {
     await seed();
     const db = as('11').firestore();
