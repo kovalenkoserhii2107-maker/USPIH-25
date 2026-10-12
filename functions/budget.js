@@ -93,6 +93,8 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // ВИКОНАННЯ Й ДАНІ ДЛЯ МЕШКАНЦІВ
     // --------------------------------------------------------
     async function gather(year) {
+        const policy=await require('./accounting-policy').create({db,FieldValue}).context();
+        const replayOptions={startPeriod:policy.startDate.slice(0,7),startDate:policy.startDate};
         const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity, payrollSnap, payrollPaySnap] = await Promise.all([
             allBudgets(),
             db.collection('expenses').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
@@ -100,7 +102,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             db.doc('bank/settings').get(),
             db.collection('apartments').get(),
             db.doc('charges/settings').get(),
-            db.collectionGroup('ledger').where('period', '>=', charges.START_PERIOD).where('period', '<=', `${year}-12`).get(),
+            db.collectionGroup('ledger').where('period', '>=', replayOptions.startPeriod).where('period', '<=', `${year}-12`).get(),
             db.collection('suppliers').get(),
             publicityRef.get(),
             db.collection('payroll_runs').get(),
@@ -130,7 +132,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
                 ledgers.get(apt).push(d.data());
             });
         }
-        const paid = charges.paidByComponent(ledgers, year, { order: components.map(c => c.id) });
+        const paid = charges.paidByComponent(ledgers, year, { ...replayOptions, order: components.map(c => c.id) });
         const incomeParts = components.filter(c => paid[c.id]).map(c => ({ component: c.id, title: c.name, factKop: paid[c.id] }));
         const payrollRuns = payrollSnap.docs.map(d => ({ period: d.id, ...d.data() }));
         const approvedPeriods = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
@@ -149,7 +151,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const info = new Map(apts.map(a => [a.apt, { entrance: a.entrance, nonres: Boolean(cs.premises?.[a.apt] && cs.premises[a.apt] !== 'res') }]));
         const labeler = show => apt => core.aptLabel(cleanApt(apt), info.get(cleanApt(apt)), show);
         const suppliers = new Map(supplierSnap.docs.map(d => [d.id, d.data()]));
-        const payOps = charges.paymentOps(ledgers, year, { order: components.map(c => c.id) });
+        const payOps = charges.paymentOps(ledgers, year, { ...replayOptions, order: components.map(c => c.id) });
         const ops = publicView => {
             const label = labeler(!publicView || showApartments);
             const out = {};

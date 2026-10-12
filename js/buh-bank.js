@@ -3,10 +3,10 @@
 // ПриватБанку, призначення рахунків, правила погодження).
 // Відбори, групування й рішення в один дотик — bank-view-core.js.
 // ============================================================
-import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
+import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadDemo, loadRequisites, demoAct, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadRequisites, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
 import { toKop } from './charges-core.js';
@@ -215,60 +215,24 @@ const RULES = [
     ['Податкова й фінансова звітність', 'Бухгалтер готує, КЕП — голова (і бухгалтер, якщо він відповідальний за облік у ДПС)', 'пп. 48.5.1 ПКУ']
 ];
 
-/** Демо-прогін на тестовому акаунті: стан, кроки, кнопки (голова). */
-function demoHtml(d, chair) {
-    if (!d) return '';
-    // Голова завжди бачить картку й причину; іншим — лише коли демо можна дивитися.
-    if (d.error) {
-        return chair ? `<section class="buh-card demo-card">
-            <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag is-error">недоступне</span></div>
-            <p class="buh-note">Сервер не відповів: ${escapeHtml(d.error)}. Найчастіше це означає, що функції ще не розгорнуто: <code>firebase deploy --only firestore:rules,firestore:indexes,functions</code>, потім оновіть сторінку.</p>
-        </section>` : '';
-    }
-    const done = d.status === 'done';
-    if (!done && d.blockers?.length && d.status !== 'failed') {
-        return chair ? `<section class="buh-card demo-card">
-            <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag is-review">недоступне</span></div>
-            <p class="buh-note">Демо проганяється лише на чистому обліку, щоб не зачепити справжні дані. Зараз заважає:</p>
-            <ul class="jr-checks">${d.blockers.map(b => `<li class="is-block"><span aria-hidden="true">✕</span>${escapeHtml(b)}</li>`).join('')}</ul>
-            ${d.canClean ? `<p class="buh-note">Це залишки попереднього демо. «Дочистити» видалить увесь облік тестового акаунта: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Довідник квартир і власників не зміниться.</p>
-                <div class="inbox-actions"><button type="button" class="btn-primary btn-compact" data-act="demo-remove" data-clean="1">Дочистити залишки демо</button></div>`
-            : d.canWipe ? `<p class="buh-note">Слідів демо в цих даних не знайдено. Якщо це тестовий облік і їх можна видалити — «Очистити облік» видалить увесь облік: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Довідник квартир і власників і журнал дій лишаться. Потрібно ввести слово «ОЧИСТИТИ».</p>
-                <div class="inbox-actions"><button type="button" class="btn-ghost-small" data-act="demo-wipe">Очистити облік…</button></div>`
-            : '<p class="buh-note">Якщо це тестовий акаунт і дані можна видалити — очистіть їх (або напишіть розробнику), тоді тут зʼявиться кнопка «Прогнати демо».</p>'}
-        </section>` : '';
-    }
-    return `<section class="buh-card demo-card">
-        <div class="buh-card-head"><h2>Демо-прогін</h2><span class="buh-tag ${done ? 'is-payment' : d.status === 'failed' ? 'is-error' : 'is-review'}">${done ? 'прогнано' : d.status === 'failed' ? 'збій' : 'тестовий акаунт'}</span></div>
-        <p class="buh-note">${done ? 'Облік заповнено демо-даними через справжні функції системи. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис», «Банк», а мешканцям — «Фінанси будинку».'
-            : 'Проведе через справжні функції повний місяць і всі види операцій: тарифи за складовими, вхідні залишки, нарахування за жовтень; виписку з оплатами мешканців (самі й вручну), орендою, обладнанням, відсотками банку й переказом у резервний фонд; постачальників, щомісячні й разовий договори, рахунок і акт однієї послуги, відхилений документ; платежі «на підписі → проведено банком» з ланцюжком платіж ↔ документ ↔ списання, платіж на підписі й платіж, який банк не прийняв; сторно з поверненням коштів постачальником, повернення переплати мешканцю; кошторис 2026, зарплату, проводки, звіт мешканцям. Цифри — у масштабі реального звіту ОСББ за 2026 рік. Уже внесені баланси квартир стануть вхідними залишками.'}</p>
-        ${d.status === 'failed' && d.lastError ? `<p class="buh-note is-error">Прогін зупинився: ${escapeHtml(d.lastError)}. «Прибрати демо» поверне облік як було.</p>` : ''}
-        ${d.steps?.length ? `<ol class="buh-steps">${d.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol>` : ''}
-        ${chair && !done && d.status !== 'failed' ? `<h3 class="ch-sub">Квартира-зразок (необовʼязково)</h3>
-            <p class="buh-note">На ній демо прожене все: залишок за статтями, нарахування з розбивкою, оплату за особовим рахунком і її розподіл за статтями, ручне рознесення із запамʼятовуванням платника. Порожні поля — дані з довідника.</p>
-            <div class="buh-inline-form ch-form demo-showcase">
-                <input id="dmApt" class="field-input ch-narrow" placeholder="Квартира" aria-label="Квартира-зразок">
-                <input id="dmArea" class="field-input ch-narrow" inputmode="decimal" placeholder="Площа, м²" aria-label="Площа">
-                <input id="dmRes" class="field-input ch-narrow" inputmode="numeric" placeholder="Проживає" aria-label="Проживає">
-                <input id="dmOpening" class="field-input ch-narrow" inputmode="decimal" placeholder="Залишок 30.09 (+ переплата)" aria-label="Залишок на 30.09.2026">
-            </div>
-            <textarea id="dmHistory" class="field-input ch-textarea" rows="4" spellcheck="false" placeholder="Історія з сервісу бухгалтера (CSV «кв;дата;тип;сума;примітка») — необовʼязково"></textarea>
-            <label class="btn-ghost-small demo-file">Вибрати файл історії<input id="dmFile" type="file" accept=".csv,.txt" hidden></label>` : ''}
-        ${chair ? `<div class="inbox-actions">${done || d.status === 'failed' ? '<button type="button" class="btn-ghost-small" data-act="demo-remove">Прибрати демо</button>'
-            : '<button type="button" class="btn-primary btn-compact" data-act="demo-run">Прогнати демо</button>'}</div>` : '<p class="buh-note">Прогнати й прибрати демо може голова.</p>'}
-    </section>`;
+/** Separate practice books never seed the working house. */
+function testModeHtml() {
+    return `<section class="buh-card"><h2>Тестова бухгалтерія</h2>
+        <p class="buh-note">Окремий навчальний будинок: нарахування, імітована виписка, зарплата, проводки та звірка звітів. Продовження з будь-якого пристрою під вашим входом.</p>
+        <a class="sv-btn is-soft" href="accounting-test.html">Відкрити тестовий режим</a>
+        <p class="buh-note">Попередні тестові дані у робочій базі автоматично не видаляються. За потреби голова може використати повне очищення з резервною копією нижче.</p></section>`;
 }
 
 export async function loadSettingsView() {
     if(session.role==='chair'){const reset=await databaseResetStatus().catch(()=>null);if(reset?.job?.active){document.getElementById('viewSettings').innerHTML='<div id="resetSettings"></div>';await mountDatabaseReset(document.getElementById('resetSettings'),reset);return;}}
-    const [settings, ex, demo, req] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadDemo(), loadRequisites().catch(() => ({}))]);
+    const [settings, ex, req] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadRequisites().catch(() => ({}))]);
     requisites = req || {};
     const small = ex?.settings?.smallKop || 0;
     const chair = session.role === 'chair';
     const connected = settings.tokenSet === true;
     const last = settings.lastSync;
     const accounts = Object.entries(settings.accounts || {});
-    document.getElementById('viewSettings').innerHTML = `${demoHtml(demo, chair)}
+    document.getElementById('viewSettings').innerHTML = `${testModeHtml()}
         <section class="buh-card">
             <div class="buh-card-head"><h2>ПриватБанк</h2><span class="buh-tag ${connected ? 'is-payment' : 'is-review'}">${connected ? `підключено · токен …${escapeHtml(settings.tokenHint || '')}` : 'не підключено'}</span></div>
             <p class="buh-note">${!connected ? 'Після підключення виписка й залишки завантажуватимуться щогодини.'
@@ -328,43 +292,6 @@ export function initSettingsView() {
             catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
         }
-        if (btn.dataset.act === 'demo-run') {
-            if (!await confirmDialog('Прогнати демо?', 'Система проведе через справжні функції повний місяць обліку: тарифи, залишки, нарахування, виписку, постачальників, акти, кошторис і звіт мешканцям. Лише для тестового акаунта; потім усе можна прибрати.', 'Прогнати')) return;
-            const v = id => document.getElementById(id)?.value?.trim() || '';
-            const opening = v('dmOpening') ? toKop(v('dmOpening')) : null;
-            if (v('dmOpening') && opening === null) { toast('Залишок — сума в гривнях, напр. 5863,05', 'error'); return; }
-            const showcase = v('dmApt') ? { apt: v('dmApt'), area: v('dmArea'), residents: v('dmRes'), openingKop: opening, history: v('dmHistory') } : null;
-            setBusy(btn, true, 'Проганяю… до хвилини');
-            try { const r = await demoAct('run', showcase ? { showcase } : {}); toast(`Готово: ${r.steps.length} кроків. Подивіться «Вхідні», «Нарахування», «Витрати», «Кошторис»`, 'success'); }
-            catch (err) { toast(err.message, 'error'); }
-            finally { setBusy(btn, false); }
-        }
-        if (btn.dataset.act === 'demo-wipe') {
-            const word = await promptDialog('Очистити облік повністю?', 'Буде видалено весь облік: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Повернути не можна. Щоб підтвердити, введіть ОЧИСТИТИ.',
-                { placeholder: 'ОЧИСТИТИ', confirmLabel: 'Очистити', maxLength: 20 });
-            if (word === null || word === undefined) return;
-            if (String(word).trim().toUpperCase() !== 'ОЧИСТИТИ') { toast('Облік не чіпали: слово не збігається', 'error'); return; }
-            setBusy(btn, true, 'Очищаю…');
-            try {
-                const r = await demoAct('remove', { wipe: true, confirm: String(word).trim() });
-                toast(r?.left?.length ? `Очищено, але лишилося: ${r.left.join('; ')}` : 'Облік очищено — можна прогнати демо', r?.left?.length ? 'error' : 'success');
-            }
-            catch (err) { toast(err.message, 'error'); }
-            finally { setBusy(btn, false); }
-        }
-        if (btn.dataset.act === 'demo-remove') {
-            const clean = btn.dataset.clean === '1';
-            if (!await confirmDialog(clean ? 'Дочистити залишки демо?' : 'Прибрати демо?', clean
-                ? 'Буде видалено весь облік тестового акаунта: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці й записи застосунку в історії квартир. Довідник квартир і власників лишиться, журнал дій — теж.'
-                : 'Буде видалено весь облік, створений демо: операції банку, платежі, документи, договори, постачальників, нарахування, кошторис, зарплату, закриті місяці; площі й баланси квартир повернуто як було. Журнал дій лишиться.', clean ? 'Дочистити' : 'Прибрати')) return;
-            setBusy(btn, true, 'Прибираю…');
-            try {
-                const r = await demoAct('remove');
-                toast(r?.left?.length ? `Прибрано, але лишилося: ${r.left.join('; ')}` : 'Демо прибрано — облік чистий, можна прогнати знову', r?.left?.length ? 'error' : 'success');
-            }
-            catch (err) { toast(err.message, 'error'); }
-            finally { setBusy(btn, false); }
-        }
         if (btn.dataset.act === 'registry-save') { await saveRegistry(btn, requisites.registry); return; }
         if (btn.dataset.act === 'small-save') {
             const kop = toKop(document.getElementById('smallInput').value);
@@ -379,11 +306,6 @@ export function initSettingsView() {
         }
     });
     host.addEventListener('change', async e => {
-        if (e.target.id === 'dmFile') {
-            const f = e.target.files?.[0];
-            if (f) document.getElementById('dmHistory').value = await f.text();
-            return;
-        }
         const select = e.target.closest('.acc-purpose-select');
         if (!select) return;
         try { await act({ action: 'setAccount', iban: select.closest('[data-iban]').dataset.iban, purpose: select.value }); toast('Збережено', 'success'); }

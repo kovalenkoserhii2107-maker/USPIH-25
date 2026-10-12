@@ -45,7 +45,7 @@ const DEFAULT_START = '2026-10-01';
 // Банк може дооформити операцію заднім числом — перечитуємо кілька днів.
 const OVERLAP_DAYS = 3;
 
-module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses, lock }) {
+module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses, lock, bankApi = privat }) {
     const settlement = require('./payroll-settlement')({ db, FieldValue, lock });
     const noteSettlement = require('./accounting-note-settlement')({ db, FieldValue, lock });
     // Баланс квартири з історії (charges.js): після кожної рознесеної оплати.
@@ -322,12 +322,12 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (!secret.exists || !secret.data().token) return { skipped: true, added: 0 };
         const token = secret.data().token;
         try {
-            if (!await privat.isReady(token)) {
+            if (!await bankApi.isReady(token)) {
                 // Нічний регламент банку — спробуємо наступної години.
                 await settingsRef.set({ lastSync: { at: FieldValue.serverTimestamp(), ok: true, added: 0, waiting: true, partial: false, error: null, trigger } }, { merge: true });
                 return { added: 0, waiting: true };
             }
-            const balances = await privat.fetchBalances(token);
+            const balances = await bankApi.fetchBalances(token);
             const ctx = await loadContext();
             const connectionId = ctx.settings.connectionId || null;
             if ((secret.data().connectionId || null) !== connectionId) throw new Error('Підключення банку змінилося — повторіть синхронізацію');
@@ -346,7 +346,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 from.setDate(from.getDate() - OVERLAP_DAYS);
                 const start = new Date(`${ctx.startDate}T00:00:00+03:00`);
                 try {
-                    const list = await privat.fetchTransactions(token, { iban, from: from < start ? start : from, to: new Date() });
+                    const list = await bankApi.fetchTransactions(token, { iban, from: from < start ? start : from, to: new Date() });
                     const r = await storeTransactions(list, 'privat', ctx);
                     added += r.added; matched += r.matched;
                     if (r.conflicts) throw new Error('Банк сторнував операцію закритого місяця або повʼязаного ланцюга. Перевірте конфлікт у «Вхідних»');
@@ -671,7 +671,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (value.length < 20 || value.length > 1000 || /\s/.test(value)) fail('invalid-argument', 'Це не схоже на токен Автоклієнта');
         let balances;
         try {
-            balances = await privat.fetchBalances(value);
+            balances = await bankApi.fetchBalances(value);
         } catch (error) {
             fail('failed-precondition', `Банк не прийняв токен: ${String(error.message || error).slice(0, 200)}`);
         }

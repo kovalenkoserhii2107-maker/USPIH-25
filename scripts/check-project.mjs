@@ -10,9 +10,10 @@ const [html, adminHtml, buhHtml, sw, firebaseJson, firestoreIndexesJson] = await
     read('index.html'), read('admin.html'), read('buh.html'), read('sw.js'), read('firebase.json'), read('firestore.indexes.json')
 ]);
 
+const testHtml=await read('accounting-test.html');
 const swVersion = sw.match(/const VERSION = '(\d+)'/)?.[1];
-for (const [name, page] of [['index.html', html], ['admin.html', adminHtml], ['buh.html', buhHtml]]) {
-    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh|-sv)?\.css|js\/(?:app|admin-main|admin-preview|buh-main)\.js)\?v=(\d+)/g)].map(m => m[1]);
+for (const [name, page] of [['index.html', html], ['admin.html', adminHtml], ['buh.html', buhHtml],['accounting-test.html',testHtml]]) {
+    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh|-sv|-accounting-test)?\.css|js\/(?:app|admin-main|admin-preview|buh-main|accounting-test)\.js)\?v=(\d+)/g)].map(m => m[1]);
     if (!swVersion || !versions.length || versions.some(version => version !== swVersion)) {
         errors.push(`Версії ${name} (${versions.join(', ')}) і sw.js (${swVersion || 'немає'}) не збігаються`);
     }

@@ -148,6 +148,7 @@ function renderAccount(apartment) {
         <h5 class="mn-h">Налаштування й переходи</h5>
         <nav class="mn-group" aria-label="Налаштування й переходи">
             ${row('data-view="settings"', 'settings', 'Налаштування', 'банк, реквізити, правила, демо')}
+            ${row('href="accounting-test.html"', 'check', 'Тестова бухгалтерія', 'окремий будинок, імітований банк, звірки')}
             ${links.join('')}
             ${row('href="admin.html?tab=finance"', 'finance', 'Фінанси: попередні розділи', 'старий вигляд у панелі правління')}
         </nav>`;

@@ -27,7 +27,7 @@ const identity = require('./payroll-payment-core');
 const REGION = 'europe-central2';
 const KINDS = ['supplier', 'tax', 'salary', 'other'];
 
-module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staffRole, notify, lock }) {
+module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staffRole, notify, lock, bankApi = privat }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
 
     async function audit(actor, role, action, target, summary, details = {}) {
@@ -156,7 +156,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         });
         if (!reserved) return { id: ref.id };
         try {
-            const result = await privat.createPayment(token, { ...payment, docNumber });
+            const result = await bankApi.createPayment(token, { ...payment, docNumber });
             await ref.update({ status: 'sent', bankRef: result.bankRef || null, paymentRef: result.paymentRef || null,
                 bankStatus: result.status || null, sentAt: FieldValue.serverTimestamp() });
         } catch (e) {
@@ -264,7 +264,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         let error = null;
         if (p.status === 'sent' && p.paymentRef) {
             const { token } = await context();
-            try { deletedInBank = token ? await privat.deletePayment(token, p.paymentRef) : false; }
+            try { deletedInBank = token ? await bankApi.deletePayment(token, p.paymentRef) : false; }
             catch (e) { error = e; logger.warn('Видалення платежу в банку', e); }
         }
         const uncertain = p.status === 'sent' && error && error.bankRejected !== true;

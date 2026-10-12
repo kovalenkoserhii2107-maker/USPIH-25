@@ -66,13 +66,13 @@ function reconcile({ period, start = START_PERIOD, startDate, runs = [], bankTx 
     const refunds = new Map();
     // Метадані оригіналу зберігають УСІ повернення, також пізніших місяців.
     // Звіряємо повний ланцюжок, тоді пізнє повернення не псує перевірку минулого місяця.
-    for (const tx of bankTx.filter(t => t.period >= START_PERIOD && t.kind === 'refund' && t.status === 'done')) {
+    for (const tx of bankTx.filter(t => t.period >= start && t.kind === 'refund' && t.status === 'done')) {
         const o = txMap.get(tx.refundOf);
         if (!o || o.direction !== 'out' || o.kind !== 'expense' || o.status !== 'done' || tx.direction !== 'in' || !positive(tx.amountKop)
             || tx.period < o.period || !(o.refundTxIds || []).includes(tx.id)) block(`Повернення ${tx.id}: немає відповідного списання`);
         refunds.set(tx.refundOf, (refunds.get(tx.refundOf) || 0) + tx.amountKop);
     }
-    for (const o of bankTx.filter(t => t.direction === 'out' && t.period >= START_PERIOD)) {
+    for (const o of bankTx.filter(t => t.direction === 'out' && t.period >= start)) {
         const kop = refunds.get(o.id) || 0, ids = o.refundTxIds || [];
         if (kop > o.amountKop || kop !== (o.refundedKop || 0) || new Set(ids).size !== ids.length
             || ids.some(id => txMap.get(id)?.refundOf !== o.id || txMap.get(id)?.status !== 'done')) block(`Списання ${o.id}: сума повернень не відповідає виписці`);

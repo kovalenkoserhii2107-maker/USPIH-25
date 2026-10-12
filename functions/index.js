@@ -451,3 +451,6 @@ const databaseReset = require('./database-reset')({ db, FieldValue, requireAdmin
     bucket: require('firebase-admin/storage').getStorage().bucket(process.env.STORAGE_BUCKET || 'uspih-25.firebasestorage.app'), auth: require('firebase-admin/auth').getAuth(),
     projectId: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || 'uspih-25' });
 exports.databaseReset = databaseReset.databaseReset;
+
+// Private training books; external bank and notifications are closed drivers.
+exports.accountingTestAction = require('./accounting-test')({ db, FieldValue, Timestamp, requireAdmin }).accountingTestAction;

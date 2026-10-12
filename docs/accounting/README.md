@@ -16,6 +16,8 @@
 [IMPORT-AND-RESET.md](IMPORT-AND-RESET.md).
 Перевірка Excel, продовження імпорту та повного облікового циклу:
 [TEST-EXCEL-IMPORT-2026-10-12.md](TEST-EXCEL-IMPORT-2026-10-12.md).
+Окрема тестова бухгалтерія без змішування з робочою базою:
+[TEST-MODE.md](TEST-MODE.md).
 
 ## Рамки (рішення правління, жовтень 2026)
 

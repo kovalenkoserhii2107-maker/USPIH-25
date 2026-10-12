@@ -683,15 +683,7 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         if (data.action === 'status') return status();
         // Прогін і прибирання змінюють облік усього будинку — лише голова.
         if (role !== 'chair') fail('permission-denied', 'Демо прогонить і прибирає голова');
-        if (data.action === 'run') {
-            try { return await run(actor, data); }
-            catch (e) {
-                // «Збій» — лише якщо прогін почав змінювати дані; відмова до старту стан не чіпає.
-                const s = (await stateRef.get().catch(() => null))?.data();
-                if (s?.status === 'running') await stateRef.set({ status: 'failed', error: String(e.message || e).slice(0, 300) }, { merge: true }).catch(() => {});
-                throw e;
-            }
-        }
+        if (data.action === 'run') fail('failed-precondition', 'Нові тести виконуються в окремій бухгалтерії: accounting-test.html');
         if (data.action === 'remove') return remove(actor, data);
         fail('invalid-argument', 'Невідома дія');
     }));

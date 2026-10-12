@@ -28,6 +28,7 @@ export async function callBackend(name, payload, timeoutMs = 45000) {
         const wrapped = new Error(friendly[code] || error?.message || 'Помилка сервера');
         wrapped.code = code;
         wrapped.cause = error;
+        wrapped.details = error?.details;
         throw wrapped;
     }
 }

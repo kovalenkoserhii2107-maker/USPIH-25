@@ -29,8 +29,8 @@ async function wipe() {
     privat.createPayment = createPayment;
     for (const name of ['apartments', 'charges', 'charges_runs', 'bank', 'bank_secrets', 'bank_tx', 'payments', 'expenses', 'suppliers', 'contracts', 'expense_settings',
         'payroll_people', 'payroll_runs', 'payroll_settings', 'reports', 'report_settings', 'osbb_settings', 'audit_log', 'journal_opening', 'journal_periods']) {
-        const snap = await db.collection(name).get();
-        await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
+        // One throttled writer per collection instead of 6,000 simultaneous deletes.
+        await db.recursiveDelete(db.collection(name));
     }
 }
 afterEach(wipe);
