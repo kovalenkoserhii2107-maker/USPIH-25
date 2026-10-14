@@ -21,6 +21,7 @@ import { docPayments } from './chain-core.js';
 import { openPaymentSheet, openTxSheet, openContractSheet } from './buh-chain.js';
 import { ASSET_SUBACCOUNTS, DEPR_METHODS, UNITS, defaultSubacc, defaultDeprMethod, suggestAssetId } from './assets-core.js';
 import { openAssets } from './buh-assets.js';
+import { openAdvance } from './buh-advance.js';
 
 
 const LEGACY = { docs: 'work' };
@@ -391,7 +392,8 @@ export async function loadExpensesView() {
         </label>` : ''}
         <div class="fl-filters dc-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
             `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}
-            <button type="button" class="fl-filter" data-go="assets" title="Інвентарна книга ОЗ, МНМА, склад Запасів та МШП">Майно та ТМЦ ›</button></div>
+            <button type="button" class="fl-filter" data-go="assets" title="Інвентарна книга ОЗ, МНМА, склад Запасів та МШП">Майно та ТМЦ ›</button>
+            <button type="button" class="fl-filter" data-go="advance" title="Авансові звіти та підзвітні особи (рах. 372)">Авансові звіти (372) ›</button></div>
         ${formHtml()}${body}`;
     if (form) document.getElementById('exForm')?.querySelector('select, input')?.focus({ preventScroll: true });
     fillTxRows();

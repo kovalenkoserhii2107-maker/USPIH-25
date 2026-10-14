@@ -90,7 +90,10 @@ const lastDay = period => {
 };
 const kyivDate = v => {
     const d = v?.toDate ? v.toDate() : v instanceof Date ? v : v ? new Date(v) : null;
-    return d && !Number.isNaN(d.getTime()) ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d) : '';
+    if (!d || Number.isNaN(d.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    const get = t => parts.find(x => x.type === t)?.value;
+    return `${get('year')}-${get('month')}-${get('day')}`;
 };
 const shift = (period, n) => {
     const [y, m] = period.split('-').map(Number);
@@ -117,7 +120,7 @@ function periodsUpTo(period, start = START_PERIOD) {
  * bankTx: [{ id, ...bank_tx }]; expenses: [{ id, ...expenses }];
  * suppliers: Map<id, { name }>; components: Map<id, name>.
  */
-function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], suppliers = new Map(), payrollRuns = [], payrollPayments = new Map(), opening = null, start = START_PERIOD, startDate, policy, adjustments = [], until }) {
+function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], suppliers = new Map(), payrollRuns = [], payrollPayments = new Map(), opening = null, start = START_PERIOD, startDate, policy, adjustments = [], advanceReports = [], until }) {
     const out = [];
     const add = (e) => { if (e.kop) out.push(e); };
     const inRange = p => p && p >= start && (!until || p <= until);
@@ -163,6 +166,9 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
             return { dr, dA: dr === '661' ? pp.personAccount || pp.name : pp.key };
         }
         if (t.kind === 'expense' && t.status === 'done' && t.expenseId) return { dr: '631', dA: expenses.find(x => x.id === t.expenseId)?.supplierName || cp.name || '' };
+        if (t.kind === 'expense' && t.status === 'done' && (t.category === 'advance' || t.advanceReportId)) {
+            return { dr: '372', dA: t.personName || cp.name || 'Підзвітна особа' };
+        }
         if (t.kind === 'expense' && t.status === 'done' && t.category === 'supplier') return { dr: '631', dA: cp.name || '', advance: true };
         if (t.kind === 'expense' && t.status === 'done') return { dr: '92', dA: BANK_EXPENSE_ITEM[t.category] || 'other' };
         return { dr: '685', dA: 'нерозібрано', unknown: true };
@@ -180,6 +186,8 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
                 const n=notesById.get(t.notePaymentId).lines[0];add({...base,dr:cash(acc),cr:n.dr,dA:acc,cA:n.dA||'',kop:t.amountKop,memo:'Оплачено нарахування за бухгалтерською довідкою'});
             } else if (t.kind === 'payment' && t.status === 'done' && (t.allocations || []).length) {
                 for (const a of t.allocations) add({ ...base, dr: cash(acc), cr: '377', kop: a.amountKop, dA: acc, cA: a.apt, memo: `Оплата внесків, кв. ${a.apt}` });
+            } else if (t.kind === 'income' && t.status === 'done' && (t.category === 'advance_return' || t.advanceReportId)) {
+                add({ ...base, dr: cash(acc), cr: '372', kop: t.amountKop, dA: acc, cA: t.personName || cp.name || 'Підзвітна особа', memo: t.purpose || 'Повернення залишку підзвітних коштів' });
             } else if (t.kind === 'income' && t.status === 'done') {
                 const income = policy?.incomeAccounts?.[t.category] || INCOME_ACCOUNT[t.category] || '719';
                 add({ ...base, dr: cash(acc), cr: income, kop: t.amountKop, dA: acc, cA: income === '48' ? t.fundId || defaultFund : t.category || 'other', memo: t.purpose || cp.name || '' });
@@ -242,6 +250,29 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
     }
     for (const doc of adjustments) if (doc.status === 'approved' && inRange(doc.period)) for (const line of doc.lines || []) {
         add({ date: doc.date, period: doc.period, ...line, fund: line.fund || doc.fundId || defaultFund, src: 'note', ref: doc.id, memo: doc.note });
+    }
+    for (const ar of advanceReports) {
+        if (!['approved', 'settled'].includes(ar.status) || !inRange(ar.period)) continue;
+        const date = ar.date && ar.date.startsWith(ar.period) ? ar.date : lastDay(ar.period);
+        if (startDate && date < startDate) continue;
+        const person = ar.personName || 'Підзвітна особа';
+        for (const l of (ar.lines || [])) {
+            const acc = l.postingAcc || '92';
+            const dA = (acc !== '92' && l.assetId) ? l.assetId : (l.item || 'office');
+            add({
+                date,
+                period: ar.period,
+                dr: acc,
+                cr: '372',
+                kop: l.amountKop,
+                dA,
+                cA: person,
+                fund: ar.fundId || defaultFund,
+                src: 'advance_report',
+                ref: ar.id,
+                memo: `Авансовий звіт № ${ar.number || ar.id} (${person}): ${l.desc || l.supplier || 'витрати'}`
+            });
+        }
     }
     return out;
 }

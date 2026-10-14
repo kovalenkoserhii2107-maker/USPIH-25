@@ -144,7 +144,10 @@ function payeeKind(name, code, supplierKind) {
 
 const kyivDate = v => {
     const d = v?.toDate ? v.toDate() : v instanceof Date ? v : v ? new Date(v) : null;
-    return d && !Number.isNaN(d.getTime()) ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d) : '';
+    if (!d || Number.isNaN(d.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    const get = t => parts.find(x => x.type === t)?.value;
+    return `${get('year')}-${get('month')}-${get('day')}`;
 };
 
 /**

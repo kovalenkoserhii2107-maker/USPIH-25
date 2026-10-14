@@ -17,6 +17,7 @@ import { openExpenses } from './buh-expenses.js';
 import { openPayroll } from './buh-payroll.js';
 import { openTxSheet } from './buh-chain.js';
 import { openAssets } from './buh-assets.js';
+import { openAdvance } from './buh-advance.js';
 
 const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 const monthTitle = p => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
@@ -89,7 +90,7 @@ function tbHtml() {
         const isOpen = open.has(r.acc);
         return `<tr class="jr-acc${isOpen ? ' is-open' : ''}"><td><button type="button" class="jr-toggle" data-act="toggle" data-acc="${escapeHtml(r.acc)}" aria-expanded="${isOpen}">${escapeHtml(r.acc)}</button></td>
             <td class="t-main">${escapeHtml(r.name)}</td>${sums(r)}</tr>
-            ${isOpen ? `${r.byA.length > 1 || (r.byA[0] && r.byA[0].a !== '') ? r.byA.map(x => `<tr class="jr-sub"><td></td><td>${r.acc === '377' && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-apt" data-apt="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : ['10','11','131','132','20','22'].includes(r.acc) && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-asset" data-asset="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : escapeHtml(label(r.acc, x.a))}</td>${sums(x)}</tr>`).join('') : ''}${entriesHtml(r.acc)}` : ''}`;
+            ${isOpen ? `${r.byA.length > 1 || (r.byA[0] && r.byA[0].a !== '') ? r.byA.map(x => `<tr class="jr-sub"><td></td><td>${r.acc === '377' && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-apt" data-apt="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : ['10','11','131','132','20','22'].includes(r.acc) && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-asset" data-asset="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : r.acc === '372' && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-adv-person" data-person="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : escapeHtml(label(r.acc, x.a))}</td>${sums(x)}</tr>`).join('') : ''}${entriesHtml(r.acc)}` : ''}`;
     }).join('');
     const t = tb.totals;
     return `<section class="buh-card jr-card">
@@ -146,6 +147,7 @@ export async function loadJournalView() {
                 ${ctx.canClose ? '<button type="button" class="btn-primary btn-compact" data-act="close">Закрити місяць</button>' : ''}
                 ${ctx.canReopen && chair ? '<button type="button" class="btn-ghost-small" data-act="reopen">Відкрити знову</button>' : ''}
                 <button type="button" class="btn-ghost-small" data-go="assets">Майно та ТМЦ</button>
+                <button type="button" class="btn-ghost-small" data-go="advance">Авансові звіти (372)</button>
                 <button type="button" class="btn-ghost-small" data-act="opening" aria-expanded="${openingShown()}">Вхідна ОСВ${ctx.opening?.status === 'approved' ? '' : ' !'}</button>
                 <button type="button" class="btn-ghost-small" data-act="csv-tb">ОСВ у CSV</button>
                 <button type="button" class="btn-ghost-small" data-act="csv-journal">Журнал у CSV</button>
@@ -180,6 +182,7 @@ async function onAction(btn) {
         } else if (a === 'all-entries') { allEntries.add(btn.dataset.acc); await loadJournalView(); }
         else if (a === 'open-apt') { location.hash = 'flats'; setTimeout(() => openFlat(btn.dataset.apt), 0); }
         else if (a === 'open-asset') { openAssets('all', btn.dataset.asset); }
+        else if (a === 'open-adv-person') { openAdvance('all'); }
         else if (a === 'open-entry') {
             const { src, ref } = btn.dataset;
             if (src === 'bank') openTxSheet(ref);

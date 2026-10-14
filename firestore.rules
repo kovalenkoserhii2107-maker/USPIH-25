@@ -690,6 +690,10 @@ service cloud.firestore {
       allow read: if validSession() && (canAccount());
       allow write: if false;
     }
+    match /advance_reports/{docId} {
+      allow read: if validSession() && (canAccount());
+      allow write: if false;
+    }
     match /annual_history/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
     match /annual_history_versions/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }
     match /annual_history_parts/{docId} { allow read: if validSession() && (canAccount()); allow write: if false; }

@@ -278,7 +278,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 } else if (ambiguous) {
                     Object.assign(doc, { kind: 'expense', status: 'review', reason: 'ambiguous-payment', paymentSuggestions: live.map(p => p.id) });
                 } else if (paid) {
-                    Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(raw.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : 'supplier', status: 'done', paymentId: paid.id });
+                    Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(raw.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : paid.kind === 'advance' ? 'advance' : 'supplier', ...(paid.advanceReportId ? { advanceReportId: paid.advanceReportId } : {}), status: 'done', paymentId: paid.id });
                     if(['salary','tax'].includes(paid.kind)&&!paid.payroll)Object.assign(doc,{status:'review',reason:'payroll-unlinked'});
                     t.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
                 } else if (byDoc?.auto && canSettle) {
@@ -487,12 +487,27 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 || tx.amountKop > expense.data().amountKop - (expense.data().stornoKop || 0) - (expense.data().paidKop || 0)))
                 fail('failed-precondition', 'Документ змінився або сума перевищує залишок: звірте документ і оплату');
             const category = p.kind === 'tax' ? (p.payroll?.key === 'esv' || core.isEsv(tx.purpose) ? 'esv' : 'taxes')
-                : p.kind === 'salary' ? 'salary' : 'supplier';
+                : p.kind === 'salary' ? 'salary' : p.kind === 'advance' ? 'advance' : 'supplier';
             t.update(txRef, { kind: 'expense', category, status: 'done', paymentId: payRef.id,
+                ...(p.advanceReportId ? { advanceReportId: p.advanceReportId } : {}),
                 ...(expense ? { expenseId: expense.id } : {}), method: 'payment', auto: false,
                 resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
             t.update(payRef, { status: 'paid', paidAt: tx.at, txId: txRef.id });
             if (expense) t.update(expense.ref, expenses.linkUpdate({ id: expense.id, ...expense.data() }, txRef.id, tx.amountKop));
+            if (p.advanceReportId) {
+                const advSnap = await t.get(db.doc(`advance_reports/${p.advanceReportId}`));
+                if (advSnap.exists) {
+                    const advData = advSnap.data();
+                    const newReimbursed = (advData.reimbursedKop || 0) + tx.amountKop;
+                    const isSettled = newReimbursed >= (advData.reimburseKop || 0);
+                    t.update(advSnap.ref, {
+                        reimbursedKop: newReimbursed,
+                        reimburseTxIds: FieldValue.arrayUnion(txRef.id),
+                        status: isSettled ? 'settled' : 'approved',
+                        ...(isSettled ? { settledAt: FieldValue.serverTimestamp() } : {})
+                    });
+                }
+            }
             t.create(db.collection('audit_log').doc(), { actor, role, action: 'bank.matchPayment', target: txRef.path,
                 summary: `${core.fromKop(tx.amountKop)} грн → платіж ${payRef.id}`, details: { paymentId: payRef.id }, at: FieldValue.serverTimestamp() });
         });
@@ -651,12 +666,20 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (expense?.exists && (expense.data().txIds || []).includes(ref.id)) {
                 t.update(expenseRef, { paidKop: Math.max(0, (expense.data().paidKop || 0) - data.amountKop), txIds: FieldValue.arrayRemove(ref.id), status: 'approved', paidAt: null });
             }
+            if (data.advanceReportId) {
+                t.update(db.doc(`advance_reports/${data.advanceReportId}`), {
+                    reimbursedKop: FieldValue.increment(-data.amountKop),
+                    reimburseTxIds: FieldValue.arrayRemove(ref.id),
+                    status: 'approved',
+                    settledAt: null
+                });
+            }
             for (const a of data.allocations || []) {
                 if (a.ledgerId) t.delete(db.doc(`apartments/${a.aptId || a.apt}/ledger/${a.ledgerId}`));
             }
             t.update(ref, {
                 kind: data.direction === 'in' ? 'payment' : 'expense', status: 'review', allocations: [],
-                category: null, method: null, expenseId: null, paymentId: null, notePaymentId:null, refundOf: null, refundReason: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
+                category: null, method: null, expenseId: null, paymentId: null, advanceReportId: null, notePaymentId:null, refundOf: null, refundReason: null, auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp()
             });
             return data;
         });
