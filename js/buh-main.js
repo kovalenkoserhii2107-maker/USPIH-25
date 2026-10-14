@@ -24,6 +24,7 @@ import { initBudgetView, loadBudgetView } from './buh-budget.js';
 import { initJournalView, loadJournalView } from './buh-journal.js';
 import { initPayrollView, loadPayrollView } from './buh-payroll.js';
 import { initReportsView, loadReportsView } from './buh-reports.js';
+import { initAssetsView, loadAssetsView } from './buh-assets.js';
 
 const VIEWS = {
     today: { title: () => todayTitle().title, sub: () => todayTitle().sub, load: loadToday },
@@ -37,6 +38,7 @@ const VIEWS = {
     payroll: { title: 'Зарплата', sub: 'Табель, утримання, ЄСВ і виплати — голова затверджує й підписує', load: loadPayrollView },
     reports: { title: 'Звіти', sub: 'Строки ДПС, файли для Електронного кабінету, квитанції', load: loadReportsView },
     budget: { title: 'Кошторис', sub: 'План на рік, виконання й звіт для мешканців', load: loadBudgetView },
+    assets: { title: 'Майно та ТМЦ', sub: 'Основні засоби (10), МНМА (11), запаси (20), МШП (22) та амортизація за НП(С)БО 7 і 9', load: loadAssetsView },
     journal: { title: 'Проводки', sub: 'Оборотно-сальдова відомість і закриття місяця', load: loadJournalView },
     settings: { title: 'Налаштування', sub: 'Підключення банку й правила погодження', load: loadSettingsView }
 };
@@ -107,6 +109,7 @@ const ICON = {
     inbox: '<path d="M4 13l3-8h10l3 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/>',
     charges: '<path d="M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"/>',
     budget: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',
+    assets: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
     journal: '<path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     board: '<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-4h6v4"/>',
@@ -142,6 +145,7 @@ function renderAccount(apartment) {
         <nav class="mn-group" aria-label="Облік">
             ${row('data-view="inbox"', 'inbox', 'Рішення', 'усе, що чекає вас, — по черзі', '<span class="mn-badge" id="buhInboxBadgeMenu" hidden></span>', true)}
             ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки', '', true)}
+            ${row('data-view="assets"', 'assets', 'Майно та ТМЦ', 'основні засоби (10), МНМА (11), запаси (20), МШП (22), амортизація')}
             ${row('data-view="budget"', 'budget', 'Кошторис', 'план і виконання за рік, звіт для мешканців')}
             ${row('data-view="journal"', 'journal', 'Проводки й ОСВ', 'журнал, закриття місяця', '', true)}
         </nav>
@@ -195,6 +199,7 @@ function init() {
     initChargesView(() => view === 'charges');
     initExpensesView();
     initBudgetView();
+    initAssetsView();
     initJournalView();
     initPayrollView();
     initReportsView();

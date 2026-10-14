@@ -17,6 +17,7 @@ import { session } from './firebase.js';
 import { openExpenses, draftFromContract, payExpense, decideExpense, decideContract } from './buh-expenses.js';
 import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
+import { openAssets, runMonthlyDepreciation } from './buh-assets.js';
 import { openPayroll } from './buh-payroll.js';
 import { openReports, reportTasks } from './buh-reports.js';
 import { receiptOverdue } from './reports-view-core.js';
@@ -459,6 +460,40 @@ export function openingItems(j, chair) {
     return [];
 }
 
+export function assetItems(j) {
+    if (!j || !j.assetsSummary) return [];
+    const out = [];
+    const s = j.assetsSummary;
+    if (s.uncommissionedCount > 0) {
+        out.push({
+            tx: { id: `assets:commission:${j.period}` },
+            proposal: {
+                type: 'setup',
+                meta: 'майно та тмц',
+                assetAction: 'open',
+                yes: 'Ввести в експлуатацію',
+                title: `Введіть в експлуатацію придбані ОЗ / МНМА (${s.uncommissionedCount} об.)`,
+                text: 'Придбані основні засоби або МНМА вже оприбутковані на баланс за документом постачальника, але очікують Акта ОЗ-1 про введення в експлуатацію та призначення МВО.'
+            }
+        });
+    }
+    if (j.status !== 'closed' && s.dueDeprCount > 0 && s.dueDeprKop > 0) {
+        out.push({
+            tx: { id: `assets:depr:${j.period}` },
+            proposal: {
+                type: 'setup',
+                meta: 'амортизація оз/мнма',
+                assetAction: 'depreciate',
+                assetPeriod: j.period,
+                yes: 'Нарахувати',
+                title: `Нарахуйте амортизацію ОЗ та МНМА за ${periodName(j.period)} (${fmtKop(s.dueDeprKop)} грн)`,
+                text: `Регламентне нарахування зносу для ${s.dueDeprCount} обʼєктів в експлуатації згідно з НП(С)БО 7 (Дт 92 Кт 131/132 та одночасно Дт 48 Кт 719).`
+            }
+        });
+    }
+    return out;
+}
+
 export function journalItems(j) {
     if (!j || j.status === 'closed') return [];
     const end = new Date(Date.UTC(Number(j.period.slice(0, 4)), Number(j.period.slice(5, 7)), 0)).toISOString().slice(0, 10);
@@ -560,6 +595,7 @@ export async function collectInbox() {
     items = chargeItems(charges)
         .concat(budgetItems(budget))
         .concat(openingItems(journal, session.role === 'chair'))
+        .concat(assetItems(journal))
         .concat(journalItems(journal))
         .concat(payrollItems(payroll, session.role === 'chair'))
         .concat(reportItems(reports))
@@ -662,6 +698,11 @@ const confirmProposal = item => {
         runTask(item, async () => { await journalAct({ action: 'close', period: item.proposal.closePeriod }); toast('Місяць закрито', 'success'); });
         return;
     }
+    if (item.proposal.type === 'setup' && item.proposal.assetAction === 'depreciate') {
+        runTask(item, () => runMonthlyDepreciation(item.proposal.assetPeriod));
+        return;
+    }
+    if (item.proposal.type === 'setup' && item.proposal.assetAction === 'open') { openAssets('all'); return; }
     if (item.proposal.type === 'setup' && item.proposal.journalPeriod) { openJournal(item.proposal.journalPeriod); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
@@ -672,6 +713,7 @@ const confirmProposal = item => {
 function openForm(item) {
     if (item.proposal.type === 'bank-conflict') { openJournal(item.tx.period); return; }
     if (item.proposal.type === 'payment-link') { openTxSheet(item.tx.id); return; }
+    if (item.proposal.type === 'setup' && item.proposal.assetAction) { openAssets('all'); return; }
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
     if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }
