@@ -18,6 +18,7 @@ import { openExpenses, draftFromContract, payExpense, decideExpense, decideContr
 import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
 import { openAssets, runMonthlyDepreciation } from './buh-assets.js';
+import { openAdvance } from './buh-advance.js';
 import { openPayroll } from './buh-payroll.js';
 import { openReports, reportTasks } from './buh-reports.js';
 import { receiptOverdue } from './reports-view-core.js';
@@ -460,6 +461,39 @@ export function openingItems(j, chair) {
     return [];
 }
 
+export function advanceItems(j, chair) {
+    if (!j || !j.advanceSummary) return [];
+    const out = [];
+    const s = j.advanceSummary;
+    if (s.pendingCount > 0 && chair) {
+        out.push({
+            tx: { id: `advance:pending:${j.period}` },
+            proposal: {
+                type: 'setup',
+                meta: 'авансові звіти',
+                advanceAction: 'open',
+                yes: 'Відкрити звіти',
+                title: `Затвердіть авансові звіти (${s.pendingCount} чекають рішення)`,
+                text: 'Працівники або члени правління внесли авансові звіти з чеками за придбані товари/послуги. Перевірте підтвердні документи та затвердьте їх для компенсації.'
+            }
+        });
+    }
+    if (s.toReimburseCount > 0 && s.toReimburseKop > 0) {
+        out.push({
+            tx: { id: `advance:pay:${j.period}` },
+            proposal: {
+                type: 'setup',
+                meta: 'компенсація підзвіт',
+                advanceAction: 'open',
+                yes: 'Відкрити виплату',
+                title: `Відшкодуйте перевитрату за авансовими звітами (${fmtKop(s.toReimburseKop)} грн)`,
+                text: `Затверджено ${s.toReimburseCount} звітів з перевитратою підзвітних осіб. Створіть виплату на їхні картки через Приват24 (Дт 372 Кт 311).`
+            }
+        });
+    }
+    return out;
+}
+
 export function assetItems(j) {
     if (!j || !j.assetsSummary) return [];
     const out = [];
@@ -596,6 +630,7 @@ export async function collectInbox() {
         .concat(budgetItems(budget))
         .concat(openingItems(journal, session.role === 'chair'))
         .concat(assetItems(journal))
+        .concat(advanceItems(journal, session.role === 'chair'))
         .concat(journalItems(journal))
         .concat(payrollItems(payroll, session.role === 'chair'))
         .concat(reportItems(reports))
@@ -703,6 +738,7 @@ const confirmProposal = item => {
         return;
     }
     if (item.proposal.type === 'setup' && item.proposal.assetAction === 'open') { openAssets('all'); return; }
+    if (item.proposal.type === 'setup' && item.proposal.advanceAction) { openAdvance('to_pay'); return; }
     if (item.proposal.type === 'setup' && item.proposal.journalPeriod) { openJournal(item.proposal.journalPeriod); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
@@ -714,6 +750,7 @@ function openForm(item) {
     if (item.proposal.type === 'bank-conflict') { openJournal(item.tx.period); return; }
     if (item.proposal.type === 'payment-link') { openTxSheet(item.tx.id); return; }
     if (item.proposal.type === 'setup' && item.proposal.assetAction) { openAssets('all'); return; }
+    if (item.proposal.type === 'setup' && item.proposal.advanceAction) { openAdvance('all'); return; }
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
     if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }

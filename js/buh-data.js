@@ -309,6 +309,10 @@ export const loadJournal = period => once(`journal:${period || ''}`, () => callB
 export const loadAssets = period => once(`assets:${period || ''}`, () => callBackend('journalAction', { action: 'assetsContext', period: period || null }, 90000));
 export const assetsAct = payload => journalAct(payload);
 
+/** Авансові звіти та розрахунки з підзвітними особами (372). */
+export const loadAdvance = period => once(`advance:${period || ''}`, () => callBackend('journalAction', { action: 'advanceContext', period: period || null }, 90000));
+export const advanceAct = payload => journalAct(payload);
+
 /** Вхідна ОСВ на 30.09.2026 — читання (без скидання кешу: інакше розділ перемальовувався б по колу). */
 export const loadOpeningData = () => once('opening', () => callBackend('journalAction', { action: 'opening' }, 90000));
 
