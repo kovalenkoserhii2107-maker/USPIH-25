@@ -433,7 +433,7 @@ const payroll = require('./payroll')({ db, FieldValue, requireAdmin, staffRole, 
 exports.payrollAction = payroll.payrollAction;
 
 // Проводки, оборотно-сальдова й закриття місяця (див. journal.js).
-const journal = require('./journal')({ db, FieldValue, requireAdmin, staffRole, lock });
+const journal = require('./journal')({ db, FieldValue, requireAdmin, staffRole, lock, payments });
 exports.journalAction = journal.journalAction;
 
 // Звітність: строки, дані для форм ДПС, позначки й квитанції (див. reports.js).

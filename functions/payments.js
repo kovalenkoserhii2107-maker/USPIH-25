@@ -25,7 +25,7 @@ const { payable } = require('./bank-accounts');
 const identity = require('./payroll-payment-core');
 
 const REGION = 'europe-central2';
-const KINDS = ['supplier', 'tax', 'salary', 'other'];
+const KINDS = ['supplier', 'tax', 'salary', 'advance', 'other'];
 
 module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staffRole, notify, lock, bankApi = privat }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
@@ -81,6 +81,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         let proposalKey = data.proposalKey ? String(data.proposalKey).slice(0, 80) : null;
         // Платіж за документом витрат (expenses.js → pay): виписка закриє й документ.
         payment.expenseId = data.expenseId ? String(data.expenseId).replace(/[^\w-]/g, '').slice(0, 60) : null;
+        payment.advanceReportId = data.advanceReportId ? String(data.advanceReportId).slice(0, 80) : null;
         // Платіж за відомістю зарплати (payroll.js): у проводках — погашення 661/641/651.
         if (data.payroll?.period) {
             if (!['advance', 'final'].includes(data.payroll.stage) || !/^[\w-]{1,200}$/.test(String(data.payroll.key || ''))) fail('invalid-argument', 'Невідомий отримувач або етап зарплатного платежу');
