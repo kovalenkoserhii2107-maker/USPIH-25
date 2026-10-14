@@ -12,7 +12,7 @@ import { fmtKop, periodName } from './charges-core.js';
 import { humanDate, daysLeft } from './tax-calendar.js';
 import { reportTasks, nextDeadline } from './reports-view-core.js';
 
-const BANK_TYPES = new Set(['link', 'assign', 'split', 'choose', 'income', 'expense']);
+const BANK_TYPES = new Set(['link', 'assign', 'split', 'choose', 'income', 'expense', 'bank-conflict', 'payment-link']);
 const DOC_TYPES = new Set(['approve-con', 'approve-exp', 'pay-exp', 'missing-doc']);
 const META_GROUP = { 'зарплата': 'payroll', 'звітність': 'reports', 'проводки': 'journal', 'кошторис': 'budget' };
 

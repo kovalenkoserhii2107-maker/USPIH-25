@@ -35,13 +35,14 @@ let busy = new Set();
 let activeFilter = 'all';
 let searchQuery = '';
 const selectedIds = new Set();
+let customSelection = false;
 
 const INBOX_FILTERS = {
     all: 'Усі',
     bank: 'Банк і оплати',
     docs: 'Документи',
     pay: 'Регулярні платежі',
-    accounting: 'Зарплата, звіти й облік'
+    accounting: 'Нарахування, зарплата й звіти'
 };
 
 function itemFilterGroup(item) {
@@ -53,7 +54,8 @@ function itemFilterGroup(item) {
 }
 
 export function setInboxFilter(group) {
-    activeFilter = INBOX_FILTERS[group] ? group : 'all';
+    const mapped = ['charges', 'payroll', 'reports', 'journal', 'budget'].includes(group) ? 'accounting' : group;
+    activeFilter = INBOX_FILTERS[mapped] ? mapped : 'all';
     focus = 0;
 }
 
@@ -296,7 +298,7 @@ function taskCardHtml(item, index) {
             </div></div></article>`;
 }
 
-function cardHtml(item, index, dir) {
+function cardHtml(item, index, dir, showCheckboxes = false) {
     if (item.proposal.type === 'pay') return payCardHtml(item, index);
     if (['approve-exp', 'approve-con', 'pay-exp', 'missing-doc'].includes(item.proposal.type)) return taskCardHtml(item, index);
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') return chargeCardHtml(item, index);
@@ -304,13 +306,13 @@ function cardHtml(item, index, dir) {
     const p = item.proposal;
     const open = editing === tx.id || !['assign', 'link'].includes(p.type);
     const quick = p.type === 'assign' || (p.type === 'link' && p.ids.length === 1);
-    const selectable = p.type === 'assign' && p.apt;
-    const checked = selectable && (selectedIds.has(tx.id) || (selectedIds.size === 0 && p.level === 'high'));
+    const selectable = showCheckboxes && p.type === 'assign' && p.apt;
+    const checked = selectable && (customSelection ? selectedIds.has(tx.id) : p.level === 'high');
     return `<article class="inbox-card${index === focus ? ' is-focus' : ''}${busy.has(tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(tx.id)}" data-index="${index}" tabindex="-1">
         <div class="inbox-main">
-            ${selectable ? `<label class="am-check inbox-select-row" style="margin-bottom:4px"><input type="checkbox" class="inbox-check" data-check-id="${escapeHtml(tx.id)}"${checked ? ' checked' : ''}><span>Вибрати для пакетного рознесення (кв. ${escapeHtml(p.apt)})</span></label>` : ''}
             <span class="inbox-sum-big ${tx.direction === 'out' ? 'is-out' : 'is-in'}">${signed(tx)} ₴</span>
             <span class="inbox-meta">${escapeHtml(when(tx.at))}</span>
+            ${selectable ? `<label class="am-check inbox-select-row" style="display:inline-flex;margin-left:10px;vertical-align:middle"><input type="checkbox" class="inbox-check" data-check-id="${escapeHtml(tx.id)}"${checked ? ' checked' : ''}><span>У пакет</span></label>` : ''}
             <p class="inbox-payer">${escapeHtml(tx.counterparty?.name || 'Платник не вказаний')}</p>
             <p class="inbox-purpose">${escapeHtml(tx.purpose || 'Без призначення')}</p>
         </div>
@@ -325,7 +327,28 @@ function cardHtml(item, index, dir) {
     </article>`;
 }
 
+export function restoreCachedBadges() {
+    try {
+        const saved = Number(sessionStorage.getItem('buh_inbox_count') || 0);
+        if (saved > 0) {
+            for (const id of ['buhInboxBadge', 'buhInboxBadgeTab', 'buhInboxBadgeMenu']) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                el.textContent = saved > 99 ? '99+' : String(saved);
+                el.hidden = false;
+            }
+        }
+        const rep = Number(sessionStorage.getItem('buh_report_count') || 0);
+        const repEl = document.getElementById('buhReportBadge');
+        if (repEl && rep > 0) {
+            repEl.textContent = String(rep);
+            repEl.hidden = false;
+        }
+    } catch { /* sessionStorage unavailable */ }
+}
+
 function updateBadges() {
+    try { sessionStorage.setItem('buh_inbox_count', String(items.length)); } catch { /* ignore */ }
     for (const id of ['buhInboxBadge', 'buhInboxBadgeTab', 'buhInboxBadgeMenu']) {
         const el = document.getElementById(id);
         if (!el) continue;
@@ -337,7 +360,7 @@ function updateBadges() {
 let dirCache = [];
 function bulkCandidates() {
     const vis = visibleItems().map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
-    if (selectedIds.size > 0) return vis.filter(i => selectedIds.has(i.tx.id));
+    if (customSelection) return vis.filter(i => selectedIds.has(i.tx.id));
     return vis.filter(i => i.proposal.level === 'high');
 }
 
@@ -352,25 +375,29 @@ function render() {
     const counts = { all: items.length, bank: 0, docs: 0, pay: 0, accounting: 0 };
     items.forEach(it => { counts[itemFilterGroup(it)] = (counts[itemFilterGroup(it)] || 0) + 1; });
     if (activeFilter !== 'all' && !counts[activeFilter]) activeFilter = 'all';
+    const nonEmptyCategories = ['bank', 'docs', 'pay', 'accounting'].filter(k => counts[k] > 0);
+    const showFilterTabs = nonEmptyCategories.length > 1 || activeFilter !== 'all';
 
     const vis = visibleItems();
     focus = Math.min(focus, Math.max(0, items.length - 1));
+    const allAssignable = vis.map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
+    const showCheckboxes = allAssignable.length > 1;
     const sure = bulkCandidates();
     const sureSum = sure.reduce((s, i) => s + (i.tx.amountKop || 0), 0);
-    const allAssignable = vis.map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
+    const allSelected = showCheckboxes && sure.length === allAssignable.length;
 
-    host.innerHTML = `<div class="fl-filters dc-tabs" role="tablist" style="margin-bottom:10px">
+    host.innerHTML = `${showFilterTabs ? `<div class="fl-filters dc-tabs" role="tablist" style="margin-bottom:10px">
             ${Object.entries(INBOX_FILTERS).filter(([k]) => k === 'all' || counts[k] > 0).map(([k, label]) =>
                 `<button type="button" class="fl-filter${k === activeFilter ? ' active' : ''}" data-inbox-filter="${k}">${escapeHtml(label)} <span>${counts[k] || 0}</span></button>`).join('')}
-        </div>
+        </div>` : ''}
         <div class="inbox-head" style="flex-wrap:wrap;gap:10px">
-            <p><b>${vis.length}</b> ${activeFilter === 'all' && !searchQuery ? 'чекають рішення' : `показано з ${items.length}`} · пропозиція є для <b>${vis.filter(({ item: i }) => !['choose', 'split', 'income', 'expense', 'setup'].includes(i.proposal.type)).length}</b></p>
-            <input type="search" id="inboxSearch" class="field-input" style="max-width:260px;padding:6px 10px" placeholder="Пошук: кв., ПІБ, призначення…" value="${escapeHtml(searchQuery)}" aria-label="Пошук у рішеннях">
-            ${allAssignable.length > 1 ? `<button type="button" class="btn-ghost-small" data-act="select-all-assign">${selectedIds.size === allAssignable.length ? 'Зняти виділення' : `Виділити всі квартири (${allAssignable.length})`}</button>` : ''}
-            ${sure.length >= 1 ? `<button type="button" class="btn-primary btn-compact" data-act="bulk">Підтвердити ${selectedIds.size ? 'вибрані' : 'всі розпізнані'} (${sure.length} · ${fmtKop(sureSum)} грн)</button>` : ''}
+            <p><b>${vis.length}</b> ${activeFilter === 'all' && !searchQuery ? 'чекають рішення' : `з ${items.length}`} · пропозиція є для <b>${vis.filter(({ item: i }) => !['choose', 'split', 'income', 'expense', 'setup'].includes(i.proposal.type)).length}</b></p>
+            ${items.length > 3 || searchQuery ? `<input type="search" id="inboxSearch" class="field-input" style="max-width:250px;min-height:34px;padding:4px 10px" placeholder="Пошук: кв., ПІБ, призначення…" value="${escapeHtml(searchQuery)}" aria-label="Пошук у рішеннях">` : ''}
+            ${showCheckboxes ? `<button type="button" class="btn-ghost-small" data-act="select-all-assign">${allSelected ? 'Зняти виділення' : `Виділити всі квартири (${allAssignable.length})`}</button>` : ''}
+            ${showCheckboxes && sure.length >= 1 ? `<button type="button" class="btn-soft btn-compact" data-act="bulk">Підтвердити у пакеті (${sure.length} · ${fmtKop(sureSum)} грн)</button>` : ''}
             <span class="inbox-keys"><kbd>↑</kbd><kbd>↓</kbd> пункти · <kbd>Enter</kbd> так · <kbd>E</kbd> змінити</span>
         </div>
-        ${vis.length ? `<div class="inbox-list">${vis.map(({ item, idx }) => cardHtml(item, idx, dirCache)).join('')}</div>`
+        ${vis.length ? `<div class="inbox-list">${vis.map(({ item, idx }) => cardHtml(item, idx, dirCache, showCheckboxes)).join('')}</div>`
             : '<p class="list-empty">За цим фільтром або запитом нічого не знайдено</p>'}`;
 }
 
@@ -549,6 +576,7 @@ export async function loadInbox() {
         const urgent = reportTasks(reports).filter(t => !t.done && !t.waiting && t.kind === 'report' && t.left <= 10).length;
         reportBadge.hidden = !urgent;
         reportBadge.textContent = urgent || '';
+        try { sessionStorage.setItem('buh_report_count', String(urgent || 0)); } catch { /* ignore */ }
     }
     render();
     return items.length;
@@ -693,7 +721,7 @@ async function bulk() {
             ok += 1;
         } catch (e) { toast(`${item.tx.counterparty?.name || ''}: ${e.message}`, 'error'); }
     }
-    toast(`Рознесено оплат: ${ok}`, 'success');
+    toast(`Рознесено: ${ok}`, 'success');
     await loadInbox();
 }
 
@@ -709,25 +737,31 @@ export function initInbox(isActive) {
             input?.setSelectionRange(pos, pos);
         }
     });
+    host.addEventListener('change', e => {
+        const cb = e.target.closest('.inbox-check');
+        if (!cb) return;
+        if (!customSelection) {
+            customSelection = true;
+            selectedIds.clear();
+            visibleItems().map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt && i.proposal.level === 'high').forEach(i => selectedIds.add(i.tx.id));
+        }
+        if (cb.checked) selectedIds.add(cb.dataset.checkId);
+        else selectedIds.delete(cb.dataset.checkId);
+        render();
+    });
     host.addEventListener('click', e => {
         const filterBtn = e.target.closest('[data-inbox-filter]');
         if (filterBtn) { activeFilter = filterBtn.dataset.inboxFilter; focus = 0; render(); return; }
         if (e.target.closest('[data-act="select-all-assign"]')) {
             const allAssignable = visibleItems().map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
-            if (selectedIds.size === allAssignable.length) selectedIds.clear();
-            else allAssignable.forEach(i => selectedIds.add(i.tx.id));
+            const current = bulkCandidates();
+            customSelection = true;
+            selectedIds.clear();
+            if (current.length < allAssignable.length) allAssignable.forEach(i => selectedIds.add(i.tx.id));
             render();
             return;
         }
-        if (e.target.closest('.inbox-select-row')) {
-            const cb = e.target.closest('.inbox-select-row').querySelector('.inbox-check');
-            if (cb && e.target === cb) {
-                if (cb.checked) selectedIds.add(cb.dataset.checkId);
-                else selectedIds.delete(cb.dataset.checkId);
-                render();
-            }
-            return;
-        }
+        if (e.target.closest('.inbox-select-row')) return;
         if (e.target.closest('[data-act="bulk"]')) { bulk(); return; }
         const card = e.target.closest('.inbox-card');
         if (!card) return;

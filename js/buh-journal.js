@@ -75,7 +75,7 @@ function entriesHtml(acc) {
             <td><b>${escapeHtml(e.dr)}</b> <small>${escapeHtml(label(e.dr, e.dA))}</small></td>
             <td><b>${escapeHtml(e.cr)}</b> <small>${escapeHtml(label(e.cr, e.cA))}</small></td>
             <td class="t-sum">${fmtKop(e.kop)}</td>
-            <td class="t-muted">${attr ? `<button type="button" class="btn-ghost-small" ${attr}>${memo} ›</button>` : memo}</td></tr>`;
+            <td class="t-muted">${memo}${attr ? ` <button type="button" class="btn-ghost-small" ${attr}>Відкрити ›</button>` : ''}</td></tr>`;
         }).join('')}</tbody></table>
         ${list.length > shown.length ? `<button type="button" class="btn-ghost-small" data-act="all-entries" data-acc="${escapeHtml(acc)}">Показати всі проводки (${list.length})</button>` : ''}
     </td></tr>`;

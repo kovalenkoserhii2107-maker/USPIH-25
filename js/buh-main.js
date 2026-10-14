@@ -12,7 +12,7 @@ import { ROLE_LABELS, hasRight } from './staff-core.js';
 import { loadProfile, loadResiliently, initAppShell, sessionExpired, rememberWorkMode } from './app-common.js';
 import { registerServiceWorker } from './install.js';
 import { onChange, act, loadSettings, when } from './buh-data.js';
-import { initInbox, loadInbox, setInboxFilter } from './buh-inbox.js';
+import { initInbox, loadInbox, setInboxFilter, restoreCachedBadges } from './buh-inbox.js';
 import { loadToday, todayTitle } from './buh-today.js';
 import { initMonthView, loadMonthView } from './buh-month.js';
 import { initFlatsView, loadFlatsView } from './buh-flats.js';
@@ -86,7 +86,7 @@ async function renderSync() {
         const last = s.lastSync;
         chip.hidden = !s.tokenSet;
         chip.classList.toggle('is-error', last?.ok === false);
-        chip.textContent = !last ? 'Банк: оновити' : last.ok === false ? 'Банк: помилка' : `Банк · ${when(last.at)}`;
+        chip.textContent = !last ? 'Виписка: оновити' : last.ok === false ? 'Виписка: помилка' : `Виписка · ${when(last.at)}`;
     } catch { chip.hidden = true; }
 }
 
@@ -122,8 +122,8 @@ function renderAccount(apartment) {
     document.getElementById('buhAccountBtn').textContent = initial;
     // Плитки основних розділів — лише на телефоні (на компʼютері вони вгорі).
     const tile = (v, t, sub) => `<button class="mn-tile buh-nav-item" data-view="${v}" type="button"><span class="mn-ico">${icon(v)}</span><b>${t}</b><small>${sub}</small></button>`;
-    // Рядок меню: іконка, назва, підпис, стрілка; бейдж — для «Рішень».
-    const row = (attrs, ico, t, sub, extra = '') => `<${attrs.startsWith('href') ? 'a' : 'button type="button"'} class="mn-row${attrs.startsWith('href') ? '' : ' buh-nav-item'}" ${attrs}>
+    // Рядок меню: іконка, назва, підпис, стрілка; mobileOnly ховає на ПК розділи, які вже винесені у верхню панель.
+    const row = (attrs, ico, t, sub, extra = '', mobileOnly = false) => `<${attrs.startsWith('href') ? 'a' : 'button type="button"'} class="mn-row${attrs.startsWith('href') ? '' : ' buh-nav-item'}${mobileOnly ? ' buh-more-mobile' : ''}" ${attrs}>
         <span class="mn-ico">${icon(ico)}</span><span class="mn-copy"><b>${t}</b><small>${sub}</small></span>${extra}<span class="mn-chev" aria-hidden="true">›</span></${attrs.startsWith('href') ? 'a' : 'button'}>`;
     const links = [];
     if (hasRight(session.role, 'manage')) links.push(row('href="admin.html" data-mode="staff"', 'board', 'Панель правління', 'збори, мешканці, звернення'));
@@ -138,19 +138,18 @@ function renderAccount(apartment) {
             ${tile('flats', 'Квартири', 'борги й історія')}${tile('expenses', 'Документи', 'рахунки й акти')}
             ${tile('payroll', 'Зарплата', 'відомість')}${tile('reports', 'Звіти', 'строки ДПС')}
         </nav>
-        <h5 class="mn-h">Облік</h5>
+        <h5 class="mn-h">Річне планування та облік</h5>
         <nav class="mn-group" aria-label="Облік">
-            ${row('data-view="inbox"', 'inbox', 'Рішення', 'усе, що чекає вас, — по черзі', '<span class="mn-badge" id="buhInboxBadgeMenu" hidden></span>')}
-            ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки')}
-            ${row('data-view="budget"', 'budget', 'Кошторис', 'план і виконання за рік')}
-            ${row('data-view="journal"', 'journal', 'Проводки й ОСВ', 'журнал, закриття місяця')}
+            ${row('data-view="inbox"', 'inbox', 'Рішення', 'усе, що чекає вас, — по черзі', '<span class="mn-badge" id="buhInboxBadgeMenu" hidden></span>', true)}
+            ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки', '', true)}
+            ${row('data-view="budget"', 'budget', 'Кошторис', 'план і виконання за рік, звіт для мешканців')}
+            ${row('data-view="journal"', 'journal', 'Проводки й ОСВ', 'журнал, закриття місяця', '', true)}
         </nav>
         <h5 class="mn-h">Налаштування й переходи</h5>
         <nav class="mn-group" aria-label="Налаштування й переходи">
             ${row('data-view="settings"', 'settings', 'Налаштування', 'банк, реквізити, правила, демо')}
             ${row('href="accounting-test.html"', 'check', 'Тестова бухгалтерія', 'окремий будинок, імітований банк, звірки')}
             ${links.join('')}
-            ${row('href="admin.html?tab=finance"', 'finance', 'Фінанси: попередні розділи', 'старий вигляд у панелі правління')}
         </nav>`;
 }
 
@@ -160,12 +159,15 @@ async function openCabinet(apt) {
     if (!hasRight(session.role, 'account')) { location.replace('admin.html'); return; }
     rememberWorkMode('buh');
     renderAccount(apartment);
+    restoreCachedBadges();
     document.getElementById('buhApp').hidden = false;
     hideAppLoader();
     const wanted = location.hash.slice(1);
-    await show(VIEWS[ALIASES[wanted] || wanted] ? wanted : 'today', { push: false });
-    renderSync();
-    refreshBadge();
+    await Promise.all([
+        show(VIEWS[ALIASES[wanted] || wanted] ? wanted : 'today', { push: false }),
+        renderSync(),
+        refreshBadge()
+    ]);
 }
 
 onAuthStateChanged(auth, async user => {
@@ -221,7 +223,7 @@ function init() {
     document.getElementById('buhSyncChip').addEventListener('click', async e => {
         const chip = e.currentTarget;
         chip.disabled = true;
-        chip.textContent = 'Банк: оновлюю…';
+        chip.textContent = 'Виписка: оновлюю…';
         try {
             const r = await act({ action: 'sync' }, 120000);
             toast(r?.partial ? `Частину рахунків не оновлено. Збережено нових операцій: ${r.added || 0}. Деталі у «Банку».`
