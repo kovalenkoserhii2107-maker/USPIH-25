@@ -1066,3 +1066,75 @@ body.chs-open { overflow: hidden; }
 .annual-forms-table { min-width: 640px; }
 .annual-forms-table td:nth-child(2) { min-width: 200px; white-space: normal; }
 .annual-forms-table td:nth-child(3), .annual-forms-table td:nth-child(4) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   МАЙНО ТА ТМЦ (ОЗ, МНМА, ЗАПАСИ, МШП)
+   ============================================================ */
+.as-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+    border-left: 4px solid var(--sv-blue, #0068cf);
+}
+.as-banner.is-ask {
+    border-left-color: #d97706;
+    background: #fffbeb;
+}
+.as-banner-copy {
+    min-width: 0;
+    flex: 1;
+}
+.as-banner-copy b {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+.as-banner-copy .buh-note {
+    margin: 0;
+}
+.as-wear-box {
+    margin: 14px 0;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: var(--sv-soft-2, #f4f6f9);
+}
+.as-wear-nums {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.as-wear-nums span {
+    display: block;
+    font-size: 12px;
+    color: var(--sv-muted, #636b78);
+    margin-bottom: 2px;
+}
+.as-wear-nums b {
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+}
+.as-progress {
+    margin-top: 10px;
+    height: 8px;
+    border-radius: 999px;
+    background: #dde3ed;
+    overflow: hidden;
+}
+.as-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #0068cf, #16a34a);
+    transition: width 0.25s ease;
+}
+@media (max-width: 720px) {
+    .as-banner {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .as-wear-nums {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+}

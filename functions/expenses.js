@@ -179,9 +179,31 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         };
         e.postingAcc = String(data.postingAcc || '92');
         if (!['92','10','11','20','22'].includes(e.postingAcc)) fail('invalid-argument','Оберіть вид придбання');
+        let assetMeta = null;
         if (e.postingAcc !== '92') {
             if (data.ownedByOsbb !== true || text(data.assetId,80).length < 2) fail('invalid-argument','Для активу підтвердіть власність саме ОСББ і вкажіть інвентарний код');
             e.ownedByOsbb = true; e.assetId = text(data.assetId,80);
+            if (Number(data.assetQty) > 0) e.assetQty = Number(data.assetQty);
+            if (data.assetUnit) e.assetUnit = text(data.assetUnit, 20);
+            assetMeta = {
+                id: e.assetId,
+                acc: e.postingAcc,
+                subacc: text(data.assetSubacc, 10) || (e.postingAcc === '10' ? '104' : e.postingAcc === '11' ? '112' : e.postingAcc === '20' ? '209' : '22'),
+                name: text(data.assetName || e.description, 200),
+                item: e.item,
+                fundId: String(data.fundId || 'main'),
+                acquiredDate: e.date,
+                ...(core.validDate(data.commissionedDate) ? { commissionedDate: String(data.commissionedDate) } : {}),
+                ...(data.commissionActNo ? { commissionActNo: text(data.commissionActNo, 60) } : {}),
+                ...(Number(data.usefulLifeMonths) > 0 ? { usefulLifeMonths: Math.round(Number(data.usefulLifeMonths)) } : {}),
+                ...(data.deprMethod ? { deprMethod: text(data.deprMethod, 30) } : {}),
+                ...(Number(data.salvageKop) >= 0 ? { salvageKop: Math.round(Number(data.salvageKop)) } : {}),
+                ...(data.assetUnit ? { unit: text(data.assetUnit, 20) } : {}),
+                ...(Number(data.assetQty) > 0 ? { initialQty: Number(data.assetQty) } : {}),
+                ...(data.custodian ? { custodian: text(data.custodian, 160) } : {}),
+                ...(data.location ? { location: text(data.location, 200) } : {}),
+                ...(data.serialNumber ? { serialNumber: text(data.serialNumber, 100) } : {})
+            };
         }
         const policy = require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
         e.fundId = String(data.fundId || policy.defaultFund);
@@ -243,6 +265,9 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
                 approval: { level: need.level, reason: need.reason, by: approved ? actor : null, at: approved ? FieldValue.serverTimestamp() : null },
                 paidKop: 0, txIds: [], updatedBy: actor, updatedAt: FieldValue.serverTimestamp(),
                 ...(data.id ? {} : { createdBy: actor, createdAt: FieldValue.serverTimestamp() }) }, { merge: true });
+            if (assetMeta) {
+                t.set(db.doc(`assets/${id(assetMeta.id)}`), { ...assetMeta, supplierName: supplier.name, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            }
             return { approved, need };
         });
         const { approved, need } = result;
@@ -472,7 +497,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         const list = { suppliers: suppliers.docs.map(plain), contracts: contracts.docs.map(plain), expenses: expenses.docs.map(plain) };
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         const policy=require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
-        return { ...list, funds:policy.funds,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0 }, today,
+        return { ...list, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0 }, today,
             missing: core.missingDocs(list.contracts, list.expenses, today), items: core.ITEMS, docTypes: core.DOC_TYPES, kinds: core.SUPPLIER_KINDS,
             limitKop: core.CONTRACT_LIMIT_KOP };
     }

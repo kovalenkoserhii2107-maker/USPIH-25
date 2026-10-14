@@ -19,6 +19,8 @@ import { periodName, fmtKop, toKop } from './charges-core.js';
 import { TABS, remaining, bucketOf, chipOf, filterDocs, docCounts, mainsFor as mainsOf, twinOf, scanKind } from './docs-core.js';
 import { docPayments } from './chain-core.js';
 import { openPaymentSheet, openTxSheet, openContractSheet } from './buh-chain.js';
+import { ASSET_SUBACCOUNTS, DEPR_METHODS, UNITS, defaultSubacc, defaultDeprMethod, suggestAssetId } from './assets-core.js';
+import { openAssets } from './buh-assets.js';
 
 
 const LEGACY = { docs: 'work' };
@@ -87,10 +89,19 @@ function docFormHtml(d = {}) {
             <label class="field"><span class="field-label">У т.ч. ПДВ, грн</span><input id="dfVat" class="field-input" inputmode="decimal" placeholder="без ПДВ" value="${money2(d.vatKop)}"></label>
             <label class="field pay-wide"><span class="field-label">Стаття витрат</span><select id="dfItem" class="field-input field-select">${options(ctx.items, d.item || 'other')}</select></label>
             <label class="field pay-wide"><span class="field-label">Джерело фінансування</span><select id="dfFund" class="field-input field-select">${options({...Object.fromEntries((ctx.funds || [{id:'main',name:'Основний фонд'}]).map(f=>[f.id,f.name])),...(ctx.ownIncome?{own:'Власний дохід (без використання 48)'}:{})},d.fundId || ctx.defaultFund || 'main')}</select></label>
-            <details class="pay-wide"><summary>Придбання активу ОСББ або запасів</summary><p class="buh-note">Послуги й ремонт спільного майна — поточні витрати. Тут виділяють тільки майно, яке належить саме ОСББ.</p>
-                <label class="field"><span class="field-label">Вид операції</span><select id="dfPosting" class="field-input field-select">${options({'92':'Поточні витрати / послуги','10':'Основний засіб ОСББ','11':'Необоротний матеріальний актив ОСББ','20':'Виробничі запаси','22':'Малоцінні предмети'},d.postingAcc || '92')}</select></label>
-                <label class="field"><span class="field-label">Інвентарний код</span><input id="dfAsset" class="field-input" maxlength="80" value="${escapeHtml(d.assetId || '')}"></label>
-                <label class="am-check"><input id="dfOwned" type="checkbox"${d.ownedByOsbb?' checked':''}><span>Майно належить саме ОСББ</span></label></details>
+            <details class="pay-wide"${d.postingAcc && d.postingAcc !== '92' ? ' open' : ''}><summary>Придбання активу ОСББ (ОЗ, МНМА) або ТМЦ (Запаси, МШП)</summary>
+                <p class="buh-note">Послуги й ремонт спільного майна будинку — це поточні витрати (рахунок 92). Тут виділяють майно, яке переходить у власність ОСББ як юрособи: понад ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн і > 1 року — Основні засоби (10); до ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн і > 1 року — МНМА (11); паливо, будматеріали, запчастини — Запаси (20); інвентар та інструмент до 1 року — МШП (22).</p>
+                <div class="pay-grid" style="margin-top:8px">
+                    <label class="field"><span class="field-label">Рахунок обліку</span><select id="dfPosting" class="field-input field-select">${options({'92':'92 · Поточні витрати / послуги','10':'10 · Основний засіб ОСББ (ОЗ)','11':'11 · Малоцінний необоротний актив (МНМА)','20':'20 · Виробничі запаси (паливо, матеріали)','22':'22 · Малоцінні та швидкозношувані предмети (МШП)'},d.postingAcc || '92')}</select></label>
+                    <label class="field"><span class="field-label">Інвентарний / номенклатурний код</span><input id="dfAsset" class="field-input" maxlength="80" placeholder="Напр.: ОЗ-001, МНМА-001, ТМЦ-001" value="${escapeHtml(d.assetId || '')}"></label>
+                    <label class="field"><span class="field-label">Кількість (для ТМЦ / МШП)</span><input id="dfAssetQty" class="field-input" type="number" step="0.001" min="0.001" value="${escapeHtml(String(d.assetQty || 1))}"></label>
+                    <label class="field"><span class="field-label">Одиниця виміру</span><select id="dfAssetUnit" class="field-input field-select">${UNITS.map(u => `<option value="${escapeHtml(u)}"${u === (d.assetUnit || 'шт.') ? ' selected' : ''}>${escapeHtml(u)}</option>`).join('')}</select></label>
+                    <label class="field"><span class="field-label">МВО (хто прийняв майно)</span><input id="dfCustodian" class="field-input" maxlength="160" placeholder="Голова правління / комендант / електрик" value="${escapeHtml(d.custodian || '')}"></label>
+                    <label class="field"><span class="field-label">Місце зберігання / встановлення</span><input id="dfLocation" class="field-input" maxlength="200" placeholder="Техприміщення / комора / електрощитова" value="${escapeHtml(d.location || '')}"></label>
+                    <label class="am-check pay-wide"><input id="dfOwned" type="checkbox"${d.ownedByOsbb?' checked':''}><span>Підтверджую: майно належить саме ОСББ як юридичній особі (не є невідʼємною частиною спільного майна будинку)</span></label>
+                    <label class="am-check pay-wide"><input id="dfCommissionNow" type="checkbox"${d.commissionedDate ? ' checked' : ''}><span>Для ОЗ (10) та МНМА (11): одразу ввести в експлуатацію датою документа (Акт ОЗ-1)</span></label>
+                </div>
+            </details>
             <label class="field pay-wide"><span class="field-label">За що</span><input id="dfDesc" class="field-input" maxlength="300" placeholder="Послуга чи товар, період" value="${escapeHtml(d.description || '')}"></label>
             ${!d.id && supplierId ? `<label class="field pay-wide"><span class="field-label">Підтверджує документ тієї самої послуги</span>
                 <select id="dfLinked" class="field-input field-select"><option value="">Ні — це окрема витрата</option>${mainsFor({ supplierId, amountKop: 0 }).map(x =>
@@ -165,6 +176,7 @@ function docActions(e) {
     if (e.status === 'pending' && isChair()) out.push(btn('approve-doc', 'Затвердити'), btn('reject-doc', 'Відхилити'));
     if (e.status === 'approved' && remaining(e) > 0 && !paying.has(e.id)) out.push(btn('pay-doc', e.paidKop > 0 ? 'Доплатити' : 'Створити платіж'));
     if (paying.has(e.id)) out.push('<button type="button" class="sv-btn" data-go="payments">Платіж на підписі голови</button>');
+    if (e.postingAcc && e.postingAcc !== '92' && e.assetId) out.push(btn('open-asset', 'Картка в «Майно та ТМЦ» ›'));
     if (['pending', 'rejected'].includes(e.status)) out.push(btn('edit-doc', 'Змінити'));
     if (['pending', 'approved', 'rejected'].includes(e.status) && !(e.paidKop > 0) && !e.linkedIds?.length && !e.stornoIds?.length && mainsFor(e).length && !twinOf(e, ctx.expenses)) {
         out.push(btn('attach-doc', 'Це та сама послуга…', ' title="Рахунок і акт однієї послуги — одна витрата"'));
@@ -266,6 +278,7 @@ function fieldsHtml(e) {
         ['Документ', docName(e)],
         ['За місяць', e.period ? periodName(e.period) : ''],
         ['Стаття', ctx.items[e.item] || ''],
+        ['Облік майна / ТМЦ', e.postingAcc && e.postingAcc !== '92' ? `Рахунок ${e.postingAcc} · Інв. код: ${e.assetId || '—'}` : ''],
         ['Договір', c ? '' : e.contractNumber ? `№ ${e.contractNumber}` : 'без договору'],
         ['ПДВ', e.vatKop ? `${fmtKop(e.vatKop)} грн` : ''],
         ['Затвердження', [e.approval?.reason, e.approval?.by ? `затвердив ${e.approval.by}` : ''].filter(Boolean).join(' · ')],
@@ -377,7 +390,8 @@ export async function loadExpensesView() {
             <span class="dc-drop-copy"><b>Додати рахунок, акт чи накладну</b><small>Перетягніть файл сюди або оберіть чи сфотографуйте — відкриється форма з цим файлом</small></span>
         </label>` : ''}
         <div class="fl-filters dc-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
-            `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}</div>
+            `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}
+            <button type="button" class="fl-filter" data-go="assets" title="Інвентарна книга ОЗ, МНМА, склад Запасів та МШП">Майно та ТМЦ ›</button></div>
         ${formHtml()}${body}`;
     if (form) document.getElementById('exForm')?.querySelector('select, input')?.focus({ preventScroll: true });
     fillTxRows();
@@ -432,7 +446,9 @@ async function saveDoc(btn) {
         const payload = { action: 'saveExpense', id: form.data.id || null, supplierId: form.data.supplierId, contractId: form.data.contractId || null,
             docType: form.data.docType, number: form.data.number, date: form.data.date, period: form.data.period, amountKop, vatKop: vat,
             item: form.data.item, description: form.data.description, files: form.data.files, linkedTo: form.data.linkedTo || null,
-            postingAcc:form.data.postingAcc || '92',assetId:form.data.assetId || '',ownedByOsbb:form.data.ownedByOsbb===true,fundId:form.data.fundId || ctx.defaultFund || 'main' };
+            postingAcc:form.data.postingAcc || '92',assetId:form.data.assetId || '',ownedByOsbb:form.data.ownedByOsbb===true,fundId:form.data.fundId || ctx.defaultFund || 'main',
+            assetQty:form.data.assetQty || 1,assetUnit:form.data.assetUnit || 'шт.',custodian:form.data.custodian || '',location:form.data.location || '',
+            commissionedDate:form.data.commissionedDate || '' };
         let r;
         try {
             r = await expAct(payload);
@@ -527,7 +543,9 @@ function snapshotForm() {
         fopChecked: document.getElementById('sfFop')?.checked === true, note: val('sfNote') } };
     if (form?.kind === 'doc') return { ...form, data: { ...form.data, supplierId: val('dfSupplier'), contractId: val('dfContract'), docType: val('dfType'), number: val('dfNumber'), date: val('dfDate'),
         period: val('dfPeriod'), amountKop: toKop(val('dfAmount')) || null, vatKop: toKop(val('dfVat')) || 0, item: val('dfItem'), description: val('dfDesc'), linkedTo: val('dfLinked') || form.data.linkedTo || '',
-        postingAcc:val('dfPosting') || '92',assetId:val('dfAsset'),ownedByOsbb:document.getElementById('dfOwned')?.checked===true,fundId:val('dfFund') || ctx.defaultFund || 'main' } };
+        postingAcc:val('dfPosting') || '92',assetId:val('dfAsset'),ownedByOsbb:document.getElementById('dfOwned')?.checked===true,fundId:val('dfFund') || ctx.defaultFund || 'main',
+        assetQty:Number(val('dfAssetQty') || 1),assetUnit:val('dfAssetUnit') || 'шт.',custodian:val('dfCustodian'),location:val('dfLocation'),
+        commissionedDate:document.getElementById('dfCommissionNow')?.checked ? (val('dfDate') || ctx.today) : '' } };
     if (form?.kind === 'contract') return { ...form, data: { ...form.data, supplierId: val('cfSupplier'), number: val('cfNumber'), date: val('cfDate'), subject: val('cfSubject'), type: val('cfType'),
         monthlyKop: toKop(val('cfAmount')), amountKop: toKop(val('cfAmount')), validFrom: val('cfFrom'), validTo: val('cfTo'), item: val('cfItem'),
         boardDecision: val('cfBoard'), meetingDecision: val('cfMeeting') } };
@@ -577,6 +595,7 @@ export function initExpensesView() {
             else if (a === 'new-doc') openExpenses('docs', { kind: 'doc', data: {} });
             else if (a === 'new-contract') openExpenses('contracts', { kind: 'contract', data: {} });
             else if (a === 'new-supplier') openExpenses('suppliers', { kind: 'supplier', data: {} });
+            else if (a === 'open-asset' && doc?.assetId) openAssets('all', doc.assetId);
             else if (a === 'edit-doc') openExpenses('docs', { kind: 'doc', data: doc });
             else if (a === 'edit-contract') openExpenses('contracts', { kind: 'contract', data: con });
             else if (a === 'edit-supplier') openExpenses('suppliers', { kind: 'supplier', data: sup });
@@ -648,6 +667,15 @@ export function initExpensesView() {
                 document.getElementById('dfItem').value = c.item;
                 if (c.type === 'monthly') document.getElementById('dfType').value = 'act';
                 if (!val('dfDesc')) document.getElementById('dfDesc').value = `${c.subject} за ${periodName(val('dfPeriod'))}`;
+            }
+        }
+        if (t.id === 'dfPosting' && t.value !== '92') {
+            const assetInput = document.getElementById('dfAsset');
+            const ownedBox = document.getElementById('dfOwned');
+            if (ownedBox) ownedBox.checked = true;
+            if (assetInput && (!assetInput.value || /^(ОЗ|МНМА|ТМЦ|МШП)-\d+$/.test(assetInput.value))) {
+                const existing = (ctx.expenses || []).map(x => x.assetId).filter(Boolean);
+                assetInput.value = suggestAssetId(t.value, existing);
             }
         }
         if (t.id === 'sfKind') document.getElementById('sfFopRow').hidden = t.value !== 'fop';
