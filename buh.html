@@ -27,11 +27,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=171">
-    <link rel="stylesheet" href="style-sv.css?v=171">
-    <link rel="stylesheet" href="style-buh.css?v=171">
+    <link rel="stylesheet" href="style.css?v=172">
+    <link rel="stylesheet" href="style-sv.css?v=172">
+    <link rel="stylesheet" href="style-buh.css?v=172">
 
-    <link rel="modulepreload" href="js/buh-main.js?v=171">
+    <link rel="modulepreload" href="js/buh-main.js?v=172">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -89,7 +89,7 @@
                     <button class="buh-nav-item" data-view="reports" type="button"><span>Звіти</span><span class="buh-badge is-soft" id="buhReportBadge" hidden></span></button>
                 </nav>
                 <div class="buh-top-tools">
-                    <button id="buhSyncChip" class="buh-chip" type="button" title="Оновити виписку з банку">Банк</button>
+                    <button id="buhSyncChip" class="buh-chip" type="button" title="Оновити виписку з банку">Виписка</button>
                     <button id="buhAccountBtn" class="buh-avatar buh-avatar-btn" type="button" aria-label="Профіль, інші розділи й налаштування">Б</button>
                 </div>
             </div>
@@ -146,7 +146,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/buh-main.js?v=171').catch(error => {
+    import('./js/buh-main.js?v=172').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження бухгалтерії:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
