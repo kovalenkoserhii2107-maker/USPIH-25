@@ -254,7 +254,7 @@ function detailCardHtml(r, empty) {
     ];
 
     const actions = [];
-    const btn = (act, label, soft = false, extra = ) =>
+    const btn = (act, label, soft = false, extra = '') =>
         `<button type="button" class="sv-btn${soft || actions.length ? ' is-soft' : ''}" data-act="${act}" data-id="${escapeHtml(r.id)}"${extra}>${label}</button>`;
 
     if (r.status === 'pending' && isChair()) {
