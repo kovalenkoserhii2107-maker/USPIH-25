@@ -19,6 +19,7 @@
 //   Після першого закритого місяця не змінюється.
 // ============================================================
 const crypto = require('crypto');
+const { randomUUID } = crypto;
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const callGuard = require('./call-guard');
 const core = require('./journal-core');
@@ -829,7 +830,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             advanceKop: Number(data.advanceKop || 0),
             advanceTxIds: Array.isArray(data.advanceTxIds) ? data.advanceTxIds : [],
             lines: (Array.isArray(data.lines) ? data.lines : []).map(l => ({
-                id: text(l.id || randomUUID().slice(0, 8), 40),
+                id: text(l.id || (typeof randomUUID === 'function' ? randomUUID().slice(0, 8) : crypto.randomBytes(4).toString('hex')), 40),
                 docType: String(l.docType || 'fiscal_receipt'),
                 number: text(l.number, 60),
                 date: String(l.date || date),
@@ -863,9 +864,9 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             report.approvedAt = FieldValue.serverTimestamp();
         }
 
-        const docId = report.id || safeId(report.number || advanceCore.suggestReportNumber(p, []));
+        if (!report.number) report.number = advanceCore.suggestReportNumber(p, []);
+        const docId = report.id || safeId(report.number);
         report.id = docId;
-        if (!report.number) report.number = docId;
         const ref = db.doc(`advance_reports/${safeId(docId)}`);
 
         await db.runTransaction(async t => {
