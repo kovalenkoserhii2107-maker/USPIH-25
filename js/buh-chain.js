@@ -121,10 +121,16 @@ async function paymentBody(id) {
         ${stepsHtml(paymentSteps(p))}
         <h3 class="chs-h">Реквізити</h3>
         ${fields([['Отримувач', p.recipient?.name], ['IBAN', p.recipient?.iban], ['ЄДРПОУ / РНОКПП', p.recipient?.code], ['Призначення', p.purpose],
-            ['З рахунку ОСББ', maskIban(p.account || '')], ['Номер у банку', p.bankRef || p.docNumber || ''], ['Повернено банком', p.returnedKop ? grn(p.returnedKop) : '']])}
+            ['З рахунку ОСББ', maskIban(p.account || '')], ['Номер у банку', p.bankRef || p.docNumber || ''],
+            ['Статус у Приват24', p.bankStatus || ''],
+            ['Підписи КЕП', Array.isArray(p.signers) && p.signers.length ? p.signers.map(s => `${s.level ? `${s.level}-й підпис: ` : ''}${s.fio || 'підписант'} (${s.state || 'підписано'})`).join('; ') : ''],
+            ['Повернено банком', p.returnedKop ? grn(p.returnedKop) : '']])}
         <h3 class="chs-h">Повʼязано</h3>
         ${links.length ? `<div class="chs-links">${links.join('')}</div>` : '<p class="py-note">Платіж створено вручну — без документа витрат. Щоб звʼязати оплату з документом, створюйте платіж із картки документа.</p>'}
-        ${p.status === 'sent' ? `<div class="chs-actions"><button type="button" class="sv-btn is-soft" data-ch="cancel" data-id="${escapeHtml(p.id)}">Скасувати платіж</button></div>` : ''}`];
+        ${['sent', 'unknown'].includes(p.status) ? `<div class="chs-actions">
+            ${p.paymentRef || p.bankRef ? `<button type="button" class="sv-btn is-soft" data-ch="check-sign" data-id="${escapeHtml(p.id)}">Перевірити підпис у Приват24</button>` : ''}
+            ${p.status === 'sent' ? `<button type="button" class="sv-btn is-soft" data-ch="cancel" data-id="${escapeHtml(p.id)}">Скасувати платіж</button>` : ''}
+        </div>` : ''}`];
 }
 
 async function txBody(id) {
@@ -153,7 +159,10 @@ async function txBody(id) {
             <div class="chs-links">${candidates.map(p => linkRow(`data-ch="match-payment" data-id="${escapeHtml(p.id)}" data-tx="${escapeHtml(tx.id)}"`, 'Привʼязати платіж',
                 p.recipient?.name || 'Платіж', [p.purpose, p.bankRef ? `№ ${p.bankRef}` : ''].filter(Boolean).join(' · '), `<b>${grn(p.amountKop)}</b>`)).join('')}</div>` : ''}
         ${links.length ? `<div class="chs-links">${links.join('')}</div>` : `<p class="py-note">${tx.status === 'review' ? 'Операцію ще не розібрано — зробіть це в «Рішеннях».' : 'Операцію рознесено без документа чи платежу.'}</p>`}
-        ${tx.status === 'review' ? '<div class="chs-actions"><button type="button" class="sv-btn" data-ch="inbox">Розібрати в «Рішеннях»</button></div>' : ''}`];
+        <div class="chs-actions">
+            ${tx.status === 'review' ? '<button type="button" class="sv-btn" data-ch="inbox">Розібрати в «Рішеннях»</button>' : ''}
+            ${tx.account && (tx.statementRef || tx.bankId) ? `<button type="button" class="sv-btn is-soft" data-ch="receipt-pdf" data-id="${escapeHtml(tx.id)}">Квитанція PDF з банку</button>` : ''}
+        </div>`];
 }
 
 async function contractBody(id) {
@@ -197,6 +206,31 @@ async function onClick(e) {
         t.disabled = true;
         try { await act({ action: 'matchPayment', txId: t.dataset.tx, paymentId: t.dataset.id }); toast('Платіж проведено за випискою', 'success'); render(); }
         catch (err) { toast(err.message, 'error'); t.disabled = false; }
+        return;
+    }
+    if (a === 'check-sign') {
+        t.disabled = true;
+        try {
+            const r = await payAct({ action: 'checkSignStatus', id: t.dataset.id });
+            toast(`Статус у Приват24: ${r?.bankStatus || 'перевірено'}`, 'success');
+            render();
+        } catch (err) { toast(err.message, 'error'); t.disabled = false; }
+        return;
+    }
+    if (a === 'receipt-pdf') {
+        t.disabled = true;
+        try {
+            const r = await act({ action: 'receiptPdf', txId: t.dataset.id });
+            const bytes = Uint8Array.from(atob(r.pdfBase64), c => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = r.fileName || `kvytantsia-${t.dataset.id}.pdf`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+            toast('PDF-квитанцію завантажено', 'success');
+        } catch (err) { toast(err.message, 'error'); }
+        finally { t.disabled = false; }
         return;
     }
     if (a === 'cancel') {

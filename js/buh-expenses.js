@@ -133,12 +133,18 @@ function supplierFormHtml(s = {}) {
     return `<section class="buh-card ex-form" id="exForm">
         <div class="buh-card-head"><h2>${s.id ? 'Змінити постачальника' : 'Новий постачальник'}</h2><button type="button" class="btn-ghost-small" data-act="close">Закрити</button></div>
         <div class="pay-grid">
-            <label class="field pay-wide"><span class="field-label">Назва</span><input id="sfName" class="field-input" maxlength="200" value="${escapeHtml(s.name || '')}" placeholder="ТОВ «Ліфт-Сервіс» або ФОП Іваненко І. І."></label>
+            <label class="field"><span class="field-label">ЄДРПОУ або РНОКПП</span>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <input id="sfCode" class="field-input" inputmode="numeric" maxlength="10" value="${escapeHtml(s.code || '')}" placeholder="8 або 10 цифр">
+                    <button type="button" class="btn-soft btn-compact" data-act="check-supplier" title="Заповнити назву, КВЕД і перевірити ризики через Приват24 ЄДР/УБКІ">Перевірити в ЄДР</button>
+                </div>
+            </label>
             <label class="field"><span class="field-label">Хто це</span><select id="sfKind" class="field-input field-select">${options(ctx.kinds, s.kind || 'company')}</select></label>
-            <label class="field"><span class="field-label">ЄДРПОУ або РНОКПП</span><input id="sfCode" class="field-input" inputmode="numeric" maxlength="10" value="${escapeHtml(s.code || '')}"></label>
+            <label class="field pay-wide"><span class="field-label">Назва</span><input id="sfName" class="field-input" maxlength="200" value="${escapeHtml(s.name || '')}" placeholder="ТОВ «Ліфт-Сервіс» або ФОП Іваненко І. І."></label>
+            <div id="sfEdrStatus" class="buh-note pay-wide" hidden></div>
             <label class="field pay-wide"><span class="field-label">IBAN для оплати</span><input id="sfIban" class="field-input" maxlength="34" value="${escapeHtml(s.iban || '')}" placeholder="UA…"></label>
             <label class="am-check pay-wide" id="sfFopRow"${(s.kind || 'company') === 'fop' ? '' : ' hidden'}><input type="checkbox" id="sfFop"${s.fopChecked ? ' checked' : ''}><span>Витяг з ЄДР і КВЕД перевірено: послуга відповідає видам діяльності ФОП</span></label>
-            <label class="field pay-wide"><span class="field-label">Примітка</span><input id="sfNote" class="field-input" maxlength="300" value="${escapeHtml(s.note || '')}"></label>
+            <label class="field pay-wide"><span class="field-label">Примітка (КВЕД, контакти)</span><input id="sfNote" class="field-input" maxlength="300" value="${escapeHtml(s.note || '')}"></label>
         </div>
         <div class="pay-form-actions"><button type="button" class="btn-primary" data-act="save-supplier">Зберегти</button></div>
     </section>`;
@@ -463,6 +469,42 @@ async function saveContract(btn) {
     finally { setBusy(btn, false); }
 }
 
+async function checkSupplierEdr(btn) {
+    const code = val('sfCode');
+    if (!/^\d{8,10}$/.test(code)) { toast('Введіть 8 цифр ЄДРПОУ або 10 цифр РНОКПП', 'error'); return; }
+    setBusy(btn, true, 'Перевіряю в ЄДР…');
+    try {
+        const d = await expAct({ action: 'checkSupplier', code });
+        const box = document.getElementById('sfEdrStatus');
+        if (!d.found) {
+            if (box) { box.hidden = false; box.textContent = d.needRetry ? 'Запит в ЄДР ще обробляється — натисніть «Перевірити в ЄДР» ще раз за кілька секунд.' : 'У ЄДР запис за цим кодом не знайдено.'; }
+            toast('У ЄДР ще немає відповіді або код не знайдено', 'info');
+            return;
+        }
+        if (d.name && !val('sfName')) document.getElementById('sfName').value = d.name;
+        const kindEl = document.getElementById('sfKind');
+        if (kindEl) {
+            kindEl.value = code.length === 10 ? 'fop' : 'company';
+            const fopRow = document.getElementById('sfFopRow');
+            if (fopRow) fopRow.hidden = kindEl.value !== 'fop';
+        }
+        const kvedStr = (d.kveds || []).slice(0, 3).map(k => `${k.code} ${k.name}`).join('; ');
+        if (kvedStr && !val('sfNote')) {
+            document.getElementById('sfNote').value = `КВЕД: ${kvedStr}`.slice(0, 300);
+        }
+        if (code.length === 10 && d.isRegistered && (d.kveds || []).length && document.getElementById('sfFop')) {
+            document.getElementById('sfFop').checked = true;
+        }
+        if (box) {
+            box.hidden = false;
+            const risks = (d.riskFlags || []).length ? ` · Увага: ${d.riskFlags.join(', ')}` : ' · Ризиків ДПС/УБКІ не виявлено';
+            box.textContent = `ЄДР: ${d.name || d.edrpou} (${d.stateText || (d.isRegistered ? 'зареєстровано' : 'стан невідомий')})${kvedStr ? ` · КВЕД: ${kvedStr}` : ''}${risks}`;
+        }
+        toast(d.isSafe ? 'Дані з ЄДР підтягнуто, ризиків не виявлено' : 'Дані з ЄДР підтягнуто — зверніть увагу на попередження', d.isSafe ? 'success' : 'info');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setBusy(btn, false); }
+}
+
 async function saveSupplier(btn) {
     setBusy(btn, true, 'Зберігаю…');
     try {
@@ -540,6 +582,7 @@ export function initExpensesView() {
             else if (a === 'edit-supplier') openExpenses('suppliers', { kind: 'supplier', data: sup });
             else if (a === 'save-doc') await saveDoc(btn);
             else if (a === 'save-contract') await saveContract(btn);
+            else if (a === 'check-supplier') await checkSupplierEdr(btn);
             else if (a === 'save-supplier') await saveSupplier(btn);
             else if (a === 'approve-doc') await decideExpense(doc, true);
             else if (a === 'reject-doc') await decideExpense(doc, false);

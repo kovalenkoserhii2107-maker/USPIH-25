@@ -30,7 +30,7 @@ const { normIban, fromKop, safeId } = require('./bank-core');
 const REGION = 'europe-central2';
 const FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
 
-module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget, lock }) {
+module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget, lock, bankApi = require('./privat') }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const settingsRef = db.doc('expense_settings/main');
 
@@ -66,6 +66,41 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     // --------------------------------------------------------
     // ПОСТАЧАЛЬНИКИ
     // --------------------------------------------------------
+    async function checkSupplier(actor, role, { code }) {
+        const clean = String(code || '').trim();
+        if (!/^\d{8,10}$/.test(clean)) fail('invalid-argument', 'Код ЄДРПОУ або РНОКПП має містити 8 або 10 цифр');
+        const secret = await db.doc('bank_secrets/privat').get();
+        const token = secret.exists ? secret.data()?.token : null;
+        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен Автоклієнта у «Налаштуваннях»');
+        let d;
+        try {
+            d = await bankApi.checkCounterparty(token, clean);
+        } catch (e) {
+            fail('unavailable', `Не вдалося перевірити контрагента в ЄДР/УБКІ: ${String(e.message || e).slice(0, 200)}`);
+        }
+        await audit(actor, role, 'expenses.supplier.check', `suppliers/${clean}`, `Перевірка ЄДР/УБКІ ${clean}: ${d.name || (d.found ? 'знайдено' : 'не знайдено')}`, { code: clean, found: d.found, isSafe: d.isSafe });
+        return {
+            found: Boolean(d.found),
+            needRetry: Boolean(d.needRetry),
+            edrpou: d.edrpou || clean,
+            name: d.name || '',
+            fullName: d.fullName || '',
+            address: d.address || '',
+            isRegistered: Boolean(d.isRegistered),
+            stateText: d.stateText || '',
+            kveds: Array.isArray(d.kveds) ? d.kveds : [],
+            taxDebtTotal: Number(d.taxDebtTotal || 0),
+            wageDebtTotal: Number(d.wageDebtTotal || 0),
+            openPenalties: Number(d.openPenalties || 0),
+            bankruptcyCount: Number(d.bankruptcyCount || 0),
+            singleTaxRisk: Boolean(d.singleTaxRisk),
+            isAggressor: Boolean(d.isAggressor),
+            hasSanctions: Boolean(d.hasSanctions),
+            isSafe: Boolean(d.isSafe),
+            riskFlags: Array.isArray(d.riskFlags) ? d.riskFlags : []
+        };
+    }
+
     async function saveSupplier(actor, role, data) {
         const s = {
             name: text(data.name, 200), kind: String(data.kind || ''), code: text(data.code, 10),
@@ -457,6 +492,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         const data = request.data || {};
         switch (data.action) {
             case 'context': return context();
+            case 'checkSupplier': return checkSupplier(actor, role, data);
             case 'saveSupplier': return saveSupplier(actor, role, data);
             case 'saveContract': return saveContract(actor, role, data);
             case 'decideContract': return decideContract(actor, role, data);
@@ -474,5 +510,5 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     }));
 
     return { expenseAction, linkUpdate, release, openForMatching,
-        actions: { saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, context } };
+        actions: { checkSupplier, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, context } };
 };
