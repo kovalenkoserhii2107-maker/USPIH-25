@@ -91,13 +91,13 @@ export async function loadToday() {
             <section class="sv-card td-tasks" aria-label="Що зробити">
                 <div class="sv-card-head"><h2>Що зробити</h2><span>${items.length ? `${items.length} ${items.length === 1 ? 'рішення' : 'рішень'}` : ''}</span></div>
                 ${list.length ? `<ul class="td-list">${list.map(t => `<li>
-                    <button type="button" class="td-task" data-go="inbox">
+                    <button type="button" class="td-task" data-go="inbox" data-inbox-group="${escapeHtml(t.key)}">
                         <span class="td-count${t.key === 'bank' || t.key === 'docs' ? ' is-hot' : ''}">${t.count}</span>
                         <span class="td-copy"><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.note)}</small></span>
                         <span class="td-sum">${t.sumKop ? escapeHtml(money(t.sumKop)) : ''}</span>
                         <span class="td-chev" aria-hidden="true">›</span>
                     </button></li>`).join('')}</ul>
-                <button type="button" class="sv-btn is-wide" data-go="inbox">Почати з першого</button>`
+                <button type="button" class="sv-btn is-wide" data-go="inbox" data-inbox-group="all">Почати з першого</button>`
                 : '<div class="td-clear"><b>Усе вирішено</b><span>Нових рішень немає. Система підготує наступні, щойно прийде виписка чи документ.</span></div>'}
             </section>
             <div class="td-side">

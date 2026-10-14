@@ -12,7 +12,7 @@ import { ROLE_LABELS, hasRight } from './staff-core.js';
 import { loadProfile, loadResiliently, initAppShell, sessionExpired, rememberWorkMode } from './app-common.js';
 import { registerServiceWorker } from './install.js';
 import { onChange, act, loadSettings, when } from './buh-data.js';
-import { initInbox, loadInbox } from './buh-inbox.js';
+import { initInbox, loadInbox, setInboxFilter } from './buh-inbox.js';
 import { loadToday, todayTitle } from './buh-today.js';
 import { initMonthView, loadMonthView } from './buh-month.js';
 import { initFlatsView, loadFlatsView } from './buh-flats.js';
@@ -207,7 +207,7 @@ function init() {
         if (nav) {
             const name = nav.dataset.go || nav.dataset.view;
             if (name === 'more') { openSheet('buhMoreSheet'); return; }
-            if (VIEWS[ALIASES[name] || name]) { e.preventDefault(); closeAllSheets(); show(name); return; }
+            if (VIEWS[ALIASES[name] || name]) { e.preventDefault(); if (nav.dataset.inboxGroup) setInboxFilter(nav.dataset.inboxGroup); closeAllSheets(); show(name); return; }
         }
         const mode = e.target.closest('[data-mode]')?.dataset.mode;
         if (mode) rememberWorkMode(mode);

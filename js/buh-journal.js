@@ -12,6 +12,10 @@ import { loadJournal, journalAct, maskIban } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
 import { loadOpening, openingAction, openingInput } from './buh-opening.js';
 import { loadNotes } from './buh-accounting-notes.js';
+import { openFlat } from './buh-flats.js';
+import { openExpenses } from './buh-expenses.js';
+import { openPayroll } from './buh-payroll.js';
+import { openTxSheet } from './buh-chain.js';
 
 const MONTHS = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
 const monthTitle = p => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
@@ -50,15 +54,29 @@ function checksHtml() {
     return `<ul class="jr-checks">${ctx.checks.map(c => `<li class="is-${c.level}"><span aria-hidden="true">${icon[c.level]}</span>${escapeHtml(c.text)}</li>`).join('')}</ul>`;
 }
 
+function entryDrillAttr(e) {
+    if (e.src === 'bank' && e.ref) return `data-act="open-entry" data-src="bank" data-ref="${escapeHtml(e.ref)}"`;
+    if (e.src === 'expense' && e.ref) return `data-act="open-entry" data-src="expense" data-ref="${escapeHtml(e.ref)}"`;
+    if (e.src === 'payroll') return `data-act="open-entry" data-src="payroll" data-ref="${escapeHtml(ctx.period)}"`;
+    if (e.dr === '377' && e.dA) return `data-act="open-apt" data-apt="${escapeHtml(e.dA)}"`;
+    if (e.cr === '377' && e.cA) return `data-act="open-apt" data-apt="${escapeHtml(e.cA)}"`;
+    return '';
+}
+
 function entriesHtml(acc) {
     const list = ctx.entries.filter(e => e.dr === acc || e.cr === acc);
     const shown = allEntries.has(acc) ? list : list.slice(0, ENTRIES_SHOWN);
     return `<tr class="jr-entries"><td colspan="8">
-        <table class="buh-table is-compact jr-journal"><thead><tr><th>Дата</th><th>Дебет</th><th>Кредит</th><th class="t-sum">Сума</th><th>Зміст</th></tr></thead>
-        <tbody>${shown.map(e => `<tr><td class="t-date">${escapeHtml(human(e.date))}</td>
+        <table class="buh-table is-compact jr-journal"><thead><tr><th>Дата</th><th>Дебет</th><th>Кредит</th><th class="t-sum">Сума</th><th>Зміст і первинний документ</th></tr></thead>
+        <tbody>${shown.map(e => {
+            const attr = entryDrillAttr(e);
+            const memo = escapeHtml(e.memo || 'Відкрити документ');
+            return `<tr><td class="t-date">${escapeHtml(human(e.date))}</td>
             <td><b>${escapeHtml(e.dr)}</b> <small>${escapeHtml(label(e.dr, e.dA))}</small></td>
             <td><b>${escapeHtml(e.cr)}</b> <small>${escapeHtml(label(e.cr, e.cA))}</small></td>
-            <td class="t-sum">${fmtKop(e.kop)}</td><td class="t-muted">${escapeHtml(e.memo || '')}</td></tr>`).join('')}</tbody></table>
+            <td class="t-sum">${fmtKop(e.kop)}</td>
+            <td class="t-muted">${attr ? `<button type="button" class="btn-ghost-small" ${attr}>${memo} ›</button>` : memo}</td></tr>`;
+        }).join('')}</tbody></table>
         ${list.length > shown.length ? `<button type="button" class="btn-ghost-small" data-act="all-entries" data-acc="${escapeHtml(acc)}">Показати всі проводки (${list.length})</button>` : ''}
     </td></tr>`;
 }
@@ -70,7 +88,7 @@ function tbHtml() {
         const isOpen = open.has(r.acc);
         return `<tr class="jr-acc${isOpen ? ' is-open' : ''}"><td><button type="button" class="jr-toggle" data-act="toggle" data-acc="${escapeHtml(r.acc)}" aria-expanded="${isOpen}">${escapeHtml(r.acc)}</button></td>
             <td class="t-main">${escapeHtml(r.name)}</td>${sums(r)}</tr>
-            ${isOpen ? `${r.byA.length > 1 || (r.byA[0] && r.byA[0].a !== '') ? r.byA.map(x => `<tr class="jr-sub"><td></td><td>${escapeHtml(label(r.acc, x.a))}</td>${sums(x)}</tr>`).join('') : ''}${entriesHtml(r.acc)}` : ''}`;
+            ${isOpen ? `${r.byA.length > 1 || (r.byA[0] && r.byA[0].a !== '') ? r.byA.map(x => `<tr class="jr-sub"><td></td><td>${r.acc === '377' && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-apt" data-apt="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : escapeHtml(label(r.acc, x.a))}</td>${sums(x)}</tr>`).join('') : ''}${entriesHtml(r.acc)}` : ''}`;
     }).join('');
     const t = tb.totals;
     return `<section class="buh-card jr-card">
@@ -158,6 +176,13 @@ async function onAction(btn) {
             await loadJournalView();
             document.querySelector(`#viewJournal [data-act="toggle"][data-acc="${CSS.escape(acc)}"]`)?.focus();
         } else if (a === 'all-entries') { allEntries.add(btn.dataset.acc); await loadJournalView(); }
+        else if (a === 'open-apt') { location.hash = 'flats'; setTimeout(() => openFlat(btn.dataset.apt), 0); }
+        else if (a === 'open-entry') {
+            const { src, ref } = btn.dataset;
+            if (src === 'bank') openTxSheet(ref);
+            else if (src === 'expense') openExpenses('docs', null, ref);
+            else if (src === 'payroll') openPayroll(ref);
+        }
         else if (a === 'opening') { showOpening = !openingShown(); await loadJournalView(); }
         else if (a === 'csv-tb') csvTb();
         else if (a === 'csv-journal') csvJournal();

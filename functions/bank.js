@@ -695,6 +695,27 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         return { ok: true };
     }
 
+    async function receiptPdf(actor, role, { txId }) {
+        const cleanId = core.safeId(txId);
+        if (!cleanId) fail('invalid-argument', 'Невідома операція');
+        const [snap, secret] = await Promise.all([db.doc(`bank_tx/${cleanId}`).get(), secretRef.get()]);
+        if (!snap.exists) fail('not-found', 'Операцію не знайдено');
+        const token = secret.exists ? secret.data()?.token : null;
+        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
+        const tx = snap.data();
+        const reference = String(tx.statementRef || (tx.bankId ? String(tx.bankId).split('_')[0] : '')).trim();
+        const refn = String(tx.statementRefn || (tx.bankId && String(tx.bankId).includes('_') ? String(tx.bankId).split('_')[1] : '1')).trim();
+        if (!tx.account || !reference) fail('failed-precondition', 'Для цієї операції немає банківського референсу платіжної інструкції');
+        let buf;
+        try {
+            buf = await bankApi.printReceiptsPdf(token, [{ account: tx.account, reference, refn }], { perPage: 1 });
+        } catch (e) {
+            fail('unavailable', `Не вдалося отримати PDF-квитанцію з ПриватБанку: ${String(e.message || e).slice(0, 200)}`);
+        }
+        await audit(actor, role, 'bank.receiptPdf', `bank_tx/${cleanId}`, `Завантажено PDF-квитанцію ${core.fromKop(tx.amountKop)} грн (${reference})`);
+        return { pdfBase64: Buffer.from(buf).toString('base64'), fileName: `kvytantsia-${cleanId}.pdf` };
+    }
+
     async function setAccount(actor, role, { iban, purpose }) {
         const key = core.normIban(iban);
         if (!PURPOSES.includes(purpose)) fail('invalid-argument', 'Невідоме призначення рахунку');
@@ -728,6 +749,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             case 'refundResident': return refundResident(actor, role, data);
             case 'saveToken': return saveToken(actor, role, data);
             case 'removeToken': return removeToken(actor, role);
+            case 'receiptPdf': return receiptPdf(actor, role, data);
             case 'setAccount': return setAccount(actor, role, data);
             case 'sync':
                 try { return await sync(`manual:${actor}`); }
@@ -744,5 +766,5 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     );
 
     // Для інтеграційних тестів на емуляторі (tests/rules/bank-server.test.mjs).
-    return { bankAction, syncBank, storeTransactions, loadContext, actions: { assign, classifyTx, matchPayment, unassign, refund, refundResident } };
+    return { bankAction, syncBank, storeTransactions, loadContext, actions: { assign, classifyTx, matchPayment, unassign, refund, refundResident, receiptPdf } };
 };

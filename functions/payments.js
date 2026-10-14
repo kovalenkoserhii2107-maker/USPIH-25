@@ -338,6 +338,35 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
      * Нагадати голові про платежі на підписі: одне push-сповіщення з
      * переліком, не частіше ніж раз на годину (позначка — bank/payReminder).
      */
+    async function checkSignStatus(actor, role, { id }) {
+        const cleanId = String(id || '').replace(/[^\w-]/g, '');
+        const ref = db.doc(`payments/${cleanId}`);
+        const [snap, { token }] = await Promise.all([ref.get(), context()]);
+        if (!snap.exists) fail('not-found', 'Платіж не знайдено');
+        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
+        const p = snap.data();
+        const paymentRef = p.paymentRef || p.bankRef;
+        if (!paymentRef) fail('failed-precondition', 'Платіж ще не має номера в Приват24');
+        let info;
+        try {
+            info = await bankApi.getPayment(token, paymentRef);
+        } catch (e) {
+            fail('unavailable', `Не вдалося перевірити стан підпису в Приват24: ${String(e.message || e).slice(0, 200)}`);
+        }
+        const pd = info?.payment_data || info || {};
+        const bankStatus = String(pd.payment_status || pd.status || p.bankStatus || '').trim() || null;
+        const rawSigners = Array.isArray(pd.signers) ? pd.signers : Array.isArray(info?.signers) ? info.signers : [];
+        const signers = rawSigners.slice(0, 10).map(s => ({
+            level: String(s.level ?? s.sign_level ?? ''),
+            fio: String(s.fio || s.name || '').slice(0, 120),
+            state: String(s.state || s.status || '').slice(0, 60),
+            at: String(s.date || s.at || '').slice(0, 40)
+        }));
+        await ref.update({ bankStatus, signers, signCheckedAt: FieldValue.serverTimestamp() });
+        await audit(actor, role, 'payment.checkSign', `payments/${cleanId}`, `Перевірено стан у Приват24: ${bankStatus || 'без змін'}`, { bankStatus, signersCount: signers.length });
+        return { bankStatus, signers };
+    }
+
     async function remind(actor, role) {
         const snap = await db.collection('payments').where('status', '==', 'sent').get();
         const waiting = snap.docs.map(d => d.data());
@@ -368,10 +397,11 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         if (data.action === 'create') return create(actor, role, data);
         if (data.action === 'cancel') return cancel(actor, role, data);
         if (data.action === 'resolve') return resolve(actor, role, data);
+        if (data.action === 'checkSignStatus') return checkSignStatus(actor, role, data);
         if (data.action === 'remind') return remind(actor, role);
         if (data.action === 'context') return contextFor();
         fail('invalid-argument', 'Невідома дія');
     }));
 
-    return { paymentAction, actions: { create, cancel, resolve, remind } };
+    return { paymentAction, actions: { create, cancel, resolve, remind, checkSignStatus } };
 };

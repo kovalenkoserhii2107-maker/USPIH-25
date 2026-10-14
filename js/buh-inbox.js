@@ -32,6 +32,54 @@ let items = [];
 let focus = 0;
 let editing = null;
 let busy = new Set();
+let activeFilter = 'all';
+let searchQuery = '';
+const selectedIds = new Set();
+
+const INBOX_FILTERS = {
+    all: 'Усі',
+    bank: 'Банк і оплати',
+    docs: 'Документи',
+    pay: 'Регулярні платежі',
+    accounting: 'Зарплата, звіти й облік'
+};
+
+function itemFilterGroup(item) {
+    const p = item.proposal;
+    if (['link', 'assign', 'split', 'choose', 'income', 'expense', 'bank-conflict', 'payment-link'].includes(p.type)) return 'bank';
+    if (['approve-con', 'approve-exp', 'pay-exp', 'missing-doc'].includes(p.type)) return 'docs';
+    if (p.type === 'pay') return 'pay';
+    return 'accounting';
+}
+
+export function setInboxFilter(group) {
+    activeFilter = INBOX_FILTERS[group] ? group : 'all';
+    focus = 0;
+}
+
+function visibleItems() {
+    const q = searchQuery.trim().toLowerCase();
+    return items.map((item, idx) => ({ item, idx })).filter(({ item }) => {
+        if (activeFilter !== 'all' && itemFilterGroup(item) !== activeFilter) return false;
+        if (!q) return true;
+        const p = item.proposal || {};
+        const hay = [
+            item.tx?.counterparty?.name,
+            item.tx?.purpose,
+            p.apt,
+            ...(p.apts || []),
+            p.title,
+            p.text,
+            p.expense?.supplierName,
+            p.expense?.description,
+            p.contract?.supplierName,
+            p.contract?.subject,
+            p.payment?.recipient?.name,
+            p.payment?.purpose
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+    });
+}
 
 /** Пропозиція системи для операції з черги. */
 export function proposalFor(tx) {
@@ -256,8 +304,11 @@ function cardHtml(item, index, dir) {
     const p = item.proposal;
     const open = editing === tx.id || !['assign', 'link'].includes(p.type);
     const quick = p.type === 'assign' || (p.type === 'link' && p.ids.length === 1);
+    const selectable = p.type === 'assign' && p.apt;
+    const checked = selectable && (selectedIds.has(tx.id) || (selectedIds.size === 0 && p.level === 'high'));
     return `<article class="inbox-card${index === focus ? ' is-focus' : ''}${busy.has(tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(tx.id)}" data-index="${index}" tabindex="-1">
         <div class="inbox-main">
+            ${selectable ? `<label class="am-check inbox-select-row" style="margin-bottom:4px"><input type="checkbox" class="inbox-check" data-check-id="${escapeHtml(tx.id)}"${checked ? ' checked' : ''}><span>Вибрати для пакетного рознесення (кв. ${escapeHtml(p.apt)})</span></label>` : ''}
             <span class="inbox-sum-big ${tx.direction === 'out' ? 'is-out' : 'is-in'}">${signed(tx)} ₴</span>
             <span class="inbox-meta">${escapeHtml(when(tx.at))}</span>
             <p class="inbox-payer">${escapeHtml(tx.counterparty?.name || 'Платник не вказаний')}</p>
@@ -284,6 +335,12 @@ function updateBadges() {
 }
 
 let dirCache = [];
+function bulkCandidates() {
+    const vis = visibleItems().map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
+    if (selectedIds.size > 0) return vis.filter(i => selectedIds.has(i.tx.id));
+    return vis.filter(i => i.proposal.level === 'high');
+}
+
 function render() {
     const host = document.getElementById('viewInbox');
     updateBadges();
@@ -292,14 +349,29 @@ function render() {
             <p>Оплати з номером квартири чи особовим рахунком і від знайомих платників система розносить сама. Тут зʼявляється лише те, що потребує вашого рішення.</p></div>`;
         return;
     }
-    focus = Math.min(focus, items.length - 1);
-    const sure = items.filter(i => i.proposal.type === 'assign' && i.proposal.level === 'high');
-    host.innerHTML = `<div class="inbox-head">
-            <p><b>${items.length}</b> чекають рішення · пропозиція є для <b>${items.filter(i => !['choose', 'split', 'income', 'expense', 'setup'].includes(i.proposal.type)).length}</b></p>
-            ${sure.length > 1 ? `<button type="button" class="btn-soft btn-compact" data-act="bulk">Підтвердити всі з високою впевненістю (${sure.length})</button>` : ''}
+    const counts = { all: items.length, bank: 0, docs: 0, pay: 0, accounting: 0 };
+    items.forEach(it => { counts[itemFilterGroup(it)] = (counts[itemFilterGroup(it)] || 0) + 1; });
+    if (activeFilter !== 'all' && !counts[activeFilter]) activeFilter = 'all';
+
+    const vis = visibleItems();
+    focus = Math.min(focus, Math.max(0, items.length - 1));
+    const sure = bulkCandidates();
+    const sureSum = sure.reduce((s, i) => s + (i.tx.amountKop || 0), 0);
+    const allAssignable = vis.map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
+
+    host.innerHTML = `<div class="fl-filters dc-tabs" role="tablist" style="margin-bottom:10px">
+            ${Object.entries(INBOX_FILTERS).filter(([k]) => k === 'all' || counts[k] > 0).map(([k, label]) =>
+                `<button type="button" class="fl-filter${k === activeFilter ? ' active' : ''}" data-inbox-filter="${k}">${escapeHtml(label)} <span>${counts[k] || 0}</span></button>`).join('')}
+        </div>
+        <div class="inbox-head" style="flex-wrap:wrap;gap:10px">
+            <p><b>${vis.length}</b> ${activeFilter === 'all' && !searchQuery ? 'чекають рішення' : `показано з ${items.length}`} · пропозиція є для <b>${vis.filter(({ item: i }) => !['choose', 'split', 'income', 'expense', 'setup'].includes(i.proposal.type)).length}</b></p>
+            <input type="search" id="inboxSearch" class="field-input" style="max-width:260px;padding:6px 10px" placeholder="Пошук: кв., ПІБ, призначення…" value="${escapeHtml(searchQuery)}" aria-label="Пошук у рішеннях">
+            ${allAssignable.length > 1 ? `<button type="button" class="btn-ghost-small" data-act="select-all-assign">${selectedIds.size === allAssignable.length ? 'Зняти виділення' : `Виділити всі квартири (${allAssignable.length})`}</button>` : ''}
+            ${sure.length >= 1 ? `<button type="button" class="btn-primary btn-compact" data-act="bulk">Підтвердити ${selectedIds.size ? 'вибрані' : 'всі розпізнані'} (${sure.length} · ${fmtKop(sureSum)} грн)</button>` : ''}
             <span class="inbox-keys"><kbd>↑</kbd><kbd>↓</kbd> пункти · <kbd>Enter</kbd> так · <kbd>E</kbd> змінити</span>
         </div>
-        <div class="inbox-list">${items.map((item, i) => cardHtml(item, i, dirCache)).join('')}</div>`;
+        ${vis.length ? `<div class="inbox-list">${vis.map(({ item, idx }) => cardHtml(item, idx, dirCache)).join('')}</div>`
+            : '<p class="list-empty">За цим фільтром або запитом нічого не знайдено</p>'}`;
 }
 
 /**
@@ -609,22 +681,53 @@ function setFocus(index) {
 }
 
 async function bulk() {
-    const sure = items.filter(i => i.proposal.type === 'assign' && i.proposal.level === 'high');
-    if (!await confirmDialog(`Рознести ${sure.length} оплат?`, 'Кожну — у квартиру, власника якої система впізнала за повним імʼям. Будь-яку можна повернути з «Банку».', 'Так, рознести')) return;
+    const sure = bulkCandidates();
+    if (!sure.length) return;
+    const sumKop = sure.reduce((s, i) => s + (i.tx.amountKop || 0), 0);
+    if (!await confirmDialog(`Рознести ${sure.length} оплат на суму ${fmtKop(sumKop)} грн?`, 'Кожну оплату буде зараховано на відповідну квартиру із запамʼятовуванням платника. Будь-яку операцію можна повернути з «Банку».', 'Так, рознести')) return;
     let ok = 0;
     for (const item of sure) {
         try {
             await act({ action: 'assign', txId: item.tx.id, allocations: [{ apt: item.proposal.apt, amountKop: item.tx.amountKop }], remember: true });
+            selectedIds.delete(item.tx.id);
             ok += 1;
         } catch (e) { toast(`${item.tx.counterparty?.name || ''}: ${e.message}`, 'error'); }
     }
-    toast(`Рознесено: ${ok}`, 'success');
+    toast(`Рознесено оплат: ${ok}`, 'success');
     await loadInbox();
 }
 
 export function initInbox(isActive) {
     const host = document.getElementById('viewInbox');
+    host.addEventListener('input', e => {
+        if (e.target.id === 'inboxSearch') {
+            searchQuery = e.target.value;
+            const pos = e.target.selectionStart;
+            render();
+            const input = document.getElementById('inboxSearch');
+            input?.focus();
+            input?.setSelectionRange(pos, pos);
+        }
+    });
     host.addEventListener('click', e => {
+        const filterBtn = e.target.closest('[data-inbox-filter]');
+        if (filterBtn) { activeFilter = filterBtn.dataset.inboxFilter; focus = 0; render(); return; }
+        if (e.target.closest('[data-act="select-all-assign"]')) {
+            const allAssignable = visibleItems().map(x => x.item).filter(i => i.proposal.type === 'assign' && i.proposal.apt);
+            if (selectedIds.size === allAssignable.length) selectedIds.clear();
+            else allAssignable.forEach(i => selectedIds.add(i.tx.id));
+            render();
+            return;
+        }
+        if (e.target.closest('.inbox-select-row')) {
+            const cb = e.target.closest('.inbox-select-row').querySelector('.inbox-check');
+            if (cb && e.target === cb) {
+                if (cb.checked) selectedIds.add(cb.dataset.checkId);
+                else selectedIds.delete(cb.dataset.checkId);
+                render();
+            }
+            return;
+        }
         if (e.target.closest('[data-act="bulk"]')) { bulk(); return; }
         const card = e.target.closest('.inbox-card');
         if (!card) return;
