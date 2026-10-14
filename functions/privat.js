@@ -267,16 +267,19 @@ function paymentBody(p, today = new Date()) {
   const isTax = Boolean(p.structCode || p.struct_code || isTreasuryAccount(recipientIban, recipientMfo));
   const maxPurposeLen = isTax ? 140 : 420;
 
+  const recipientCard = p.recipient?.card ? String(p.recipient.card).replace(/\s+/g, '') : '';
   const body = {
     document_number: String(p.docNumber),
-    document_type: 'cr',
+    document_type: String(p.documentType || 'cr'),
     payer_account: normIban(p.account),
-    recipient_account: recipientIban,
-    recipient_nceo: String(p.recipient.code),
-    payment_naming: String(p.recipient.name).slice(0, 140),
+    ...(recipientCard && !recipientIban
+      ? { recipient_card: recipientCard }
+      : { recipient_account: recipientIban }),
+    recipient_nceo: String(p.recipient?.code ?? '0000000000'),
+    payment_naming: String(p.recipient?.name || '').slice(0, 140),
     payment_amount: (p.amountKop / 100).toFixed(2),
-    payment_destination: String(p.purpose).slice(0, maxPurposeLen),
-    payment_ccy: 'UAH',
+    payment_destination: String(p.purpose || '').slice(0, maxPurposeLen),
+    payment_ccy: String(p.currency || 'UAH'),
     payment_date: date,
     payment_accept_date: date
   };
@@ -302,14 +305,30 @@ function paymentBody(p, today = new Date()) {
   if (structCategory !== undefined && structCategory !== null && structCategory !== '') {
     body.struct_category = String(structCategory).slice(0, 140);
   }
-  if (structType !== undefined && structType !== null && structCategory !== '') {
-    body.struct_type = String(structType).slice(0, 10);
-  } else if (structType !== undefined && structType !== null && structType !== '') {
+  if (structType !== undefined && structType !== null && structType !== '') {
     body.struct_type = String(structType).slice(0, 10);
   }
 
-  if (p.signerMsg) body.signer_msg = String(p.signerMsg);
-  if (p.odbMsg) body.odb_msg = String(p.odbMsg);
+  const optionalMap = {
+    attach: p.attach,
+    signer_msg: p.signerMsg,
+    odb_msg: p.odbMsg,
+    copy_from_ref: p.copyFromRef,
+    payment_cb_ref: p.paymentCbRef,
+    payer_ultmt_nceo: p.payerUltmt?.code,
+    payer_ultmt_name: p.payerUltmt?.name,
+    payer_ultmt_document_series: p.payerUltmt?.documentSeries,
+    payer_ultmt_document_number: p.payerUltmt?.documentNumber,
+    payer_ultmt_document_id_number: p.payerUltmt?.documentIdNumber,
+    recipient_ultmt_nceo: p.recipientUltmt?.code,
+    recipient_ultmt_name: p.recipientUltmt?.name,
+    recipient_ultmt_document_series: p.recipientUltmt?.documentSeries,
+    recipient_ultmt_document_number: p.recipientUltmt?.documentNumber,
+    recipient_ultmt_document_id_number: p.recipientUltmt?.documentIdNumber
+  };
+  for (const [k, v] of Object.entries(optionalMap)) {
+    if (v !== undefined && v !== null && v !== '') body[k] = String(v);
+  }
 
   return body;
 }
@@ -370,7 +389,7 @@ async function printReceiptsPdf(token, transactions, { perPage = 4 } = {}) {
     token,
     RECEIPT_URL,
     { transactions: formatted, perPage: safePerPage },
-    { contentType: 'application/json', accept: 'application/octet-stream', rawResponse: true }
+    { contentType: 'application/json;charset=utf8', accept: 'application/octet-stream', rawResponse: true }
   );
 }
 
@@ -474,11 +493,11 @@ async function checkCounterparty(token, edrpou, { edrpouSel, retryOnPending = tr
   const payload = { edrpou: code };
   if (edrpouSel) payload.edrpou_sel = String(edrpouSel).trim();
 
-  let resp = await post(token, UBKI_URL, payload, { contentType: 'application/json', accept: 'application/json' });
+  let resp = await post(token, UBKI_URL, payload, { contentType: 'application/json;charset=utf8', accept: 'application/json' });
   let summary = summarizeCounterpartyDossier(resp);
   if (summary.needRetry && retryOnPending) {
     await new Promise(r => setTimeout(r, 1500));
-    resp = await post(token, UBKI_URL, payload, { contentType: 'application/json', accept: 'application/json' });
+    resp = await post(token, UBKI_URL, payload, { contentType: 'application/json;charset=utf8', accept: 'application/json' });
     summary = summarizeCounterpartyDossier(resp);
   }
   return summary;
