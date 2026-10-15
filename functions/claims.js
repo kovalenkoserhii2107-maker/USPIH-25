@@ -11,6 +11,11 @@ const REGION = 'europe-central2';
 module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffRole }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const text = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+    const parseArea = v => {
+        if (typeof v === 'number') return v;
+        const n = parseFloat(String(v || '').replace(',', '.'));
+        return Number.isFinite(n) ? n : 0;
+    };
 
     async function audit(actor, role, action, target, summary, details = {}) {
         await db.collection('audit_log').add({
@@ -45,7 +50,7 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
                     apt: d.id,
                     ownerName: data.owner || (data.owners && data.owners[0]?.name) || '',
                     ownerCode: (data.owners && data.owners[0]?.rnokpp) || '',
-                    area: data.area || (data.areaCenti ? data.areaCenti / 100 : 0),
+                    area: parseArea(data.area != null && data.area !== '' ? data.area : (data.areaCenti ? data.areaCenti / 100 : 0)),
                     balance,
                     debtKop,
                     claim: {
