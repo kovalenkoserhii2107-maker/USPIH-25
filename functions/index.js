@@ -411,6 +411,10 @@ const lock = require('./period-lock')(db);
 const charges = require('./charges')({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock });
 exports.chargesAction = charges.chargesAction;
 
+// Претензійно-позовна робота з боржниками (див. claims.js)
+const claims = require('./claims')({ db, FieldValue, requireAdmin, staffRole });
+exports.claimsAction = claims.claimsAction;
+
 // Вихідні платежі через API: бухгалтер підтверджує, голова підписує в Приват24.
 const payments = require('./payments')({ db, FieldValue, requireAdmin, staffRole, notify, lock });
 exports.paymentAction = payments.paymentAction;
