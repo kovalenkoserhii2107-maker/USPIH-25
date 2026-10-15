@@ -66,7 +66,7 @@ module.exports=function annualReports({db,FieldValue,journal}) {
         const settings=snap.data()||{},sourceHash=reportHash(report),calculation=formsCore.build(report,settings);
         const reviewed=settings.sourceHash===sourceHash;
         if(!reviewed){calculation.checks.push({level:'block',text:'Погодьте розшифровку для поточного журналу. Після зміни джерел потрібна повторна перевірка'});calculation.reviewReady=false;}
-        return {year:String(year),sourceHash,reviewed,settings,calculation,versions:versions.docs.filter(d=>['annual-working-data','annual-calculation-forms'].includes(d.data().type)).map(d=>({id:d.id,version:d.data().version,basis:d.data().basis||''})).sort((a,b)=>b.version-a.version)};
+        return {year:String(year),report,sourceHash,reviewed,settings,calculation,versions:versions.docs.filter(d=>['annual-working-data','annual-calculation-forms','annual-dps-xml'].includes(d.data().type)).map(d=>({id:d.id,version:d.data().version,type:d.data().type,basis:d.data().basis||''})).sort((a,b)=>b.version-a.version)};
     }
     async function saveForms(actor,role,payload) {
         const {year,sourceHash}=payload;

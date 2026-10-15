@@ -23,6 +23,7 @@ const core = require('./reports-core');
 const { START_PERIOD } = require('./journal-core');
 const { validDate } = require('./expenses-core');
 const dps = require('./dps-xml');
+const annualDps = require('./annual-dps-xml');
 const STI = require('./dps/sti.json');
 const { fopReport } = require('./fop-report-core');
 const { kyivDate } = require('./journal-core');
@@ -233,6 +234,104 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
         return { ...packageInfo(snap), files: (r.files || []).map(f => ({ name: f.name, ...(f.path?{path:f.path,generation:f.generation,sha256:f.sha256}:{data:f.data}) })) };
     }
 
+    /** Пакет XML річної звітності (J0101912 + J0901206) для ДПС; файли — base64 у windows-1251. */
+    async function annualXml(actor, role, { year, stan, num }) {
+        if (!/^20\d{2}$/.test(String(year || ''))) fail('invalid-argument', 'Невідомий рік');
+        const [{ calculation, reviewed, report }, cfg] = await Promise.all([
+            annualReports.forms({ year }),
+            xmlSettings()
+        ]);
+        if (!reviewed || !calculation.reviewReady) {
+            fail('failed-precondition', 'Спочатку перевірте й погодьте розшифровку річних форм');
+        }
+        const s = cfg.settings;
+        const office = STI.find(x => x.sti === Number(s.sti));
+        const org = { ...cfg.org, ...s, sti: office ? { reg: office.reg, raj: office.raj, code: office.sti, name: office.name } : null };
+        const kind = stan === undefined ? 1 : Number(stan);
+        const number = num === undefined ? 1 : Number(num);
+        const out = annualDps.buildAnnualPackage({
+            year: String(year),
+            org,
+            report,
+            calculation,
+            fillDate: today(),
+            num: number,
+            stan: kind
+        });
+        if (out.problems.length) return { files: [], problems: out.problems };
+
+        const key = `npo-${year}`;
+        const fsKey = `fs-stat-${year}`;
+        const files = out.files.map(f => {
+            const bytes = annualDps.encode1251(f.xml);
+            return {
+                name: f.name,
+                doc: f.doc,
+                title: f.title,
+                size: bytes.length,
+                sha256: createHash('sha256').update(bytes).digest('hex'),
+                data: bytes.toString('base64')
+            };
+        });
+        const hash = createHash('sha256').update(files.map(f => `${f.name}:${f.sha256}`).join('\n')).digest('hex');
+
+        const [oldNpo, oldFs] = await Promise.all([
+            db.collection('report_packages').where('key', '==', key).get(),
+            db.collection('report_packages').where('key', '==', fsKey).get()
+        ]);
+        const version = Math.max(0, ...oldNpo.docs.map(d => Number(d.data().version) || 0), ...oldFs.docs.map(d => Number(d.data().version) || 0)) + 1;
+
+        const refNpo = db.doc(`report_packages/${key}--${version}`);
+        const refFs = db.doc(`report_packages/${fsKey}--${version}`);
+
+        const batch = db.batch();
+        batch.set(refNpo, {
+            key,
+            year: String(year),
+            version,
+            stan: kind,
+            num: number,
+            type: 'annual-dps-xml',
+            filingReady: true,
+            complete: true,
+            hash,
+            totals: out.totals,
+            files,
+            by: actor,
+            at: FieldValue.serverTimestamp()
+        });
+        batch.set(refFs, {
+            key: fsKey,
+            year: String(year),
+            version,
+            stan: kind,
+            num: number,
+            type: 'annual-dps-xml',
+            filingReady: true,
+            complete: true,
+            linkedTo: refNpo.id,
+            hash,
+            totals: out.totals,
+            files,
+            by: actor,
+            at: FieldValue.serverTimestamp()
+        });
+        await batch.commit();
+
+        await audit(actor, role, 'annual.xml', `reports/${key}`,
+            `XML річної звітності за ${year} (J0101912 + J0901206): версія ${version}, ${files.length} файли.`,
+            { year, version, hash, stan: kind, num: number });
+
+        return {
+            problems: [],
+            totals: out.totals,
+            packageId: refNpo.id,
+            version,
+            hash,
+            files: files.map(f => ({ name: f.name, doc: f.doc, title: f.title, data: f.data }))
+        };
+    }
+
     // Imported, externally reviewed filings are separate from our worksheets.
     // Persist content hashes and GCS generations; Storage rules forbid overwrite.
     async function externalAnnualPackage(actor,role,{key,files,basis,submissionKind='initial',previousPackageId=''}) {
@@ -365,11 +464,12 @@ module.exports = function reportFunctions({ db, FieldValue, requireAdmin, staffR
             case 'annualPackage': return annualReports.packageData(data);
             case 'annualComparative': return annualReports.saveComparative(actor,role,data);
             case 'annualForms': return annualReports.forms(data);
+            case 'annualXml': return annualXml(actor, role, data);
             case 'saveAnnualForms': return annualReports.saveForms(actor,role,data);
             case 'externalAnnualPackage': return externalAnnualPackage(actor,role,data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { reportsAction, annualReports, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml, packageFiles, externalAnnualPackage } };
+    return { reportsAction, annualReports, actions: { context, payrollData, mark, xmlSettings, saveXmlSettings, xml, packageFiles, externalAnnualPackage, annualXml } };
 };

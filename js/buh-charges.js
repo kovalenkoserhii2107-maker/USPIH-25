@@ -144,6 +144,7 @@ async function statementHtml() {
                 <span class="ch-tools">
                     <button type="button" class="btn-ghost-small" data-act="csv">CSV для Excel</button>
                     <button type="button" class="btn-soft btn-compact" data-act="receipts">Квитанції</button>
+                    <a class="btn-ghost-small" href="#claims">Претензії та суди →</a>
                 </span>
             </div>
             ${!st.opening ? '<p class="buh-note ch-warn">Вхідні залишки ще не внесено — колонка «на початок» неповна.</p>' : ''}

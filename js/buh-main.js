@@ -26,6 +26,7 @@ import { initPayrollView, loadPayrollView } from './buh-payroll.js';
 import { initReportsView, loadReportsView } from './buh-reports.js';
 import { initAssetsView, loadAssetsView } from './buh-assets.js';
 import { initAdvanceView, loadAdvanceView } from './buh-advance.js';
+import { loadClaimsView } from './buh-claims.js';
 
 const VIEWS = {
     today: { title: () => todayTitle().title, sub: () => todayTitle().sub, load: loadToday },
@@ -41,6 +42,7 @@ const VIEWS = {
     budget: { title: 'Кошторис', sub: 'План на рік, виконання й звіт для мешканців', load: loadBudgetView },
     assets: { title: 'Майно та ТМЦ', sub: 'Основні засоби (10), МНМА (11), запаси (20), МШП (22) та амортизація за НП(С)БО 7 і 9', load: loadAssetsView },
     advance: { title: 'Авансові звіти', sub: 'Розрахунки з підзвітними особами (рах. 372): чеки, компенсація в Приват24', load: loadAdvanceView },
+    claims: { title: 'Претензійна робота', sub: 'Боржники, досудові вимоги, судові накази (ст. 161 ЦПК), позови та реструктуризація', load: loadClaimsView },
     journal: { title: 'Проводки', sub: 'Оборотно-сальдова відомість і закриття місяця', load: loadJournalView },
     settings: { title: 'Налаштування', sub: 'Підключення банку й правила погодження', load: loadSettingsView }
 };
@@ -149,6 +151,7 @@ function renderAccount(apartment) {
             ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки', '', true)}
             ${row('data-view="assets"', 'assets', 'Майно та ТМЦ', 'основні засоби (10), МНМА (11), запаси (20), МШП (22), амортизація')}
             ${row('data-view="advance"', 'expenses', 'Авансові звіти (372)', 'підзвітні особи, витрати за чеками, виплата на картку')}
+            ${row('data-view="claims"', 'charges', 'Претензійно-позовна робота', 'боржники, претензії, судові накази, позови, договори')}
             ${row('data-view="budget"', 'budget', 'Кошторис', 'план і виконання за рік, звіт для мешканців')}
             ${row('data-view="journal"', 'journal', 'Проводки й ОСВ', 'журнал, закриття місяця', '', true)}
         </nav>
