@@ -96,22 +96,22 @@ function bannersHtml() {
     const out = [];
     const plan = ctx.deprPlan;
     if (ctx.status === 'open' && plan?.items?.length > 0) {
-        out.push(`<div class="buh-card as-banner is-work">
-            <div class="as-banner-copy">
+        out.push(`<div class="buh-card as-banner is-work" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+            <div class="as-banner-copy" style="flex:1 1 280px;min-width:220px">
                 <b>Регламентна амортизація за ${escapeHtml(periodName(ctx.period))}: ${fmtKop(plan.totalKop)} грн (${plan.items.length} об.)</b>
                 <p class="buh-note">Проводка: <b>Дт 92 Кт 131/132</b> та одночасно <b>Дт 48 Кт 719</b> (визнання доходу цільового фінансування в сумі нарахованого зносу за п. 18 НП(С)БО 15): ${plan.items.map(i => `${escapeHtml(i.id)} «${escapeHtml(i.name)}» — ${fmtKop(i.kop)} грн`).join('; ')}.</p>
             </div>
-            <button type="button" class="btn-primary btn-compact" data-act="depreciate-month">Нарахувати амортизацію (${fmtKop(plan.totalKop)} грн)</button>
+            <button type="button" class="sv-btn" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-act="depreciate-month">Нарахувати амортизацію (${fmtKop(plan.totalKop)} грн)</button>
         </div>`);
     }
     const uncomm = ctx.items.filter(a => isNonCurrent(a.acc) && a.status === 'uncommissioned' && a.costKop > 0);
     if (uncomm.length > 0) {
-        out.push(`<div class="buh-card as-banner is-ask">
-            <div class="as-banner-copy">
+        out.push(`<div class="buh-card as-banner is-ask" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+            <div class="as-banner-copy" style="flex:1 1 280px;min-width:220px">
                 <b>Очікують введення в експлуатацію (Акт ОЗ-1): ${uncomm.length} об.</b>
                 <p class="buh-note">Майно вже оприбутковане на баланс за документом постачальника, але ще не введене в експлуатацію: ${uncomm.map(a => `<b>${escapeHtml(a.id)}</b> «${escapeHtml(a.name)}» (${fmtKop(a.costKop)} грн)`).join(', ')}.</p>
             </div>
-            <button type="button" class="sv-btn" data-act="open-commission" data-id="${escapeHtml(uncomm[0].id)}">Ввести в експлуатацію ›</button>
+            <button type="button" class="sv-btn" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-act="open-commission" data-id="${escapeHtml(uncomm[0].id)}">Ввести в експлуатацію ›</button>
         </div>`);
     }
     return out.join('');
@@ -408,7 +408,7 @@ function detailCardHtml(a, empty) {
 
 async function openPrintWindow(title, bodyHtml) {
     const req = await loadRequisites().catch(() => ({}));
-    const orgName = req?.recipientName || 'ОСББ «Успіх-25»';
+    const orgName = req?.payeeName || req?.recipientName || 'ОСББ «Успіх-25»';
     const edrpou = req?.edrpou || '—';
     const win = window.open('', '_blank', 'width=920,height=780');
     if (!win) { toast('Дозвольте спливаючі вікна для друку акта', 'error'); return; }
@@ -612,7 +612,7 @@ export async function loadAssetsView() {
                 `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
             <span class="buh-note">НП(С)БО 7 «Основні засоби», НП(С)БО 9 «Запаси», пп. 14.1.138 ПКУ (поріг МНМА — ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн).</span>
             <span class="ch-tools">
-                <button type="button" class="btn-primary btn-compact" data-act="new-card">+ Картка ОЗ / ТМЦ</button>
+                <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-card">+ Картка ОЗ / ТМЦ</button>
                 <button type="button" class="btn-ghost-small" data-act="print-inventory">Інвентаризаційний опис</button>
                 <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
                 <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ ›</button>

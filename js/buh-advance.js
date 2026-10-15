@@ -82,24 +82,28 @@ function bannersHtml() {
     const out = [];
     const pendingList = (ctx.reports || []).filter(r => r.status === 'pending');
     if (isChair() && pendingList.length > 0) {
-        out.push(`<div class="buh-card as-banner is-ask">
-            <div class="as-banner-copy">
+        out.push(`<div class="buh-card as-banner is-ask" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+            <div class="as-banner-copy" style="flex:1 1 280px;min-width:220px">
                 <b>Чекають затвердження голови: ${pendingList.length} авансових звітів</b>
                 <p class="buh-note">${pendingList.map(r => `№ ${escapeHtml(r.number || r.id)} (${escapeHtml(r.personName)} — ${fmtKop(r.totals.spentKop)} грн)`).join(', ')}.</p>
             </div>
-            <button type="button" class="sv-btn" data-act="pick" data-id="${escapeHtml(pendingList[0].id)}">Переглянути звіт ›</button>
+            <button type="button" class="sv-btn" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-act="pick" data-id="${escapeHtml(pendingList[0].id)}">Переглянути звіт ›</button>
         </div>`);
     }
 
     const toPay = (ctx.reports || []).filter(r => r.status === 'approved' && (r.totals.pendingReimburseKop || 0) > 0);
     if (toPay.length > 0) {
         const sum = toPay.reduce((s, r) => s + r.totals.pendingReimburseKop, 0);
-        out.push(`<div class="buh-card as-banner is-work">
-            <div class="as-banner-copy">
+        const firstUnpaid = toPay.find(r => !r.paymentId) || toPay[0];
+        const btnHtml = firstUnpaid.paymentId
+            ? `<button type="button" class="sv-btn is-soft" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-go="payments">Платіж у Приват24 ›</button>`
+            : `<button type="button" class="sv-btn" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-act="pay-advance" data-id="${escapeHtml(firstUnpaid.id)}">Створити платіж (${fmtKop(firstUnpaid.totals.pendingReimburseKop)} грн)</button>`;
+        out.push(`<div class="buh-card as-banner is-work" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+            <div class="as-banner-copy" style="flex:1 1 280px;min-width:220px">
                 <b>До відшкодування підзвітним особам: ${toPay.length} звітів на суму ${fmtKop(sum)} грн</b>
                 <p class="buh-note">Затверджені витрати власних коштів. Створіть платіж у Приват24 на особисту картку підзвітної особи (Дт 372 Кт 311) в один клік.</p>
             </div>
-            <button type="button" class="btn-primary btn-compact" data-act="pay-advance" data-id="${escapeHtml(toPay[0].id)}">Створити платіж (${fmtKop(toPay[0].totals.pendingReimburseKop)} грн)</button>
+            ${btnHtml}
         </div>`);
     }
     return out.join('');
@@ -109,9 +113,9 @@ function lineRowHtml(l, idx) {
     const acc = l.postingAcc || '92';
     const isAsset = acc !== '92';
     return `<div class="av-line buh-card is-compact" data-line-idx="${idx}" style="margin:8px 0;padding:12px;background:var(--sv-soft-2,#f4f6f9)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
             <b style="font-size:13.5px">Документ № ${idx + 1}</b>
-            <button type="button" class="btn-ghost-small" data-act="remove-line" data-line-idx="${idx}" style="color:#b42318">Видалити рядок ✕</button>
+            <button type="button" class="btn-ghost-small" data-act="remove-line" data-line-idx="${idx}" style="color:#b42318;width:auto;flex:0 0 auto">Видалити рядок ✕</button>
         </div>
         <div class="pay-grid">
             <label class="field"><span class="field-label">Вид документа</span>
@@ -156,7 +160,7 @@ function advanceFormHtml(d = {}) {
     return `<section class="buh-card ex-form" id="avForm">
         <div class="buh-card-head">
             <h2>${d.isEdit ? `Змінити авансовий звіт № ${escapeHtml(d.number || d.id)}` : 'Новий авансовий звіт (Рахунок 372)'}</h2>
-            <button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button>
+            <button type="button" class="btn-ghost-small" data-act="close-form" style="width:auto;flex:0 0 auto">Закрити</button>
         </div>
         <p class="buh-note">Складається підзвітною особою при придбанні товарів/послуг за власні кошти або за рахунок виданого авансу (Типова форма наказу Мінфіну № 841 / 289, пп. 170.9 ПКУ). Усі чеки розносяться за статтями або приходуються на склад у «Майно та ТМЦ».</p>
         <div class="pay-grid">
@@ -188,25 +192,20 @@ function advanceFormHtml(d = {}) {
                 <input id="avAdvance" class="field-input" inputmode="decimal" placeholder="0,00" value="${money2(d.advanceKop || 0)}"></label>
         </div>
         <div style="margin-top:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
                 <h3 style="font-size:16px;margin:0">Підтвердні документи (чеки, квитанції, накладні)</h3>
-                <button type="button" class="btn-soft btn-compact" data-act="add-line">+ Додати чек</button>
+                <button type="button" class="sv-btn is-soft" style="width:auto;flex:0 0 auto;min-height:38px;padding:0 16px;font-size:13.5px" data-act="add-line">+ Додати чек</button>
             </div>
             <div id="avLinesList">${lines.map((l, idx) => lineRowHtml(l, idx)).join('')}</div>
         </div>
         <div class="pay-form-actions" style="margin-top:16px">
-            <button type="button" class="btn-primary" data-act="save-report">${d.id ? 'Зберегти зміни' : isChair() ? 'Зберегти й затвердити' : 'Подати на затвердження голові'}</button>
+            <button type="button" class="sv-btn" style="width:auto" data-act="save-report">${d.id ? 'Зберегти зміни' : isChair() ? 'Зберегти й затвердити' : 'Подати на затвердження голові'}</button>
         </div>
     </section>`;
 }
 
 function reportRowHtml(r) {
     const t = r.totals;
-    const rightVal = t.reimburseKop > 0
-        ? `перевитрата ${fmtKop(t.reimburseKop)} грн`
-        : t.returnKop > 0
-            ? `залишок ${fmtKop(t.returnKop)} грн`
-            : `${fmtKop(t.spentKop)} грн`;
     const [statusText, statusCls] = ADVANCE_STATUS_LABELS[r.status] || [r.status, ''];
 
     return `<li><button type="button" class="fl-item dc-item${r.id === selected ? ' is-current' : ''}" data-act="pick" data-id="${escapeHtml(r.id)}" aria-current="${r.id === selected}">
@@ -241,7 +240,7 @@ function detailCardHtml(r, empty) {
         ['Витрачено за чеками', `${fmtKop(t.spentKop)} грн`],
         ...(t.reimburseKop > 0 ? [
             ['Перевитрата (до відшкодування)', `${fmtKop(t.reimburseKop)} грн`],
-            ['Фактично відшкодовано', t.reimbursedKop > 0 ? `${fmtKop(t.reimbursedKop)} грн` : 'ще не виплачено'],
+            ['Фактично відшкодовано', t.reimbursedKop > 0 ? `${fmtKop(t.reimbursedKop)} грн` : r.paymentId ? 'платіж створено в Приват24 (очікує проведення)' : 'ще не виплачено'],
             ['Залишок до виплати', t.pendingReimburseKop > 0 ? `${fmtKop(t.pendingReimburseKop)} грн` : 'повністю виплачено']
         ] : []),
         ...(t.returnKop > 0 ? [
@@ -262,7 +261,11 @@ function detailCardHtml(r, empty) {
         actions.push(btn('reject-report', 'Відхилити', true));
     }
     if (r.status === 'approved' && t.pendingReimburseKop > 0) {
-        actions.push(btn('pay-advance', `Створити платіж у Приват24 (${fmtKop(t.pendingReimburseKop)} грн)`));
+        if (r.paymentId) {
+            actions.push(`<button type="button" class="sv-btn is-soft" data-go="payments">Перейти в «Платежі» (очікує підпису) ›</button>`);
+        } else {
+            actions.push(btn('pay-advance', `Створити платіж у Приват24 (${fmtKop(t.pendingReimburseKop)} грн)`));
+        }
     }
     actions.push(btn('print-advance', 'Друк авансового звіту (№ 841)', true));
     if (['draft', 'pending', 'rejected'].includes(r.status) || (r.status === 'approved' && t.reimbursedKop === 0)) {
@@ -304,8 +307,8 @@ function detailCardHtml(r, empty) {
 
 async function printAdvanceReport(r) {
     const req = await loadRequisites().catch(() => ({}));
-    const orgName = req?.recipientName || 'ОСББ «Успіх-25»';
-    const edrpou = req?.edrpou || '—';
+    const orgName = req?.payeeName || req?.recipientName || 'ОСББ «Успіх-25»';
+    const edrpou = req?.edrpou || '40562894';
     const t = r.totals;
     const fundName = (ctx.funds || []).find(f => f.id === r.fundId)?.name || r.fundId || 'Основний фонд';
     const win = window.open('', '_blank', 'width=940,height=800');
@@ -409,7 +412,7 @@ export async function loadAdvanceView() {
                 `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
             <span class="buh-note">Рахунок 372 «Розрахунки з підзвітними особами». Наказ Мінфіну № 841 (у редакції № 289), пп. 170.9 ПКУ.</span>
             <span class="ch-tools">
-                <button type="button" class="btn-primary btn-compact" data-act="new-report">+ Авансовий звіт</button>
+                <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-report">+ Авансовий звіт</button>
                 <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
                 <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ (рах. 372) ›</button>
             </span>
@@ -532,7 +535,7 @@ async function saveReport(btn) {
 export async function reimburseReport(r) {
     const pc = await loadPaymentContext();
     const account = defaultAccount(pc.accounts || []);
-    if (!account) throw new Error('Банк не підключено — немає рахунку, з якого платити');
+    if (!account) throw new Error('Банк не підключено — немає рахунку ОСББ, з якого платити (перевірте «Налаштування»)');
     const res = await advanceAct({ action: 'reimburseAdvanceReport', id: r.id, account });
     toast(`Платіж на ${fmtKop(res.amountKop)} грн відправлено в Приват24 на підпис голови`, 'success');
     return res;
@@ -610,6 +613,20 @@ export function initAdvanceView() {
             } catch (err) { toast(err.message, 'error'); }
             finally { if (btn.isConnected) setBusy(btn, false); }
         } else if (a === 'pay-advance' && report) {
+            if (!report.personIban || !/^UA\d{27}$/.test(String(report.personIban).replace(/\s+/g, ''))) {
+                toast('Спочатку вкажіть IBAN особистої картки та РНОКПП підзвітної особи у звіті', 'error');
+                form = { isEdit: true, data: { ...report } };
+                await loadAdvanceView();
+                document.getElementById('avPersonIban')?.focus();
+                return;
+            }
+            if (!report.personCode || !/^\d{10}$/.test(String(report.personCode).trim())) {
+                toast('Для банківського платежу в Приват24 вкажіть РНОКПП (10 цифр) підзвітної особи', 'error');
+                form = { isEdit: true, data: { ...report } };
+                await loadAdvanceView();
+                document.getElementById('avPersonCode')?.focus();
+                return;
+            }
             if (!await confirmDialog(
                 `Виплатити компенсацію ${fmtKop(report.totals.pendingReimburseKop)} грн?`,
                 `Підзвітній особі: ${report.personName} на картку ${report.personIban || '—'}. Платіж зʼявиться в Приват24 на підпис голови.`,

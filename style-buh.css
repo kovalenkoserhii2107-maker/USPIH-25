@@ -1070,8 +1070,17 @@ body.chs-open { overflow: hidden; }
 /* ============================================================
    МАЙНО ТА ТМЦ (ОЗ, МНМА, ЗАПАСИ, МШП)
    ============================================================ */
+#viewAssets .btn-primary, #viewAssets .btn-soft,
+#viewAdvance .btn-primary, #viewAdvance .btn-soft,
+#viewClaims .btn-primary, #viewClaims .btn-soft,
+.as-banner .btn-primary, .as-banner .btn-soft, .as-banner .sv-btn,
+.ch-tools .btn-primary, .ch-tools .sv-btn {
+    width: auto;
+    flex: 0 0 auto;
+}
 .as-banner {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
@@ -1083,8 +1092,8 @@ body.chs-open { overflow: hidden; }
     background: #fffbeb;
 }
 .as-banner-copy {
-    min-width: 0;
-    flex: 1;
+    min-width: 220px;
+    flex: 1 1 280px;
 }
 .as-banner-copy b {
     display: block;
