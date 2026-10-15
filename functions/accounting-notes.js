@@ -2,10 +2,12 @@
 const { HttpsError }=require('firebase-functions/v2/https');
 const { validDate }=require('./expenses-core');
 const jcore=require('./journal-core');
+const policyStoreFactory=require('./accounting-policy');
 const TYPES={fundTransfer:'Перенесення між фондами',depreciation:'Амортизація власного активу ОСББ',inventory:'Списання використаних запасів / МШП',assetDisposal:'Ліквідація (списання) ОЗ / МНМА (Акт ОЗ-3)',rentAccrual:'Нарахування оренди / послуги покупцю',accrual:'Витрата з нарахованим зобовʼязанням',reverse:'Сторно бухгалтерської довідки'};
 module.exports=function notes({db,FieldValue,lock,load}) {
     const fail=message=>{throw new HttpsError('failed-precondition',message);};
     const text=(v,n=300)=>String(v||'').trim().slice(0,n);
+    const policyStore=policyStoreFactory.create({db,FieldValue});
     async function context() {
         const rows=(await db.collection('accounting_notes').get()).docs.map(d=>({id:d.id,...d.data()}));
         return {types:TYPES,notes:rows.sort((a,b)=>b.date.localeCompare(a.date))};
@@ -14,7 +16,7 @@ module.exports=function notes({db,FieldValue,lock,load}) {
         if(!TYPES[type]||!validDate(date)||!Number.isSafeInteger(amountKop)||amountKop<=0||amountKop>100000000000||text(source).length<5||text(note).length<5)fail('Укажіть вид, дату, суму, підставу та пояснення бухгалтерської довідки');
         const period=date.slice(0,7),ref=db.collection('accounting_notes').doc();
         await db.runTransaction(async t=>{
-            const data=await load(t),policy=data.policy;
+            const policy=await policyStore.context(t);
             await lock?.assertOpen(period,'Бухгалтерська довідка',t);
             if(date<policy.startDate)fail('Раніші операції переносять через річний журнал');
             let lines;
@@ -49,9 +51,13 @@ module.exports=function notes({db,FieldValue,lock,load}) {
     }
     async function approve(actor,role,{id}) {
         if(role!=='chair')throw new HttpsError('permission-denied','Бухгалтерську довідку погоджує голова');
+        const ref=db.doc(`accounting_notes/${String(id||'').replace(/[^\w-]/g,'')}`);
+        const data=await load();
+        if(data.policy.status!=='approved')fail('Спочатку погодьте параметри обліку');
         await db.runTransaction(async t=>{
-            const ref=db.doc(`accounting_notes/${String(id||'').replace(/[^\w-]/g,'')}`),data=await load(t),snap=await t.get(ref),doc=snap.data();
-            if(data.policy.status!=='approved')fail('Спочатку погодьте параметри обліку');
+            const [snap,policy]=await Promise.all([t.get(ref),policyStore.context(t)]);
+            const doc=snap.data();
+            if(policy.status!=='approved')fail('Спочатку погодьте параметри обліку');
             if(doc?.status!=='draft')fail('Довідку вже погоджено або не знайдено');
             await lock?.assertOpen(doc.period,'Бухгалтерська довідка',t);
             const tb=jcore.trialBalance(jcore.journal(data.input,doc.period),doc.period);

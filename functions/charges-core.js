@@ -143,7 +143,6 @@ const openingDate = (startDate = '2026-10-01') => {
     return new Date(kyivDate(year,month,day,0).getTime()-1);
 };
 
-/** Місяці, за які ще не нараховано: від початку обліку до поточного включно. */
 /**
  * Місяці, за які пора нараховувати: минулі ще не нараховані, а поточний —
  * з його останнього дня (today — «РРРР-ММ-ДД» за Києвом).
@@ -371,6 +370,23 @@ function replay(entries, { startPeriod = START_PERIOD, startDate, order = ['main
     return { balances, steps };
 }
 
+/**
+ * Перевіряє, чи можна використати вже збережений у записах історії розподіл
+ * оплат (entry.alloc) без повного перерахунку попередніх років:
+ * якщо до ledgers завантажено лише цільовий рік (немає записів за попередні
+ * роки та opening), і всі платежі/повернення за цей рік уже містять alloc
+ * (або в ОСББ лише одна основна складова 'main').
+ */
+function canUseSavedAlloc(entries, year, startPeriod = START_PERIOD, order = ['main']) {
+    const prefix = `${year}-`;
+    const hasPriorEntries = entries.some(e => e.kind === 'opening' || (String(e.period || '') >= startPeriod && String(e.period || '') < `${year}-01`));
+    if (hasPriorEntries) return false;
+    const yearPayments = entries.filter(e => ['payment', 'refund'].includes(e.kind) && String(e.period || '').startsWith(prefix));
+    if (!yearPayments.length) return true;
+    if (order.length <= 1 && order[0] === 'main') return true;
+    return yearPayments.every(e => Array.isArray(e.alloc) && e.alloc.length > 0 && e.alloc.every(a => a && a.component && Number.isInteger(a.amountKop)));
+}
+
 /** Залишки за складовими на початок і кінець місяця, нараховано й сплачено за складовими. */
 function componentStatement(entries, period, opts = {}) {
     const { steps } = replay(entries, opts);
@@ -392,7 +408,27 @@ function componentStatement(entries, period, opts = {}) {
 /** Надходження внесків за складовими за рік (розподіл оплат усіх квартир) — «Надходження по статтях». */
 function paidByComponent(ledgers, year, opts = {}) {
     const out = {};
+    const startPeriod = opts.startPeriod || START_PERIOD;
+    const startDate = opts.startDate;
+    const order = opts.order || ['main'];
+    const prefix = `${year}-`;
     for (const entries of ledgers.values()) {
+        if (canUseSavedAlloc(entries, year, startPeriod, order)) {
+            for (const entry of entries) {
+                if (!['payment', 'refund'].includes(entry.kind) || !String(entry.period || '').startsWith(prefix)) continue;
+                if (String(entry.period || '') < startPeriod) continue;
+                if (startDate && entry.at && new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date(msOf(entry.at))) < startDate) continue;
+                if (Array.isArray(entry.alloc) && entry.alloc.length > 0) {
+                    for (const a of entry.alloc) {
+                        if (a && a.component && a.amountKop) out[a.component] = (out[a.component] || 0) + a.amountKop;
+                    }
+                } else {
+                    const kop = entry.kind === 'refund' ? -entryKop(entry) : entryKop(entry);
+                    if (kop) out.main = (out.main || 0) + kop;
+                }
+            }
+            continue;
+        }
         for (const { entry, parts } of replay(entries, opts).steps) {
             if (!['payment', 'refund'].includes(entry.kind) || !String(entry.period || '').startsWith(String(year))) continue;
             for (const [c, v] of Object.entries(parts)) out[c] = (out[c] || 0) + v;
@@ -409,7 +445,29 @@ function paidByComponent(ledgers, year, opts = {}) {
  */
 function paymentOps(ledgers, year, opts = {}) {
     const out = [];
+    const startPeriod = opts.startPeriod || START_PERIOD;
+    const startDate = opts.startDate;
+    const order = opts.order || ['main'];
+    const prefix = `${year}-`;
     for (const [apt, entries] of ledgers) {
+        if (canUseSavedAlloc(entries, year, startPeriod, order)) {
+            const sorted = entries
+                .map((e, i) => ({ e, i }))
+                .filter(({ e }) => ['payment', 'refund'].includes(e.kind) && String(e.period || '').startsWith(prefix) && String(e.period || '') >= startPeriod
+                    && (!startDate || !e.at || new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date(msOf(e.at))) >= startDate))
+                .sort((a, b) => (msOf(a.e.at) - msOf(b.e.at)) || (KIND_ORDER[a.e.kind] - KIND_ORDER[b.e.kind]) || a.i - b.i);
+            for (const { e: entry } of sorted) {
+                if (Array.isArray(entry.alloc) && entry.alloc.length > 0) {
+                    for (const a of entry.alloc) {
+                        if (a && a.component && a.amountKop) out.push({ apt, at: entry.at, component: a.component, kop: a.amountKop });
+                    }
+                } else {
+                    const kop = entry.kind === 'refund' ? -entryKop(entry) : entryKop(entry);
+                    if (kop) out.push({ apt, at: entry.at, component: 'main', kop });
+                }
+            }
+            continue;
+        }
         for (const { entry, parts } of replay(entries, opts).steps) {
             if (!['payment', 'refund'].includes(entry.kind) || !String(entry.period || '').startsWith(String(year))) continue;
             for (const [component, kop] of Object.entries(parts)) if (kop) out.push({ apt, at: entry.at, component, kop });
@@ -460,5 +518,5 @@ module.exports = {
     parseArea, parseRate, formatRate, formatArea, chargeKop, entryKop,
     validPeriod, shiftPeriod, currentPeriod, periodName, kyivDate, lastDay, chargeDate, openingDate, duePeriods,
     tariffFor, checkTariff, checkGroupName, computeCharges, chargeNote,
-    checkOpening, openingNote, balanceFromLedger, statement, allocatePayment, replay, componentStatement, paidByComponent, paymentOps
+    checkOpening, openingNote, balanceFromLedger, statement, allocatePayment, replay, canUseSavedAlloc, componentStatement, paidByComponent, paymentOps
 };

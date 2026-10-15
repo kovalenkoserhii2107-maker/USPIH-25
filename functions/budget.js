@@ -54,7 +54,6 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // --------------------------------------------------------
     // КОНТРОЛЬ ДОКУМЕНТІВ ВИТРАТ (для expenses.js)
     // --------------------------------------------------------
-    /** Причина, з якої документ має затвердити голова (вихід за кошторис), або null. */
     /**
      * Списання, повернення яких потрапили в рік, хоча саме списання — у
      * попередньому (комісія за грудень, повернена в січні): без них
@@ -93,8 +92,9 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     // ВИКОНАННЯ Й ДАНІ ДЛЯ МЕШКАНЦІВ
     // --------------------------------------------------------
     async function gather(year) {
-        const policy=await require('./accounting-policy').create({db,FieldValue}).context();
-        const replayOptions={startPeriod:policy.startDate.slice(0,7),startDate:policy.startDate};
+        const policy = await require('./accounting-policy').create({ db, FieldValue }).context();
+        const replayOptions = { startPeriod: policy.startDate.slice(0, 7), startDate: policy.startDate };
+        const yearStart = `${year}-01` > replayOptions.startPeriod ? `${year}-01` : replayOptions.startPeriod;
         const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity, payrollSnap, payrollPaySnap] = await Promise.all([
             allBudgets(),
             db.collection('expenses').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
@@ -102,7 +102,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             db.doc('bank/settings').get(),
             db.collection('apartments').get(),
             db.doc('charges/settings').get(),
-            db.collectionGroup('ledger').where('period', '>=', replayOptions.startPeriod).where('period', '<=', `${year}-12`).get(),
+            db.collectionGroup('ledger').where('period', '>=', yearStart).where('period', '<=', `${year}-12`).get(),
             db.collection('suppliers').get(),
             publicityRef.get(),
             db.collection('payroll_runs').get(),
@@ -113,26 +113,44 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const bankOut = await withRefundOrigins(tx);
         const budget = core.effectiveBudget(budgets, year);
         const months = core.monthsElapsed(year, today());
-        // Оплати мешканців за складовими: розподіл тим самим правилом, що й баланс квартири.
+        // Оплати мешканців за складовими: спочатку читаємо лише записи цільового року.
+        // Якщо всі оплати року вже мають збережений розподіл (entry.alloc) або складова одна ('main'),
+        // попередні роки та opening взагалі не читаються з Firestore.
         const cs = chargeSettings.exists ? chargeSettings.data() : {};
         const components = cs.components?.length ? cs.components : charges.DEFAULT_COMPONENTS;
+        const order = components.map(c => c.id);
         const ledgers = new Map();
+        const seenDocPaths = new Set();
         ledgerSnap.forEach(d => {
             if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
+            seenDocPaths.add(d.ref.path);
             const apt = d.ref.parent.parent.id;
             if (!ledgers.has(apt)) ledgers.set(apt, []);
             ledgers.get(apt).push(d.data());
         });
-        // Вхідний залишок (вересень 2026) теж потрібен для розподілу першої оплати.
-        if (cs.opening?.set) {
-            (await db.collectionGroup('ledger').where('kind', '==', 'opening').get()).forEach(d => {
-                if (d.ref.parent.parent?.parent?.id !== 'apartments') return;
-                const apt = d.ref.parent.parent.id;
-                if (!ledgers.has(apt)) ledgers.set(apt, []);
-                ledgers.get(apt).push(d.data());
-            });
+        const needsFullReplay = (order.length > 1 || order[0] !== 'main') && [...ledgers.values()].some(entries =>
+            entries.some(e => ['payment', 'refund'].includes(e.kind) && (!Array.isArray(e.alloc) || !e.alloc.length))
+        );
+        if (needsFullReplay) {
+            const extraQueries = [];
+            if (yearStart > replayOptions.startPeriod) {
+                extraQueries.push(db.collectionGroup('ledger').where('period', '>=', replayOptions.startPeriod).where('period', '<', yearStart).get());
+            }
+            if (cs.opening?.set) {
+                extraQueries.push(db.collectionGroup('ledger').where('kind', '==', 'opening').get());
+            }
+            const extraSnaps = await Promise.all(extraQueries);
+            for (const snap of extraSnaps) {
+                snap.forEach(d => {
+                    if (d.ref.parent.parent?.parent?.id !== 'apartments' || seenDocPaths.has(d.ref.path)) return;
+                    seenDocPaths.add(d.ref.path);
+                    const apt = d.ref.parent.parent.id;
+                    if (!ledgers.has(apt)) ledgers.set(apt, []);
+                    ledgers.get(apt).push(d.data());
+                });
+            }
         }
-        const paid = charges.paidByComponent(ledgers, year, { ...replayOptions, order: components.map(c => c.id) });
+        const paid = charges.paidByComponent(ledgers, year, { ...replayOptions, order });
         const incomeParts = components.filter(c => paid[c.id]).map(c => ({ component: c.id, title: c.name, factKop: paid[c.id] }));
         const payrollRuns = payrollSnap.docs.map(d => ({ period: d.id, ...d.data() }));
         const approvedPeriods = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
@@ -143,15 +161,11 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const fundsKop = accounts.reduce((s, a) => s + (!a.currency || a.currency === 'UAH' ? a.balanceKop || 0 : 0), 0);
         const fundsAt = accounts.map(a => a.balanceAt?.toDate?.()).filter(Boolean).sort((a, b) => b - a)[0] || null;
         const apts = apartments.docs.map(d => ({ apt: cleanApt(d.id), ...d.data() }));
-        // Скільки дадуть внески за рік за чинними тарифами — підказка для плану надходжень.
-        // Розшифровка статей (як «Внесок на обслуговування ліфтів → платежі» в сервісі):
-        // { 'exp-lift': [...], 'inc-rent': [...], 'inc-c-main': [...] }.
-        // Номери квартир мешканцям — лише за рішенням правління (finance_settings/public).
         const showApartments = Boolean(publicity.exists && publicity.data().showApartments);
         const info = new Map(apts.map(a => [a.apt, { entrance: a.entrance, nonres: Boolean(cs.premises?.[a.apt] && cs.premises[a.apt] !== 'res') }]));
         const labeler = show => apt => core.aptLabel(cleanApt(apt), info.get(cleanApt(apt)), show);
         const suppliers = new Map(supplierSnap.docs.map(d => [d.id, d.data()]));
-        const payOps = charges.paymentOps(ledgers, year, { ...replayOptions, order: components.map(c => c.id) });
+        const payOps = charges.paymentOps(ledgers, year, { ...replayOptions, order });
         const ops = publicView => {
             const label = labeler(!publicView || showApartments);
             const out = {};

@@ -74,12 +74,12 @@ module.exports=function annualReports({db,FieldValue,journal}) {
         const p=payload.settings||{},settings={financingTerm:p.financingTerm||'',deposit351:p.deposit351||'',cash313:p.cash313||'',
             noViolation:p.noViolation===true,noIncomeTax:p.noIncomeTax===true,comparatives:p.comparatives||{},assignments:p.assignments||{}};
         if(Object.keys(settings.assignments).length>200||JSON.stringify(settings).length>60000)fail('Завелика розшифровка форм');
+        const report=await data({year});
+        if(sourceHash!==reportHash(report))throw new HttpsError('aborted','Річні джерела змінилися. Оновіть розрахунок перед погодженням');
+        const calculation=formsCore.build(report,settings);
+        const errors=calculation.checks.filter(c=>c.level==='block');
+        if(errors.length)fail(errors.map(c=>c.text).join('; '));
         return db.runTransaction(async t=>{
-            const report=await data({year},t);
-            if(sourceHash!==reportHash(report))throw new HttpsError('aborted','Річні джерела змінилися. Оновіть розрахунок перед погодженням');
-            const calculation=formsCore.build(report,settings);
-            const errors=calculation.checks.filter(c=>c.level==='block');
-            if(errors.length)fail(errors.map(c=>c.text).join('; '));
             t.set(db.doc(`annual_form_settings/${year}`),{...settings,sourceHash,basis:String(payload.basis).trim().slice(0,500),by:actor,role,at:FieldValue.serverTimestamp()});
             t.create(db.collection('audit_log').doc(),{actor,role,action:'annual.forms.review',target:`annual_form_settings/${year}`,summary:'Перевірено рядки річних розрахункових форм',details:{sourceHash,layoutVersion:calculation.layoutVersion},at:FieldValue.serverTimestamp()});
             return {ok:true};
@@ -88,14 +88,17 @@ module.exports=function annualReports({db,FieldValue,journal}) {
     async function approveHistory(actor,role,{year}) {
         if(role!=='chair')throw new HttpsError('permission-denied','Перенос обліку погоджує голова');
         if(!valid(year))fail('Оберіть рік');
+        const source=await journal.load();
+        if(source.opening?.status!=='approved')fail('Спочатку погодьте вхідну ОСВ на дату переходу');
+        const expected=core.bookBalances(jcore.buildEntries(source.input).filter(e=>e.src==='opening'));
         await db.runTransaction(async t=>{
-            const pointer=await t.get(db.doc(`annual_history/${year}`)),version=pointer.data()?.draftId;
+            const [pointer,openingSnap,policy]=await Promise.all([t.get(db.doc(`annual_history/${year}`)),t.get(db.doc('journal_opening/main')),journal.actions.policy(t)]);
+            const version=pointer.data()?.draftId;
             if(!version)fail('Спочатку завантажте історію року');
-            const [meta,parts,source]=await Promise.all([t.get(db.doc(`annual_history_versions/${version}`)),t.get(db.collection('annual_history_parts').where('version','==',version)),journal.load(t)]);
-            if(source.opening?.status!=='approved')fail('Спочатку погодьте вхідну ОСВ на дату переходу');
+            if(openingSnap.data()?.status!=='approved')fail('Спочатку погодьте вхідну ОСВ на дату переходу');
+            const [meta,parts]=await Promise.all([t.get(db.doc(`annual_history_versions/${version}`)),t.get(db.collection('annual_history_parts').where('version','==',version))]);
             const entries=parts.docs.sort((a,b)=>a.data().index-b.data().index).flatMap(d=>d.data().entries);
-            if(parts.size!==meta.data().parts||parts.docs.sort((a,b)=>a.data().index-b.data().index).some((d,i)=>d.data().index!==i)||meta.data().startDate!==source.policy.startDate)fail('Перенесення неповне або дата переходу змінилася');
-            const expected=core.bookBalances(jcore.buildEntries(source.input).filter(e=>e.src==='opening'));
+            if(parts.size!==meta.data().parts||parts.docs.sort((a,b)=>a.data().index-b.data().index).some((d,i)=>d.data().index!==i)||meta.data().startDate!==policy.startDate)fail('Перенесення неповне або дата переходу змінилася');
             const actual=core.bookBalances(core.historyEntries({...meta.data(),entries},String(year)));
             const off=[...new Set([...expected.keys(),...actual.keys()])].filter(k=>(expected.get(k)||0)!==(actual.get(k)||0));
             if(off.length)fail(`Перенесений журнал не дає погоджену вхідну ОСВ: ${off.slice(0,8).join(', ')}. Виправте перенос, не підганяйте баланс`);
@@ -106,19 +109,28 @@ module.exports=function annualReports({db,FieldValue,journal}) {
     }
     async function snapshot(actor,role,{year,withForms=false,submissionKind='initial',previousPackageId='',basis=''}) {
         if(!valid(year))fail('Оберіть рік');
+        const [report,prepared]=await Promise.all([data({year}),withForms?forms({year}):null]);
+        if(withForms){
+            if(!prepared.calculation.reviewReady)fail('Спочатку погодьте повну розшифровку річних форм');
+            if(prepared.sourceHash!==reportHash(report))fail('Джерела розрахунку змінилися');
+            if(!['initial','replacement','correction'].includes(submissionKind)||String(basis).trim().length<5)fail('Оберіть вид версії й підставу формування');
+            report.forms=prepared.calculation;
+        }
+        const parts=Math.ceil(report.entries.length/250),tables={...report};delete tables.entries;
+        const hash=reportHash(report);
         return db.runTransaction(async t=>{
-            const [report,packages,financialPackages,prepared]=await Promise.all([data({year},t),t.get(db.collection('report_packages').where('key','==',`npo-${year}`)),t.get(db.collection('report_packages').where('key','==',`fs-stat-${year}`)),withForms?forms({year},t):null]);
+            const [packages,financialPackages,formSettingsSnap]=await Promise.all([
+                t.get(db.collection('report_packages').where('key','==',`npo-${year}`)),
+                t.get(db.collection('report_packages').where('key','==',`fs-stat-${year}`)),
+                withForms?t.get(db.doc(`annual_form_settings/${year}`)):null
+            ]);
             if(withForms){
-                if(!prepared.calculation.reviewReady)fail('Спочатку погодьте повну розшифровку річних форм');
-                if(prepared.sourceHash!==reportHash(report))fail('Джерела розрахунку змінилися');
-                if(!['initial','replacement','correction'].includes(submissionKind)||String(basis).trim().length<5)fail('Оберіть вид версії й підставу формування');
+                if(formSettingsSnap?.data()?.sourceHash!==prepared.sourceHash)fail('Джерела розрахунку змінилися');
                 if(submissionKind!=='initial'&&!packages.docs.some(d=>d.id===previousPackageId))fail('Оберіть попередню версію цього року для виправлення');
                 if(submissionKind==='initial'&&previousPackageId)fail('Для первинного розрахунку попередня версія не потрібна');
-                report.forms=prepared.calculation;
             }
             const version=Math.max(0,...[...packages.docs,...financialPackages.docs].map(d=>Number(d.data().version)||0))+1;
-            const id=`npo-${year}--${version}`,parts=Math.ceil(report.entries.length/250),tables={...report};delete tables.entries;
-            const hash=reportHash(report);
+            const id=`npo-${year}--${version}`;
             for(let i=0;i<parts;i++)t.create(db.doc(`annual_package_parts/${id}-${i}`),{packageId:id,index:i,entries:report.entries.slice(i*250,(i+1)*250)});
             for(const key of [`npo-${year}`,`fs-stat-${year}`])t.create(db.doc(`report_packages/${key}--${version}`),{key,version,type:withForms?'annual-calculation-forms':'annual-working-data',archiveId:id,hash,hashFormat:'canonical-json-v1',tables,parts,
                 filingReady:false,submissionKind:withForms?submissionKind:null,previousPackageId:withForms?previousPackageId:null,basis:withForms?String(basis).trim().slice(0,500):'',

@@ -24,6 +24,7 @@ const core = require('./charges-core');
 const { cleanApt, fromKop } = require('./bank-core');
 
 const REGION = 'europe-central2';
+const RECOMPUTE_CONCURRENCY = 20;
 
 module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock }) {
     const settingsRef = db.doc('charges/settings');
@@ -138,6 +139,9 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
      * Перерахувати баланси з історії. apts — лише ці квартири (після
      * оплати), без apts — усі. Поки вхідні залишки не внесено, баланс
      * веде бухгалтер вручну, і сервер його не чіпає.
+     *
+     * Транзакції квартир виконуються паралельними пакетами (по 20),
+     * оскільки кожна квартира оновлює власне піддерево apartments/{apt}.
      */
     async function recompute(apts) {
         const settings = await loadSettings();
@@ -145,29 +149,31 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         const targets = apts ? [...new Set(apts.map(String))] : (await loadApartments()).map(a => a.id);
         let updated = 0;
         const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
-        // Each balance uses a transactional ledger snapshot: concurrent payments
-        // cannot overwrite a newer balance with an older calculation.
-        for (const apt of targets) {
-            const changed = await db.runTransaction(async t => {
-                const ref = db.doc(`apartments/${apt}`);
-                const [snap, ledger, freshSettings] = await Promise.all([t.get(ref), t.get(db.collection(`apartments/${apt}/ledger`)), t.get(settingsRef)]);
-                if (!freshSettings.data()?.opening?.set || !snap.exists || snap.data().isAdmin === true) return false;
-                const current = freshSettings.data();
-                const currentComponents = current.components?.length ? current.components : core.DEFAULT_COMPONENTS;
-                const currentNames = new Map(currentComponents.map(c => [c.id, c.name]));
-                const currentNamed = parts => Object.entries(parts).filter(([, v]) => v).map(([component, amountKop]) => ({ component, name: currentNames.get(component) || 'Інше', amountKop }));
-                const entries = ledger.docs.map(d => ({ _id: d.id, ...d.data() }));
-                const { balances, steps } = core.replay(entries, { startPeriod: current.startPeriod || core.START_PERIOD, startDate:current.startDate, order: currentComponents.map(c => c.id) });
-                for (const { entry, parts } of steps) {
-                    if (entry.kind !== 'payment' || !entry._id || same(entry.alloc, currentNamed(parts))) continue;
-                    t.update(db.doc(`apartments/${apt}/ledger/${entry._id}`), { alloc: currentNamed(parts) });
-                }
-                const balance = fromKop(core.balanceFromLedger(entries, current.startPeriod || core.START_PERIOD, current.startDate));
-                if (snap.data().balance === balance && snap.data().balanceSource === 'ledger' && same(snap.data().balanceParts, currentNamed(balances))) return false;
-                t.set(ref, { balance, balanceParts: currentNamed(balances), balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
-                return true;
-            });
-            if (changed) updated++;
+
+        const recomputeOne = apt => db.runTransaction(async t => {
+            const ref = db.doc(`apartments/${apt}`);
+            const [snap, ledger, freshSettings] = await Promise.all([t.get(ref), t.get(db.collection(`apartments/${apt}/ledger`)), t.get(settingsRef)]);
+            if (!freshSettings.data()?.opening?.set || !snap.exists || snap.data().isAdmin === true) return false;
+            const current = freshSettings.data();
+            const currentComponents = current.components?.length ? current.components : core.DEFAULT_COMPONENTS;
+            const currentNames = new Map(currentComponents.map(c => [c.id, c.name]));
+            const currentNamed = parts => Object.entries(parts).filter(([, v]) => v).map(([component, amountKop]) => ({ component, name: currentNames.get(component) || 'Інше', amountKop }));
+            const entries = ledger.docs.map(d => ({ _id: d.id, ...d.data() }));
+            const { balances, steps } = core.replay(entries, { startPeriod: current.startPeriod || core.START_PERIOD, startDate: current.startDate, order: currentComponents.map(c => c.id) });
+            for (const { entry, parts } of steps) {
+                if (!['payment', 'refund'].includes(entry.kind) || !entry._id || same(entry.alloc, currentNamed(parts))) continue;
+                t.update(db.doc(`apartments/${apt}/ledger/${entry._id}`), { alloc: currentNamed(parts) });
+            }
+            const balance = fromKop(core.balanceFromLedger(entries, current.startPeriod || core.START_PERIOD, current.startDate));
+            if (snap.data().balance === balance && snap.data().balanceSource === 'ledger' && same(snap.data().balanceParts, currentNamed(balances))) return false;
+            t.set(ref, { balance, balanceParts: currentNamed(balances), balanceSource: 'ledger', balanceUpdatedBy: 'system', balanceUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            return true;
+        });
+
+        for (let i = 0; i < targets.length; i += RECOMPUTE_CONCURRENCY) {
+            const chunk = targets.slice(i, i + RECOMPUTE_CONCURRENCY);
+            const results = await Promise.all(chunk.map(recomputeOne));
+            updated += results.filter(Boolean).length;
         }
         return { updated };
     }

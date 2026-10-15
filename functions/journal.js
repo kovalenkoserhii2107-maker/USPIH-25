@@ -130,6 +130,62 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         };
     }
 
+    /** Полегшене завантаження виключно для реєстру ОЗ, МНМА та ТМЦ (без читання ledger квартир і bank_tx). */
+    async function loadForAssets(transaction = null) {
+        const get = ref => transaction ? transaction.get(ref) : ref.get();
+        const policy = await policyStore.context(transaction);
+        const [exSnap, periodSnap, openingSnap, notesSnap, assetsSnap] = await Promise.all([
+            get(db.collection('expenses')),
+            get(db.collection('journal_periods')),
+            get(db.doc('journal_opening/main')),
+            get(db.collection('accounting_notes')),
+            Promise.resolve().then(() => get(db.collection('assets'))).catch(() => ({ docs: [] }))
+        ]);
+        const opening = openingSnap.exists ? openingSnap.data() : null;
+        const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
+        return {
+            policy,
+            assets: (assetsSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+            opening,
+            periods,
+            closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
+            input: {
+                start: policy.startDate.slice(0, 7),
+                startDate: policy.startDate,
+                policy,
+                expenses: exSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                adjustments: notesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                opening
+            }
+        };
+    }
+
+    /** Полегшене завантаження виключно для підсистеми авансових звітів (рахунок 372). */
+    async function loadForAdvance(transaction = null) {
+        const get = ref => transaction ? transaction.get(ref) : ref.get();
+        const policy = await policyStore.context(transaction);
+        const [periodSnap, payrollPeople, advanceSnap, staffSnap] = await Promise.all([
+            get(db.collection('journal_periods')),
+            get(db.collection('payroll_people')),
+            Promise.resolve().then(() => get(db.collection('advance_reports'))).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => get(db.collection('staff'))).catch(() => ({ docs: [] }))
+        ]);
+        const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
+        return {
+            policy,
+            advanceReports: (advanceSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+            people: payrollPeople.docs.map(d => ({ id: d.id, ...d.data() })),
+            staff: (staffSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+            periods,
+            closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
+            input: {
+                start: policy.startDate.slice(0, 7),
+                startDate: policy.startDate,
+                policy
+            }
+        };
+    }
+
     /** Місяць за замовчуванням — перший незакритий, що вже скінчився, або поточний. */
     function defaultPeriod(closed, now, start) {
         const current = now.slice(0, 7);
@@ -315,17 +371,26 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     async function approveOpening(actor, role) {
         if (role !== 'chair') fail('permission-denied', 'Вхідну ОСВ затверджує голова');
         const ref = db.doc('journal_opening/main');
-        const totals = await db.runTransaction(async t => {
-            const data = await load(t);
-            if (data.closed.length) fail('failed-precondition', 'Уже є закритий місяць — вхідну ОСВ не змінюють');
-            if (data.opening?.status !== 'draft') fail('failed-precondition', data.opening ? 'Вхідну ОСВ уже затверджено' : 'Вхідну ОСВ ще не збережено');
-            const auto = core.buildEntries({ ...data.input, opening: null }).filter(e => e.src === 'opening');
-            const sums = core.openingTotals(auto, data.opening.lines);
-            if (sums.diff) fail('failed-precondition', `Дебет не дорівнює кредиту: різниця ${(sums.diff / 100).toFixed(2)} грн. Зазвичай її закриває залишок цільового фінансування (48) або нерозподілений результат (44)`);
+        const data = await load();
+        if (data.closed.length) fail('failed-precondition', 'Уже є закритий місяць — вхідну ОСВ не змінюють');
+        if (data.opening?.status !== 'draft') fail('failed-precondition', data.opening ? 'Вхідну ОСВ уже затверджено' : 'Вхідну ОСВ ще не збережено');
+        const auto = core.buildEntries({ ...data.input, opening: null }).filter(e => e.src === 'opening');
+        const sums = core.openingTotals(auto, data.opening.lines);
+        if (sums.diff) fail('failed-precondition', `Дебет не дорівнює кредиту: різниця ${(sums.diff / 100).toFixed(2)} грн. Зазвичай її закриває залишок цільового фінансування (48) або нерозподілений результат (44)`);
+
+        await db.runTransaction(async t => {
+            const [closed, openingSnap] = await Promise.all([
+                t.get(db.collection('journal_periods').where('status', '==', 'closed').limit(1)),
+                t.get(ref)
+            ]);
+            if (!closed.empty) fail('failed-precondition', 'Уже є закритий місяць — вхідну ОСВ не змінюють');
+            if (openingSnap.data()?.status !== 'draft') fail('failed-precondition', openingSnap.exists ? 'Вхідну ОСВ уже затверджено' : 'Вхідну ОСВ ще не збережено');
+            if (JSON.stringify(openingSnap.data()?.lines || []) !== JSON.stringify(data.opening.lines || [])) {
+                fail('aborted', 'Рядки вхідної ОСВ змінилися під час перевірки — перегляньте та затвердьте ще раз');
+            }
             t.update(ref, { status: 'approved', approvedBy: actor, approvedAt: FieldValue.serverTimestamp() });
-            return sums;
         });
-        await audit(actor, role, 'journal.opening.approve', 'journal_opening/main', `Вхідну ОСВ затверджено: дебет = кредит = ${(totals.dr / 100).toFixed(2)} грн`, totals);
+        await audit(actor, role, 'journal.opening.approve', 'journal_opening/main', `Вхідну ОСВ затверджено: дебет = кредит = ${(sums.dr / 100).toFixed(2)} грн`, sums);
         return { ok: true };
     }
 
@@ -334,7 +399,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     // --------------------------------------------------------
     async function assetsContext({ period } = {}, transaction = null) {
         const now = today();
-        const data = await load(transaction);
+        const data = await loadForAssets(transaction);
         const p = validPeriod(period) ? period : defaultPeriod(data.closed, now, data.input.start);
         const stored = data.periods.get(p);
         const isClosed = stored?.status === 'closed';
@@ -396,8 +461,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const sourceMode = String(data.sourceMode || 'card_only');
 
         await db.runTransaction(async t => {
-            const loaded = await load(t);
-            if (!loaded.policy.funds.some(f => f.id === card.fundId)) card.fundId = loaded.policy.defaultFund;
+            const policy = await policyStore.context(t);
+            if (!policy.funds.some(f => f.id === card.fundId)) card.fundId = policy.defaultFund;
             if (sourceMode === 'donated_or_surplus' && initialCostKop > 0) {
                 if (!validDate(card.acquiredDate)) fail('invalid-argument', 'Вкажіть дату оприбуткування для безоплатно отриманого майна або лишку');
                 const p = card.acquiredDate.slice(0, 7);
@@ -446,25 +511,27 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const actNo = text(data.commissionActNo || '1', 60);
         const period = commDate.slice(0, 7);
 
+        const loaded = await loadForAssets();
+        const state = assetsCore.reconcileAssets({
+            assets: loaded.assets,
+            expenses: loaded.input.expenses,
+            opening: loaded.opening,
+            adjustments: loaded.input.adjustments,
+            policy: loaded.policy,
+            period
+        });
+        const current = state.items.find(x => x.id === assetId);
+        if (!current || !assetsCore.isNonCurrent(current.acc)) fail('not-found', 'Обʼєкт ОЗ/МНМА не знайдено');
+        if (current.costKop <= 0) fail('failed-precondition', 'Первісна вартість обʼєкта ще не оприбуткована на баланс (проведіть документ постачальника або вхідний залишок)');
+        const method = data.deprMethod && assetsCore.DEPR_METHODS[data.deprMethod] ? data.deprMethod : (current.deprMethod || assetsCore.defaultDeprMethod(current.acc));
+        const months = Number(data.usefulLifeMonths) > 0 ? Math.round(Number(data.usefulLifeMonths)) : (current.usefulLifeMonths || (current.acc === '10' ? 60 : 36));
+        const custodian = text(data.custodian ?? current.custodian, 160);
+        const location = text(data.location ?? current.location, 200);
+
         let accruedKop = 0;
         await db.runTransaction(async t => {
-            const loaded = await load(t);
-            const state = assetsCore.reconcileAssets({
-                assets: loaded.assets,
-                expenses: loaded.input.expenses,
-                opening: loaded.opening,
-                adjustments: loaded.input.adjustments,
-                policy: loaded.policy,
-                period
-            });
-            const current = state.items.find(x => x.id === assetId);
-            if (!current || !assetsCore.isNonCurrent(current.acc)) fail('not-found', 'Обʼєкт ОЗ/МНМА не знайдено');
-            if (current.costKop <= 0) fail('failed-precondition', 'Первісна вартість обʼєкта ще не оприбуткована на баланс (проведіть документ постачальника або вхідний залишок)');
-            const method = data.deprMethod && assetsCore.DEPR_METHODS[data.deprMethod] ? data.deprMethod : (current.deprMethod || assetsCore.defaultDeprMethod(current.acc));
-            const months = Number(data.usefulLifeMonths) > 0 ? Math.round(Number(data.usefulLifeMonths)) : (current.usefulLifeMonths || (current.acc === '10' ? 60 : 36));
-            const custodian = text(data.custodian ?? current.custodian, 160);
-            const location = text(data.location ?? current.location, 200);
-
+            const pSnap = await t.get(db.doc(`journal_periods/${period}`));
+            const periodClosed = pSnap.data()?.status === 'closed';
             const ref = db.doc(`assets/${safeId(assetId)}`);
             t.set(ref, {
                 id: assetId,
@@ -484,7 +551,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             }, { merge: true });
 
             // Якщо це МНМА (11) з методом 100% або 50%/50% і період відкритий — одразу нараховуємо знос першого місяця експлуатації (п. 27 НП(С)БО 7)
-            if (current.acc === '11' && (method === 'mnhma_100' || method === 'mnhma_50_50') && data.accrueFirstMonth !== false && !loaded.closed.includes(period)) {
+            if (current.acc === '11' && (method === 'mnhma_100' || method === 'mnhma_50_50') && data.accrueFirstMonth !== false && !periodClosed) {
                 const updatedCard = { ...current, commissionedDate: commDate, deprMethod: method, usefulLifeMonths: months };
                 const firstDepr = assetsCore.monthlyDepreciationFor(updatedCard, period);
                 if (firstDepr > 0) {
@@ -526,22 +593,23 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
 
     async function depreciateMonth(actor, role, { period } = {}) {
         const now = today();
+        const loaded = await loadForAssets();
+        const p = validPeriod(period) ? period : defaultPeriod(loaded.closed, now, loaded.input.start);
+        const state = assetsCore.reconcileAssets({
+            assets: loaded.assets,
+            expenses: loaded.input.expenses,
+            opening: loaded.opening,
+            adjustments: loaded.input.adjustments,
+            policy: loaded.policy,
+            period: p
+        });
+        const plan = assetsCore.planMonthlyDepreciation(state.items, p);
+        if (!plan.lines.length || plan.totalKop <= 0) {
+            await lock?.assertOpen(p, 'Нарахування амортизації за місяць');
+            return { ok: true, period: p, count: 0, totalKop: 0 };
+        }
         const result = await db.runTransaction(async t => {
-            const loaded = await load(t);
-            const p = validPeriod(period) ? period : defaultPeriod(loaded.closed, now, loaded.input.start);
             await lock?.assertOpen(p, 'Нарахування амортизації за місяць', t);
-            const state = assetsCore.reconcileAssets({
-                assets: loaded.assets,
-                expenses: loaded.input.expenses,
-                opening: loaded.opening,
-                adjustments: loaded.input.adjustments,
-                policy: loaded.policy,
-                period: p
-            });
-            const plan = assetsCore.planMonthlyDepreciation(state.items, p);
-            if (!plan.lines.length || plan.totalKop <= 0) {
-                return { period: p, count: 0, totalKop: 0 };
-            }
             const noteRef = db.collection('accounting_notes').doc();
             t.create(noteRef, {
                 type: 'depreciation',
@@ -577,29 +645,29 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         if (!validDate(date)) fail('invalid-argument', 'Вкажіть коректну дату акта списання');
         const period = date.slice(0, 7);
 
-        const out = await db.runTransaction(async t => {
-            const loaded = await load(t);
-            await lock?.assertOpen(period, 'Списання ТМЦ / МШП', t);
-            const state = assetsCore.reconcileAssets({
-                assets: loaded.assets,
-                expenses: loaded.input.expenses,
-                opening: loaded.opening,
-                adjustments: loaded.input.adjustments,
-                policy: loaded.policy,
-                period
-            });
-            const asset = state.items.find(x => x.id === assetId);
-            const plan = assetsCore.planInventoryWriteOff(asset, {
-                date,
-                qty: data.qty,
-                item: data.item,
-                actNo: data.actNo,
-                reason: data.reason,
-                custodian: data.custodian,
-                location: data.location
-            });
-            if (plan.error) fail('invalid-argument', plan.error);
+        const loaded = await loadForAssets();
+        const state = assetsCore.reconcileAssets({
+            assets: loaded.assets,
+            expenses: loaded.input.expenses,
+            opening: loaded.opening,
+            adjustments: loaded.input.adjustments,
+            policy: loaded.policy,
+            period
+        });
+        const asset = state.items.find(x => x.id === assetId);
+        const plan = assetsCore.planInventoryWriteOff(asset, {
+            date,
+            qty: data.qty,
+            item: data.item,
+            actNo: data.actNo,
+            reason: data.reason,
+            custodian: data.custodian,
+            location: data.location
+        });
+        if (plan.error) fail('invalid-argument', plan.error);
 
+        const out = await db.runTransaction(async t => {
+            await lock?.assertOpen(period, 'Списання ТМЦ / МШП', t);
             const noteRef = db.collection('accounting_notes').doc();
             t.create(noteRef, {
                 type: 'inventory',
@@ -645,25 +713,25 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         if (!validDate(date)) fail('invalid-argument', 'Вкажіть дату Акта ОЗ-3');
         const period = date.slice(0, 7);
 
-        const out = await db.runTransaction(async t => {
-            const loaded = await load(t);
-            await lock?.assertOpen(period, 'Ліквідація ОЗ/МНМА (Акт ОЗ-3)', t);
-            const state = assetsCore.reconcileAssets({
-                assets: loaded.assets,
-                expenses: loaded.input.expenses,
-                opening: loaded.opening,
-                adjustments: loaded.input.adjustments,
-                policy: loaded.policy,
-                period
-            });
-            const asset = state.items.find(x => x.id === assetId);
-            const plan = assetsCore.planAssetDisposal(asset, {
-                date,
-                actNo: data.actNo,
-                reason: data.reason
-            });
-            if (plan.error) fail('invalid-argument', plan.error);
+        const loaded = await loadForAssets();
+        const state = assetsCore.reconcileAssets({
+            assets: loaded.assets,
+            expenses: loaded.input.expenses,
+            opening: loaded.opening,
+            adjustments: loaded.input.adjustments,
+            policy: loaded.policy,
+            period
+        });
+        const asset = state.items.find(x => x.id === assetId);
+        const plan = assetsCore.planAssetDisposal(asset, {
+            date,
+            actNo: data.actNo,
+            reason: data.reason
+        });
+        if (plan.error) fail('invalid-argument', plan.error);
 
+        const out = await db.runTransaction(async t => {
+            await lock?.assertOpen(period, 'Ліквідація ОЗ/МНМА (Акт ОЗ-3)', t);
             const noteRef = db.collection('accounting_notes').doc();
             t.create(noteRef, {
                 type: 'assetDisposal',
@@ -710,23 +778,24 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         if (!assetId || !validDate(date) || !Number.isFinite(qty) || qty <= 0 || reason.length < 4) {
             fail('invalid-argument', 'Вкажіть дату, номер акта, кількість та причину списання зношеного МШП з позабалансового обліку');
         }
+        const loaded = await loadForAssets();
+        const state = assetsCore.reconcileAssets({
+            assets: loaded.assets,
+            expenses: loaded.input.expenses,
+            opening: loaded.opening,
+            adjustments: loaded.input.adjustments,
+            policy: loaded.policy,
+            period: date.slice(0, 7)
+        });
+        const asset = state.items.find(x => x.id === assetId);
+        if (!asset || asset.acc !== '22') fail('not-found', 'Картку МШП (рахунок 22) не знайдено');
+        if (qty > (asset.inUseQty || 0) + 1e-6) {
+            fail('invalid-argument', `В оперативному обліку за МВО рахується лише ${asset.inUseQty || 0} ${asset.unit || 'шт.'}`);
+        }
+        const newRetired = Number(((asset.retiredQty || 0) + qty).toFixed(3));
+        const ref = db.doc(`assets/${safeId(asset.id)}`);
+
         await db.runTransaction(async t => {
-            const loaded = await load(t);
-            const state = assetsCore.reconcileAssets({
-                assets: loaded.assets,
-                expenses: loaded.input.expenses,
-                opening: loaded.opening,
-                adjustments: loaded.input.adjustments,
-                policy: loaded.policy,
-                period: date.slice(0, 7)
-            });
-            const asset = state.items.find(x => x.id === assetId);
-            if (!asset || asset.acc !== '22') fail('not-found', 'Картку МШП (рахунок 22) не знайдено');
-            if (qty > (asset.inUseQty || 0) + 1e-6) {
-                fail('invalid-argument', `В оперативному обліку за МВО рахується лише ${asset.inUseQty || 0} ${asset.unit || 'шт.'}`);
-            }
-            const newRetired = Number(((asset.retiredQty || 0) + qty).toFixed(3));
-            const ref = db.doc(`assets/${safeId(asset.id)}`);
             t.set(ref, {
                 id: asset.id,
                 acc: '22',
@@ -748,7 +817,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     // --------------------------------------------------------
     async function advanceContext({ period } = {}, transaction = null) {
         const now = today();
-        const data = await load(transaction);
+        const data = await loadForAdvance(transaction);
         const p = validPeriod(period) ? period : defaultPeriod(data.closed, now, data.input.start);
         const stored = data.periods.get(p);
         const isClosed = stored?.status === 'closed';
@@ -870,9 +939,9 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const ref = db.doc(`advance_reports/${safeId(docId)}`);
 
         await db.runTransaction(async t => {
-            const loaded = await load(t);
+            const policy = await policyStore.context(t);
             await lock?.assertOpen(p, 'Авансовий звіт', t);
-            if (!loaded.policy.funds.some(f => f.id === report.fundId)) report.fundId = loaded.policy.defaultFund;
+            if (!policy.funds.some(f => f.id === report.fundId)) report.fundId = policy.defaultFund;
 
             t.set(ref, {
                 ...report,
@@ -1026,17 +1095,19 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         });
         try {
             const at = new Date().toISOString();
-            // Узгоджений знімок усіх джерел і фінальна позначка —
-            // в одній транзакції після резервування місяця.
+            // Оскільки місяць заблоковано статусом 'closing' з closingToken,
+            // важке читання та звірка виконуються поза транзакцією (щоб не перевищити ліміт 500 документів Firestore),
+            // а запис архіву проводок і переведення статусу в 'closed' — атомарно під перевіркою closingToken.
+            const fresh = await context({ period });
+            const blocks = fresh.checks.filter(c => c.level === 'block');
+            if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
+            const archiveParts = Math.ceil(fresh.entries.length / 250);
             const ctx = await db.runTransaction(async t => {
-                const current = await t.get(ref);
+                const [current, operation] = await Promise.all([t.get(ref), t.get(db.doc('charges/operation'))]);
                 if (current.data()?.closingToken !== token || current.data()?.status !== 'closing') fail('aborted', 'Стан закриття місяця змінився. Перевірте місяць знову.');
-                const fresh = await context({ period }, t);
-                const blocks = fresh.checks.filter(c => c.level === 'block');
-                if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
-                const archiveParts = Math.ceil(fresh.entries.length / 250);
-                for(let i=archiveParts;i<(current.data().archiveParts || 0);i++)t.delete(db.doc(`journal_snapshots/${period}-${i}`));
-                for (let i = 0; i < archiveParts; i++) t.set(db.doc(`journal_snapshots/${period}-${i}`), { period,index:i,entries:fresh.entries.slice(i*250,(i+1)*250),version:1 });
+                if (operation.data()?.active && operation.data().until > Date.now()) fail('aborted', 'Виконується операція нарахувань. Закрийте місяць після її завершення.');
+                for (let i = archiveParts; i < (current.data().archiveParts || 0); i++) t.delete(db.doc(`journal_snapshots/${period}-${i}`));
+                for (let i = 0; i < archiveParts; i++) t.set(db.doc(`journal_snapshots/${period}-${i}`), { period, index: i, entries: fresh.entries.slice(i * 250, (i + 1) * 250), version: 1 });
                 t.set(ref, {
                     status: 'closed', key: fresh.key, totals: fresh.tb.totals,
                     tb: fresh.tb.rows, entries: fresh.entries.length,
@@ -1078,17 +1149,21 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
 
     async function bankCut(actor, role, { period, rows, note }) {
         if (!validPeriod(period) || text(note, 300).length < 5 || !Array.isArray(rows)) fail('invalid-argument', 'Укажіть період, залишки з виписки та її реквізити');
+        const current = await context({ period });
+        if (current.status !== 'open') fail('failed-precondition', 'Місяць уже закрито або закривається');
+        if (current.today < core.lastDay(period)) fail('failed-precondition', 'Залишок на кінець місяця звіряють після настання цієї дати');
+        const clean = rows.map(r => ({ acc: String(r.acc), iban: String(r.iban), balanceKop: Number(r.balanceKop) }));
+        if (clean.length !== current.bankRows.length || new Set(clean.map(r => `${r.acc}:${r.iban}`)).size !== clean.length || clean.some(r => !Number.isSafeInteger(r.balanceKop)
+            || !current.bankRows.some(x => x.acc === r.acc && x.iban === r.iban && x.balanceKop === r.balanceKop))) {
+            fail('failed-precondition', 'Залишки виписки не збігаються з обліком. Знайдіть пропущені операції або виправте вхідну ОСВ');
+        }
         await db.runTransaction(async t => {
-            const current = await context({ period }, t);
-            if (current.status !== 'open') fail('failed-precondition', 'Місяць уже закрито або закривається');
-            if(current.today<core.lastDay(period))fail('failed-precondition','Залишок на кінець місяця звіряють після настання цієї дати');
-            const clean = rows.map(r => ({ acc:String(r.acc), iban:String(r.iban), balanceKop:Number(r.balanceKop) }));
-            if (clean.length !== current.bankRows.length || new Set(clean.map(r=>`${r.acc}:${r.iban}`)).size !== clean.length || clean.some(r=>!Number.isSafeInteger(r.balanceKop)
-                || !current.bankRows.some(x=>x.acc===r.acc && x.iban===r.iban && x.balanceKop===r.balanceKop))) fail('failed-precondition', 'Залишки виписки не збігаються з обліком. Знайдіть пропущені операції або виправте вхідну ОСВ');
-            t.set(db.doc(`journal_bank_checks/${period}`), { period,date:core.lastDay(period),key:current.key,rows:clean,note:text(note,300),by:actor,at:FieldValue.serverTimestamp() });
-            t.create(db.collection('audit_log').doc(),{actor,role,action:'journal.bankCut',target:`journal_bank_checks/${period}`,summary:'Банк звірено з обліком на кінець періоду',details:{period,note:text(note,300)},at:FieldValue.serverTimestamp()});
+            const pSnap = await t.get(db.doc(`journal_periods/${period}`));
+            if (pSnap.data()?.status && pSnap.data()?.status !== 'open') fail('failed-precondition', 'Місяць уже закрито або закривається');
+            t.set(db.doc(`journal_bank_checks/${period}`), { period, date: core.lastDay(period), key: current.key, rows: clean, note: text(note, 300), by: actor, at: FieldValue.serverTimestamp() });
+            t.create(db.collection('audit_log').doc(), { actor, role, action: 'journal.bankCut', target: `journal_bank_checks/${period}`, summary: 'Банк звірено з обліком на кінець періоду', details: { period, note: text(note, 300) }, at: FieldValue.serverTimestamp() });
         });
-        return {ok:true};
+        return { ok: true };
     }
 
     const journalAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120, memory: '512MiB' }, callGuard('journalAction', async request => {
@@ -1125,7 +1200,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     }));
 
     return {
-        journalAction, load, notes,
+        journalAction, load, loadForAssets, loadForAdvance, notes,
         actions: {
             context, close, reopen, openingContext, saveOpening, approveOpening, bankCut,
             policy: policyStore.context, savePolicy: policyStore.save,
