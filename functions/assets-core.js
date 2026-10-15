@@ -44,6 +44,13 @@
 //      цільового фінансування (Дт 48 Кт 719) у сумі визнаних витрат,
 //      завдяки чому у Формі № 2-м/2-мс та Звіті неприбуткової організації
 //      доходи завжди дорівнюють витратам (фінансовий результат = 0 грн).
+//   5. Єдина система інвентарних / номенклатурних номерів:
+//      • Автоматична нумерація за синтетичним рахунком:
+//        10 → ОЗ-001, 11 → МНМА-001, 20 → ТМЦ-001, 22 → МШП-001.
+//      • При міграції з попередньої системи обліку (вхідні залишки ОСВ)
+//        у картці зберігається також старий інвентарний / номенклатурний
+//        номер (`legacyId`), щоб обʼєкт знаходився і за новим єдиним
+//        номером, і за старим номером з попередньої бухгалтерії.
 // ============================================================
 
 const DEFAULT_MNHMA_LIMIT_KOP = 2_000_000; // 20 000,00 грн (пп. 14.1.138 ПКУ)
@@ -101,6 +108,9 @@ const wearAccountFor = acc => (acc === '10' ? '131' : acc === '11' ? '132' : nul
 const defaultSubacc = acc => (acc === '10' ? '104' : acc === '11' ? '112' : acc === '20' ? '209' : '22');
 const defaultDeprMethod = acc => (acc === '10' ? 'straight' : acc === '11' ? 'mnhma_100' : null);
 
+const UNIFIED_ID_RE = /^(ОЗ|МНМА|ТМЦ|МШП)-\d{1,6}$/i;
+const isUnifiedAssetId = id => UNIFIED_ID_RE.test(String(id || '').trim());
+
 function recommendClassification({ unitCostKop = 0, usefulLifeMonths = 12, consumable = false, mnhmaLimitKop = DEFAULT_MNHMA_LIMIT_KOP } = {}) {
     if (consumable) {
         return {
@@ -135,25 +145,83 @@ function recommendClassification({ unitCostKop = 0, usefulLifeMonths = 12, consu
 }
 
 function suggestAssetId(acc, existingIds = []) {
-    const prefix = acc === '10' ? 'ОЗ-' : acc === '11' ? 'МНМА-' : acc === '22' ? 'МШП-' : 'ТМЦ-';
-    const used = new Set((existingIds || []).map(x => String(x || '').trim().toUpperCase()));
+    const prefix = String(acc) === '10' ? 'ОЗ-' : String(acc) === '11' ? 'МНМА-' : String(acc) === '22' ? 'МШП-' : 'ТМЦ-';
+    const used = new Set();
+    for (const item of existingIds || []) {
+        if (!item) continue;
+        if (typeof item === 'object') {
+            if (item.id) used.add(String(item.id).trim().toUpperCase());
+            if (item.legacyId) used.add(String(item.legacyId).trim().toUpperCase());
+            if (item.assetId) used.add(String(item.assetId).trim().toUpperCase());
+        } else {
+            used.add(String(item).trim().toUpperCase());
+        }
+    }
     let maxNum = 0;
     for (const id of used) {
         if (id.startsWith(prefix)) {
-            const n = Number(id.slice(prefix.length).replace(/\D+/g, ''));
-            if (Number.isInteger(n) && n > maxNum) maxNum = n;
+            const tail = id.slice(prefix.length);
+            if (/^\d+$/.test(tail)) {
+                const n = Number(tail);
+                if (Number.isInteger(n) && n > maxNum) maxNum = n;
+            }
         }
     }
-    for (let next = maxNum + 1; next < 10000; next++) {
+    for (let next = maxNum + 1; next < 100000; next++) {
         const candidate = `${prefix}${String(next).padStart(3, '0')}`;
         if (!used.has(candidate)) return candidate;
     }
     return `${prefix}${Date.now().toString().slice(-4)}`;
 }
 
+/**
+ * Збирає всі вже зайняті інвентарні та номенклатурні коди з карток,
+ * вхідних залишків ОСВ, документів постачальників, бухгалтерських довідок
+ * та авансових звітів для єдиної наскрізної нумерації без дублів.
+ */
+function collectExistingAssetIds({
+    assets = [],
+    expenses = [],
+    opening = null,
+    adjustments = [],
+    advanceReports = []
+} = {}) {
+    const out = new Set();
+    const add = v => {
+        const s = String(v || '').trim();
+        if (s) out.add(s);
+    };
+    for (const a of assets || []) {
+        add(a?.id);
+        add(a?.legacyId);
+    }
+    for (const e of expenses || []) {
+        if (e?.status !== 'canceled') add(e?.assetId);
+    }
+    for (const l of opening?.lines || []) {
+        if (['10', '11', '20', '22', '131', '132'].includes(String(l?.acc || ''))) add(l?.a);
+    }
+    for (const n of adjustments || []) {
+        if (['10', '11', '20', '22'].includes(String(n?.assetAcc || ''))) add(n?.analytic);
+        for (const l of n?.lines || []) {
+            if (['10', '11', '20', '22', '131', '132'].includes(String(l?.dr || ''))) add(l?.dA);
+            if (['10', '11', '20', '22', '131', '132'].includes(String(l?.cr || ''))) add(l?.cA);
+        }
+    }
+    for (const r of advanceReports || []) {
+        if (r?.status === 'rejected') continue;
+        for (const l of r?.lines || []) {
+            if (l?.postingAcc && l.postingAcc !== '92') add(l?.assetId);
+        }
+    }
+    return [...out];
+}
+
 function checkAssetCard(card) {
     const id = String(card?.id || '').trim();
     if (id.length < 2 || id.length > 80) return 'Вкажіть інвентарний або номенклатурний код (від 2 до 80 символів, напр. ОЗ-001)';
+    const legacyId = String(card?.legacyId || '').trim();
+    if (legacyId.length > 80) return 'Старий інвентарний номер не може перевищувати 80 символів';
     const acc = String(card?.acc || '');
     if (!ASSET_ACCOUNTS[acc]) return 'Оберіть рахунок обліку: 10 (ОЗ), 11 (МНМА), 20 (Запаси) або 22 (МШП)';
     const name = String(card?.name || '').trim();
@@ -227,55 +295,96 @@ function reconcileAssets({
     const mnhmaLimitKop = Number(policy?.mnhmaLimitKop || DEFAULT_MNHMA_LIMIT_KOP);
     const defaultFund = policy?.defaultFund || 'main';
     const byId = new Map();
+    const byLegacyId = new Map();
+    const usedIds = new Set(collectExistingAssetIds({ assets, expenses, opening, adjustments }).map(x => String(x).toUpperCase()));
 
-    const ensure = (rawId, fallbackAcc = '10') => {
-        const id = String(rawId || '').trim();
-        if (!id) return null;
-        if (!byId.has(id)) {
-            const acc = ASSET_ACCOUNTS[fallbackAcc] ? fallbackAcc : '10';
-            byId.set(id, {
-                id,
-                acc,
-                subacc: defaultSubacc(acc),
-                name: id,
-                item: 'systems',
-                fundId: defaultFund,
-                supplierName: '',
-                acquiredDate: '',
-                commissionedDate: '',
-                commissionActNo: '',
-                disposedDate: '',
-                disposalActNo: '',
-                disposalReason: '',
-                usefulLifeMonths: acc === '10' ? 60 : acc === '11' ? 36 : 12,
-                deprMethod: defaultDeprMethod(acc),
-                salvageKop: 0,
-                unit: 'шт.',
-                initialQty: 0,
-                addedQtyFromMeta: false,
-                writtenOffQty: 0,
-                retiredQty: 0,
-                custodian: '',
-                location: '',
-                serialNumber: '',
-                passportNote: '',
-                acquiredCostKop: 0,
-                disposedCostKop: 0,
-                wearBeforePeriodKop: 0,
-                deprThisPeriodKop: 0,
-                disposedWearKop: 0,
-                inventoryWriteOffKop: 0,
-                history: [],
-                sourceDocs: []
-            });
+    const createBlank = (id, fallbackAcc = '10', legacyId = '') => {
+        const acc = ASSET_ACCOUNTS[fallbackAcc] ? fallbackAcc : '10';
+        return {
+            id,
+            legacyId: String(legacyId || '').trim(),
+            acc,
+            subacc: defaultSubacc(acc),
+            name: id,
+            item: 'systems',
+            fundId: defaultFund,
+            supplierName: '',
+            acquiredDate: '',
+            commissionedDate: '',
+            commissionActNo: '',
+            disposedDate: '',
+            disposalActNo: '',
+            disposalReason: '',
+            usefulLifeMonths: acc === '10' ? 60 : acc === '11' ? 36 : 12,
+            deprMethod: defaultDeprMethod(acc),
+            salvageKop: 0,
+            unit: 'шт.',
+            initialQty: 0,
+            addedQtyFromMeta: false,
+            writtenOffQty: 0,
+            retiredQty: 0,
+            custodian: '',
+            location: '',
+            serialNumber: '',
+            passportNote: '',
+            acquiredCostKop: 0,
+            disposedCostKop: 0,
+            wearBeforePeriodKop: 0,
+            deprThisPeriodKop: 0,
+            disposedWearKop: 0,
+            inventoryWriteOffKop: 0,
+            history: [],
+            sourceDocs: []
+        };
+    };
+
+    const ensure = (rawCode, fallbackAcc = '10', { fromOpening = false, memo = '' } = {}) => {
+        const code = String(rawCode || '').trim();
+        if (!code) return null;
+        if (byId.has(code)) return byId.get(code);
+        if (byLegacyId.has(code)) return byLegacyId.get(code);
+
+        const acc = ASSET_ACCOUNTS[fallbackAcc] ? fallbackAcc : '10';
+        // Якщо обʼєкт прийшов із вхідних залишків (міграції з попередньої системи обліку)
+        // зі старим неєдиним кодом (напр. «Інв-15», «00042», «Генератор»),
+        // автоматично присвоюємо йому єдиний інвентарний номер (ОЗ-001 / МНМА-001 / ТМЦ-001 / МШП-001),
+        // а старий номер зберігаємо в legacyId, щоб знаходити і так, і так.
+        if (fromOpening && !isUnifiedAssetId(code)) {
+            const unifiedId = suggestAssetId(acc, [...usedIds]);
+            usedIds.add(unifiedId.toUpperCase());
+            usedIds.add(code.toUpperCase());
+            const card = createBlank(unifiedId, acc, code);
+            card.name = memo ? String(memo).trim() : code;
+            byId.set(unifiedId, card);
+            byLegacyId.set(code, card);
+            return card;
         }
-        return byId.get(id);
+
+        usedIds.add(code.toUpperCase());
+        const card = createBlank(code, acc, '');
+        byId.set(code, card);
+        return card;
     };
 
     for (const meta of assets || []) {
         if (!meta?.id) continue;
-        const card = ensure(meta.id, meta.acc || '10');
-        if (meta.acc && ASSET_ACCOUNTS[meta.acc]) card.acc = meta.acc;
+        const rawId = String(meta.id).trim();
+        const rawLegacy = String(meta.legacyId || '').trim();
+        const acc = meta.acc && ASSET_ACCOUNTS[meta.acc] ? meta.acc : '10';
+        let card = byId.get(rawId) || (rawLegacy ? byLegacyId.get(rawLegacy) : null);
+        if (!card) {
+            card = createBlank(rawId, acc, rawLegacy);
+            byId.set(rawId, card);
+        }
+        card.acc = acc;
+        if (rawLegacy) {
+            card.legacyId = rawLegacy;
+            byLegacyId.set(rawLegacy, card);
+        } else if (!isUnifiedAssetId(rawId)) {
+            // Якщо картку імпортовано зі старим кодом як id — фіксуємо його і в legacyId для подвійного пошуку
+            card.legacyId = rawId;
+            byLegacyId.set(rawId, card);
+        }
         card.subacc = meta.subacc && ASSET_SUBACCOUNTS[meta.subacc]?.acc === card.acc ? meta.subacc : defaultSubacc(card.acc);
         if (meta.name) card.name = String(meta.name).trim();
         if (meta.item) card.item = String(meta.item).trim();
@@ -306,18 +415,29 @@ function reconcileAssets({
     }
 
     if (opening?.status === 'approved' && Array.isArray(opening.lines)) {
-        for (const l of opening.lines) {
+        // Спершу обробляємо основні рахунки 10, 11, 20, 22, а потім знос 131, 132,
+        // щоб знос гарантовано привʼязався до створеної картки за старим чи новим номером.
+        const sortedOpening = [...opening.lines].sort((x, y) => {
+            const xWear = x?.acc === '131' || x?.acc === '132' ? 1 : 0;
+            const yWear = y?.acc === '131' || y?.acc === '132' ? 1 : 0;
+            return xWear - yWear;
+        });
+        for (const l of sortedOpening) {
             const acc = String(l.acc || '');
             const a = String(l.a || '').trim();
             const kop = Number(l.kop || 0);
             if (!a || kop <= 0) continue;
             if (['10', '11', '20', '22'].includes(acc)) {
-                const card = ensure(a, acc);
+                const card = ensure(a, acc, { fromOpening: true, memo: l.memo });
                 card.acc = acc;
+                if (!isUnifiedAssetId(a) && !card.legacyId) {
+                    card.legacyId = a;
+                    byLegacyId.set(a, card);
+                }
                 card.subacc = ASSET_SUBACCOUNTS[card.subacc]?.acc === acc ? card.subacc : defaultSubacc(acc);
                 const sign = l.side === 'cr' ? -1 : 1;
                 card.acquiredCostKop += sign * kop;
-                if (l.memo && card.name === card.id) card.name = String(l.memo).trim();
+                if (l.memo && (card.name === card.id || card.name === card.legacyId)) card.name = String(l.memo).trim();
                 if (!card.acquiredDate && policy?.startDate) card.acquiredDate = policy.startDate;
                 if (isNonCurrent(acc) && !card.commissionedDate && policy?.startDate) {
                     card.commissionedDate = policy.startDate;
@@ -326,12 +446,16 @@ function reconcileAssets({
                 card.history.push({
                     date: policy?.startDate || '2026-09-30',
                     kind: 'opening',
-                    title: `Вхідний залишок (${acc})`,
+                    title: `Вхідний залишок (${acc})${card.legacyId && card.legacyId !== card.id ? ` [стар. № ${card.legacyId}]` : ''}`,
                     amountKop: sign * kop
                 });
             } else if (acc === '131' || acc === '132') {
                 const targetAcc = acc === '131' ? '10' : '11';
-                const card = ensure(a, targetAcc);
+                const card = ensure(a, targetAcc, { fromOpening: true, memo: l.memo });
+                if (!isUnifiedAssetId(a) && !card.legacyId) {
+                    card.legacyId = a;
+                    byLegacyId.set(a, card);
+                }
                 const sign = l.side === 'dr' ? -1 : 1;
                 card.wearBeforePeriodKop += sign * kop;
                 card.history.push({
@@ -356,7 +480,7 @@ function reconcileAssets({
         card.subacc = ASSET_SUBACCOUNTS[card.subacc]?.acc === acc ? card.subacc : defaultSubacc(acc);
         const kop = Number(e.amountKop || 0);
         card.acquiredCostKop += kop;
-        if (e.description && card.name === card.id) card.name = String(e.description).trim();
+        if (e.description && (card.name === card.id || card.name === card.legacyId)) card.name = String(e.description).trim();
         if (e.item) card.item = e.item;
         if (e.fundId) card.fundId = e.fundId;
         if (e.supplierName && !card.supplierName) card.supplierName = e.supplierName;
@@ -520,7 +644,7 @@ function reconcileAssets({
         list.push(card);
     }
 
-    list.sort((a, b) => a.acc.localeCompare(b.acc) || a.id.localeCompare(b.id, 'uk'));
+    list.sort((a, b) => a.acc.localeCompare(b.acc) || a.id.localeCompare(b.id, 'uk', { numeric: true }));
 
     const summary = {
         ozCount: list.filter(x => x.acc === '10' && x.status !== 'disposed').length,
@@ -565,6 +689,7 @@ function planMonthlyDepreciation(reconciledItems, period) {
         });
         items.push({
             id: a.id,
+            legacyId: a.legacyId || '',
             name: a.name,
             acc: a.acc,
             wearAcc: cr,
@@ -680,8 +805,10 @@ module.exports = {
     wearAccountFor,
     defaultSubacc,
     defaultDeprMethod,
+    isUnifiedAssetId,
     recommendClassification,
     suggestAssetId,
+    collectExistingAssetIds,
     checkAssetCard,
     monthlyDepreciationFor,
     reconcileAssets,

@@ -25,6 +25,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const callGuard = require('./call-guard');
 const logger = require('firebase-functions/logger');
 const core = require('./expenses-core');
+const assetsCore = require('./assets-core');
 const { normIban, fromKop, safeId } = require('./bank-core');
 
 const REGION = 'europe-central2';
@@ -181,12 +182,30 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         if (!['92','10','11','20','22'].includes(e.postingAcc)) fail('invalid-argument','Оберіть вид придбання');
         let assetMeta = null;
         if (e.postingAcc !== '92') {
-            if (data.ownedByOsbb !== true || text(data.assetId,80).length < 2) fail('invalid-argument','Для активу підтвердіть власність саме ОСББ і вкажіть інвентарний код');
-            e.ownedByOsbb = true; e.assetId = text(data.assetId,80);
+            if (data.ownedByOsbb !== true) fail('invalid-argument','Для активу підтвердіть власність саме ОСББ і вкажіть інвентарний код');
+            let resolvedAssetId = text(data.assetId, 80);
+            if (resolvedAssetId.length < 2) {
+                const [assetsSnap, exSnap, openingSnap, advSnap] = await Promise.all([
+                    Promise.resolve().then(() => db.collection('assets').get()).catch(() => ({ docs: [] })),
+                    Promise.resolve().then(() => db.collection('expenses').get()).catch(() => ({ docs: [] })),
+                    Promise.resolve().then(() => db.doc('journal_opening/main').get()).catch(() => ({ exists: false })),
+                    Promise.resolve().then(() => db.collection('advance_reports').get()).catch(() => ({ docs: [] }))
+                ]);
+                const existingIds = assetsCore.collectExistingAssetIds({
+                    assets: (assetsSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+                    expenses: (exSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+                    opening: openingSnap?.exists ? openingSnap.data() : null,
+                    advanceReports: (advSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }))
+                });
+                resolvedAssetId = assetsCore.suggestAssetId(e.postingAcc, existingIds);
+            }
+            e.ownedByOsbb = true;
+            e.assetId = resolvedAssetId;
             if (Number(data.assetQty) > 0) e.assetQty = Number(data.assetQty);
             if (data.assetUnit) e.assetUnit = text(data.assetUnit, 20);
             assetMeta = {
                 id: e.assetId,
+                ...(data.legacyId ? { legacyId: text(data.legacyId, 80) } : {}),
                 acc: e.postingAcc,
                 subacc: text(data.assetSubacc, 10) || (e.postingAcc === '10' ? '104' : e.postingAcc === '11' ? '112' : e.postingAcc === '20' ? '209' : '22'),
                 name: text(data.assetName || e.description, 200),
@@ -275,7 +294,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             `${core.DOC_TYPES[e.docType]} № ${e.number} ${supplier.name}: ${fromKop(e.amountKop)} грн — ${approved ? 'затверджено' : 'на затвердження голові'} (${need.reason})`,
             { ...e, files: e.files.length, level: need.level });
         if (!approved) await tellChair('Витрата чекає затвердження', `${supplier.name}: ${fromKop(e.amountKop).toLocaleString('uk-UA')} грн — ${need.reason}`);
-        return { id: ref.id, status: approved ? 'approved' : 'pending', approval: need, warnings: core.supplierWarnings(supplier) };
+        return { id: ref.id, assetId: e.assetId || null, status: approved ? 'approved' : 'pending', approval: need, warnings: core.supplierWarnings(supplier) };
     }
 
     /** Підтвердний документ (акт до рахунку тощо): та сама операція — без другої витрати й боргу. */
@@ -482,11 +501,14 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     // СТАН ДЛЯ КАБІНЕТУ
     // --------------------------------------------------------
     async function context() {
-        const [suppliers, contracts, expenses, settings] = await Promise.all([
+        const [suppliers, contracts, expenses, settings, assetsSnap, openingSnap, advSnap] = await Promise.all([
             db.collection('suppliers').orderBy('name').limit(500).get(),
             db.collection('contracts').orderBy('date', 'desc').limit(300).get(),
             db.collection('expenses').orderBy('date', 'desc').limit(400).get(),
-            settingsRef.get()
+            settingsRef.get(),
+            Promise.resolve().then(() => db.collection('assets').get()).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => db.doc('journal_opening/main').get()).catch(() => ({ exists: false })),
+            Promise.resolve().then(() => db.collection('advance_reports').get()).catch(() => ({ docs: [] }))
         ]);
         const plain = d => {
             const out = { id: d.id, ...d.data() };
@@ -495,9 +517,24 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             return out;
         };
         const list = { suppliers: suppliers.docs.map(plain), contracts: contracts.docs.map(plain), expenses: expenses.docs.map(plain) };
+        const assetsList = (assetsSnap?.docs || []).map(plain);
+        const existingAssetIds = assetsCore.collectExistingAssetIds({
+            assets: assetsList,
+            expenses: list.expenses,
+            opening: openingSnap?.exists ? openingSnap.data() : null,
+            advanceReports: (advSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }))
+        });
+        const assetCatalog = assetsList.map(a => ({
+            id: a.id,
+            legacyId: a.legacyId || '',
+            acc: a.acc || '10',
+            subacc: a.subacc || '',
+            name: a.name || a.id,
+            unit: a.unit || 'шт.'
+        }));
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         const policy=require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
-        return { ...list, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0 }, today,
+        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0 }, today,
             missing: core.missingDocs(list.contracts, list.expenses, today), items: core.ITEMS, docTypes: core.DOC_TYPES, kinds: core.SUPPLIER_KINDS,
             limitKop: core.CONTRACT_LIMIT_KOP };
     }

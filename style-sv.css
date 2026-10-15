@@ -51,6 +51,20 @@ body.buh-mode .container { max-width: none; margin: 0; padding: 0; }
 .buh-chip[hidden] { display: none; }
 .buh-avatar { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: #fff; color: #000; font-weight: 800; font-size: 15px; }
 .buh-avatar-btn { border: 0; cursor: pointer; font-family: var(--font); }
+.buh-menu-btn {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 6px 4px 14px;
+    border: 0; border-radius: 999px; background: #fff; color: #000; font: 700 13.5px var(--font);
+    white-space: nowrap; cursor: pointer; transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.buh-menu-btn:hover { background: var(--sv-soft-2); box-shadow: 0 4px 14px -6px rgba(0, 0, 0, .18); }
+.buh-menu-btn.active { background: #000; color: #fff; }
+.buh-menu-ico { flex-shrink: 0; }
+.buh-menu-label { font-weight: 800; letter-spacing: -.01em; }
+.buh-menu-ava {
+    display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--sv-soft); color: #000; font-weight: 800; font-size: 13.5px;
+}
+.buh-menu-btn.active .buh-menu-ava { background: rgba(255, 255, 255, .2); color: #fff; }
 
 .buh-main { box-sizing: border-box; width: 100%; max-width: 1240px; margin: 0 auto; padding: 4px clamp(16px, 3vw, 40px) 64px; }
 .buh-head { display: flex; flex-direction: column; gap: 4px; padding: 10px 0 22px; }
@@ -201,6 +215,8 @@ button.sv-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -18p
     .buh-brand-mark { width: 40px; height: 40px; }
     .buh-chip { min-height: 40px; padding: 0 12px; font-size: 12px; }
     .buh-avatar { width: 40px; height: 40px; }
+    .buh-menu-btn { min-height: 40px; padding: 3px 5px 3px 11px; gap: 6px; font-size: 12.5px; }
+    .buh-menu-ava { width: 28px; height: 28px; font-size: 12px; }
     .buh-main { padding: 0 16px calc(104px + env(safe-area-inset-bottom)); }
     .buh-head { padding: 6px 0 16px; }
     .buh-head h1 { font-size: clamp(26px, 7.5vw, 32px); }

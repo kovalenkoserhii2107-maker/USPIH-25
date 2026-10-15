@@ -41,6 +41,9 @@ const val = id => document.getElementById(id)?.value?.trim() ?? '';
 const options = (map, cur) => Object.entries(map).map(([k, v]) =>
     `<option value="${escapeHtml(k)}"${String(k) === String(cur) ? ' selected' : ''}>${escapeHtml(typeof v === 'object' ? v.title : v)}</option>`).join('');
 
+const allUsedIds = () => ctx?.existingAssetIds || (ctx?.items || []).flatMap(x => [x.id, x.legacyId]).filter(Boolean);
+const codeWithLegacy = a => a?.legacyId && a.legacyId !== a.id ? `${a.id} (стар. № ${a.legacyId})` : (a?.id || '');
+
 export function openAssets(seg = 'all', assetId = null, prefillForm = null) {
     if (TABS[seg]) segment = seg;
     if (assetId) selected = assetId;
@@ -74,7 +77,7 @@ function filterItems(list) {
     return (list || []).filter(a => {
         if (!matchesTab(a, segment)) return false;
         if (!q) return true;
-        return [a.id, a.name, a.custodian, a.location, a.serialNumber, a.supplierName, a.subacc]
+        return [a.id, a.legacyId, a.name, a.custodian, a.location, a.serialNumber, a.supplierName, a.subacc]
             .filter(Boolean).join(' ').toLowerCase().includes(q);
     });
 }
@@ -120,20 +123,22 @@ function bannersHtml() {
 function cardFormHtml(d = {}) {
     const acc = d.acc || '10';
     const subOpts = Object.fromEntries(Object.entries(ASSET_SUBACCOUNTS).filter(([, v]) => v.acc === acc));
-    const nextCode = d.id || suggestAssetId(acc, (ctx.items || []).map(x => x.id));
+    const nextCode = d.id || suggestAssetId(acc, allUsedIds());
     const nonCurr = isNonCurrent(acc);
     const limitGrn = ((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA');
     return `<section class="buh-card ex-form" id="asForm">
         <div class="buh-card-head"><h2>${d.isEdit ? `Картка активу ${escapeHtml(d.id)}` : 'Нова картка ОЗ, МНМА або ТМЦ'}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
-        <p class="buh-note">Вартісний поріг МНМА за Обліковою політикою (пп. 14.1.138 ПКУ): <b>${limitGrn} грн</b>. Придбання за рахунком або накладною постачальника проводьте через розділ «Документи» (там створюється проводка Дт 10/11/20/22 Кт 631). Тут можна відредагувати паспортні дані картки, МВО або оприбуткувати безоплатно отримане майно ОСББ (Дт 10/11/20/22 Кт 48).</p>
+        <p class="buh-note">Вартісний поріг МНМА за Обліковою політикою (пп. 14.1.138 ПКУ): <b>${limitGrn} грн</b>. Інвентарний / номенклатурний номер підставляється системою автоматично за єдиним стандартом (<b>ОЗ-001</b>, <b>МНМА-001</b>, <b>ТМЦ-001</b>, <b>МШП-001</b>). Якщо обʼєкт перенесено з попередньої бухгалтерської програми, укажіть також його старий номер — пошук працюватиме за обома номерами.</p>
         <div class="pay-grid">
             <label class="field"><span class="field-label">Рахунок обліку</span>
                 <select id="afAcc" class="field-input field-select"${d.isEdit ? ' disabled' : ''}>${options(ASSET_ACCOUNTS, acc)}</select></label>
             <label class="field"><span class="field-label">Субрахунок за Планом рахунків</span>
                 <select id="afSubacc" class="field-input field-select">${options(subOpts, d.subacc || defaultSubacc(acc))}</select></label>
-            <label class="field"><span class="field-label">Інвентарний / номенклатурний код</span>
-                <input id="afId" class="field-input" maxlength="80" value="${escapeHtml(nextCode)}"${d.isEdit ? ' readonly' : ''}></label>
-            <label class="field"><span class="field-label">Назва обʼєкта або ТМЦ</span>
+            <label class="field"><span class="field-label">Інвентарний / номенкл. код (авто)</span>
+                <input id="afId" class="field-input" maxlength="80" value="${escapeHtml(nextCode)}" readonly title="Присвоюється автоматично за єдиною системою нумерації"></label>
+            <label class="field"><span class="field-label">Старий інв. № (до міграції, за наявності)</span>
+                <input id="afLegacyId" class="field-input" maxlength="80" placeholder="Напр.: Інв-104/12 або 00045" value="${escapeHtml(d.legacyId || '')}"></label>
+            <label class="field pay-wide"><span class="field-label">Назва обʼєкта або ТМЦ</span>
                 <input id="afName" class="field-input" maxlength="200" placeholder="Напр.: Генератор інверторний 5,5 кВт" value="${escapeHtml(d.name || '')}"></label>
             <label class="field"><span class="field-label">Стаття витрат (92) для зносу / списання</span>
                 <select id="afItem" class="field-input field-select">${options(ctx.expenseItems, d.item || 'systems')}</select></label>
@@ -181,7 +186,7 @@ function cardFormHtml(d = {}) {
 
 function commissionFormHtml(a) {
     return `<section class="buh-card ex-form" id="asForm">
-        <div class="buh-card-head"><h2>Введення в експлуатацію (Форма ОЗ-1): ${escapeHtml(a.id)}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
+        <div class="buh-card-head"><h2>Введення в експлуатацію (Форма ОЗ-1): ${escapeHtml(codeWithLegacy(a))}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
         <p class="buh-note">Обʼєкт <b>«${escapeHtml(a.name)}»</b> первісною вартістю <b>${fmtKop(a.costKop)} грн</b>. ${a.acc === '10'
             ? 'Для основних засобів (рахунок 10) прямолінійна амортизація почне нараховуватися з місяця, наступного за місяцем введення в експлуатацію (п. 29 НП(С)БО 7).'
             : 'Для МНМА (рахунок 11) за методом «100 %» або «50 %/50 %» система одразу нарахує знос у місяці введення в експлуатацію (п. 27 НП(С)БО 7), зберігаючи обʼєкт у кількісному інвентарному обліку.'}</p>
@@ -208,7 +213,7 @@ function commissionFormHtml(a) {
 function writeOffFormHtml(a) {
     const isMshp = a.acc === '22';
     return `<section class="buh-card ex-form" id="asForm">
-        <div class="buh-card-head"><h2>${isMshp ? 'Передача МШП в експлуатацію' : 'Акт списання використаних запасів'}: ${escapeHtml(a.id)}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
+        <div class="buh-card-head"><h2>${isMshp ? 'Передача МШП в експлуатацію' : 'Акт списання використаних запасів'}: ${escapeHtml(codeWithLegacy(a))}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
         <p class="buh-note">На складі: <b>${a.remainingQty} ${escapeHtml(a.unit || 'шт.')}</b> на суму <b>${fmtKop(a.costKop)} грн</b>. ${isMshp
             ? 'Згідно з п. 23 НП(С)БО 9 при видачі МШП працівникові їхня вартість списується з балансу (Дт 92 Кт 22 та Дт 48 Кт 719), а сама річ переходить в оперативний позабалансовий кількісний облік за МВО до моменту повного фізичного зносу.'
             : 'Вартість фактично витрачених матеріалів списується на витрати утримання будинку (Дт 92 Кт 20 та одночасно Дт 48 Кт 719).'}</p>
@@ -234,7 +239,7 @@ function writeOffFormHtml(a) {
 
 function disposeFormHtml(a) {
     return `<section class="buh-card ex-form" id="asForm">
-        <div class="buh-card-head"><h2>Ліквідація обʼєкта (Форма ОЗ-3): ${escapeHtml(a.id)}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
+        <div class="buh-card-head"><h2>Ліквідація обʼєкта (Форма ОЗ-3): ${escapeHtml(codeWithLegacy(a))}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
         <p class="buh-note">Обʼєкт <b>«${escapeHtml(a.name)}»</b>: первісна вартість <b>${fmtKop(a.costKop)} грн</b>, накопичений знос <b>${fmtKop(a.wearKop)} грн</b>, залишкова вартість <b>${fmtKop(a.netKop)} грн</b>. Система спише накопичений знос (<b>Дт ${a.acc === '10' ? '131' : '132'} Кт ${a.acc}</b> на ${fmtKop(a.wearKop)} грн)${a.netKop > 0 ? ` та залишкову вартість (<b>Дт 92 Кт ${a.acc}</b> на ${fmtKop(a.netKop)} грн)` : ''}.</p>
         <div class="pay-grid">
             <label class="field"><span class="field-label">Дата Акта ОЗ-3</span>
@@ -250,7 +255,7 @@ function disposeFormHtml(a) {
 
 function retireMshpFormHtml(a) {
     return `<section class="buh-card ex-form" id="asForm">
-        <div class="buh-card-head"><h2>Списання зношеного МШП з позабалансового обліку: ${escapeHtml(a.id)}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
+        <div class="buh-card-head"><h2>Списання зношеного МШП з позабалансового обліку: ${escapeHtml(codeWithLegacy(a))}</h2><button type="button" class="btn-ghost-small" data-act="close-form">Закрити</button></div>
         <p class="buh-note">МШП <b>«${escapeHtml(a.name)}»</b> вже списано з балансу при передачі в роботу (п. 23 НП(С)БО 9) і рахується в оперативному обліку за МВО (${escapeHtml(a.custodian || 'не вказано')}) у кількості <b>${a.inUseQty} ${escapeHtml(a.unit || 'шт.')}</b>. Після фізичного зносу оформлюється акт вибуття з позабалансового обліку.</p>
         <div class="pay-grid">
             <label class="field"><span class="field-label">Дата акта вибуття</span>
@@ -269,7 +274,7 @@ function retireMshpFormHtml(a) {
 function activeFormHtml() {
     if (!form) return '';
     if (form.kind === 'card') return cardFormHtml(form.data);
-    const a = (ctx.items || []).find(x => x.id === form.id);
+    const a = (ctx.items || []).find(x => x.id === form.id || (x.legacyId && x.legacyId === form.id));
     if (!a) return '';
     if (form.kind === 'commission') return commissionFormHtml(a);
     if (form.kind === 'writeoff') return writeOffFormHtml(a);
@@ -285,10 +290,11 @@ function listRowHtml(a) {
         : a.costKop > 0
             ? `${a.remainingQty} ${escapeHtml(a.unit || 'шт.')} · ${fmtKop(a.costKop)} грн`
             : `${a.inUseQty || 0} ${escapeHtml(a.unit || 'шт.')} (в експл.)`;
+    const legacyBadge = a.legacyId && a.legacyId !== a.id ? ` · стар. № ${escapeHtml(a.legacyId)}` : '';
     return `<li><button type="button" class="fl-item dc-item${a.id === selected ? ' is-current' : ''}" data-act="pick" data-id="${escapeHtml(a.id)}" aria-current="${a.id === selected}">
         <span class="fl-copy">
             <b>${escapeHtml(a.name)}</b>
-            <small>${escapeHtml(a.id)} · Рах. ${escapeHtml(a.subacc || a.acc)}${a.custodian ? ` · МВО: ${escapeHtml(a.custodian)}` : ''}</small>
+            <small>${escapeHtml(a.id)}${legacyBadge} · Рах. ${escapeHtml(a.subacc || a.acc)}${a.custodian ? ` · МВО: ${escapeHtml(a.custodian)}` : ''}</small>
         </span>
         <span class="dc-right">
             <b class="fl-sum">${rightVal}</b>
@@ -306,6 +312,7 @@ function detailCardHtml(a, empty) {
     const fundName = (ctx.funds || []).find(f => f.id === a.fundId)?.name || a.fundId;
     const rows = [
         ['Інвентарний / номенкл. код', a.id],
+        ...(a.legacyId && a.legacyId !== a.id ? [['Старий інв. № (до міграції)', a.legacyId]] : []),
         ['Рахунок та субрахунок', `${a.acc} (${ASSET_SUBACCOUNTS[a.subacc]?.title || a.subacc})`],
         ['Стаття витрат (92)', ctx.expenseItems[a.item] || a.item],
         ['Джерело фінансування (48)', fundName],
@@ -379,7 +386,7 @@ function detailCardHtml(a, empty) {
 
     return `<div class="fl-card-head">
             <div>
-                <span class="fl-facts">${escapeHtml(ASSET_ACCOUNTS[a.acc] || '')} · Інв. № ${escapeHtml(a.id)}</span>
+                <span class="fl-facts">${escapeHtml(ASSET_ACCOUNTS[a.acc] || '')} · Інв. № ${escapeHtml(a.id)}${a.legacyId && a.legacyId !== a.id ? ` · Старий № ${escapeHtml(a.legacyId)}` : ''}</span>
                 <h2>${escapeHtml(a.name)}</h2>
                 <span class="dc-amount">${isFixed ? `${fmtKop(a.netKop)} грн` : `${a.remainingQty} ${escapeHtml(a.unit || 'шт.')} (${fmtKop(a.costKop)} грн)`}</span>
             </div>
@@ -446,7 +453,7 @@ function printOz1(a) {
         <table>
             <thead><tr><th>Інвентарний №</th><th>Найменування обʼєкта та заводський №</th><th>Рахунок / субрахунок</th><th>Строк служби, міс.</th><th>Метод нарахування зносу</th><th class="num">Первісна вартість, грн</th></tr></thead>
             <tbody><tr>
-                <td><b>${escapeHtml(a.id)}</b></td>
+                <td><b>${escapeHtml(a.id)}</b>${a.legacyId && a.legacyId !== a.id ? `<br><small>Старий №: ${escapeHtml(a.legacyId)}</small>` : ''}</td>
                 <td><b>${escapeHtml(a.name)}</b>${a.serialNumber ? `<br><small>Серійний №: ${escapeHtml(a.serialNumber)}</small>` : ''}${a.passportNote ? `<br><small>${escapeHtml(a.passportNote)}</small>` : ''}</td>
                 <td>${escapeHtml(a.acc)} / ${escapeHtml(a.subacc || defaultSubacc(a.acc))}</td>
                 <td>${a.deprMethod === 'straight' ? a.usefulLifeMonths : 'згідно з обліковою політикою'}</td>
@@ -474,7 +481,7 @@ function printOz3(a) {
         <table>
             <thead><tr><th>Інвентарний №</th><th>Найменування обʼєкта</th><th>Дата введення</th><th class="num">Первісна вартість, грн</th><th class="num">Накопичений знос, грн</th><th class="num">Залишкова вартість, грн</th></tr></thead>
             <tbody><tr>
-                <td><b>${escapeHtml(a.id)}</b></td>
+                <td><b>${escapeHtml(a.id)}</b>${a.legacyId && a.legacyId !== a.id ? `<br><small>Старий №: ${escapeHtml(a.legacyId)}</small>` : ''}</td>
                 <td><b>${escapeHtml(a.name)}</b></td>
                 <td>${escapeHtml(human(a.commissionedDate || a.acquiredDate))}</td>
                 <td class="num">${fmtKop(a.acquiredCostKop || a.costKop)}</td>
@@ -506,7 +513,7 @@ function printWriteOffAct(a) {
         <table>
             <thead><tr><th>Номенкл. №</th><th>Найменування ТМЦ / МШП</th><th>Рахунок</th><th>Од. вим.</th><th class="num">Кількість</th><th class="num">Сума, грн</th><th>Напрям використання та місце робіт</th></tr></thead>
             <tbody><tr>
-                <td><b>${escapeHtml(a.id)}</b></td>
+                <td><b>${escapeHtml(a.id)}</b>${a.legacyId && a.legacyId !== a.id ? `<br><small>Старий №: ${escapeHtml(a.legacyId)}</small>` : ''}</td>
                 <td><b>${escapeHtml(a.name)}</b></td>
                 <td>${escapeHtml(a.subacc || a.acc)}</td>
                 <td>${escapeHtml(a.unit || 'шт.')}</td>
@@ -534,7 +541,7 @@ function printInventorySheet() {
             <thead><tr><th>№</th><th>Інв. / ном. код</th><th>Найменування обʼєкта / ТМЦ</th><th>Рах.</th><th>МВО та місце</th><th class="num">Кільк. (облік)</th><th class="num">Первісна вартість, грн</th><th class="num">Знос, грн</th><th class="num">Залишкова вартість, грн</th><th class="num">Фактична наявність</th></tr></thead>
             <tbody>${activeItems.map((a, idx) => `<tr>
                 <td>${idx + 1}</td>
-                <td><b>${escapeHtml(a.id)}</b></td>
+                <td><b>${escapeHtml(a.id)}</b>${a.legacyId && a.legacyId !== a.id ? `<br><small>стар. № ${escapeHtml(a.legacyId)}</small>` : ''}</td>
                 <td>${escapeHtml(a.name)}</td>
                 <td>${escapeHtml(a.subacc || a.acc)}</td>
                 <td>${escapeHtml([a.custodian, a.location].filter(Boolean).join(' · ') || '—')}</td>
@@ -564,7 +571,7 @@ function exportCsv() {
     const csvCell = v => (/[;"\r\n]/.test(String(v ?? '')) ? `"${String(v ?? '').replace(/"/g, '""')}"` : String(v ?? ''));
     const csvKop = k => ((Number(k || 0)) / 100).toFixed(2).replace('.', ',');
     const rows = [[
-        'Інвентарний код', 'Рахунок', 'Субрахунок', 'Найменування', 'Статус',
+        'Інвентарний код (єдина система)', 'Старий інв. № (до міграції)', 'Рахунок', 'Субрахунок', 'Найменування', 'Статус',
         'Дата оприбуткування', 'Дата введення в експлуатацію', 'Метод амортизації',
         'Строк служби (міс.)', 'Кількість на складі', 'МШП в експлуатації (позабаланс)',
         'Од. вим.', 'Первісна вартість (грн)', 'Накопичений знос (грн)', 'Залишкова вартість (грн)',
@@ -572,7 +579,7 @@ function exportCsv() {
     ]];
     for (const a of ctx.items || []) {
         rows.push([
-            a.id, a.acc, a.subacc || '', a.name, a.statusLabel,
+            a.id, a.legacyId || '', a.acc, a.subacc || '', a.name, a.statusLabel,
             a.acquiredDate || '', a.commissionedDate || '', a.deprMethod || '',
             isNonCurrent(a.acc) ? a.usefulLifeMonths : '',
             isInventory(a.acc) ? a.remainingQty : 1,
@@ -596,6 +603,10 @@ function exportCsv() {
 export async function loadAssetsView() {
     ctx = await loadAssets(period);
     period = ctx.period;
+    if (selected) {
+        const matched = (ctx.items || []).find(a => a.id === selected || (a.legacyId && a.legacyId === selected));
+        if (matched) selected = matched.id;
+    }
     const list = filterItems(ctx.items);
     if (!list.some(a => a.id === selected)) {
         selected = window.matchMedia('(max-width: 900px)').matches ? null : list[0]?.id || null;
@@ -607,11 +618,10 @@ export async function loadAssetsView() {
     if (!host) return 0;
 
     host.innerHTML = `
-        <div class="buh-toolbar">
-            <select id="asPeriod" class="field-input field-select ch-period" aria-label="Період">${(ctx.periods || []).slice().reverse().map(p =>
-                `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
-            <span class="buh-note">НП(С)БО 7 «Основні засоби», НП(С)БО 9 «Запаси», пп. 14.1.138 ПКУ (поріг МНМА — ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн).</span>
+        <div class="buh-toolbar as-toolbar-right">
             <span class="ch-tools">
+                <select id="asPeriod" class="field-input field-select ch-period" aria-label="Період">${(ctx.periods || []).slice().reverse().map(p =>
+                    `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
                 <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-card">+ Картка ОЗ / ТМЦ</button>
                 <button type="button" class="btn-ghost-small" data-act="print-inventory">Інвентаризаційний опис</button>
                 <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
@@ -650,7 +660,7 @@ export async function loadAssetsView() {
             <section class="fl-list" aria-label="Інвентарна книга та ТМЦ">
                 <label class="fl-search dc-search">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                    <input type="search" id="asQuery" placeholder="Інв. №, назва, МВО, місце…" value="${escapeHtml(query)}" aria-label="Пошук активу або ТМЦ">
+                    <input type="search" id="asQuery" placeholder="Інв. № (новий чи старий), назва, МВО, місце…" value="${escapeHtml(query)}" aria-label="Пошук активу або ТМЦ">
                 </label>
                 ${list.length
                     ? `<ul class="fl-items">${list.map(listRowHtml).join('')}</ul>`
@@ -659,7 +669,8 @@ export async function loadAssetsView() {
             <section class="fl-card dc-card${cur || !list.length ? '' : ' is-idle'}" id="asCard" aria-live="polite">
                 ${detailCardHtml(cur, !list.length)}
             </section>
-        </div>`;
+        </div>
+        <p class="buh-note as-footer-note">НП(С)БО 7 «Основні засоби», НП(С)БО 9 «Запаси», пп. 14.1.138 ПКУ (поріг МНМА — ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн).</p>`;
 
     return (s.uncommissionedCount || 0) + (ctx.status === 'open' ? (s.dueDeprCount || 0) : 0);
 }
@@ -667,9 +678,11 @@ export async function loadAssetsView() {
 async function saveCard(btn) {
     const acc = val('afAcc') || '10';
     const donatedKop = val('afDonatedKop') ? toKop(val('afDonatedKop')) : 0;
+    const autoId = val('afId') || suggestAssetId(acc, allUsedIds());
     const payload = {
         action: 'saveAsset',
-        id: val('afId'),
+        id: autoId,
+        legacyId: val('afLegacyId'),
         acc,
         subacc: val('afSubacc'),
         name: val('afName'),
@@ -720,7 +733,7 @@ async function saveCommission(btn) {
             location: val('cmLocation')
         });
         form = null;
-        selected = id;
+        selected = r.id || id;
         toast(r.accruedKop ? `Введено в експлуатацію (ОЗ-1) та нараховано знос ${fmtKop(r.accruedKop)} грн` : 'Обʼєкт введено в експлуатацію за Актом ОЗ-1', 'success');
         await loadAssetsView();
     } catch (e) { toast(e.message, 'error'); }
@@ -743,7 +756,7 @@ async function saveWriteOff(btn) {
             reason: val('woReason')
         });
         form = null;
-        selected = id;
+        selected = r.id || id;
         toast(r.acc === '22'
             ? `МШП передано в експлуатацію (${fmtKop(r.amountKop)} грн списано на 92, облік за МВО збережено)`
             : `Списано використані запаси на суму ${fmtKop(r.amountKop)} грн`, 'success');
@@ -764,7 +777,7 @@ async function saveDispose(btn) {
             reason: val('dpReason')
         });
         form = null;
-        selected = id;
+        selected = r.id || id;
         toast(`Обʼєкт ліквідовано за Актом ОЗ-3 (списано знос ${fmtKop(r.wearKop)} грн)`, 'success');
         await loadAssetsView();
     } catch (e) { toast(e.message, 'error'); }
@@ -775,7 +788,7 @@ async function saveRetireMshp(btn) {
     const id = btn.dataset.id;
     setBusy(btn, true, 'Списую з позабалансу…');
     try {
-        await assetsAct({
+        const r = await assetsAct({
             action: 'retireMshp',
             id,
             date: val('rtDate'),
@@ -784,7 +797,7 @@ async function saveRetireMshp(btn) {
             reason: val('rtReason')
         });
         form = null;
-        selected = id;
+        selected = r.id || id;
         toast('Зношений МШП списано з оперативного позабалансового обліку', 'success');
         await loadAssetsView();
     } catch (e) { toast(e.message, 'error'); }
@@ -801,7 +814,7 @@ export function initAssetsView() {
         if (!btn || btn.disabled) return;
         const a = btn.dataset.act;
         const id = btn.dataset.id || selected;
-        const card = (ctx?.items || []).find(x => x.id === id);
+        const card = (ctx?.items || []).find(x => x.id === id || (x.legacyId && x.legacyId === id));
 
         if (a === 'pick') {
             selected = btn.dataset.id;
@@ -813,7 +826,7 @@ export function initAssetsView() {
         if (a === 'close-form') { form = null; loadAssetsView(); return; }
         if (a === 'new-card') {
             const defaultAcc = segment === 'mnhma' ? '11' : segment === 'stock' ? '20' : segment === 'mshp' ? '22' : '10';
-            form = { kind: 'card', data: { acc: defaultAcc } };
+            form = { kind: 'card', data: { acc: defaultAcc, id: suggestAssetId(defaultAcc, allUsedIds()) } };
             await loadAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
@@ -894,10 +907,12 @@ export function initAssetsView() {
                 ...form.data,
                 acc: newAcc,
                 subacc: defaultSubacc(newAcc),
-                id: suggestAssetId(newAcc, (ctx.items || []).map(x => x.id)),
+                id: suggestAssetId(newAcc, allUsedIds()),
+                legacyId: val('afLegacyId'),
                 name: val('afName'),
                 custodian: val('afCustodian'),
-                location: val('afLocation')
+                location: val('afLocation'),
+                passportNote: val('afNote')
             };
             loadAssetsView();
         }
