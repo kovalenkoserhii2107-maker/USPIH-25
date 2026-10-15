@@ -1147,3 +1147,28 @@ body.chs-open { overflow: hidden; }
         gap: 8px;
     }
 }
+
+/* ---------- Додаткове вирівнювання для «Майно та ТМЦ» і «Авансові звіти» ---------- */
+.as-toolbar-right {
+    justify-content: flex-end;
+}
+.as-toolbar-right .ch-tools {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.as-footer-note {
+    margin: 20px 4px 0;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    text-align: right;
+    color: var(--sv-muted, #4D4D4D);
+    font-size: 13px;
+}
+@media (max-width: 720px) {
+    .as-footer-note {
+        text-align: left;
+    }
+}

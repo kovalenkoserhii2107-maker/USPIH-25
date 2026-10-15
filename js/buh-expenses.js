@@ -47,6 +47,7 @@ const docName = x => `${ctx.docTypes[x.docType] || 'Документ'} № ${x.n
 const docsWord = n => (n % 10 === 1 && n % 100 !== 11 ? 'документ' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'документи' : 'документів');
 const val = id => document.getElementById(id)?.value?.trim() ?? '';
 const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
+const allExistingAssetIds = () => ctx?.existingAssetIds || (ctx?.expenses || []).map(x => x.assetId).filter(Boolean);
 
 /** Відкрити розділ на потрібній вкладці, за потреби — з готовою формою чи документом. */
 export function openExpenses(seg = 'docs', prefill = null, docId = null) {
@@ -73,6 +74,9 @@ const money2 = k => (k ? (k / 100).toFixed(2).replace('.', ',') : '');
 function docFormHtml(d = {}) {
     const supplierId = d.supplierId || '';
     const contracts = ctx.contracts.filter(c => c.supplierId === supplierId && c.status !== 'rejected');
+    const postingAcc = d.postingAcc || '92';
+    const prefilledAssetId = postingAcc !== '92' ? (d.assetId || suggestAssetId(postingAcc, allExistingAssetIds())) : (d.assetId || '');
+    const catalog = ctx.assetCatalog || [];
     return `<section class="buh-card ex-form" id="exForm">
         <div class="buh-card-head"><h2>${d.id ? 'Змінити документ' : 'Новий документ'}</h2><button type="button" class="btn-ghost-small" data-act="close">Закрити</button></div>
         <div class="pay-grid">
@@ -90,18 +94,19 @@ function docFormHtml(d = {}) {
             <label class="field"><span class="field-label">У т.ч. ПДВ, грн</span><input id="dfVat" class="field-input" inputmode="decimal" placeholder="без ПДВ" value="${money2(d.vatKop)}"></label>
             <label class="field pay-wide"><span class="field-label">Стаття витрат</span><select id="dfItem" class="field-input field-select">${options(ctx.items, d.item || 'other')}</select></label>
             <label class="field pay-wide"><span class="field-label">Джерело фінансування</span><select id="dfFund" class="field-input field-select">${options({...Object.fromEntries((ctx.funds || [{id:'main',name:'Основний фонд'}]).map(f=>[f.id,f.name])),...(ctx.ownIncome?{own:'Власний дохід (без використання 48)'}:{})},d.fundId || ctx.defaultFund || 'main')}</select></label>
-            <details class="pay-wide"${d.postingAcc && d.postingAcc !== '92' ? ' open' : ''}><summary>Придбання активу ОСББ (ОЗ, МНМА) або ТМЦ (Запаси, МШП)</summary>
-                <p class="buh-note">Послуги й ремонт спільного майна будинку — це поточні витрати (рахунок 92). Тут виділяють майно, яке переходить у власність ОСББ як юрособи: понад ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн і > 1 року — Основні засоби (10); до ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн і > 1 року — МНМА (11); паливо, будматеріали, запчастини — Запаси (20); інвентар та інструмент до 1 року — МШП (22).</p>
+            <details class="pay-wide"${postingAcc !== '92' ? ' open' : ''}><summary>Придбання активу ОСББ (ОЗ, МНМА) або ТМЦ (Запаси, МШП)</summary>
+                <p class="buh-note">Послуги й ремонт спільного майна будинку — це поточні витрати (рахунок 92). Тут виділяють майно, яке переходить у власність ОСББ як юрособи: понад ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн і > 1 року — Основні засоби (10); до ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн і > 1 року — МНМА (11); паливо, будматеріали, запчастини — Запаси (20); інвентар та інструмент до 1 року — МШП (22). Інвентарний / номенклатурний номер підставляється автоматично.</p>
                 <div class="pay-grid" style="margin-top:8px">
-                    <label class="field"><span class="field-label">Рахунок обліку</span><select id="dfPosting" class="field-input field-select">${options({'92':'92 · Поточні витрати / послуги','10':'10 · Основний засіб ОСББ (ОЗ)','11':'11 · Малоцінний необоротний актив (МНМА)','20':'20 · Виробничі запаси (паливо, матеріали)','22':'22 · Малоцінні та швидкозношувані предмети (МШП)'},d.postingAcc || '92')}</select></label>
-                    <label class="field"><span class="field-label">Інвентарний / номенклатурний код</span><input id="dfAsset" class="field-input" maxlength="80" placeholder="Напр.: ОЗ-001, МНМА-001, ТМЦ-001" value="${escapeHtml(d.assetId || '')}"></label>
+                    <label class="field"><span class="field-label">Рахунок обліку</span><select id="dfPosting" class="field-input field-select">${options({'92':'92 · Поточні витрати / послуги','10':'10 · Основний засіб ОСББ (ОЗ)','11':'11 · Малоцінний необоротний актив (МНМА)','20':'20 · Виробничі запаси (паливо, матеріали)','22':'22 · Малоцінні та швидкозношувані предмети (МШП)'},postingAcc)}</select></label>
+                    <label class="field"><span class="field-label">Інвентарний / номенкл. код (авто)</span><input id="dfAsset" list="dfAssetList" class="field-input" maxlength="80" placeholder="Підставляється автоматично (ОЗ-001, ТМЦ-001…)" value="${escapeHtml(prefilledAssetId)}"></label>
                     <label class="field"><span class="field-label">Кількість (для ТМЦ / МШП)</span><input id="dfAssetQty" class="field-input" type="number" step="0.001" min="0.001" value="${escapeHtml(String(d.assetQty || 1))}"></label>
                     <label class="field"><span class="field-label">Одиниця виміру</span><select id="dfAssetUnit" class="field-input field-select">${UNITS.map(u => `<option value="${escapeHtml(u)}"${u === (d.assetUnit || 'шт.') ? ' selected' : ''}>${escapeHtml(u)}</option>`).join('')}</select></label>
                     <label class="field"><span class="field-label">МВО (хто прийняв майно)</span><input id="dfCustodian" class="field-input" maxlength="160" placeholder="Голова правління / комендант / електрик" value="${escapeHtml(d.custodian || '')}"></label>
                     <label class="field"><span class="field-label">Місце зберігання / встановлення</span><input id="dfLocation" class="field-input" maxlength="200" placeholder="Техприміщення / комора / електрощитова" value="${escapeHtml(d.location || '')}"></label>
-                    <label class="am-check pay-wide"><input id="dfOwned" type="checkbox"${d.ownedByOsbb?' checked':''}><span>Підтверджую: майно належить саме ОСББ як юридичній особі (не є невідʼємною частиною спільного майна будинку)</span></label>
+                    <label class="am-check pay-wide"><input id="dfOwned" type="checkbox"${d.ownedByOsbb || postingAcc !== '92' ? ' checked' : ''}><span>Підтверджую: майно належить саме ОСББ як юридичній особі (не є невідʼємною частиною спільного майна будинку)</span></label>
                     <label class="am-check pay-wide"><input id="dfCommissionNow" type="checkbox"${d.commissionedDate ? ' checked' : ''}><span>Для ОЗ (10) та МНМА (11): одразу ввести в експлуатацію датою документа (Акт ОЗ-1)</span></label>
                 </div>
+                <datalist id="dfAssetList">${catalog.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${a.legacyId ? ` (стар. № ${escapeHtml(a.legacyId)})` : ''}</option>`).join('')}</datalist>
             </details>
             <label class="field pay-wide"><span class="field-label">За що</span><input id="dfDesc" class="field-input" maxlength="300" placeholder="Послуга чи товар, період" value="${escapeHtml(d.description || '')}"></label>
             ${!d.id && supplierId ? `<label class="field pay-wide"><span class="field-label">Підтверджує документ тієї самої послуги</span>
@@ -440,6 +445,9 @@ async function saveDoc(btn) {
     if (vat === null) { toast('ПДВ — сума в гривнях', 'error'); return; }
     // Після будь-якої дії розділ перемальовується — введене не має зникнути, якщо сервер відмовить.
     form = snapshotForm();
+    if (form.data.postingAcc && form.data.postingAcc !== '92' && !form.data.assetId) {
+        form.data.assetId = suggestAssetId(form.data.postingAcc, allExistingAssetIds());
+    }
     setBusy(btn, true, files.length ? 'Завантажую файли…' : 'Зберігаю…');
     try {
         const uploaded = await uploadExpenseFiles(files);
@@ -671,13 +679,17 @@ export function initExpensesView() {
                 if (!val('dfDesc')) document.getElementById('dfDesc').value = `${c.subject} за ${periodName(val('dfPeriod'))}`;
             }
         }
-        if (t.id === 'dfPosting' && t.value !== '92') {
+        if (t.id === 'dfPosting') {
             const assetInput = document.getElementById('dfAsset');
             const ownedBox = document.getElementById('dfOwned');
-            if (ownedBox) ownedBox.checked = true;
-            if (assetInput && (!assetInput.value || /^(ОЗ|МНМА|ТМЦ|МШП)-\d+$/.test(assetInput.value))) {
-                const existing = (ctx.expenses || []).map(x => x.assetId).filter(Boolean);
-                assetInput.value = suggestAssetId(t.value, existing);
+            if (t.value === '92') {
+                if (assetInput) assetInput.value = '';
+                if (ownedBox) ownedBox.checked = false;
+            } else {
+                if (ownedBox) ownedBox.checked = true;
+                if (assetInput && (!assetInput.value || /^(ОЗ|МНМА|ТМЦ|МШП)-\d+$/i.test(assetInput.value))) {
+                    assetInput.value = suggestAssetId(t.value, allExistingAssetIds());
+                }
             }
         }
         if (t.id === 'sfKind') document.getElementById('sfFopRow').hidden = t.value !== 'fop';
@@ -703,7 +715,6 @@ export function initExpensesView() {
     host.addEventListener('keydown', e => {
         if (e.key !== 'Enter' || !e.target.closest('#exForm') || e.target.matches('textarea, select, [type="file"]')) return;
         e.preventDefault();
-        host.querySelector('#exForm [data-act^="save"]')?.click();
+        document.querySelector('#exForm [data-act^="save-"]')?.click();
     });
 }
-

@@ -279,3 +279,39 @@ test('ліквідація обʼєкта ОЗ / МНМА за Актом ОЗ-3
     assert.deepEqual(plan.lines[0], { dr: '132', cr: '11', dA: 'МНМА-002', cA: 'МНМА-002', kop: 400_000, fund: 'main' });
     assert.deepEqual(plan.lines[1], { dr: '92', cr: '11', dA: 'repair', cA: 'МНМА-002', kop: 400_000, fund: 'main' });
 });
+
+test('єдина система інвентарних номерів та збереження старого номера (legacyId) при міграції з попередньої системи обліку', () => {
+    const opening = {
+        status: 'approved',
+        lines: [
+            { acc: '131', a: 'Інв-104/12', side: 'cr', kop: 1_500_000, memo: 'Знос генератора' },
+            { acc: '10', a: 'Інв-104/12', side: 'dr', kop: 6_000_000, memo: 'Генератор інверторний 5,5 кВт' },
+            { acc: '20', a: 'СКЛ-0045', side: 'dr', kop: 800_000, memo: 'Дизельне паливо зимове' }
+        ]
+    };
+    const policy = { startDate: '2026-10-01', defaultFund: 'main' };
+    const state = assets.reconcileAssets({ opening, policy, period: '2026-10' });
+
+    const gen = state.items.find(x => x.legacyId === 'Інв-104/12');
+    assert.ok(gen, 'Обʼєкт ОЗ має знаходитися за старим інвентарним номером Інв-104/12');
+    assert.equal(gen.id, 'ОЗ-001', 'Обʼєкту автоматично присвоєно єдиний інвентарний номер ОЗ-001');
+    assert.equal(gen.name, 'Генератор інверторний 5,5 кВт');
+    assert.equal(gen.costKop, 6_000_000);
+    assert.equal(gen.wearKop, 1_500_000);
+    assert.equal(gen.netKop, 4_500_000);
+
+    const fuel = state.items.find(x => x.legacyId === 'СКЛ-0045');
+    assert.ok(fuel, 'ТМЦ має знаходитися за старим номенклатурним номером СКЛ-0045');
+    assert.equal(fuel.id, 'ТМЦ-001', 'ТМЦ автоматично присвоєно єдиний номенклатурний номер ТМЦ-001');
+    assert.equal(fuel.costKop, 800_000);
+
+    // Перевірка наскрізної підстановки наступного вільного номера з урахуванням усіх джерел
+    const allIds = assets.collectExistingAssetIds({
+        assets: state.items,
+        opening,
+        expenses: [{ status: 'approved', assetId: 'ОЗ-002' }],
+        advanceReports: [{ status: 'approved', lines: [{ postingAcc: '20', assetId: 'ТМЦ-002' }] }]
+    });
+    assert.equal(assets.suggestAssetId('10', allIds), 'ОЗ-003');
+    assert.equal(assets.suggestAssetId('20', allIds), 'ТМЦ-003');
+});

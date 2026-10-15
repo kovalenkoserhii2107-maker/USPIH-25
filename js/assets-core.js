@@ -1,12 +1,10 @@
 // ============================================================
-// Основні засоби (ОЗ, МНМА) та ТМЦ (Виробничі запаси, МШП) ОСББ:
-// класифікація, інвентарна книга, методи амортизації, складський
-// і позабалансовий кількісний облік МШП в експлуатації, списання
-// та ліквідація (ES-модуль для клієнта, синхронний з functions/assets-core.js).
+// Чисті функції обліку ОЗ, МНМА (НП(С)БО 7) та ТМЦ, МШП (НП(С)БО 9)
+// для кабінету бухгалтера та тестів.
 // ============================================================
 
 export const DEFAULT_MNHMA_LIMIT_KOP = 2_000_000; // 20 000,00 грн (пп. 14.1.138 ПКУ)
-const MAX_KOP = 100_000_000_000;
+export const MAX_KOP = 100_000_000_000;
 
 export const ASSET_ACCOUNTS = {
     10: 'Основні засоби (ОЗ)',
@@ -44,21 +42,14 @@ export const ASSET_STATUS_LABELS = {
     disposed: ['Списано / ліквідовано', '']
 };
 
-const validDate = d => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))) return false;
-    const dt = new Date(`${d}T00:00:00Z`);
-    return !Number.isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === d;
-};
-const validPeriod = p => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(p || ''));
-const lastDayOfPeriod = p => {
-    const [y, m] = String(p).split('-').map(Number);
-    return `${p}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
-};
 export const isNonCurrent = acc => acc === '10' || acc === '11';
 export const isInventory = acc => acc === '20' || acc === '22';
 export const wearAccountFor = acc => (acc === '10' ? '131' : acc === '11' ? '132' : null);
 export const defaultSubacc = acc => (acc === '10' ? '104' : acc === '11' ? '112' : acc === '20' ? '209' : '22');
 export const defaultDeprMethod = acc => (acc === '10' ? 'straight' : acc === '11' ? 'mnhma_100' : null);
+
+const UNIFIED_ID_RE = /^(ОЗ|МНМА|ТМЦ|МШП)-\d{1,6}$/i;
+export const isUnifiedAssetId = id => UNIFIED_ID_RE.test(String(id || '').trim());
 
 export function recommendClassification({ unitCostKop = 0, usefulLifeMonths = 12, consumable = false, mnhmaLimitKop = DEFAULT_MNHMA_LIMIT_KOP } = {}) {
     if (consumable) {
@@ -94,119 +85,31 @@ export function recommendClassification({ unitCostKop = 0, usefulLifeMonths = 12
 }
 
 export function suggestAssetId(acc, existingIds = []) {
-    const prefix = acc === '10' ? 'ОЗ-' : acc === '11' ? 'МНМА-' : acc === '22' ? 'МШП-' : 'ТМЦ-';
-    const used = new Set((existingIds || []).map(x => String(x || '').trim().toUpperCase()));
+    const prefix = String(acc) === '10' ? 'ОЗ-' : String(acc) === '11' ? 'МНМА-' : String(acc) === '22' ? 'МШП-' : 'ТМЦ-';
+    const used = new Set();
+    for (const item of existingIds || []) {
+        if (!item) continue;
+        if (typeof item === 'object') {
+            if (item.id) used.add(String(item.id).trim().toUpperCase());
+            if (item.legacyId) used.add(String(item.legacyId).trim().toUpperCase());
+            if (item.assetId) used.add(String(item.assetId).trim().toUpperCase());
+        } else {
+            used.add(String(item).trim().toUpperCase());
+        }
+    }
     let maxNum = 0;
     for (const id of used) {
         if (id.startsWith(prefix)) {
-            const n = Number(id.slice(prefix.length).replace(/\D+/g, ''));
-            if (Number.isInteger(n) && n > maxNum) maxNum = n;
+            const tail = id.slice(prefix.length);
+            if (/^\d+$/.test(tail)) {
+                const n = Number(tail);
+                if (Number.isInteger(n) && n > maxNum) maxNum = n;
+            }
         }
     }
-    for (let next = maxNum + 1; next < 10000; next++) {
+    for (let next = maxNum + 1; next < 100000; next++) {
         const candidate = `${prefix}${String(next).padStart(3, '0')}`;
         if (!used.has(candidate)) return candidate;
     }
     return `${prefix}${Date.now().toString().slice(-4)}`;
-}
-
-export function checkAssetCard(card) {
-    const id = String(card?.id || '').trim();
-    if (id.length < 2 || id.length > 80) return 'Вкажіть інвентарний або номенклатурний код (від 2 до 80 символів, напр. ОЗ-001)';
-    const acc = String(card?.acc || '');
-    if (!ASSET_ACCOUNTS[acc]) return 'Оберіть рахунок обліку: 10 (ОЗ), 11 (МНМА), 20 (Запаси) або 22 (МШП)';
-    const name = String(card?.name || '').trim();
-    if (name.length < 2 || name.length > 200) return 'Вкажіть назву обʼєкта або ТМЦ (від 2 до 200 символів)';
-    if (card?.subacc && (!ASSET_SUBACCOUNTS[card.subacc] || ASSET_SUBACCOUNTS[card.subacc].acc !== acc)) {
-        return 'Субрахунок не відповідає обраному синтетичному рахунку';
-    }
-    if (isNonCurrent(acc)) {
-        const method = card?.deprMethod || defaultDeprMethod(acc);
-        if (!DEPR_METHODS[method]) return 'Оберіть метод нарахування амортизації';
-        if (acc === '10' && method !== 'straight') return 'Для основних засобів (рахунок 10) застосовується прямолінійний метод амортизації (п. 26 НП(С)БО 7)';
-        if (method === 'straight') {
-            const months = Number(card?.usefulLifeMonths);
-            if (!Number.isInteger(months) || months < 1 || months > 600) {
-                return 'Для прямолінійного методу вкажіть строк корисного використання в місяцях (напр. 36 або 60 міс.)';
-            }
-        }
-        const salvage = Number(card?.salvageKop || 0);
-        if (!Number.isInteger(salvage) || salvage < 0 || salvage > MAX_KOP) return 'Ліквідаційна вартість має бути цілим невідʼємним числом';
-        if (card?.commissionedDate && !validDate(card.commissionedDate)) return 'Некоректна дата введення в експлуатацію';
-    } else {
-        const qty = Number(card?.initialQty ?? 1);
-        if (!Number.isFinite(qty) || qty <= 0 || qty > 1_000_000) return 'Кількість ТМЦ має бути додатною';
-    }
-    return null;
-}
-
-export function monthlyDepreciationFor(asset, period) {
-    if (!validPeriod(period) || !isNonCurrent(asset?.acc)) return 0;
-    const costKop = Number(asset?.costKop || 0);
-    const salvageKop = Math.max(0, Math.min(costKop, Number(asset?.salvageKop || 0)));
-    const depreciableKop = Math.max(0, costKop - salvageKop);
-    const wearBeforeKop = Number(asset?.wearBeforePeriodKop ?? asset?.wearKop ?? 0);
-    const alreadyInPeriodKop = Number(asset?.deprThisPeriodKop || 0);
-    if (costKop <= 0 || depreciableKop <= 0) return 0;
-    if (alreadyInPeriodKop > 0) return 0;
-    if (asset?.disposedDate && asset.disposedDate.slice(0, 7) <= period) return 0;
-
-    const commDate = String(asset?.commissionedDate || '').trim();
-    if (!validDate(commDate)) return 0;
-    const commPeriod = commDate.slice(0, 7);
-
-    const remainingDepreciable = Math.max(0, depreciableKop - wearBeforeKop);
-    if (remainingDepreciable <= 0) return 0;
-
-    const method = asset?.deprMethod || defaultDeprMethod(asset.acc);
-    if (method === 'mnhma_100') {
-        if (period < commPeriod) return 0;
-        return remainingDepreciable;
-    }
-    if (method === 'mnhma_50_50') {
-        if (period < commPeriod) return 0;
-        const firstHalf = Math.round(depreciableKop / 2);
-        if (wearBeforeKop < firstHalf) return Math.min(remainingDepreciable, firstHalf - wearBeforeKop);
-        return 0;
-    }
-    if (period <= commPeriod) return 0;
-    const months = Math.max(1, Number(asset?.usefulLifeMonths || 36));
-    const monthly = Math.max(1, Math.round(depreciableKop / months));
-    return Math.min(remainingDepreciable, monthly);
-}
-
-export function planMonthlyDepreciation(reconciledItems, period) {
-    if (!validPeriod(period)) return { date: '', period, lines: [], items: [], totalKop: 0 };
-    const date = lastDayOfPeriod(period);
-    const lines = [];
-    const items = [];
-    let totalKop = 0;
-
-    for (const a of reconciledItems || []) {
-        if (!isNonCurrent(a.acc)) continue;
-        const kop = monthlyDepreciationFor(a, period);
-        if (kop <= 0) continue;
-        const cr = wearAccountFor(a.acc);
-        const dA = a.item || 'systems';
-        lines.push({
-            dr: '92',
-            cr,
-            dA,
-            cA: a.id,
-            kop,
-            fund: a.fundId || 'main'
-        });
-        items.push({
-            id: a.id,
-            name: a.name,
-            acc: a.acc,
-            wearAcc: cr,
-            deprMethod: a.deprMethod,
-            kop,
-            fundId: a.fundId || 'main',
-            item: dA
-        });
-        totalKop += kop;
-    }
-    return { date, period, lines, items, totalKop };
 }

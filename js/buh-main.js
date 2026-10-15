@@ -48,6 +48,7 @@ const VIEWS = {
 };
 // Старі посилання (#overview) ведуть на «Сьогодні».
 const ALIASES = { overview: 'today' };
+const MENU_ONLY_VIEWS = new Set(['assets', 'advance', 'claims', 'budget', 'settings']);
 const textOf = v => (typeof v === 'function' ? v() : v);
 let view = 'today';
 
@@ -64,6 +65,7 @@ async function show(name, { push = true, refresh = false } = {}) {
     document.querySelectorAll('[data-view]').forEach(b => {
         if (b.matches('.buh-nav-item, .buh-tab')) b.classList.toggle('active', b.dataset.view === name);
     });
+    document.getElementById('buhAccountBtn')?.classList.toggle('active', MENU_ONLY_VIEWS.has(name));
     const title = textOf(VIEWS[name].title);
     document.getElementById('buhTitle').textContent = title;
     document.getElementById('buhSubtitle').textContent = textOf(VIEWS[name].sub);
@@ -114,6 +116,9 @@ const ICON = {
     charges: '<path d="M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"/>',
     budget: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',
     assets: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+    advance: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
+    claims: '<path d="M12 3v18M5 7h14M7 7l-3 6h6l-3-6zM17 7l-3 6h6l-3-6z"/><path d="M8 21h8"/>',
+    check: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     journal: '<path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     board: '<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-4h6v4"/>',
@@ -126,7 +131,9 @@ const icon = k => `<svg class="mn-ico-svg" viewBox="0 0 24 24" width="22" height
 function renderAccount(apartment) {
     const name = session.staffName || (session.serviceAccount ? 'Бухгалтер' : `Квартира ${session.apt}`);
     const initial = name.trim().charAt(0).toUpperCase() || 'Б';
-    document.getElementById('buhAccountBtn').textContent = initial;
+    const avaEl = document.getElementById('buhAccountAva');
+    if (avaEl) avaEl.textContent = initial;
+    else document.getElementById('buhAccountBtn').textContent = initial;
     // Плитки основних розділів — лише на телефоні (на компʼютері вони вгорі).
     const tile = (v, t, sub) => `<button class="mn-tile buh-nav-item" data-view="${v}" type="button"><span class="mn-ico">${icon(v)}</span><b>${t}</b><small>${sub}</small></button>`;
     // Рядок меню: іконка, назва, підпис, стрілка; mobileOnly ховає на ПК розділи, які вже винесені у верхню панель.
@@ -150,8 +157,8 @@ function renderAccount(apartment) {
             ${row('data-view="inbox"', 'inbox', 'Рішення', 'усе, що чекає вас, — по черзі', '<span class="mn-badge" id="buhInboxBadgeMenu" hidden></span>', true)}
             ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки', '', true)}
             ${row('data-view="assets"', 'assets', 'Майно та ТМЦ', 'основні засоби (10), МНМА (11), запаси (20), МШП (22), амортизація')}
-            ${row('data-view="advance"', 'expenses', 'Авансові звіти (372)', 'підзвітні особи, витрати за чеками, виплата на картку')}
-            ${row('data-view="claims"', 'charges', 'Претензійно-позовна робота', 'боржники, претензії, судові накази, позови, договори')}
+            ${row('data-view="advance"', 'advance', 'Авансові звіти (372)', 'підзвітні особи, витрати за чеками, виплата на картку')}
+            ${row('data-view="claims"', 'claims', 'Претензійно-позовна робота', 'боржники, претензії, судові накази, позови, договори')}
             ${row('data-view="budget"', 'budget', 'Кошторис', 'план і виконання за рік, звіт для мешканців')}
             ${row('data-view="journal"', 'journal', 'Проводки й ОСВ', 'журнал, закриття місяця', '', true)}
         </nav>
@@ -169,93 +176,83 @@ async function openCabinet(apt) {
     if (!hasRight(session.role, 'account')) { location.replace('admin.html'); return; }
     rememberWorkMode('buh');
     renderAccount(apartment);
-    restoreCachedBadges();
     document.getElementById('buhApp').hidden = false;
     hideAppLoader();
-    const wanted = location.hash.slice(1);
-    await Promise.all([
-        show(VIEWS[ALIASES[wanted] || wanted] ? wanted : 'today', { push: false }),
-        renderSync(),
-        refreshBadge()
-    ]);
+    await show(location.hash.replace('#', '') || 'today', { push: false });
+    renderSync();
+    refreshBadge();
+    onChange(() => {
+        show(view, { push: false, refresh: true });
+        renderSync();
+        refreshBadge();
+    });
 }
 
-onAuthStateChanged(auth, async user => {
-    if (!user) { resetSession(); toResident(); return; }
-    if (sessionExpired()) { await signOut(auth); return; }
-    try {
-        await loadResiliently(() => openCabinet(currentApt()), null);
-    } catch (e) {
-        console.error('Завантаження бухгалтерії:', e);
-        toast('Не вдалося завантажити бухгалтерію', 'error');
-        document.getElementById('buhApp').hidden = false;
-        hideAppLoader();
+// ------------------------------------------------------------
+// СТАРТ
+// ------------------------------------------------------------
+initSheets();
+restoreCachedBadges();
+initAppShell('Бухгалтерія');
+initInbox(() => view === 'inbox');
+initMonthView();
+initFlatsView();
+initBankView();
+initPaymentsView();
+initChargesView();
+initExpensesView();
+initBudgetView();
+initPayrollView();
+initReportsView();
+initAssetsView();
+initAdvanceView();
+initJournalView();
+initSettingsView();
+
+document.addEventListener('click', e => {
+    const mode = e.target.closest('[data-mode]');
+    if (mode) { rememberWorkMode(mode.dataset.mode); return; }
+    const nav = e.target.closest('[data-view]');
+    if (nav) {
+        if (nav.dataset.view === 'more') { openSheet('buhMoreSheet'); return; }
+        closeAllSheets();
+        show(nav.dataset.view);
+        return;
     }
+    const go = e.target.closest('[data-go]');
+    if (go) {
+        if (go.dataset.inboxFilter) setInboxFilter(go.dataset.inboxFilter);
+        show(go.dataset.go);
+        return;
+    }
+    if (e.target.closest('#buhAccountBtn')) { openSheet('buhMoreSheet'); return; }
+    if (e.target.closest('[data-act="logout"]')) { resetSession(); signOut(auth).then(toResident); }
 });
 
-// ------------------------------------------------------------
-// ПОДІЇ
-// ------------------------------------------------------------
-function init() {
-    initAppShell();
-    initSheets();
-    initInbox(() => view === 'inbox');
-    initBankView();
-    initPaymentsView();
-    initChargesView(() => view === 'charges');
-    initExpensesView();
-    initBudgetView();
-    initAssetsView();
-    initAdvanceView();
-    initJournalView();
-    initPayrollView();
-    initReportsView();
-    initSettingsView();
-    initMonthView();
-    initFlatsView();
-    registerServiceWorker();
+document.getElementById('buhSyncChip').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Синхронізую…';
+    try {
+        const r = await act({ action: 'sync' });
+        toast(`Нових: ${r.imported}, рознесено: ${r.autoAssigned}, чекають: ${r.review}`, 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; renderSync(); }
+});
 
-    document.addEventListener('click', async e => {
-        // Навігація — пункти меню, вкладки й посилання data-go всередині розділів.
-        const nav = e.target.closest('.buh-nav-item[data-view], .buh-tab[data-view], [data-go]');
-        if (nav) {
-            const name = nav.dataset.go || nav.dataset.view;
-            if (name === 'more') { openSheet('buhMoreSheet'); return; }
-            if (VIEWS[ALIASES[name] || name]) { e.preventDefault(); if (nav.dataset.inboxGroup) setInboxFilter(nav.dataset.inboxGroup); closeAllSheets(); show(name); return; }
-        }
-        const mode = e.target.closest('[data-mode]')?.dataset.mode;
-        if (mode) rememberWorkMode(mode);
-        if (e.target.closest('[data-act="logout"]')) {
-            localStorage.removeItem('session_timestamp');
-            await signOut(auth);
-        }
-        if (e.target.closest('#buhAccountBtn')) openSheet('buhMoreSheet');
-    });
+window.addEventListener('popstate', () => show(location.hash.replace('#', '') || 'today', { push: false }));
 
-    document.getElementById('buhSyncChip').addEventListener('click', async e => {
-        const chip = e.currentTarget;
-        chip.disabled = true;
-        chip.textContent = 'Виписка: оновлюю…';
-        try {
-            const r = await act({ action: 'sync' }, 120000);
-            toast(r?.partial ? `Частину рахунків не оновлено. Збережено нових операцій: ${r.added || 0}. Деталі у «Банку».`
-                : r?.waiting ? 'Банк зараз оновлює дані — спробуйте за кілька хвилин' : r?.added ? `Нових операцій: ${r.added}` : 'Виписку перевірено. Нових операцій немає', r?.partial ? 'error' : 'success');
-        } catch (err) { toast(err.message, 'error'); }
-        finally { chip.disabled = false; }
-    });
+let activeUserKey = null;
+onAuthStateChanged(auth, async user => {
+    if (!user) { activeUserKey = null; resetSession(); toResident(); return; }
+    if (await sessionExpired(user)) { activeUserKey = null; resetSession(); await signOut(auth); toResident(); return; }
+    const apt = currentApt(user);
+    if (!apt) { activeUserKey = null; resetSession(); toResident(); return; }
+    const key = `${user.uid}:${apt}`;
+    if (key === activeUserKey) return;
+    activeUserKey = key;
+    try { await openCabinet(apt); }
+    catch (e) { activeUserKey = null; console.error('Вхід у бухгалтерію:', e); hideAppLoader(); toast('Помилка завантаження', 'error'); }
+});
 
-    // Після будь-якої дії — перемальовуємо відкритий розділ і лічильники.
-    onChange(() => {
-        clearTimeout(init.timer);
-        init.timer = setTimeout(() => {
-            // «Вхідні» оновлюють себе самі після кожного рішення.
-            if (view !== 'inbox') show(view, { push: false, refresh: true });
-            renderSync();
-            refreshBadge();
-        }, 50);
-    });
-    // «Назад» до першого екрана повертає адресу без розділу — це «Сьогодні».
-    window.addEventListener('hashchange', () => { const name = ALIASES[location.hash.slice(1)] || location.hash.slice(1) || 'today'; if (VIEWS[name] && name !== view) show(name, { push: false }); });
-}
-
-init();
+registerServiceWorker();

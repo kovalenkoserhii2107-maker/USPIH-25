@@ -59,7 +59,10 @@ function checksHtml() {
 function entryDrillAttr(e) {
     if (e.src === 'bank' && e.ref) return `data-act="open-entry" data-src="bank" data-ref="${escapeHtml(e.ref)}"`;
     if (e.src === 'expense' && e.ref) return `data-act="open-entry" data-src="expense" data-ref="${escapeHtml(e.ref)}"`;
+    if (e.src === 'advance_report' && e.ref) return `data-act="open-entry" data-src="advance" data-ref="${escapeHtml(e.ref)}"`;
     if (e.src === 'payroll') return `data-act="open-entry" data-src="payroll" data-ref="${escapeHtml(ctx.period)}"`;
+    if (['10', '11', '131', '132', '20', '22'].includes(e.dr) && e.dA) return `data-act="open-asset" data-asset="${escapeHtml(e.dA)}"`;
+    if (['10', '11', '131', '132', '20', '22'].includes(e.cr) && e.cA) return `data-act="open-asset" data-asset="${escapeHtml(e.cA)}"`;
     if (e.dr === '377' && e.dA) return `data-act="open-apt" data-apt="${escapeHtml(e.dA)}"`;
     if (e.cr === '377' && e.cA) return `data-act="open-apt" data-apt="${escapeHtml(e.cA)}"`;
     return '';
@@ -187,6 +190,7 @@ async function onAction(btn) {
             const { src, ref } = btn.dataset;
             if (src === 'bank') openTxSheet(ref);
             else if (src === 'expense') openExpenses('docs', null, ref);
+            else if (src === 'advance') openAdvance('all', ref);
             else if (src === 'payroll') openPayroll(ref);
         }
         else if (a === 'opening') { showOpening = !openingShown(); await loadJournalView(); }

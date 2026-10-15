@@ -39,6 +39,14 @@ const val = id => document.getElementById(id)?.value?.trim() ?? '';
 const options = (map, cur) => Object.entries(map).map(([k, v]) =>
     `<option value="${escapeHtml(k)}"${String(k) === String(cur) ? ' selected' : ''}>${escapeHtml(typeof v === 'object' ? v.title : v)}</option>`).join('');
 
+function nextAssetIdForLine(acc, currentLines = [], excludeIdx = -1) {
+    const baseIds = ctx?.existingAssetIds || [];
+    const lineIds = (currentLines || [])
+        .map((l, idx) => (idx === excludeIdx ? '' : l?.assetId))
+        .filter(Boolean);
+    return suggestAssetId(acc, [...baseIds, ...lineIds]);
+}
+
 export function openAdvance(seg = 'all', reportId = null, prefillForm = null) {
     if (TABS[seg]) segment = seg;
     if (reportId) selected = reportId;
@@ -61,7 +69,7 @@ function filterReports(list) {
     return (list || []).filter(r => {
         if (!matchesTab(r, segment)) return false;
         if (!q) return true;
-        const lineTexts = (r.lines || []).map(l => `${l.supplier || ''} ${l.desc || ''} ${l.number || ''}`).join(' ');
+        const lineTexts = (r.lines || []).map(l => `${l.supplier || ''} ${l.desc || ''} ${l.number || ''} ${l.assetId || ''}`).join(' ');
         return [r.id, r.number, r.personName, r.purpose, r.personIban, lineTexts]
             .filter(Boolean).join(' ').toLowerCase().includes(q);
     });
@@ -109,9 +117,10 @@ function bannersHtml() {
     return out.join('');
 }
 
-function lineRowHtml(l, idx) {
+function lineRowHtml(l, idx, allLines = []) {
     const acc = l.postingAcc || '92';
     const isAsset = acc !== '92';
+    const autoAssetId = isAsset ? (l.assetId || nextAssetIdForLine(acc, allLines, idx)) : '';
     return `<div class="av-line buh-card is-compact" data-line-idx="${idx}" style="margin:8px 0;padding:12px;background:var(--sv-soft-2,#f4f6f9)">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
             <b style="font-size:13.5px">Документ № ${idx + 1}</b>
@@ -133,8 +142,8 @@ function lineRowHtml(l, idx) {
             <label class="field"><span class="field-label">Стаття витрат кошторису (92)</span>
                 <select class="field-input field-select av-item">${options(ctx.expenseItems, l.item || 'systems')}</select></label>
             ${isAsset ? `
-                <label class="field"><span class="field-label">Інв. / номенкл. код на складі</span>
-                    <input class="field-input av-asset-id" maxlength="80" placeholder="ТМЦ-001 / МШП-001" value="${escapeHtml(l.assetId || '')}"></label>
+                <label class="field"><span class="field-label">Інв. / номенкл. код на складі (авто)</span>
+                    <input class="field-input av-asset-id" list="avAssetList" maxlength="80" placeholder="Підставляється автоматично" value="${escapeHtml(autoAssetId)}"></label>
                 <label class="field"><span class="field-label">Кількість</span>
                     <input class="field-input av-asset-qty" type="number" step="0.001" min="0.001" value="${escapeHtml(String(l.assetQty || 1))}"></label>
                 <label class="field"><span class="field-label">Одиниця виміру</span>
@@ -156,13 +165,14 @@ function advanceFormHtml(d = {}) {
     }];
     const nextNo = d.number || suggestReportNumber(ctx.period, ctx.reports);
     const peopleList = ctx.people || [];
+    const catalog = ctx.assetCatalog || [];
 
     return `<section class="buh-card ex-form" id="avForm">
         <div class="buh-card-head">
             <h2>${d.isEdit ? `Змінити авансовий звіт № ${escapeHtml(d.number || d.id)}` : 'Новий авансовий звіт (Рахунок 372)'}</h2>
             <button type="button" class="btn-ghost-small" data-act="close-form" style="width:auto;flex:0 0 auto">Закрити</button>
         </div>
-        <p class="buh-note">Складається підзвітною особою при придбанні товарів/послуг за власні кошти або за рахунок виданого авансу (Типова форма наказу Мінфіну № 841 / 289, пп. 170.9 ПКУ). Усі чеки розносяться за статтями або приходуються на склад у «Майно та ТМЦ».</p>
+        <p class="buh-note">Складається підзвітною особою при придбанні товарів/послуг за власні кошти або за рахунок виданого авансу (Типова форма наказу Мінфіну № 841 / 289, пп. 170.9 ПКУ). При виборі рахунку 20, 22 або 11 інвентарний / номенклатурний номер підставляється автоматично за єдиною системою.</p>
         <div class="pay-grid">
             <label class="field pay-wide"><span class="field-label">Підзвітна особа (працівник або член правління)</span>
                 <div style="display:flex;gap:8px">
@@ -191,12 +201,13 @@ function advanceFormHtml(d = {}) {
             <label class="field"><span class="field-label">Одержано аванс з рахунку ОСББ, грн</span>
                 <input id="avAdvance" class="field-input" inputmode="decimal" placeholder="0,00" value="${money2(d.advanceKop || 0)}"></label>
         </div>
+        <datalist id="avAssetList">${catalog.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${a.legacyId ? ` (стар. № ${escapeHtml(a.legacyId)})` : ''}</option>`).join('')}</datalist>
         <div style="margin-top:16px">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
                 <h3 style="font-size:16px;margin:0">Підтвердні документи (чеки, квитанції, накладні)</h3>
                 <button type="button" class="sv-btn is-soft" style="width:auto;flex:0 0 auto;min-height:38px;padding:0 16px;font-size:13.5px" data-act="add-line">+ Додати чек</button>
             </div>
-            <div id="avLinesList">${lines.map((l, idx) => lineRowHtml(l, idx)).join('')}</div>
+            <div id="avLinesList">${lines.map((l, idx) => lineRowHtml(l, idx, lines)).join('')}</div>
         </div>
         <div class="pay-form-actions" style="margin-top:16px">
             <button type="button" class="sv-btn" style="width:auto" data-act="save-report">${d.id ? 'Зберегти зміни' : isChair() ? 'Зберегти й затвердити' : 'Подати на затвердження голові'}</button>
@@ -355,7 +366,7 @@ async function printAdvanceReport(r) {
                 <td>${escapeHtml(human(l.date))}</td>
                 <td>${escapeHtml(l.number || '—')}</td>
                 <td>${escapeHtml(l.supplier || '')}${l.desc ? ` — ${escapeHtml(l.desc)}` : ''}</td>
-                <td>${escapeHtml(l.postingAcc || '92')}</td>
+                <td>${escapeHtml(l.postingAcc || '92')}${l.assetId ? ` (${escapeHtml(l.assetId)})` : ''}</td>
                 <td class="num">${fmtKop(l.amountKop)}</td>
             </tr>`).join('')}</tbody>
             <tfoot><tr><th colspan="5">РАЗОМ за доданими документами:</th><th class="num">${fmtKop(t.spentKop)}</th></tr></tfoot>
@@ -407,11 +418,10 @@ export async function loadAdvanceView() {
     if (!host) return 0;
 
     host.innerHTML = `
-        <div class="buh-toolbar">
-            <select id="avPeriodSelect" class="field-input field-select ch-period" aria-label="Період">${(ctx.periods || []).slice().reverse().map(p =>
-                `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
-            <span class="buh-note">Рахунок 372 «Розрахунки з підзвітними особами». Наказ Мінфіну № 841 (у редакції № 289), пп. 170.9 ПКУ.</span>
+        <div class="buh-toolbar as-toolbar-right">
             <span class="ch-tools">
+                <select id="avPeriodSelect" class="field-input field-select ch-period" aria-label="Період">${(ctx.periods || []).slice().reverse().map(p =>
+                    `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
                 <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-report">+ Авансовий звіт</button>
                 <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
                 <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ (рах. 372) ›</button>
@@ -449,7 +459,7 @@ export async function loadAdvanceView() {
             <section class="fl-list" aria-label="Авансові звіти">
                 <label class="fl-search dc-search">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                    <input type="search" id="avQuery" placeholder="Номер, ПІБ, чек, призначення…" value="${escapeHtml(query)}" aria-label="Пошук авансового звіту">
+                    <input type="search" id="avQuery" placeholder="Номер, ПІБ, чек, інв. код, призначення…" value="${escapeHtml(query)}" aria-label="Пошук авансового звіту">
                 </label>
                 ${list.length
                     ? `<ul class="fl-items">${list.map(reportRowHtml).join('')}</ul>`
@@ -458,7 +468,8 @@ export async function loadAdvanceView() {
             <section class="fl-card dc-card${cur || !list.length ? '' : ' is-idle'}" id="avCard" aria-live="polite">
                 ${detailCardHtml(cur, !list.length)}
             </section>
-        </div>`;
+        </div>
+        <p class="buh-note as-footer-note">Рахунок 372 «Розрахунки з підзвітними особами». Наказ Мінфіну № 841 (у редакції № 289), пп. 170.9 ПКУ.</p>`;
 
     return (s.pendingCount || 0) + (s.toReimburseCount || 0);
 }
@@ -470,6 +481,18 @@ function snapshotFormData() {
         container.querySelectorAll('.av-line').forEach(el => {
             const idx = Number(el.dataset.lineIdx);
             const oldLine = form?.data?.lines?.[idx] || {};
+            const postingAcc = el.querySelector('.av-posting')?.value || '92';
+            const assetInputEl = el.querySelector('.av-asset-id');
+            let assetId = assetInputEl ? assetInputEl.value.trim() : (oldLine.assetId || '');
+            if (postingAcc === '92') {
+                assetId = '';
+            } else {
+                const expectedPrefix = postingAcc === '11' ? 'МНМА-' : postingAcc === '22' ? 'МШП-' : 'ТМЦ-';
+                const prevAcc = oldLine.postingAcc || '92';
+                if (!assetId || (prevAcc !== postingAcc && /^(ОЗ|МНМА|ТМЦ|МШП)-\d+$/i.test(assetId) && !assetId.toUpperCase().startsWith(expectedPrefix))) {
+                    assetId = nextAssetIdForLine(postingAcc, lines, -1);
+                }
+            }
             lines.push({
                 ...oldLine,
                 docType: el.querySelector('.av-doc-type')?.value || 'fiscal_receipt',
@@ -477,11 +500,11 @@ function snapshotFormData() {
                 date: el.querySelector('.av-doc-date')?.value || ctx.today,
                 amountKop: toKop(el.querySelector('.av-amount')?.value) || 0,
                 supplier: el.querySelector('.av-supplier')?.value?.trim() || '',
-                postingAcc: el.querySelector('.av-posting')?.value || '92',
+                postingAcc,
                 item: el.querySelector('.av-item')?.value || 'systems',
-                assetId: el.querySelector('.av-asset-id')?.value?.trim() || '',
-                assetQty: Number(el.querySelector('.av-asset-qty')?.value || 1),
-                assetUnit: el.querySelector('.av-asset-unit')?.value || 'шт.',
+                assetId,
+                assetQty: Number(el.querySelector('.av-asset-qty')?.value || oldLine.assetQty || 1),
+                assetUnit: el.querySelector('.av-asset-unit')?.value || oldLine.assetUnit || 'шт.',
                 desc: el.querySelector('.av-desc')?.value?.trim() || '',
                 files: oldLine.files || []
             });
@@ -661,13 +684,6 @@ export function initAdvanceView() {
             }
         }
         if (e.target.classList.contains('av-posting') && form) {
-            const lineEl = e.target.closest('.av-line');
-            if (lineEl && e.target.value !== '92') {
-                const assetInput = lineEl.querySelector('.av-asset-id');
-                if (assetInput && !assetInput.value) {
-                    assetInput.value = suggestAssetId(e.target.value, []);
-                }
-            }
             form = { ...form, data: snapshotFormData() };
             loadAdvanceView();
         }

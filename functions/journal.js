@@ -134,18 +134,21 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     async function loadForAssets(transaction = null) {
         const get = ref => transaction ? transaction.get(ref) : ref.get();
         const policy = await policyStore.context(transaction);
-        const [exSnap, periodSnap, openingSnap, notesSnap, assetsSnap] = await Promise.all([
+        const [exSnap, periodSnap, openingSnap, notesSnap, assetsSnap, advanceSnap] = await Promise.all([
             get(db.collection('expenses')),
             get(db.collection('journal_periods')),
             get(db.doc('journal_opening/main')),
             get(db.collection('accounting_notes')),
-            Promise.resolve().then(() => get(db.collection('assets'))).catch(() => ({ docs: [] }))
+            Promise.resolve().then(() => get(db.collection('assets'))).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => get(db.collection('advance_reports'))).catch(() => ({ docs: [] }))
         ]);
         const opening = openingSnap.exists ? openingSnap.data() : null;
         const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
+        const advanceReports = (advanceSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
         return {
             policy,
             assets: (assetsSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+            advanceReports,
             opening,
             periods,
             closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
@@ -155,7 +158,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 policy,
                 expenses: exSnap.docs.map(d => ({ id: d.id, ...d.data() })),
                 adjustments: notesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-                opening
+                opening,
+                advanceReports
             }
         };
     }
@@ -164,18 +168,27 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     async function loadForAdvance(transaction = null) {
         const get = ref => transaction ? transaction.get(ref) : ref.get();
         const policy = await policyStore.context(transaction);
-        const [periodSnap, payrollPeople, advanceSnap, staffSnap] = await Promise.all([
+        const [periodSnap, payrollPeople, advanceSnap, staffSnap, assetsSnap, exSnap, openingSnap] = await Promise.all([
             get(db.collection('journal_periods')),
             get(db.collection('payroll_people')),
             Promise.resolve().then(() => get(db.collection('advance_reports'))).catch(() => ({ docs: [] })),
-            Promise.resolve().then(() => get(db.collection('staff'))).catch(() => ({ docs: [] }))
+            Promise.resolve().then(() => get(db.collection('staff'))).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => get(db.collection('assets'))).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => get(db.collection('expenses'))).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => get(db.doc('journal_opening/main'))).catch(() => ({ exists: false }))
         ]);
         const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
+        const assets = (assetsSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+        const expenses = (exSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+        const opening = openingSnap?.exists ? openingSnap.data() : null;
         return {
             policy,
             advanceReports: (advanceSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
             people: payrollPeople.docs.map(d => ({ id: d.id, ...d.data() })),
             staff: (staffSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
+            assets,
+            expenses,
+            opening,
             periods,
             closed: [...periods.entries()].filter(([, p]) => p.status === 'closed').map(([id]) => id).sort(),
             input: {
@@ -270,7 +283,15 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             const ready = checks.findIndex(c => c.level === 'ok' && c.text.startsWith('Можна закривати'));
             if (ready >= 0) checks.splice(ready, 1);
         }
-        const assetLabels = Object.fromEntries(assetsState.items.map(a => [a.id, a.name && a.name !== a.id ? `${a.id} · ${a.name}` : a.id]));
+        const assetLabels = {};
+        for (const a of assetsState.items) {
+            const legacySuffix = a.legacyId && a.legacyId !== a.id ? ` (стар. ${a.legacyId})` : '';
+            const labelStr = a.name && a.name !== a.id && a.name !== a.legacyId
+                ? `${a.id}${legacySuffix} · ${a.name}`
+                : `${a.id}${legacySuffix}`;
+            assetLabels[a.id] = labelStr;
+            if (a.legacyId) assetLabels[a.legacyId] = labelStr;
+        }
         return {
             period: p, today: now, start: data.input.start, startDate: data.policy.startDate, policy: data.policy, bankRows, bankCut: cut ? {note:cut.note, date:cut.date, key:cut.key} : null,
             periods: core.periodsUpTo(now.slice(0, 7), data.input.start).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
@@ -411,6 +432,13 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             policy: data.policy,
             period: p
         });
+        const existingAssetIds = assetsCore.collectExistingAssetIds({
+            assets: state.items,
+            expenses: data.input.expenses,
+            opening: data.opening,
+            adjustments: data.input.adjustments,
+            advanceReports: data.advanceReports
+        });
         const deprPlan = assetsCore.planMonthlyDepreciation(state.items, p);
         return {
             period: p,
@@ -420,6 +448,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             status: isClosed ? 'closed' : 'open',
             periods: core.periodsUpTo(now.slice(0, 7), data.input.start).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
             items: state.items,
+            existingAssetIds,
             summary: state.summary,
             mnhmaLimitKop: state.mnhmaLimitKop,
             deprPlan,
@@ -433,18 +462,32 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     async function saveAsset(actor, role, data) {
+        const acc = String(data.acc || '10');
+        let resolvedId = text(data.id, 80);
+        if (!resolvedId) {
+            const loaded = await loadForAssets();
+            const existingIds = assetsCore.collectExistingAssetIds({
+                assets: loaded.assets,
+                expenses: loaded.input.expenses,
+                opening: loaded.opening,
+                adjustments: loaded.input.adjustments,
+                advanceReports: loaded.advanceReports
+            });
+            resolvedId = assetsCore.suggestAssetId(acc, existingIds);
+        }
         const card = {
-            id: text(data.id, 80),
-            acc: String(data.acc || '10'),
-            subacc: text(data.subacc, 10) || assetsCore.defaultSubacc(String(data.acc || '10')),
+            id: resolvedId,
+            legacyId: text(data.legacyId, 80),
+            acc,
+            subacc: text(data.subacc, 10) || assetsCore.defaultSubacc(acc),
             name: text(data.name, 200),
             item: ITEMS[data.item] ? String(data.item) : 'systems',
             fundId: text(data.fundId || 'main', 40),
             acquiredDate: validDate(data.acquiredDate) ? String(data.acquiredDate) : '',
             commissionedDate: validDate(data.commissionedDate) ? String(data.commissionedDate) : '',
             commissionActNo: text(data.commissionActNo, 60),
-            usefulLifeMonths: Number(data.usefulLifeMonths) > 0 ? Math.round(Number(data.usefulLifeMonths)) : (String(data.acc) === '10' ? 60 : 36),
-            deprMethod: text(data.deprMethod, 30) || assetsCore.defaultDeprMethod(String(data.acc || '10')),
+            usefulLifeMonths: Number(data.usefulLifeMonths) > 0 ? Math.round(Number(data.usefulLifeMonths)) : (acc === '10' ? 60 : 36),
+            deprMethod: text(data.deprMethod, 30) || assetsCore.defaultDeprMethod(acc),
             salvageKop: Number(data.salvageKop) >= 0 ? Math.round(Number(data.salvageKop)) : 0,
             unit: text(data.unit || 'шт.', 20),
             initialQty: Number(data.initialQty) > 0 ? Number(data.initialQty) : 1,
@@ -499,8 +542,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 updatedAt: FieldValue.serverTimestamp()
             }, { merge: true });
         });
-        await audit(actor, role, 'assets.save', `assets/${docId}`, `Картку ${card.id} «${card.name}» (рахунок ${card.acc}) збережено`, card);
-        return { ok: true, id: card.id };
+        await audit(actor, role, 'assets.save', `assets/${docId}`, `Картку ${card.id}${card.legacyId ? ` (стар. № ${card.legacyId})` : ''} «${card.name}» (рахунок ${card.acc}) збережено`, card);
+        return { ok: true, id: card.id, legacyId: card.legacyId };
     }
 
     async function commissionAsset(actor, role, data) {
@@ -520,9 +563,10 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             policy: loaded.policy,
             period
         });
-        const current = state.items.find(x => x.id === assetId);
+        const current = state.items.find(x => x.id === assetId || (x.legacyId && x.legacyId === assetId));
         if (!current || !assetsCore.isNonCurrent(current.acc)) fail('not-found', 'Обʼєкт ОЗ/МНМА не знайдено');
         if (current.costKop <= 0) fail('failed-precondition', 'Первісна вартість обʼєкта ще не оприбуткована на баланс (проведіть документ постачальника або вхідний залишок)');
+        const canonicalId = current.id;
         const method = data.deprMethod && assetsCore.DEPR_METHODS[data.deprMethod] ? data.deprMethod : (current.deprMethod || assetsCore.defaultDeprMethod(current.acc));
         const months = Number(data.usefulLifeMonths) > 0 ? Math.round(Number(data.usefulLifeMonths)) : (current.usefulLifeMonths || (current.acc === '10' ? 60 : 36));
         const custodian = text(data.custodian ?? current.custodian, 160);
@@ -532,9 +576,10 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         await db.runTransaction(async t => {
             const pSnap = await t.get(db.doc(`journal_periods/${period}`));
             const periodClosed = pSnap.data()?.status === 'closed';
-            const ref = db.doc(`assets/${safeId(assetId)}`);
+            const ref = db.doc(`assets/${safeId(canonicalId)}`);
             t.set(ref, {
-                id: assetId,
+                id: canonicalId,
+                ...(current.legacyId ? { legacyId: current.legacyId } : {}),
                 acc: current.acc,
                 subacc: current.subacc || assetsCore.defaultSubacc(current.acc),
                 name: current.name,
@@ -563,19 +608,19 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                         date: commDate,
                         period,
                         amountKop: firstDepr,
-                        analytic: assetId,
+                        analytic: canonicalId,
                         assetAcc: '11',
                         lines: [{
                             dr: '92',
                             cr: '132',
                             dA: data.item && ITEMS[data.item] ? String(data.item) : (current.item || 'systems'),
-                            cA: assetId,
+                            cA: canonicalId,
                             kop: firstDepr,
                             fund: current.fundId || loaded.policy.defaultFund
                         }],
                         fundId: current.fundId || loaded.policy.defaultFund,
                         source: `Акт ОЗ-1 № ${actNo} від ${commDate.split('-').reverse().join('.')}`,
-                        note: `Амортизація МНМА при введенні в експлуатацію (${method === 'mnhma_100' ? '100 %' : '50 %'}): «${current.name}» (${assetId})`,
+                        note: `Амортизація МНМА при введенні в експлуатацію (${method === 'mnhma_100' ? '100 %' : '50 %'}): «${current.name}» (${canonicalId})`,
                         status: 'approved',
                         approvedBy: actor,
                         approvedAt: FieldValue.serverTimestamp(),
@@ -585,10 +630,10 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 }
             }
         });
-        await audit(actor, role, 'assets.commission', `assets/${safeId(assetId)}`,
-            `Введено в експлуатацію ${assetId} (Акт ОЗ-1 № ${actNo} від ${commDate.split('-').reverse().join('.')})${accruedKop ? `, нараховано знос ${(accruedKop / 100).toFixed(2)} грн` : ''}`,
-            { id: assetId, commissionedDate: commDate, actNo, accruedKop });
-        return { ok: true, id: assetId, accruedKop };
+        await audit(actor, role, 'assets.commission', `assets/${safeId(canonicalId)}`,
+            `Введено в експлуатацію ${canonicalId} (Акт ОЗ-1 № ${actNo} від ${commDate.split('-').reverse().join('.')})${accruedKop ? `, нараховано знос ${(accruedKop / 100).toFixed(2)} грн` : ''}`,
+            { id: canonicalId, commissionedDate: commDate, actNo, accruedKop });
+        return { ok: true, id: canonicalId, accruedKop };
     }
 
     async function depreciateMonth(actor, role, { period } = {}) {
@@ -654,7 +699,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             policy: loaded.policy,
             period
         });
-        const asset = state.items.find(x => x.id === assetId);
+        const asset = state.items.find(x => x.id === assetId || (x.legacyId && x.legacyId === assetId));
         const plan = assetsCore.planInventoryWriteOff(asset, {
             date,
             qty: data.qty,
@@ -690,6 +735,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             });
             t.set(db.doc(`assets/${safeId(asset.id)}`), {
                 id: asset.id,
+                ...(asset.legacyId ? { legacyId: asset.legacyId } : {}),
                 acc: asset.acc,
                 name: asset.name,
                 ...(plan.custodian ? { custodian: plan.custodian } : {}),
@@ -722,7 +768,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             policy: loaded.policy,
             period
         });
-        const asset = state.items.find(x => x.id === assetId);
+        const asset = state.items.find(x => x.id === assetId || (x.legacyId && x.legacyId === assetId));
         const plan = assetsCore.planAssetDisposal(asset, {
             date,
             actNo: data.actNo,
@@ -753,6 +799,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             });
             t.set(db.doc(`assets/${safeId(asset.id)}`), {
                 id: asset.id,
+                ...(asset.legacyId ? { legacyId: asset.legacyId } : {}),
                 acc: asset.acc,
                 name: asset.name,
                 disposedDate: plan.date,
@@ -787,7 +834,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             policy: loaded.policy,
             period: date.slice(0, 7)
         });
-        const asset = state.items.find(x => x.id === assetId);
+        const asset = state.items.find(x => x.id === assetId || (x.legacyId && x.legacyId === assetId));
         if (!asset || asset.acc !== '22') fail('not-found', 'Картку МШП (рахунок 22) не знайдено');
         if (qty > (asset.inUseQty || 0) + 1e-6) {
             fail('invalid-argument', `В оперативному обліку за МВО рахується лише ${asset.inUseQty || 0} ${asset.unit || 'шт.'}`);
@@ -798,6 +845,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         await db.runTransaction(async t => {
             t.set(ref, {
                 id: asset.id,
+                ...(asset.legacyId ? { legacyId: asset.legacyId } : {}),
                 acc: '22',
                 name: asset.name,
                 retiredQty: newRetired,
@@ -806,9 +854,9 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 updatedAt: FieldValue.serverTimestamp()
             }, { merge: true });
         });
-        await audit(actor, role, 'assets.retireMshp', `assets/${safeId(assetId)}`,
-            `Списано з позабалансового обліку МШП ${assetId} (${qty} од., Акт № ${actNo}): ${reason}`, { id: assetId, qty, date, actNo, reason });
-        return { ok: true, id: assetId };
+        await audit(actor, role, 'assets.retireMshp', `assets/${safeId(asset.id)}`,
+            `Списано з позабалансового обліку МШП ${asset.id} (${qty} од., Акт № ${actNo}): ${reason}`, { id: asset.id, qty, date, actNo, reason });
+        return { ok: true, id: asset.id };
     }
 
 
@@ -860,6 +908,20 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             .reduce((s, r) => s + (r.totals.pendingReturnKop || 0), 0);
         const pendingCount = reportsWithTotals.filter(r => r.status === 'pending').length;
 
+        const existingAssetIds = assetsCore.collectExistingAssetIds({
+            assets: data.assets,
+            expenses: data.expenses,
+            opening: data.opening,
+            advanceReports: data.advanceReports
+        });
+        const assetCatalog = (data.assets || []).map(a => ({
+            id: a.id,
+            legacyId: a.legacyId || '',
+            acc: a.acc || '20',
+            name: a.name || a.id,
+            unit: a.unit || 'шт.'
+        }));
+
         return {
             period: p,
             today: now,
@@ -867,6 +929,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             periods: core.periodsUpTo(now.slice(0, 7), data.input.start).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
             reports: reportsWithTotals,
             people: [...peopleMap.values()],
+            existingAssetIds,
+            assetCatalog,
             summary: {
                 totalSpentPeriodKop,
                 totalPendingReimburseKop,
@@ -885,6 +949,18 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     async function saveAdvanceReport(actor, role, data) {
         const p = String(data.period || today().slice(0, 7)).trim();
         const date = String(data.date || today()).trim();
+        const rawLines = Array.isArray(data.lines) ? data.lines : [];
+        let usedIds = null;
+        if (rawLines.some(l => l && String(l.postingAcc || '92') !== '92' && !String(l.assetId || '').trim())) {
+            const loaded = await loadForAdvance();
+            usedIds = new Set(assetsCore.collectExistingAssetIds({
+                assets: loaded.assets,
+                expenses: loaded.expenses,
+                opening: loaded.opening,
+                advanceReports: loaded.advanceReports
+            }));
+        }
+
         const report = {
             id: text(data.id, 80),
             number: text(data.number, 60),
@@ -898,21 +974,29 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             fundId: text(data.fundId || 'main', 40),
             advanceKop: Number(data.advanceKop || 0),
             advanceTxIds: Array.isArray(data.advanceTxIds) ? data.advanceTxIds : [],
-            lines: (Array.isArray(data.lines) ? data.lines : []).map(l => ({
-                id: text(l.id || (typeof randomUUID === 'function' ? randomUUID().slice(0, 8) : crypto.randomBytes(4).toString('hex')), 40),
-                docType: String(l.docType || 'fiscal_receipt'),
-                number: text(l.number, 60),
-                date: String(l.date || date),
-                supplier: text(l.supplier, 200),
-                amountKop: Number(l.amountKop || 0),
-                item: ITEMS[l.item] ? String(l.item) : 'office',
-                postingAcc: String(l.postingAcc || '92'),
-                assetId: text(l.assetId, 80),
-                assetQty: Number(l.assetQty || 1),
-                assetUnit: text(l.assetUnit || 'шт.', 20),
-                desc: text(l.desc, 300),
-                files: Array.isArray(l.files) ? l.files : []
-            }))
+            lines: rawLines.map(l => {
+                const postingAcc = String(l.postingAcc || '92');
+                let assetId = text(l.assetId, 80);
+                if (postingAcc !== '92' && !assetId && usedIds) {
+                    assetId = assetsCore.suggestAssetId(postingAcc, [...usedIds]);
+                }
+                if (assetId && usedIds) usedIds.add(assetId);
+                return {
+                    id: text(l.id || (typeof randomUUID === 'function' ? randomUUID().slice(0, 8) : crypto.randomBytes(4).toString('hex')), 40),
+                    docType: String(l.docType || 'fiscal_receipt'),
+                    number: text(l.number, 60),
+                    date: String(l.date || date),
+                    supplier: text(l.supplier, 200),
+                    amountKop: Number(l.amountKop || 0),
+                    item: ITEMS[l.item] ? String(l.item) : 'office',
+                    postingAcc,
+                    assetId,
+                    assetQty: Number(l.assetQty || 1),
+                    assetUnit: text(l.assetUnit || 'шт.', 20),
+                    desc: text(l.desc, 300),
+                    files: Array.isArray(l.files) ? l.files : []
+                };
+            })
         };
 
         const error = advanceCore.checkAdvanceReport(report);
@@ -959,6 +1043,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                         t.set(aRef, {
                             id: l.assetId,
                             acc: l.postingAcc,
+                            subacc: assetsCore.defaultSubacc(l.postingAcc),
                             name: l.desc || l.supplier || l.assetId,
                             item: l.item,
                             fundId: report.fundId,
@@ -1005,6 +1090,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                     t.set(aRef, {
                         id: l.assetId,
                         acc: l.postingAcc,
+                        subacc: assetsCore.defaultSubacc(l.postingAcc),
                         name: l.desc || l.supplier || l.assetId,
                         item: l.item,
                         fundId: rep.fundId || 'main',
