@@ -313,6 +313,16 @@ export const assetsAct = payload => journalAct(payload);
 export const loadAdvance = period => once(`advance:${period || ''}`, () => callBackend('journalAction', { action: 'advanceContext', period: period || null }, 90000));
 export const advanceAct = payload => journalAct(payload);
 
+/** Претензійно-позовна робота з боржниками (суди, накази, претензії). */
+export const loadClaims = () => once('claims', () => callBackend('claimsAction', { action: 'context' }, 60000));
+export async function claimsAct(payload) {
+    try {
+        return await callBackend('claimsAction', payload, 60000);
+    } finally {
+        invalidate();
+    }
+}
+
 /** Вхідна ОСВ на 30.09.2026 — читання (без скидання кешу: інакше розділ перемальовувався б по колу). */
 export const loadOpeningData = () => once('opening', () => callBackend('journalAction', { action: 'opening' }, 90000));
 
