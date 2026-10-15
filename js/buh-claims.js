@@ -12,6 +12,16 @@
 // ============================================================
 import { escapeHtml, toast, setBusy } from './ui.js';
 import { loadClaims, claimsAct } from './buh-data.js';
+const fmtArea = v => {
+    if (v == null || v === '') return '—';
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n.toFixed(1) : '—';
+};
+const fmtAreaCsv = v => {
+    if (v == null || v === '') return '';
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n.toFixed(2) : '';
+};
 import {
     COURT_DEFAULT_NAME,
     COURT_DEFAULT_ADDRESS,
@@ -142,7 +152,7 @@ function render() {
                             <tr>
                                 <td><b>кв. ${escapeHtml(d.apt)}</b></td>
                                 <td>${escapeHtml(d.ownerName || '—')}${d.ownerCode ? `<br><small class="t-muted">РНОКПП ${escapeHtml(d.ownerCode)}</small>` : ''}</td>
-                                <td>${d.area ? d.area.toFixed(1) : '—'}</td>
+                                <td>${fmtArea(d.area)}</td>
                                 <td class="t-sum is-out"><b>${fmtKop(d.debtKop)}</b></td>
                                 <td>
                                     <span class="buh-tag ${['court_order_filed', 'lawsuit_filed'].includes(d.claim.status) ? 'is-review' : ['court_order_issued', 'lawsuit_satisfied'].includes(d.claim.status) ? 'is-payment' : d.claim.status === 'enforcement' ? 'is-bad' : 'is-soft'}">
@@ -415,7 +425,7 @@ function exportCsv() {
             `кв. ${d.apt}`,
             `"${(d.ownerName || '').replace(/"/g, '""')}"`,
             d.ownerCode || '',
-            d.area ? d.area.toFixed(2) : '',
+            fmtAreaCsv(d.area),
             (d.debtKop / 100).toFixed(2),
             `"${CLAIM_STAGES[d.claim.stage] || d.claim.stage}"`,
             `"${CLAIM_STATUSES[d.claim.status] || d.claim.status}"`,
