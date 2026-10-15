@@ -404,9 +404,8 @@ function exportCsv() {
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
-export async function loadAdvanceView() {
-    ctx = await loadAdvance(period);
-    period = ctx.period;
+function renderAdvanceView() {
+    if (!ctx) return 0;
     const list = filterReports(ctx.reports);
     if (!list.some(r => r.id === selected)) {
         selected = window.matchMedia('(max-width: 900px)').matches ? null : list[0]?.id || null;
@@ -418,14 +417,18 @@ export async function loadAdvanceView() {
     if (!host) return 0;
 
     host.innerHTML = `
-        <div class="buh-toolbar as-toolbar-right">
-            <span class="ch-tools">
+        <div class="as-top-bar">
+            <div class="as-period-row">
                 <select id="avPeriodSelect" class="field-input field-select ch-period" aria-label="Період">${(ctx.periods || []).slice().reverse().map(p =>
                     `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
-                <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-report">+ Авансовий звіт</button>
-                <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
-                <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ (рах. 372) ›</button>
-            </span>
+            </div>
+            <div class="buh-toolbar as-toolbar-right">
+                <span class="ch-tools">
+                    <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-report">+ Авансовий звіт</button>
+                    <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
+                    <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ (рах. 372) ›</button>
+                </span>
+            </div>
         </div>
         <div class="kpi-grid">
             <div class="kpi">
@@ -472,6 +475,12 @@ export async function loadAdvanceView() {
         <p class="buh-note as-footer-note">Рахунок 372 «Розрахунки з підзвітними особами». Наказ Мінфіну № 841 (у редакції № 289), пп. 170.9 ПКУ.</p>`;
 
     return (s.pendingCount || 0) + (s.toReimburseCount || 0);
+}
+
+export async function loadAdvanceView() {
+    ctx = await loadAdvance(period);
+    period = ctx.period;
+    return renderAdvanceView();
 }
 
 function snapshotFormData() {
@@ -570,7 +579,7 @@ export function initAdvanceView() {
 
     host.addEventListener('click', async e => {
         const seg = e.target.closest('[data-seg]');
-        if (seg) { segment = seg.dataset.seg; form = null; loadAdvanceView(); return; }
+        if (seg) { segment = seg.dataset.seg; form = null; renderAdvanceView(); return; }
         const btn = e.target.closest('[data-act]');
         if (!btn || btn.disabled) return;
         const a = btn.dataset.act;
@@ -579,21 +588,20 @@ export function initAdvanceView() {
 
         if (a === 'pick') {
             selected = btn.dataset.id;
-            loadAdvanceView().then(() => {
-                if (window.matchMedia('(max-width: 900px)').matches) document.getElementById('avCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
+            renderAdvanceView();
+            if (window.matchMedia('(max-width: 900px)').matches) document.getElementById('avCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
-        if (a === 'close-form') { form = null; loadAdvanceView(); return; }
+        if (a === 'close-form') { form = null; renderAdvanceView(); return; }
         if (a === 'new-report') {
             form = { isEdit: false, data: { date: ctx.today, period: ctx.period, lines: [{ docType: 'fiscal_receipt', date: ctx.today, amountKop: 0, postingAcc: '92', item: 'systems' }] } };
-            await loadAdvanceView();
+            renderAdvanceView();
             document.getElementById('avForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
         if (a === 'edit-report' && report) {
             form = { isEdit: true, data: { ...report } };
-            await loadAdvanceView();
+            renderAdvanceView();
             document.getElementById('avForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
@@ -601,7 +609,7 @@ export function initAdvanceView() {
             const current = snapshotFormData();
             current.lines.push({ docType: 'fiscal_receipt', number: '', date: current.date || ctx.today, supplier: '', amountKop: 0, item: 'systems', postingAcc: '92' });
             form = { ...form, data: current };
-            await loadAdvanceView();
+            renderAdvanceView();
             return;
         }
         if (a === 'remove-line') {
@@ -610,7 +618,7 @@ export function initAdvanceView() {
             if (current.lines.length > 1) {
                 current.lines.splice(lineIdx, 1);
                 form = { ...form, data: current };
-                await loadAdvanceView();
+                renderAdvanceView();
             } else {
                 toast('У звіті має бути щонайменше один документ', 'info');
             }
@@ -639,14 +647,14 @@ export function initAdvanceView() {
             if (!report.personIban || !/^UA\d{27}$/.test(String(report.personIban).replace(/\s+/g, ''))) {
                 toast('Спочатку вкажіть IBAN особистої картки та РНОКПП підзвітної особи у звіті', 'error');
                 form = { isEdit: true, data: { ...report } };
-                await loadAdvanceView();
+                renderAdvanceView();
                 document.getElementById('avPersonIban')?.focus();
                 return;
             }
             if (!report.personCode || !/^\d{10}$/.test(String(report.personCode).trim())) {
                 toast('Для банківського платежу в Приват24 вкажіть РНОКПП (10 цифр) підзвітної особи', 'error');
                 form = { isEdit: true, data: { ...report } };
-                await loadAdvanceView();
+                renderAdvanceView();
                 document.getElementById('avPersonCode')?.focus();
                 return;
             }
@@ -685,7 +693,7 @@ export function initAdvanceView() {
         }
         if (e.target.classList.contains('av-posting') && form) {
             form = { ...form, data: snapshotFormData() };
-            loadAdvanceView();
+            renderAdvanceView();
         }
     });
 
@@ -693,11 +701,10 @@ export function initAdvanceView() {
         if (e.target.id === 'avQuery') {
             query = e.target.value;
             const pos = e.target.selectionStart;
-            loadAdvanceView().then(() => {
-                const input = document.getElementById('avQuery');
-                input?.focus();
-                input?.setSelectionRange(pos, pos);
-            });
+            renderAdvanceView();
+            const input = document.getElementById('avQuery');
+            input?.focus();
+            input?.setSelectionRange(pos, pos);
         }
     });
 }

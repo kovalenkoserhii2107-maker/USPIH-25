@@ -212,7 +212,10 @@ initSettingsView();
 document.addEventListener('click', e => {
     const mode = e.target.closest('[data-mode]');
     if (mode) { rememberWorkMode(mode.dataset.mode); return; }
-    const nav = e.target.closest('[data-view]');
+    // ВАЖЛИВО: шукаємо лише кнопки навігації (.buh-nav-item, .buh-tab),
+    // а не контейнери <section class="buh-view" data-view="...">,
+    // інакше будь-який клік усередині активного розділу викликав би show() і скидав екран угору!
+    const nav = e.target.closest('.buh-nav-item[data-view], .buh-tab[data-view]');
     if (nav) {
         if (nav.dataset.view === 'more') { openSheet('buhMoreSheet'); return; }
         closeAllSheets();

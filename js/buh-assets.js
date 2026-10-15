@@ -600,9 +600,8 @@ function exportCsv() {
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
-export async function loadAssetsView() {
-    ctx = await loadAssets(period);
-    period = ctx.period;
+function renderAssetsView() {
+    if (!ctx) return 0;
     if (selected) {
         const matched = (ctx.items || []).find(a => a.id === selected || (a.legacyId && a.legacyId === selected));
         if (matched) selected = matched.id;
@@ -618,15 +617,19 @@ export async function loadAssetsView() {
     if (!host) return 0;
 
     host.innerHTML = `
-        <div class="buh-toolbar as-toolbar-right">
-            <span class="ch-tools">
+        <div class="as-top-bar">
+            <div class="as-period-row">
                 <select id="asPeriod" class="field-input field-select ch-period" aria-label="Період">${(ctx.periods || []).slice().reverse().map(p =>
                     `<option value="${escapeHtml(p.id)}"${p.id === ctx.period ? ' selected' : ''}>${escapeHtml(periodName(p.id))}${p.status === 'closed' ? ' · закрито' : ''}</option>`).join('')}</select>
-                <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-card">+ Картка ОЗ / ТМЦ</button>
-                <button type="button" class="btn-ghost-small" data-act="print-inventory">Інвентаризаційний опис</button>
-                <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
-                <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ ›</button>
-            </span>
+            </div>
+            <div class="buh-toolbar as-toolbar-right">
+                <span class="ch-tools">
+                    <button type="button" class="sv-btn" style="width:auto;min-height:38px;padding:0 18px;font-size:13.5px" data-act="new-card">+ Картка ОЗ / ТМЦ</button>
+                    <button type="button" class="btn-ghost-small" data-act="print-inventory">Інвентаризаційний опис</button>
+                    <button type="button" class="btn-ghost-small" data-act="export-csv">Реєстр у CSV</button>
+                    <button type="button" class="btn-ghost-small" data-go="journal">В ОСВ ›</button>
+                </span>
+            </div>
         </div>
         <div class="kpi-grid">
             <div class="kpi">
@@ -673,6 +676,12 @@ export async function loadAssetsView() {
         <p class="buh-note as-footer-note">НП(С)БО 7 «Основні засоби», НП(С)БО 9 «Запаси», пп. 14.1.138 ПКУ (поріг МНМА — ${((ctx.mnhmaLimitKop || 2000000) / 100).toLocaleString('uk-UA')} грн).</p>`;
 
     return (s.uncommissionedCount || 0) + (ctx.status === 'open' ? (s.dueDeprCount || 0) : 0);
+}
+
+export async function loadAssetsView() {
+    ctx = await loadAssets(period);
+    period = ctx.period;
+    return renderAssetsView();
 }
 
 async function saveCard(btn) {
@@ -809,7 +818,7 @@ export function initAssetsView() {
     if (!host) return;
     host.addEventListener('click', async e => {
         const seg = e.target.closest('[data-seg]');
-        if (seg) { segment = seg.dataset.seg; form = null; loadAssetsView(); return; }
+        if (seg) { segment = seg.dataset.seg; form = null; renderAssetsView(); return; }
         const btn = e.target.closest('[data-act]');
         if (!btn || btn.disabled) return;
         const a = btn.dataset.act;
@@ -818,50 +827,49 @@ export function initAssetsView() {
 
         if (a === 'pick') {
             selected = btn.dataset.id;
-            loadAssetsView().then(() => {
-                if (window.matchMedia('(max-width: 900px)').matches) document.getElementById('asCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
+            renderAssetsView();
+            if (window.matchMedia('(max-width: 900px)').matches) document.getElementById('asCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
-        if (a === 'close-form') { form = null; loadAssetsView(); return; }
+        if (a === 'close-form') { form = null; renderAssetsView(); return; }
         if (a === 'new-card') {
             const defaultAcc = segment === 'mnhma' ? '11' : segment === 'stock' ? '20' : segment === 'mshp' ? '22' : '10';
             form = { kind: 'card', data: { acc: defaultAcc, id: suggestAssetId(defaultAcc, allUsedIds()) } };
-            await loadAssetsView();
+            renderAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
         if (a === 'edit-card' && card) {
             form = { kind: 'card', data: { ...card, isEdit: true } };
-            await loadAssetsView();
+            renderAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
         if (a === 'open-commission' && card) {
             selected = card.id;
             form = { kind: 'commission', id: card.id };
-            await loadAssetsView();
+            renderAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
         if (a === 'open-writeoff' && card) {
             selected = card.id;
             form = { kind: 'writeoff', id: card.id };
-            await loadAssetsView();
+            renderAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
         if (a === 'open-dispose' && card) {
             selected = card.id;
             form = { kind: 'dispose', id: card.id };
-            await loadAssetsView();
+            renderAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
         if (a === 'open-retire-mshp' && card) {
             selected = card.id;
             form = { kind: 'retire-mshp', id: card.id };
-            await loadAssetsView();
+            renderAssetsView();
             document.getElementById('asForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
@@ -910,11 +918,17 @@ export function initAssetsView() {
                 id: suggestAssetId(newAcc, allUsedIds()),
                 legacyId: val('afLegacyId'),
                 name: val('afName'),
+                item: val('afItem') || form.data.item || 'systems',
+                fundId: val('afFund') || form.data.fundId || 'main',
+                deprMethod: defaultDeprMethod(newAcc),
+                usefulLifeMonths: newAcc === '10' ? 60 : 36,
                 custodian: val('afCustodian'),
                 location: val('afLocation'),
                 passportNote: val('afNote')
             };
-            loadAssetsView();
+            const formEl = document.getElementById('asForm');
+            if (formEl) formEl.outerHTML = cardFormHtml(form.data);
+            else renderAssetsView();
         }
     });
 
@@ -922,11 +936,10 @@ export function initAssetsView() {
         if (e.target.id === 'asQuery') {
             query = e.target.value;
             const pos = e.target.selectionStart;
-            loadAssetsView().then(() => {
-                const input = document.getElementById('asQuery');
-                input?.focus();
-                input?.setSelectionRange(pos, pos);
-            });
+            renderAssetsView();
+            const input = document.getElementById('asQuery');
+            input?.focus();
+            input?.setSelectionRange(pos, pos);
         }
     });
 }
