@@ -1103,9 +1103,14 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             if (blocks.length) fail('failed-precondition', blocks.map(c => c.text).join('; '));
             const archiveParts = Math.ceil(fresh.entries.length / 250);
             const ctx = await db.runTransaction(async t => {
-                const [current, operation] = await Promise.all([t.get(ref), t.get(db.doc('charges/operation'))]);
+                // Банк — єдине джерело, що приймає записи в місяць зі статусом 'closing'
+                // (як операції «на розбір»). Вони могли надійти після context() вище,
+                // тому перевіряємо їх ще раз атомарно з фінальним записом.
+                const lateBankQuery = db.collection('bank_tx').where('period', '==', period).where('status', '==', 'review').limit(1);
+                const [current, operation, lateBank] = await Promise.all([t.get(ref), t.get(db.doc('charges/operation')), t.get(lateBankQuery)]);
                 if (current.data()?.closingToken !== token || current.data()?.status !== 'closing') fail('aborted', 'Стан закриття місяця змінився. Перевірте місяць знову.');
                 if (operation.data()?.active && operation.data().until > Date.now()) fail('aborted', 'Виконується операція нарахувань. Закрийте місяць після її завершення.');
+                if (!lateBank.empty) fail('failed-precondition', 'У «Вхідних» чекають рішення операції банку за цей місяць, що надійшли під час закриття. Розберіть їх і закрийте місяць знову.');
                 for (let i = archiveParts; i < (current.data().archiveParts || 0); i++) t.delete(db.doc(`journal_snapshots/${period}-${i}`));
                 for (let i = 0; i < archiveParts; i++) t.set(db.doc(`journal_snapshots/${period}-${i}`), { period, index: i, entries: fresh.entries.slice(i * 250, (i + 1) * 250), version: 1 });
                 t.set(ref, {
