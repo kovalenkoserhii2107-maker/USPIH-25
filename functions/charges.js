@@ -142,22 +142,42 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
      *
      * Транзакції квартир виконуються паралельними пакетами (по 20),
      * оскільки кожна квартира оновлює власне піддерево apartments/{apt}.
+     *
+     * Спільний документ charges/settings НЕ читається всередині транзакцій:
+     * інакше 20 паралельних транзакцій чекають блокування одного документа
+     * (Transaction lock timeout). Налаштування читаються один раз до пакетів;
+     * якщо за час перерахунку вони змінилися — перерахунок повторюється.
      */
     async function recompute(apts) {
         const settings = await loadSettings();
         if (!settings.opening?.set) return { skipped: true, updated: 0 };
         const targets = apts ? [...new Set(apts.map(String))] : (await loadApartments()).map(a => a.id);
-        let updated = 0;
         const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const settingsSnap = await settingsRef.get();
+            const current = settingsSnap.data() || {};
+            if (!current.opening?.set) return { skipped: true, updated: 0 };
+            const updated = await recomputeWith(targets, current, same);
+            const after = await settingsRef.get();
+            const unchanged = settingsSnap.updateTime && after.updateTime && typeof settingsSnap.updateTime.isEqual === 'function'
+                ? settingsSnap.updateTime.isEqual(after.updateTime)
+                : JSON.stringify(after.data() || {}) === JSON.stringify(current);
+            if (unchanged) return { updated };
+        }
+        throw new Error('Налаштування нарахувань змінювалися під час перерахунку балансів');
+    }
+
+    async function recomputeWith(targets, current, same) {
+        let updated = 0;
+        const currentComponents = current.components?.length ? current.components : core.DEFAULT_COMPONENTS;
+        const currentNames = new Map(currentComponents.map(c => [c.id, c.name]));
+        const currentNamed = parts => Object.entries(parts).filter(([, v]) => v).map(([component, amountKop]) => ({ component, name: currentNames.get(component) || 'Інше', amountKop }));
 
         const recomputeOne = apt => db.runTransaction(async t => {
             const ref = db.doc(`apartments/${apt}`);
-            const [snap, ledger, freshSettings] = await Promise.all([t.get(ref), t.get(db.collection(`apartments/${apt}/ledger`)), t.get(settingsRef)]);
-            if (!freshSettings.data()?.opening?.set || !snap.exists || snap.data().isAdmin === true) return false;
-            const current = freshSettings.data();
-            const currentComponents = current.components?.length ? current.components : core.DEFAULT_COMPONENTS;
-            const currentNames = new Map(currentComponents.map(c => [c.id, c.name]));
-            const currentNamed = parts => Object.entries(parts).filter(([, v]) => v).map(([component, amountKop]) => ({ component, name: currentNames.get(component) || 'Інше', amountKop }));
+            const [snap, ledger] = await Promise.all([t.get(ref), t.get(db.collection(`apartments/${apt}/ledger`))]);
+            if (!snap.exists || snap.data().isAdmin === true) return false;
             const entries = ledger.docs.map(d => ({ _id: d.id, ...d.data() }));
             const { balances, steps } = core.replay(entries, { startPeriod: current.startPeriod || core.START_PERIOD, startDate: current.startDate, order: currentComponents.map(c => c.id) });
             for (const { entry, parts } of steps) {
@@ -175,7 +195,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             const results = await Promise.all(chunk.map(recomputeOne));
             updated += results.filter(Boolean).length;
         }
-        return { updated };
+        return updated;
     }
 
     /** Для bank.js: помилка перерахунку не має зривати рознесення оплати. */
