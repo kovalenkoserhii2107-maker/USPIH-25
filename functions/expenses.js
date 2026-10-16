@@ -660,9 +660,11 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     }
 
     async function recognizeDocument(actor, role, data) {
-        const textContent = String(data.textContent || "").trim();
-        const rawBase64 = String(data.base64Data || "").replace(/^data:[^;]+;base64,/, "").trim();
-        const mimeType = String(data.mimeType || "application/pdf");
+        let textContent = String(data.textContent || "").trim();
+        let rawBase64 = String(data.base64Data || "").replace(/^data:[^;]+;base64,/, "").trim();
+        let mimeType = String(data.mimeType || "application/pdf");
+        const fileName = String(data.fileName || "").trim().toLowerCase();
+        let extractedFiles = [];
 
         const [supSnap, conSnap, setSnap, finSnap] = await Promise.all([
             db.collection("suppliers").get(),
@@ -678,7 +680,80 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
 
         let parsed = null;
 
-        if (rawBase64 && apiKey) {
+        // 1. Перевірка на ZIP-пакет (M.E.Doc / Вчасно)
+        if (fileName.endsWith(".zip") || mimeType === "application/zip" || rawBase64.startsWith("UEsDB")) {
+            try {
+                const zipBuffer = Buffer.from(rawBase64, "base64");
+                const unzipped = docRecogCore.unpackZip(zipBuffer);
+                if (unzipped.length > 0) {
+                    const xmlEntry = unzipped.find(f => f.name.toLowerCase().endsWith(".xml"));
+                    const pdfEntry = unzipped.find(f => f.name.toLowerCase().endsWith(".pdf"));
+                    const p7sEntries = unzipped.filter(f => f.name.toLowerCase().endsWith(".p7s") || f.name.toLowerCase().endsWith(".sign"));
+
+                    if (pdfEntry) {
+                        extractedFiles.push({
+                            name: pdfEntry.name,
+                            base64Data: "data:application/pdf;base64," + pdfEntry.data.toString("base64"),
+                            mimeType: "application/pdf",
+                            size: pdfEntry.data.length
+                        });
+                    }
+                    for (const p7 of p7sEntries) {
+                        extractedFiles.push({
+                            name: p7.name,
+                            base64Data: "data:application/pkcs7-signature;base64," + p7.data.toString("base64"),
+                            mimeType: "application/pkcs7-signature",
+                            size: p7.data.length
+                        });
+                    }
+
+                    if (xmlEntry) {
+                        const xmlText = docRecogCore.decodeTextBuffer(xmlEntry.data);
+                        parsed = docRecogCore.parseEdiXml(xmlText);
+                        extractedFiles.unshift({
+                            name: xmlEntry.name,
+                            base64Data: "data:application/xml;base64," + xmlEntry.data.toString("base64"),
+                            mimeType: "application/xml",
+                            size: xmlEntry.data.length
+                        });
+                    } else if (pdfEntry) {
+                        rawBase64 = pdfEntry.data.toString("base64");
+                        mimeType = "application/pdf";
+                    }
+                }
+            } catch (zipErr) {
+                logger.warn("ZIP unpack in recognizeDocument:", zipErr.message);
+            }
+        }
+
+        // 2. Перевірка на прямий XML (M.E.Doc / CommerceML / UBL)
+        if (!parsed && (fileName.endsWith(".xml") || mimeType.includes("xml") || textContent.startsWith("<") || textContent.startsWith("<?xml"))) {
+            let xmlText = textContent;
+            if (!xmlText && rawBase64) {
+                try {
+                    xmlText = docRecogCore.decodeTextBuffer(Buffer.from(rawBase64, "base64"));
+                } catch (_) {}
+            }
+            if (xmlText) {
+                parsed = docRecogCore.parseEdiXml(xmlText);
+            }
+        }
+
+        // 3. Перевірка на JSON
+        if (!parsed && (fileName.endsWith(".json") || mimeType.includes("json") || (textContent.startsWith("{") && textContent.endsWith("}")))) {
+            let jsonText = textContent;
+            if (!jsonText && rawBase64) {
+                try {
+                    jsonText = Buffer.from(rawBase64, "base64").toString("utf8");
+                } catch (_) {}
+            }
+            if (jsonText) {
+                parsed = docRecogCore.parseEdiJson(jsonText);
+            }
+        }
+
+        // 4. Якщо не розпізнано як XML/JSON — викликаємо Gemini Vision OCR для PDF/фото
+        if (!parsed && rawBase64 && apiKey && !mimeType.includes("zip") && !mimeType.includes("xml")) {
             try {
                 parsed = await callGeminiVision(rawBase64, mimeType, apiKey);
             } catch (err) {
@@ -686,6 +761,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             }
         }
 
+        // 5. Запасний варіант: текстовий евристичний парсер
         if (!parsed && textContent) {
             parsed = docRecogCore.parseDocumentText(textContent);
         }
@@ -701,7 +777,9 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             recognized: parsed,
             matchedSupplier: match.matched,
             matchedContract: match.contract,
-            isNewSupplier: match.isNew
+            isNewSupplier: match.isNew,
+            extractedFiles,
+            source: parsed.source || "ocr"
         };
     }
 
