@@ -14,6 +14,24 @@ import { callBackend } from './backend.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
 import { formatMoney } from './ui.js';
 
+// Хто зробив запис: у документах лежить логін (номер квартири чи службовий
+// вхід), а людям показуємо імʼя з команди правління.
+const ROLE_LABEL = { chair: 'Голова', board: 'Член правління', accountant: 'Бухгалтер' };
+let staffNames = null;
+export function loadStaffNames() {
+    staffNames ||= getDocs(collection(db, 'staff'))
+        .then(snap => Object.fromEntries(snap.docs.map(d => [d.id, d.data().name || ROLE_LABEL[d.data().role] || ''])))
+        .catch(() => ({}));
+    return staffNames;
+}
+/** Підпис автора запису: імʼя з команди, інакше — «кв. N». */
+export function authorLabel(names, by) {
+    if (!by) return '';
+    if (names?.[by]) return names[by];
+    if (by === 'system') return 'система';
+    return /^\d+$/.test(String(by)) ? `кв. ${by}` : String(by);
+}
+
 export const ACCOUNT_PURPOSES = {
     current: 'Поточний', repair: 'Ремонтний фонд', reserve: 'Резервний фонд', deposit: 'Депозит', grant: 'Грантовий'
 };

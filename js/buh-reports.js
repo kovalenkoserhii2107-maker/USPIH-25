@@ -316,10 +316,11 @@ export async function loadReportsView() {
         ${list.length ? `<ul class="deadline-list rp-list">${list.map(rowHtml).join('')}</ul>` : `<p class="py-empty">${empty}</p>`}</section>`;
     document.getElementById('viewReports').innerHTML = `
         <div class="rp-top">${heroHtml(focus.hero)}${focus.side.length ? `<div class="rp-sides">${focus.side.map(sideHtml).join('')}</div>` : ''}</div>
-        ${group('Найближчі строки', attention, 'Найближчим місяцем нічого подавати не треба')}
+        ${attention.length ? group('Найближчі строки', attention, '') : ''}
         ${waiting.length ? group('Подано — чекаємо квитанцію № 2', waiting, '') : ''}
-        ${later.length ? group('Далі', later, '') : ''}
-        ${group('Виконано', done, 'Позначок ще немає')}
+        ${later.length ? group(attention.length ? 'Далі' : 'Наступні строки', later, '') : ''}
+        ${!attention.length && !later.length && !waiting.length ? group('Строки', [], 'Найближчим часом нічого подавати не треба') : ''}
+        ${done.length ? group('Виконано', done, '') : ''}
         <div id="annualReports"><p class="buh-note">Річні дані завантажуються…</p></div>
         <p class="buh-note">Строки — за правилами ПКУ (docs/accounting/LEGAL.md, розділ 11); з вихідного строк подання переноситься на понеділок. Зарплатні звіти до ${escapeHtml(monthName(ctx.start))} потребують переносу зарплатної бази.</p>`;
     const annualHost=document.getElementById('annualReports');

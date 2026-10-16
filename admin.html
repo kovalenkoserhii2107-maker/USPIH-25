@@ -28,14 +28,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=181">
-    <link rel="stylesheet" href="style-chat.css?v=181">
-    <link rel="stylesheet" href="style-sv.css?v=181">
-    <link rel="stylesheet" href="style-admin.css?v=181">
+    <link rel="stylesheet" href="style.css?v=182">
+    <link rel="stylesheet" href="style-chat.css?v=182">
+    <link rel="stylesheet" href="style-sv.css?v=182">
+    <link rel="stylesheet" href="style-admin.css?v=182">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=181">
+    <link rel="modulepreload" href="js/admin-main.js?v=182">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -140,7 +140,11 @@
                 <button class="buh-brand" type="button" data-nav="overview" aria-label="Сьогодні"><img class="buh-brand-mark app-icon" src="assets/icons/icon-192x192.png" alt="" width="44" height="44"><span><b>Успіх-25</b><small>Правління</small></span></button>
                 <nav class="buh-nav" id="adminTopNav" aria-label="Розділи панелі"></nav>
                 <div class="buh-top-tools">
-                    <button id="adminAccountBtn" class="buh-avatar buh-avatar-btn" type="button" aria-label="Профіль, інші розділи й вихід"><span id="adminAvatar" aria-hidden="true">П</span></button>
+                    <button id="adminAccountBtn" class="buh-menu-btn buh-avatar-btn" type="button" aria-label="Меню: профіль, інші розділи й вихід">
+                        <svg class="buh-menu-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                        <span class="buh-menu-label">Меню</span>
+                        <span class="buh-menu-ava" id="adminAvatar" aria-hidden="true">П</span>
+                    </button>
                 </div>
             </div>
         </header>
@@ -1400,7 +1404,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=181' : './js/admin-main.js?v=181').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=182' : './js/admin-main.js?v=182').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

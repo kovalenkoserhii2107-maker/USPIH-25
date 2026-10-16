@@ -1877,3 +1877,24 @@ body.admin-sv .dir-apt, body.admin-sv .req-avatar { background: var(--sv-soft); 
 body.admin-sv .overview-kicker { color: var(--sv-muted); }
 body.admin-sv .sign-card.is-waiting .overview-kicker, body.admin-sv .sign-card.is-waiting .sign-push { color: var(--sv-yellow-ink); }
 body.admin-sv .sign-head h2 { color: #000; font-weight: 800; }
+
+/* «На підпис у Приват24» — та сама мова, що й картки «Сьогодні». */
+body.admin-sv .sign-card { padding: 24px 28px; border: 0; border-radius: 28px; }
+body.admin-sv .sign-card .overview-kicker { font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+body.admin-sv .sign-head h2 { margin-top: 6px; font-size: 28px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+body.admin-sv .sign-list { margin-top: 14px; }
+body.admin-sv .sign-list li { align-items: baseline; padding: 12px 0; border-top-color: rgba(0, 0, 0, .08); font-size: 15px; }
+body.admin-sv .sign-list li b { font-weight: 800; }
+body.admin-sv .sign-list li small { color: var(--sv-yellow-ink); font-size: 13.5px; font-weight: 600; }
+body.admin-sv .sign-how { margin-top: 12px; font-size: 14.5px; font-weight: 600; }
+body.admin-sv .sign-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+body.admin-sv .sign-push { font-size: 13.5px; font-weight: 600; }
+body.admin-sv .sign-approve { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 14px 18px;
+    border-radius: 20px; background: rgba(255, 255, 255, .7); transition: background .2s ease; }
+body.admin-sv .sign-card:not(.is-waiting) .sign-approve { background: var(--sv-yellow); }
+body.admin-sv .sign-approve:hover { background: #fff; }
+body.admin-sv .sign-approve span { display: flex; flex-direction: column; gap: 2px; }
+body.admin-sv .sign-approve b { font-size: 16px; font-weight: 800; }
+body.admin-sv .sign-approve small { color: var(--sv-muted); font-size: 13.5px; font-weight: 600; }
+body.admin-sv .sign-approve i { font-size: 24px; font-style: normal; font-weight: 800; }
+@media (max-width: 900px) { body.admin-sv .sign-card { padding: 20px; border-radius: 24px; } body.admin-sv .sign-head h2 { font-size: 24px; } }

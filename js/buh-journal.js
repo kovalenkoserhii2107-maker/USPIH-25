@@ -162,10 +162,10 @@ export async function loadJournalView() {
             <div class="kpi"><span>Поточні та депозитні рахунки</span><b>${fmtKop(ctx.tb.rows.filter(r=>['311','313','351','143'].includes(r.acc)).reduce((s,r)=>s+r.closeDr-r.closeCr,0))}</b><small>${ctx.opening?.status === 'approved' ? 'з погодженими вхідними залишками' : `рух з ${escapeHtml(ctx.startDate || ctx.start)}, без вхідних залишків`}</small></div>
             <div class="kpi"><span>Борг співвласників (377)</span><b class="is-out">${fmtKop(ctx.tb.rows.find(r => r.acc === '377')?.byA.reduce((s, x) => s + x.closeDr, 0) || 0)}</b><small>переплати — ${fmtKop(ctx.tb.rows.find(r => r.acc === '377')?.byA.reduce((s, x) => s + x.closeCr, 0) || 0)}</small></div>
         </div>
-        ${!closed && ctx.bankRows?.length ? `<details class="buh-card"${ctx.bankCut?.key===ctx.key?'':' open'}><summary>Звірка з банком на кінець місяця</summary><p class="buh-note">Внесіть залишки з виписки на останній день цього місяця. Поточний залишок банку може належати іншій даті.</p>
+        ${openingShown() ? '<div id="jrOpening"><section class="buh-card"><p class="list-empty">Завантаження вхідної ОСВ…</p></section></div>' : ''}
+        ${!closed && ctx.bankRows?.length ? `<details class="buh-card jr-cut"${ctx.bankCut?.key===ctx.key || ctx.opening?.status !== 'approved' ? '' : ' open'}><summary>Звірка з банком на кінець місяця</summary><p class="buh-note">Внесіть залишки з виписки на останній день цього місяця. Поточний залишок банку може належати іншій даті.</p>
             ${ctx.bankRows.map((r,i)=>`<label class="py-field"><span>…${escapeHtml(r.iban.slice(-4))} · ${r.acc} · в обліку ${fmtKop(r.balanceKop)} грн</span><input class="field-input" inputmode="decimal" data-jr-cut="${i}" placeholder="Залишок у виписці, грн" value="${ctx.bankCut?.key===ctx.key?(r.balanceKop/100).toFixed(2):''}"></label>`).join('')}
             <label class="py-field"><span>Реквізити виписки / підтвердження</span><input id="jrCutNote" class="field-input" maxlength="300" value="${escapeHtml(ctx.bankCut?.note || '')}"></label><button type="button" class="sv-btn is-soft" data-act="bank-cut">Звірити залишки</button></details>`:''}
-        ${openingShown() ? '<div id="jrOpening"><section class="buh-card"><p class="list-empty">Завантаження вхідної ОСВ…</p></section></div>' : ''}
         <section class="buh-card"><div class="buh-card-head"><h2>${closed ? 'Стан' : 'Перед закриттям'}</h2></div>${checksHtml()}</section>
         ${tbHtml()}<div id="jrNotes"></div>`;
     const notesHost=document.getElementById('jrNotes');

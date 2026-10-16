@@ -217,10 +217,10 @@ const RULES = [
 
 /** Separate practice books never seed the working house. */
 function testModeHtml() {
-    return `<section class="buh-card"><h2>Тестова бухгалтерія</h2>
+    return `<section class="buh-card"><div class="buh-card-head"><h2>Тестова бухгалтерія</h2></div>
         <p class="buh-note">Окремий навчальний будинок: нарахування, імітована виписка, зарплата, проводки та звірка звітів. Продовження з будь-якого пристрою під вашим входом.</p>
         <a class="sv-btn is-soft" href="accounting-test.html">Відкрити тестовий режим</a>
-        <p class="buh-note">Попередні тестові дані у робочій базі автоматично не видаляються. За потреби голова може використати повне очищення з резервною копією нижче.</p></section>`;
+        <p class="buh-note">Попередні тестові дані у робочій базі автоматично не видаляються. За потреби голова може використати повне очищення з резервною копією — нижче.</p></section>`;
 }
 
 const AI_KEY_STORAGE = 'uspih25_gemini_api_key';
@@ -272,7 +272,7 @@ export async function loadSettingsView() {
     const accounts = Object.entries(settings.accounts || {});
     const savedAiKey = getStoredAiKey(ex?.settings?.geminiApiKey);
     const keyTail = savedAiKey.length >= 4 ? savedAiKey.slice(-4) : savedAiKey;
-    hostEl.innerHTML = `${testModeHtml()}
+    hostEl.innerHTML = `
         <section class="buh-card">
             <div class="buh-card-head"><h2>ПриватБанк</h2><span class="buh-tag ${connected ? 'is-payment' : 'is-review'}">${connected ? `підключено · токен …${escapeHtml(settings.tokenHint || '')}` : 'не підключено'}</span></div>
             <p class="buh-note">${!connected ? 'Після підключення виписка й залишки завантажуватимуться щогодини.'
@@ -292,6 +292,7 @@ export async function loadSettingsView() {
             <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно.</p>
         </section>
         ${registryHtml(requisites.registry, requisites.houseAddress)}
+        ${testModeHtml()}
         <div id="migrationSettings"></div><div id="resetSettings"></div>
         <div id="accountingSettings"><p class="buh-note">Завантаження параметрів обліку…</p></div>
         ${accounts.length ? `<section class="buh-card">
@@ -314,7 +315,7 @@ export async function loadSettingsView() {
                 ${chair ? '<button type="button" class="btn-primary btn-compact" data-act="ai-key-save">Зберегти ключ</button>' : '<span class="t-muted">змінює голова</span>'}
                 ${chair ? `<button type="button" class="btn-ghost-small" data-act="ai-key-clear" id="aiKeyClearBtn"${savedAiKey ? '' : ' hidden'}>Очистити</button>` : ''}
             </div>
-            <p class="buh-note" id="aiKeyStatusNote" style="${savedAiKey ? 'color:#15803d;font-weight:600;' : ''}">${savedAiKey
+            <p class="buh-note" id="aiKeyStatusNote" style="${savedAiKey ? 'color:var(--sv-green);font-weight:600;' : ''}">${savedAiKey
                 ? `✓ Ключ збережено та активний (закінчується на …${escapeHtml(keyTail)}). Фотографії та скани розпізнаються через Google Gemini Vision.`
                 : 'Ключ ще не збережено — зараз діє безкоштовний текстовий парсер PDF.'}</p>
             <p class="buh-note"><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Отримати безкоштовний ключ у Google AI Studio ↗</a> (до 1 500 запитів на добу безкоштовно).</p>

@@ -286,7 +286,7 @@ function render() {
     const s = ctx.stats || {};
 
     const martialLawNotice = isMartialLaw
-        ? `<div class="buh-card is-note" style="border-left: 4px solid #2B5C8F; margin-bottom: 14px;">
+        ? `<div class="buh-card is-note" style="margin-bottom: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                 <b>Режим воєнного стану (Постанова КМУ № 206 / № 1405 від 29.12.2023)</b>
                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -565,7 +565,7 @@ async function openCaseModal(apt) {
                         <button type="button" class="sv-btn btn-compact" id="printDocBtn">Друк / PDF</button>
                     </div>
                 </div>
-                <pre id="docPreviewContent" style="background:#F8FAFC; border:1px solid #D6DCE5; border-radius:8px; padding:14px; font-size:13px; line-height:1.5; white-space:pre-wrap; max-height:360px; overflow-y:auto; font-family:monospace;"></pre>
+                <pre id="docPreviewContent" style="background:var(--sv-soft-2); border:1px solid var(--sv-line); border-radius:8px; padding:14px; font-size:13px; line-height:1.5; white-space:pre-wrap; max-height:360px; overflow-y:auto; font-family:monospace;"></pre>
             </div>
         </div>
     `;
