@@ -210,10 +210,12 @@ export const loadExpenses = () => once('expenses', () => callBackend('expenseAct
 
 /** Дія з витратами — на сервері, з журналом; голові — push, коли потрібне його рішення. */
 export async function expAct(payload, timeoutMs = 60000) {
+    const quiet = payload?.action === 'recognizeDocument' || (payload?.action === 'settings' && payload?.geminiApiKey !== undefined);
     try {
         return await callBackend('expenseAction', payload, timeoutMs);
     } finally {
-        invalidate();
+        if (quiet) delete cache.expenses;
+        else invalidate();
     }
 }
 

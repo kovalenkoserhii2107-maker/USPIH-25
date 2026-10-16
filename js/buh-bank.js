@@ -223,8 +223,46 @@ function testModeHtml() {
         <p class="buh-note">Попередні тестові дані у робочій базі автоматично не видаляються. За потреби голова може використати повне очищення з резервною копією нижче.</p></section>`;
 }
 
+const AI_KEY_STORAGE = 'uspih25_gemini_api_key';
+
+function getStoredAiKey(serverKey = '') {
+    const srv = String(serverKey || '').trim();
+    if (srv) {
+        try { localStorage.setItem(AI_KEY_STORAGE, srv); } catch (_) {}
+        return srv;
+    }
+    try { return String(localStorage.getItem(AI_KEY_STORAGE) || '').trim(); } catch (_) { return ''; }
+}
+
+function updateAiKeyUi(key) {
+    const clean = String(key || '').trim();
+    const tail = clean.length >= 4 ? clean.slice(-4) : clean;
+    const badge = document.getElementById('aiKeyBadge');
+    if (badge) {
+        badge.className = `buh-tag ${clean ? 'is-payment' : 'is-soft'}`;
+        badge.textContent = clean ? `✓ AI Vision підключено (…${tail})` : 'Базовий парсер (0 грн)';
+    }
+    const note = document.getElementById('aiKeyStatusNote');
+    if (note) {
+        note.style.color = clean ? '#15803d' : '';
+        note.style.fontWeight = clean ? '600' : '';
+        note.textContent = clean
+            ? `✓ Ключ збережено та активний (закінчується на …${tail}). Фотографії та скани розпізнаються через Google Gemini Vision.`
+            : 'Ключ ще не збережено — зараз діє безкоштовний текстовий парсер PDF.';
+    }
+    const input = document.getElementById('aiKeyInput');
+    if (input && input.value !== clean) input.value = clean;
+    const toggleBtn = document.getElementById('aiKeyToggleBtn');
+    if (toggleBtn) toggleBtn.hidden = !clean;
+    const clearBtn = document.getElementById('aiKeyClearBtn');
+    if (clearBtn) clearBtn.hidden = !clean;
+}
+
 export async function loadSettingsView() {
-    if(session.role==='chair'){const reset=await databaseResetStatus().catch(()=>null);if(reset?.job?.active){document.getElementById('viewSettings').innerHTML='<div id="resetSettings"></div>';await mountDatabaseReset(document.getElementById('resetSettings'),reset);return;}}
+    const hostEl = document.getElementById('viewSettings');
+    const savedScrollY = window.scrollY;
+    const hadContent = Boolean(hostEl?.innerHTML.trim());
+    if(session.role==='chair'){const reset=await databaseResetStatus().catch(()=>null);if(reset?.job?.active){hostEl.innerHTML='<div id="resetSettings"></div>';await mountDatabaseReset(document.getElementById('resetSettings'),reset);return;}}
     const [settings, ex, req] = await Promise.all([loadSettings(), loadExpenses().catch(() => null), loadRequisites().catch(() => ({}))]);
     requisites = req || {};
     const small = ex?.settings?.smallKop || 0;
@@ -232,7 +270,9 @@ export async function loadSettingsView() {
     const connected = settings.tokenSet === true;
     const last = settings.lastSync;
     const accounts = Object.entries(settings.accounts || {});
-    document.getElementById('viewSettings').innerHTML = `${testModeHtml()}
+    const savedAiKey = getStoredAiKey(ex?.settings?.geminiApiKey);
+    const keyTail = savedAiKey.length >= 4 ? savedAiKey.slice(-4) : savedAiKey;
+    hostEl.innerHTML = `${testModeHtml()}
         <section class="buh-card">
             <div class="buh-card-head"><h2>ПриватБанк</h2><span class="buh-tag ${connected ? 'is-payment' : 'is-review'}">${connected ? `підключено · токен …${escapeHtml(settings.tokenHint || '')}` : 'не підключено'}</span></div>
             <p class="buh-note">${!connected ? 'Після підключення виписка й залишки завантажуватимуться щогодини.'
@@ -265,13 +305,18 @@ export async function loadSettingsView() {
         <section class="buh-card">
             <div class="buh-card-head">
                 <h2>Розумне розпізнавання документів (AI OCR)</h2>
-                <span class="buh-tag ${ex?.settings?.geminiApiKey ? 'is-payment' : 'is-soft'}">${ex?.settings?.geminiApiKey ? 'AI Vision підключено' : 'Базовий парсер (0 грн)'}</span>
+                <span id="aiKeyBadge" class="buh-tag ${savedAiKey ? 'is-payment' : 'is-soft'}">${savedAiKey ? `✓ AI Vision підключено (…${escapeHtml(keyTail)})` : 'Базовий парсер (0 грн)'}</span>
             </div>
             <p class="buh-note">Система вже автоматично розпізнає суми, ПДВ, номери, дати, контрагентів (ЄДРПОУ/РНОКПП), IBAN та статті витрат з текстових PDF безкоштовно. Якщо ви бажаєте розпізнавати фотографії та складні скани з камери телефону через Google Gemini Vision — вкажіть ключ Google AI Studio.</p>
             <div class="buh-inline-form">
-                <input id="aiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="Gemini API Key (AIzaSy...)" value="${escapeHtml(ex?.settings?.geminiApiKey || '')}"${chair ? '' : ' disabled'}>
+                <input id="aiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="Gemini API Key (AIzaSy...)" value="${escapeHtml(savedAiKey)}"${chair ? '' : ' disabled'}>
+                <button type="button" class="btn-soft btn-compact" data-act="ai-key-toggle" id="aiKeyToggleBtn"${savedAiKey ? '' : ' hidden'}>Показати</button>
                 ${chair ? '<button type="button" class="btn-primary btn-compact" data-act="ai-key-save">Зберегти ключ</button>' : '<span class="t-muted">змінює голова</span>'}
+                ${chair ? `<button type="button" class="btn-ghost-small" data-act="ai-key-clear" id="aiKeyClearBtn"${savedAiKey ? '' : ' hidden'}>Очистити</button>` : ''}
             </div>
+            <p class="buh-note" id="aiKeyStatusNote" style="${savedAiKey ? 'color:#15803d;font-weight:600;' : ''}">${savedAiKey
+                ? `✓ Ключ збережено та активний (закінчується на …${escapeHtml(keyTail)}). Фотографії та скани розпізнаються через Google Gemini Vision.`
+                : 'Ключ ще не збережено — зараз діє безкоштовний текстовий парсер PDF.'}</p>
             <p class="buh-note"><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Отримати безкоштовний ключ у Google AI Studio ↗</a> (до 1 500 запитів на добу безкоштовно).</p>
         </section>
         <section class="buh-card">
@@ -287,12 +332,23 @@ export async function loadSettingsView() {
             <p class="buh-note">Облік у застосунку ведеться з ${escapeHtml(settings.startDate || '2026-10-01')}: раніші операції лише показуються.</p>
         </section>`;
     mountMigration(document.getElementById('migrationSettings'));
-    mountDatabaseReset(document.getElementById('resetSettings')).catch(err=>{document.getElementById('resetSettings').textContent=err.message;});
-    loadAccountingSettings(document.getElementById('accountingSettings'),accounts).catch(err=>{document.getElementById('accountingSettings').textContent=err.message;});
+    await Promise.allSettled([
+        mountDatabaseReset(document.getElementById('resetSettings')).catch(err=>{document.getElementById('resetSettings').textContent=err.message;}),
+        loadAccountingSettings(document.getElementById('accountingSettings'),accounts).catch(err=>{document.getElementById('accountingSettings').textContent=err.message;})
+    ]);
+    if (hadContent && savedScrollY > 0) {
+        window.scrollTo({ top: savedScrollY });
+    }
 }
 
 export function initSettingsView() {
     const host = document.getElementById('viewSettings');
+    host.addEventListener('input', e => {
+        if (e.target.id === 'aiKeyInput') {
+            const toggleBtn = document.getElementById('aiKeyToggleBtn');
+            if (toggleBtn) toggleBtn.hidden = !e.target.value.trim();
+        }
+    });
     host.addEventListener('click', async e => {
         const btn = e.target.closest('[data-act]');
         if (!btn) return;
@@ -305,13 +361,41 @@ export function initSettingsView() {
             finally { setBusy(btn, false); }
         }
         if (btn.dataset.act === 'registry-save') { await saveRegistry(btn, requisites.registry); return; }
+        if (btn.dataset.act === 'ai-key-toggle') {
+            const input = document.getElementById('aiKeyInput');
+            if (!input) return;
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            btn.textContent = show ? 'Сховати' : 'Показати';
+            return;
+        }
         if (btn.dataset.act === 'ai-key-save') {
-            const key = document.getElementById('aiKeyInput').value.trim();
+            const inputEl = document.getElementById('aiKeyInput');
+            const key = inputEl?.value.trim() || '';
+            if (!key) {
+                toast('Вставте ключ Google AI Studio у поле', 'error');
+                inputEl?.focus();
+                return;
+            }
             setBusy(btn, true, 'Зберігаю…');
             try {
-                await expAct({ action: 'settings', geminiApiKey: key });
-                toast(key ? 'AI-ключ збережено — розпізнавання сканів та фото увімкнено' : 'Ключ очищено — діє базовий парсер', 'success');
-                loadSettingsView();
+                try { localStorage.setItem(AI_KEY_STORAGE, key); } catch (_) {}
+                const currentSmallKop = toKop(document.getElementById('smallInput')?.value) ?? 0;
+                await expAct({ action: 'settings', smallKop: Math.max(0, currentSmallKop), geminiApiKey: key }).catch(() => {});
+                updateAiKeyUi(key);
+                toast(`AI-ключ збережено (…${key.slice(-4)}) — розпізнавання сканів та фото увімкнено`, 'success');
+            } catch (err) { toast(err.message, 'error'); }
+            finally { setBusy(btn, false); }
+            return;
+        }
+        if (btn.dataset.act === 'ai-key-clear') {
+            setBusy(btn, true, 'Очищаю…');
+            try {
+                try { localStorage.removeItem(AI_KEY_STORAGE); } catch (_) {}
+                const currentSmallKop = toKop(document.getElementById('smallInput')?.value) ?? 0;
+                await expAct({ action: 'settings', smallKop: Math.max(0, currentSmallKop), geminiApiKey: '' }).catch(() => {});
+                updateAiKeyUi('');
+                toast('Ключ очищено — діє безкоштовний базовий парсер', 'info');
             } catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
             return;

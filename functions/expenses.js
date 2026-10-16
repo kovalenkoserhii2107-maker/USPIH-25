@@ -543,7 +543,6 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
 
 
     async function callGeminiVision(base64Data, mimeType, apiKey) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const prompt = `Ти професійний бухгалтер ОСББ в Україні.
 Проаналізуй цей первинний документ (рахунок на оплату, акт виконаних робіт, видаткову накладну, договір або фіскальний чек).
 Поверни виключно валідний JSON у такому форматі:
@@ -576,19 +575,29 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
                 temperature: 0.1
             }
         };
-        const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Gemini API HTTP ${res.status}: ${err.slice(0, 150)}`);
+        const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        let lastErr = null;
+        for (const model of models) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) {
+                const err = await res.text();
+                lastErr = new Error(`Gemini API (${model}) HTTP ${res.status}: ${err.slice(0, 150)}`);
+                if (res.status === 404) continue;
+                throw lastErr;
+            }
+            const data = await res.json();
+            const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!txt) throw new Error("Порожня відповідь");
+            const parsed = JSON.parse(txt);
+            if (parsed.date && !parsed.period) parsed.period = String(parsed.date).slice(0, 7);
+            return parsed;
         }
-        const data = await res.json();
-        const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!txt) throw new Error("Порожня відповідь");
-        return JSON.parse(txt);
+        throw lastErr || new Error("Не вдалося викликати Gemini Vision");
     }
 
     async function recognizeDocument(actor, role, data) {
@@ -596,15 +605,17 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         const rawBase64 = String(data.base64Data || "").replace(/^data:[^;]+;base64,/, "").trim();
         const mimeType = String(data.mimeType || "application/pdf");
 
-        const [supSnap, conSnap, finSnap] = await Promise.all([
+        const [supSnap, conSnap, setSnap, finSnap] = await Promise.all([
             db.collection("suppliers").get(),
             db.collection("contracts").get(),
+            settingsRef.get(),
             db.doc("osbb_settings/finance").get()
         ]);
         const suppliers = supSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const contracts = conSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const setDoc = setSnap.exists ? setSnap.data() : {};
         const fin = finSnap.exists ? finSnap.data() : {};
-        const apiKey = process.env.GEMINI_API_KEY || fin.geminiApiKey || "";
+        const apiKey = String(data.apiKey || process.env.GEMINI_API_KEY || setDoc.geminiApiKey || fin.geminiApiKey || "").trim();
 
         let parsed = null;
 
@@ -642,13 +653,23 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         };
     }
 
-    async function setSettings(actor, role, { smallKop }) {
+    async function setSettings(actor, role, { smallKop, geminiApiKey } = {}) {
         if (role !== 'chair') fail('permission-denied', 'Поріг задає голова');
+        if (geminiApiKey !== undefined && smallKop === undefined) {
+            const cleanKey = String(geminiApiKey || '').trim().slice(0, 200);
+            await settingsRef.set({ geminiApiKey: cleanKey, by: actor, at: FieldValue.serverTimestamp() }, { merge: true });
+            await audit(actor, role, 'expenses.settings.ai', 'expense_settings/main',
+                cleanKey ? `Підключено ключ Gemini AI Vision (…${cleanKey.slice(-4)})` : 'Ключ Gemini AI Vision очищено',
+                { aiKeySet: Boolean(cleanKey) });
+            return { ok: true, geminiApiKey: cleanKey };
+        }
         const v = Number(smallKop);
         if (!Number.isInteger(v) || v < 0 || v > 2_000_000) fail('invalid-argument', 'Поріг — від 0 до 20 000 грн');
-        await settingsRef.set({ smallKop: v, by: actor, at: FieldValue.serverTimestamp() }, { merge: true });
-        await audit(actor, role, 'expenses.settings', 'expense_settings/main', `Дрібні витрати без договору до ${fromKop(v)} грн затверджує бухгалтер`, { smallKop: v });
-        return { ok: true };
+        const payload = { smallKop: v, by: actor, at: FieldValue.serverTimestamp() };
+        if (geminiApiKey !== undefined) payload.geminiApiKey = String(geminiApiKey || '').trim().slice(0, 200);
+        await settingsRef.set(payload, { merge: true });
+        await audit(actor, role, 'expenses.settings', 'expense_settings/main', `Дрібні витрати без договору до ${fromKop(v)} грн затверджує бухгалтер`, { smallKop: v, ...(geminiApiKey !== undefined ? { aiKeySet: Boolean(payload.geminiApiKey) } : {}) });
+        return { ok: true, ...(geminiApiKey !== undefined ? { geminiApiKey: payload.geminiApiKey } : {}) };
     }
 
     const expenseAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, callGuard('expenseAction', async request => {

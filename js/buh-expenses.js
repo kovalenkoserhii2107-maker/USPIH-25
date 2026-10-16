@@ -116,6 +116,79 @@ function flashField(id) {
     el.classList.add("doc-field-highlight");
 }
 
+async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
+    const rawBase64 = String(base64DataUrl || "").replace(/^data:[^;]+;base64,/, "").trim();
+    const prompt = `Ти професійний бухгалтер ОСББ в Україні.
+Проаналізуй цей первинний документ (рахунок на оплату, акт виконаних робіт, видаткову накладну, договір або фіскальний чек).
+Поверни виключно валідний JSON у такому форматі:
+{
+  "docType": "invoice" | "act" | "waybill" | "contract" | "receipt",
+  "number": "номер документа",
+  "date": "YYYY-MM-DD",
+  "supplier": {
+    "name": "назва постачальника або ФОП",
+    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)",
+    "iban": "UA..."
+  },
+  "amountKop": 125000,
+  "vatKop": 25000,
+  "item": "lift" | "cleaning" | "waste" | "power" | "water" | "systems" | "repair" | "services" | "other",
+  "postingAcc": "92" | "20" | "22" | "11" | "10",
+  "paymentDueDays": 5,
+  "contractEnd": "YYYY-MM-DD",
+  "description": "короткий опис товару чи послуг"
+}`;
+    const body = {
+        contents: [{
+            parts: [
+                { text: prompt },
+                { inlineData: { mimeType, data: rawBase64 } }
+            ]
+        }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
+    };
+    for (const model of ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            if (res.status === 404) continue;
+            const errTxt = await res.text();
+            throw new Error(`Gemini API HTTP ${res.status}: ${errTxt.slice(0, 120)}`);
+        }
+        const data = await res.json();
+        const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!txt) throw new Error("Порожня відповідь AI");
+        const parsed = JSON.parse(txt);
+        if (parsed.date && !parsed.period) parsed.period = String(parsed.date).slice(0, 7);
+        return parsed;
+    }
+    throw new Error("Модель Gemini недоступна");
+}
+
+function matchSupplierClient(recognizedSupplier) {
+    if (!recognizedSupplier || !ctx) return { matched: null, contract: null };
+    const code = String(recognizedSupplier.code || "").trim();
+    const iban = String(recognizedSupplier.iban || "").replace(/\s+/g, "").toUpperCase();
+    const nameLower = String(recognizedSupplier.name || "").trim().toLowerCase();
+    const suppliers = ctx.suppliers || [];
+    const contracts = ctx.contracts || [];
+    let found = null;
+    if (code) found = suppliers.find(s => String(s.code || "").trim() === code);
+    if (!found && iban) found = suppliers.find(s => String(s.iban || "").replace(/\s+/g, "").toUpperCase() === iban);
+    if (!found && nameLower.length > 3) {
+        const clean = nameLower.replace(/(?:тов|пп|фоп|прат|пат|кп|«|»|")/gi, "").trim();
+        found = suppliers.find(s => {
+            const sn = String(s.name || "").toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|кп|«|»|")/gi, "").trim();
+            return clean && sn && (sn.includes(clean) || clean.includes(sn));
+        });
+    }
+    const contract = found ? (contracts.find(c => c.supplierId === found.id && c.status === "approved") || null) : null;
+    return { matched: found, contract };
+}
+
 async function recognizeUploadedDocument(file, kind = "doc") {
     if (!file) return;
     if (file.size > 20 * 1024 * 1024) { toast("Файл перевищує 20 МБ", "error"); return; }
@@ -138,13 +211,35 @@ async function recognizeUploadedDocument(file, kind = "doc") {
             textContent = await file.text();
         }
 
-        const res = await expAct({
-            action: "recognizeDocument",
-            base64Data,
-            mimeType: file.type || "application/pdf",
-            textContent,
-            fileName: file.name
-        });
+        let localKey = "";
+        try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
+        const apiKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
+
+        let res = null;
+        try {
+            res = await expAct({
+                action: "recognizeDocument",
+                base64Data,
+                mimeType: file.type || "application/pdf",
+                textContent,
+                fileName: file.name,
+                apiKey
+            });
+        } catch (srvErr) {
+            if (!base64Data || !apiKey) throw srvErr;
+        }
+
+        const hasMeaningfulResult = res?.recognized && (res.recognized.amountKop || res.recognized.number || res.recognized.supplier?.code || res.recognized.supplier?.name);
+        if (!hasMeaningfulResult && base64Data && apiKey) {
+            const directParsed = await callGeminiVisionDirect(base64Data, file.type || "application/pdf", apiKey);
+            const m = matchSupplierClient(directParsed.supplier);
+            res = {
+                ok: true,
+                recognized: directParsed,
+                matchedSupplier: m.matched,
+                matchedContract: m.contract
+            };
+        }
 
         if (res.ok && res.recognized) {
             const r = res.recognized;
@@ -193,6 +288,7 @@ async function recognizeUploadedDocument(file, kind = "doc") {
             if (!files.some(f => f.name === file.name && f.size === file.size)) {
                 files = [...files, file];
             }
+            form = snapshotForm();
 
             if (bar) {
                 bar.classList.remove("is-scanning");
