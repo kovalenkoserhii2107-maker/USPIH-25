@@ -543,25 +543,31 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
 
 
     async function callGeminiVision(base64Data, mimeType, apiKey) {
-        const prompt = `Ти професійний бухгалтер ОСББ в Україні.
-Проаналізуй цей первинний документ (рахунок на оплату, акт виконаних робіт, видаткову накладну, договір або фіскальний чек).
-Поверни виключно валідний JSON у такому форматі:
+        const prompt = `Ти професійний бухгалтер та експерт з первинних документів в Україні.
+Уважно проаналізуй цей первинний документ (акт наданих послуг / виконаних робіт, рахунок на оплату, видаткову накладну, договір, фіскальний чек).
+
+ВАЖЛИВО ПРО СТОРОНИ ДОКУМЕНТА:
+• Замовник / покупець — це ОСББ «Успіх-25» (код ЄДРПОУ 40562894). Не вказуй ОСББ як постачальника!
+• Постачальник (виконавець / продавець) — це ІНША сторона (підприємство, ТОВ, ПП, ФОП), яка надає послуги чи продає товари. Вкажи саме її реквізити в обʼєкті "supplier" (назва, ЄДРПОУ/РНОКПП, IBAN).
+
+Поверни ТІЛЬКИ валідний JSON у такому форматі без зайвого тексту:
 {
-  "docType": "invoice" | "act" | "waybill" | "contract" | "receipt",
-  "number": "номер документа",
+  "docType": "act" | "invoice" | "waybill" | "contract" | "receipt",
+  "number": "номер документа без символу № (наприклад, 666)",
   "date": "YYYY-MM-DD",
+  "period": "YYYY-MM",
   "supplier": {
-    "name": "назва постачальника або ФОП",
-    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)",
-    "iban": "UA..."
+    "name": "повна назва постачальника / виконавця",
+    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр) постачальника",
+    "iban": "IBAN постачальника (UA... 29 символів, якщо вказано)"
   },
-  "amountKop": 125000,
-  "vatKop": 25000,
+  "amountKop": 4499217,
+  "vatKop": 0,
   "item": "lift" | "cleaning" | "waste" | "power" | "water" | "systems" | "repair" | "services" | "other",
   "postingAcc": "92" | "20" | "22" | "11" | "10",
-  "paymentDueDays": 5,
+  "contractName": "назва чи номер договору, якщо зазначено в документі",
   "contractEnd": "YYYY-MM-DD",
-  "description": "короткий опис товару чи послуг"
+  "description": "короткий опис наданих послуг чи товару"
 }`;
         const body = {
             contents: [{
@@ -592,9 +598,29 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             }
             const data = await res.json();
             const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!txt) throw new Error("Порожня відповідь");
-            const parsed = JSON.parse(txt);
-            if (parsed.date && !parsed.period) parsed.period = String(parsed.date).slice(0, 7);
+            if (!txt) throw new Error("Порожня відповідь AI");
+            let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+            const parsed = JSON.parse(cleanTxt);
+            if (parsed.amountKop !== undefined) {
+                parsed.amountKop = Math.round(Number(parsed.amountKop));
+            } else if (parsed.amount !== undefined) {
+                parsed.amountKop = Math.round(Number(parsed.amount) * 100);
+            }
+            if (parsed.vatKop !== undefined) {
+                parsed.vatKop = Math.round(Number(parsed.vatKop));
+            } else if (parsed.vat !== undefined) {
+                parsed.vatKop = Math.round(Number(parsed.vat) * 100);
+            }
+            if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
+            if (parsed.date) {
+                parsed.date = String(parsed.date).trim();
+                if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
+            }
+            if (parsed.supplier) {
+                if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
+                if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
+                if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
+            }
             return parsed;
         }
         throw lastErr || new Error("Не вдалося викликати Gemini Vision");
@@ -629,13 +655,6 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
 
         if (!parsed && textContent) {
             parsed = docRecogCore.parseDocumentText(textContent);
-        } else if (!parsed && rawBase64) {
-            try {
-                const decoded = Buffer.from(rawBase64, "base64").toString("utf8");
-                if (/[\wа-яіїєґ]/i.test(decoded)) {
-                    parsed = docRecogCore.parseDocumentText(decoded);
-                }
-            } catch (_) {}
         }
 
         if (!parsed) {

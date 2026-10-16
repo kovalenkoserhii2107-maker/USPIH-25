@@ -118,25 +118,31 @@ function flashField(id) {
 
 async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
     const rawBase64 = String(base64DataUrl || "").replace(/^data:[^;]+;base64,/, "").trim();
-    const prompt = `Ти професійний бухгалтер ОСББ в Україні.
-Проаналізуй цей первинний документ (рахунок на оплату, акт виконаних робіт, видаткову накладну, договір або фіскальний чек).
-Поверни виключно валідний JSON у такому форматі:
+    const prompt = `Ти професійний бухгалтер та експерт з первинних документів в Україні.
+Уважно проаналізуй цей первинний документ (акт наданих послуг / виконаних робіт, рахунок на оплату, видаткову накладну, договір, фіскальний чек).
+
+ВАЖЛИВО ПРО СТОРОНИ ДОКУМЕНТА:
+• Замовник / покупець — це ОСББ «Успіх-25» (код ЄДРПОУ 40562894). Не вказуй ОСББ як постачальника!
+• Постачальник (виконавець / продавець) — це ІНША сторона (підприємство, ТОВ, ПП, ФОП), яка надає послуги чи продає товари. Вкажи саме її реквізити в обʼєкті "supplier" (назва, ЄДРПОУ/РНОКПП, IBAN).
+
+Поверни виключно валідний JSON у такому форматі без будь-яких зайвих слів:
 {
-  "docType": "invoice" | "act" | "waybill" | "contract" | "receipt",
-  "number": "номер документа",
+  "docType": "act" | "invoice" | "waybill" | "contract" | "receipt",
+  "number": "номер документа без символу № (наприклад, 666)",
   "date": "YYYY-MM-DD",
+  "period": "YYYY-MM",
   "supplier": {
-    "name": "назва постачальника або ФОП",
-    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)",
-    "iban": "UA..."
+    "name": "повна назва постачальника / виконавця (наприклад, КК ЗАТИШОК ТОВ)",
+    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр) постачальника",
+    "iban": "IBAN постачальника (UA... 29 символів, якщо вказано)"
   },
-  "amountKop": 125000,
-  "vatKop": 25000,
+  "amountKop": 4499217,
+  "vatKop": 0,
   "item": "lift" | "cleaning" | "waste" | "power" | "water" | "systems" | "repair" | "services" | "other",
   "postingAcc": "92" | "20" | "22" | "11" | "10",
-  "paymentDueDays": 5,
+  "contractName": "назва чи номер договору, якщо зазначено в документі (наприклад, основний договір)",
   "contractEnd": "YYYY-MM-DD",
-  "description": "короткий опис товару чи послуг"
+  "description": "короткий опис наданих послуг чи товару"
 }`;
     const body = {
         contents: [{
@@ -161,8 +167,32 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
         const data = await res.json();
         const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!txt) throw new Error("Порожня відповідь AI");
-        const parsed = JSON.parse(txt);
-        if (parsed.date && !parsed.period) parsed.period = String(parsed.date).slice(0, 7);
+        let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+        const parsed = JSON.parse(cleanTxt);
+        if (parsed.amountKop !== undefined) {
+            if (typeof parsed.amountKop === "string") parsed.amountKop = Math.round(parseFloat(parsed.amountKop.replace(",", ".")));
+            else parsed.amountKop = Math.round(Number(parsed.amountKop));
+        } else if (parsed.amount !== undefined) {
+            const num = typeof parsed.amount === "string" ? parseFloat(parsed.amount.replace(",", ".")) : Number(parsed.amount);
+            parsed.amountKop = Math.round(num * 100);
+        }
+        if (parsed.vatKop !== undefined) {
+            if (typeof parsed.vatKop === "string") parsed.vatKop = Math.round(parseFloat(parsed.vatKop.replace(",", ".")));
+            else parsed.vatKop = Math.round(Number(parsed.vatKop));
+        } else if (parsed.vat !== undefined) {
+            const num = typeof parsed.vat === "string" ? parseFloat(parsed.vat.replace(",", ".")) : Number(parsed.vat);
+            parsed.vatKop = Math.round(num * 100);
+        }
+        if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
+        if (parsed.date) {
+            parsed.date = String(parsed.date).trim();
+            if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
+        }
+        if (parsed.supplier) {
+            if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
+            if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
+            if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
+        }
         return parsed;
     }
     throw new Error("Модель Gemini недоступна");
@@ -187,6 +217,72 @@ function matchSupplierClient(recognizedSupplier) {
     }
     const contract = found ? (contracts.find(c => c.supplierId === found.id && c.status === "approved") || null) : null;
     return { matched: found, contract };
+}
+
+function renderSuggestedSupplierCard(s, contractName = "") {
+    let container = document.getElementById("dfSuggestedSupplier");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "dfSuggestedSupplier";
+        const formEl = document.getElementById("exForm");
+        const gridEl = formEl?.querySelector(".pay-grid");
+        if (gridEl) gridEl.insertAdjacentElement("beforebegin", container);
+    }
+    const supName = s?.name || "Новий контрагент";
+    const code = s?.code || "—";
+    const iban = s?.iban || "—";
+    container.innerHTML = `
+        <div class="doc-supplier-prompt">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+                <div style="flex:1 1 260px">
+                    <span class="buh-tag is-review" style="font-size:11.5px;padding:2px 8px;margin-bottom:4px;display:inline-block">⚡ Контрагент з документа відсутній у довіднику</span>
+                    <div style="font-size:15.5px;font-weight:700;color:#0f172a;margin:2px 0">${escapeHtml(supName)}</div>
+                    <div style="font-size:13px;color:#475569">
+                        ЄДРПОУ / РНОКПП: <b>${escapeHtml(code)}</b> · IBAN: <b>${escapeHtml(iban)}</b>
+                        ${contractName ? ` · Договір: <i>«${escapeHtml(contractName)}»</i>` : ""}
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <button type="button" class="btn-primary btn-compact" data-act="quick-add-supplier" style="white-space:nowrap;font-weight:600">
+                        ⚡ Додати в довідник в 1 клік
+                    </button>
+                    <button type="button" class="btn-soft btn-compact" data-act="open-edit-supplier" style="white-space:nowrap">
+                        Перевірити в ЄДР і додати…
+                    </button>
+                    <button type="button" class="btn-ghost-small" data-act="dismiss-suggested-supplier" style="color:#64748b">
+                        ✕ Разово без внесення
+                    </button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function suggestedSupplierHtml(s, contractName = "") {
+    if (!s || (!s.name && !s.code && !s.iban)) return "";
+    return `
+        <div class="doc-supplier-prompt" id="dfSuggestedSupplier">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+                <div style="flex:1 1 260px">
+                    <span class="buh-tag is-review" style="font-size:11.5px;padding:2px 8px;margin-bottom:4px;display:inline-block">⚡ Контрагент з документа відсутній у довіднику</span>
+                    <div style="font-size:15.5px;font-weight:700;color:#0f172a;margin:2px 0">${escapeHtml(s.name || "Новий контрагент")}</div>
+                    <div style="font-size:13px;color:#475569">
+                        ЄДРПОУ / РНОКПП: <b>${escapeHtml(s.code || "—")}</b> · IBAN: <b>${escapeHtml(s.iban || "—")}</b>
+                        ${contractName ? ` · Договір: <i>«${escapeHtml(contractName)}»</i>` : ""}
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <button type="button" class="btn-primary btn-compact" data-act="quick-add-supplier" style="white-space:nowrap;font-weight:600">
+                        ⚡ Додати в довідник в 1 клік
+                    </button>
+                    <button type="button" class="btn-soft btn-compact" data-act="open-edit-supplier" style="white-space:nowrap">
+                        Перевірити в ЄДР і додати…
+                    </button>
+                    <button type="button" class="btn-ghost-small" data-act="dismiss-suggested-supplier" style="color:#64748b">
+                        ✕ Разово без внесення
+                    </button>
+                </div>
+            </div>
+        </div>`;
 }
 
 async function recognizeUploadedDocument(file, kind = "doc") {
@@ -216,32 +312,39 @@ async function recognizeUploadedDocument(file, kind = "doc") {
         const apiKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
 
         let res = null;
-        try {
-            res = await expAct({
-                action: "recognizeDocument",
-                base64Data,
-                mimeType: file.type || "application/pdf",
-                textContent,
-                fileName: file.name,
-                apiKey
-            });
-        } catch (srvErr) {
-            if (!base64Data || !apiKey) throw srvErr;
+        if (base64Data && apiKey) {
+            try {
+                const directParsed = await callGeminiVisionDirect(base64Data, file.type || "application/pdf", apiKey);
+                if (directParsed && (directParsed.amountKop || directParsed.number || directParsed.supplier?.name || directParsed.supplier?.code)) {
+                    const m = matchSupplierClient(directParsed.supplier);
+                    res = {
+                        ok: true,
+                        recognized: directParsed,
+                        matchedSupplier: m.matched,
+                        matchedContract: m.contract
+                    };
+                }
+            } catch (aiErr) {
+                console.warn("Direct Gemini Vision error:", aiErr);
+            }
         }
 
-        const hasMeaningfulResult = res?.recognized && (res.recognized.amountKop || res.recognized.number || res.recognized.supplier?.code || res.recognized.supplier?.name);
-        if (!hasMeaningfulResult && base64Data && apiKey) {
-            const directParsed = await callGeminiVisionDirect(base64Data, file.type || "application/pdf", apiKey);
-            const m = matchSupplierClient(directParsed.supplier);
-            res = {
-                ok: true,
-                recognized: directParsed,
-                matchedSupplier: m.matched,
-                matchedContract: m.contract
-            };
+        if (!res) {
+            try {
+                res = await expAct({
+                    action: "recognizeDocument",
+                    base64Data,
+                    mimeType: file.type || "application/pdf",
+                    textContent,
+                    fileName: file.name,
+                    apiKey
+                });
+            } catch (srvErr) {
+                if (!textContent) throw srvErr;
+            }
         }
 
-        if (res.ok && res.recognized) {
+        if (res?.ok && res.recognized) {
             const r = res.recognized;
             if (isDoc) {
                 if (r.docType && document.getElementById("dfType")) { document.getElementById("dfType").value = r.docType; flashField("dfType"); }
@@ -251,7 +354,7 @@ async function recognizeUploadedDocument(file, kind = "doc") {
                 if (r.amountKop && document.getElementById("dfAmount")) { document.getElementById("dfAmount").value = money2(r.amountKop); flashField("dfAmount"); }
                 if (r.vatKop !== undefined && document.getElementById("dfVat")) { document.getElementById("dfVat").value = r.vatKop ? money2(r.vatKop) : ""; flashField("dfVat"); }
                 if (r.item && document.getElementById("dfItem")) { document.getElementById("dfItem").value = r.item; flashField("dfItem"); }
-                if (r.description && document.getElementById("dfDesc")) { document.getElementById("dfDesc").value = r.description; flashField("dfDesc"); }
+                if ((r.description || r.contractName) && document.getElementById("dfDesc")) { document.getElementById("dfDesc").value = r.description || r.contractName; flashField("dfDesc"); }
 
                 if (res.matchedSupplier && document.getElementById("dfSupplier")) {
                     document.getElementById("dfSupplier").value = res.matchedSupplier.id;
@@ -260,6 +363,12 @@ async function recognizeUploadedDocument(file, kind = "doc") {
                         document.getElementById("dfContract").value = res.matchedContract.id;
                         flashField("dfContract");
                     }
+                    document.getElementById("dfSuggestedSupplier")?.remove();
+                } else if (r.supplier && (r.supplier.name || r.supplier.code || r.supplier.iban)) {
+                    if (!form) form = { kind: "doc", data: {} };
+                    form.data.suggestedSupplier = r.supplier;
+                    form.data.contractName = r.contractName || "";
+                    renderSuggestedSupplierCard(r.supplier, r.contractName);
                 }
 
                 if (r.postingAcc && r.postingAcc !== "92" && document.getElementById("dfPosting")) {
@@ -278,7 +387,7 @@ async function recognizeUploadedDocument(file, kind = "doc") {
                 if (r.contractEnd && document.getElementById("cfTo")) { document.getElementById("cfTo").value = r.contractEnd; flashField("cfTo"); }
                 if (r.amountKop && document.getElementById("cfAmount")) { document.getElementById("cfAmount").value = money2(r.amountKop); flashField("cfAmount"); }
                 if (r.item && document.getElementById("cfItem")) { document.getElementById("cfItem").value = r.item; flashField("cfItem"); }
-                if (r.description && document.getElementById("cfSubject")) { document.getElementById("cfSubject").value = r.description; flashField("cfSubject"); }
+                if ((r.description || r.contractName) && document.getElementById("cfSubject")) { document.getElementById("cfSubject").value = r.description || r.contractName; flashField("cfSubject"); }
                 if (res.matchedSupplier && document.getElementById("cfSupplier")) {
                     document.getElementById("cfSupplier").value = res.matchedSupplier.id;
                     flashField("cfSupplier");
@@ -296,13 +405,12 @@ async function recognizeUploadedDocument(file, kind = "doc") {
             }
             if (status) {
                 status.hidden = false;
-                const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `Контрагент: ${r.supplier.name} (код ${r.supplier.code || "—"})` : "");
+                const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `⚡ Новий контрагент: ${r.supplier.name} (${r.supplier.code || "код —"})` : "");
                 const numDate = [r.number ? `№ ${r.number}` : "", r.date ? `від ${human(r.date)}` : ""].filter(Boolean).join(" ");
                 const sumStr = r.amountKop ? `Сума: ${fmtKop(r.amountKop)} грн` : "";
-                const termsStr = r.paymentDueDays ? `Відстрочка: ${r.paymentDueDays} дн.` : "";
-                status.innerHTML = `<span class="doc-recog-badge">✓ Успішно розпізнано</span> <span style="font-size:13px;color:#1e293b;">${[supTitle, numDate, sumStr, termsStr].filter(Boolean).join(" · ")}</span>`;
+                status.innerHTML = `<span class="doc-recog-badge">✓ Успішно розпізнано</span> <span style="font-size:13px;color:#1e293b;">${[supTitle, numDate, sumStr].filter(Boolean).join(" · ")}</span>`;
             }
-            toast("Реквізити документа заповнено автоматично", "success");
+            toast("Реквізити документа розпізнано автоматично", "success");
         }
     } catch (err) {
         console.warn("Помилка розпізнавання:", err);
@@ -316,18 +424,24 @@ async function recognizeUploadedDocument(file, kind = "doc") {
 }
 
 function docFormHtml(d = {}) {
-    const supplierId = d.supplierId || '';
-    const contracts = ctx.contracts.filter(c => c.supplierId === supplierId && c.status !== 'rejected');
-    const postingAcc = d.postingAcc || '92';
-    const prefilledAssetId = postingAcc !== '92' ? (d.assetId || suggestAssetId(postingAcc, allExistingAssetIds())) : (d.assetId || '');
+    const supplierId = d.supplierId || "";
+    const contracts = ctx.contracts.filter(c => c.supplierId === supplierId && c.status !== "rejected");
+    const postingAcc = d.postingAcc || "92";
+    const prefilledAssetId = postingAcc !== "92" ? (d.assetId || suggestAssetId(postingAcc, allExistingAssetIds())) : (d.assetId || "");
     const catalog = ctx.assetCatalog || [];
     return `<section class="buh-card ex-form" id="exForm">
-        <div class="buh-card-head"><h2>${d.id ? 'Змінити документ' : 'Новий документ'}</h2><button type="button" class="btn-ghost-small" data-act="close">Закрити</button></div>
-        ${docRecogHtml('doc')}
+        <div class="buh-card-head"><h2>${d.id ? "Змінити документ" : "Новий документ"}</h2><button type="button" class="btn-ghost-small" data-act="close">Закрити</button></div>
+        ${docRecogHtml("doc")}
+        ${suggestedSupplierHtml(d.suggestedSupplier, d.contractName)}
         <div class="pay-grid">
             <label class="field pay-wide"><span class="field-label">Постачальник</span>
                 <select id="dfSupplier" class="field-input field-select"><option value="">Оберіть…</option>${ctx.suppliers.map(s =>
-                    `<option value="${escapeHtml(s.id)}"${s.id === supplierId ? ' selected' : ''}>${escapeHtml(s.name)} · ${escapeHtml(s.code)}</option>`).join('')}<option value="__new">+ Новий постачальник…</option></select></label>
+                    `<option value="${escapeHtml(s.id)}"${s.id === supplierId ? " selected" : ""}>${escapeHtml(s.name)} · ${escapeHtml(s.code)}</option>`).join("")}<option value="__new">+ Новий постачальник…</option></select></label>
+            <label class="field pay-wide"><span class="field-label">Договір</span>
+                <select id="dfContract" class="field-input field-select"><option value="">Без договору</option>${contracts.map(c =>
+                    `<option value="${escapeHtml(c.id)}"${c.id === d.contractId ? " selected" : ""}>№ ${escapeHtml(c.number)} від ${human(c.date)} — ${escapeHtml(c.subject)}${c.status === "pending" ? " (не затверджено)" : ""}</option>`).join("")}</select>
+                ${supplierId && !contracts.length ? `<p class="buh-note" id="dfContractHelp" style="margin:4px 0 0">У постачальника ще немає договорів. Можна провести <b>разово без договору</b> (затверджує голова) або <button type="button" class="btn-ghost-small" data-act="quick-add-contract" style="display:inline;padding:0;text-decoration:underline;color:#0068cf;background:none;border:none;cursor:pointer">+ додати договір</button>.</p>` : ""}
+            </label>
             <label class="field pay-wide"><span class="field-label">Договір</span>
                 <select id="dfContract" class="field-input field-select"><option value="">Без договору</option>${contracts.map(c =>
                     `<option value="${escapeHtml(c.id)}"${c.id === d.contractId ? ' selected' : ''}>№ ${escapeHtml(c.number)} від ${human(c.date)} — ${escapeHtml(c.subject)}${c.status === 'pending' ? ' (не затверджено)' : ''}</option>`).join('')}</select></label>
@@ -720,9 +834,21 @@ async function saveDoc(btn) {
             else if (await confirmDialog('Це окрема послуга?', 'Документ стане окремою витратою й окремим боргом постачальнику.', 'Так, окрема')) r = await expAct({ ...payload, distinct: true });
             else return;
         }
+        const wasApproved = r.status === 'approved';
+        const savedNumber = form?.data?.number || '';
+        const savedSupId = form?.data?.supplierId;
         form = null;
-        toast(r.status === 'linked' ? 'Привʼязано як підтвердний документ — окремої витрати немає' : r.status === 'approved' ? `Затверджено (${r.approval.reason}) — можна сплачувати` : `Надіслано голові: ${r.approval.reason}`, 'success');
+        toast(r.status === 'linked' ? 'Привʼязано як підтвердний документ — окремої витрати немає' : wasApproved ? `Затверджено (${r.approval.reason}) — готово до оплати` : `Надіслано голові: ${r.approval.reason}`, 'success');
         (r.warnings || []).forEach(w => toast(w, 'info'));
+        if (wasApproved) {
+            const supObj = ctx.suppliers.find(s => s.id === savedSupId);
+            const supName = supObj?.name || 'постачальнику';
+            if (await confirmDialog('Створити платіж у Приват24?', `${supName}: сума ${fmtKop(amountKop)} грн. Створити платіж на підпис голови у Приват24?`, 'Створити платіж')) {
+                try {
+                    await payExpense({ id: r.id, supplierName: supName, amountKop, paidKop: 0, stornoKop: 0 });
+                } catch (pErr) { toast(pErr.message, 'error'); }
+            }
+        }
     } catch (e) { toast(e.message, 'error'); }
     finally { setBusy(btn, false); }
 }
@@ -731,6 +857,7 @@ async function saveContract(btn) {
     const amount = toKop(val('cfAmount'));
     if (!amount || amount <= 0) { toast('Вкажіть суму', 'error'); return; }
     const monthly = val('cfType') === 'monthly';
+    const back = form?.back;
     form = snapshotForm();
     setBusy(btn, true, 'Зберігаю…');
     try {
@@ -739,8 +866,11 @@ async function saveContract(btn) {
             subject: val('cfSubject'), type: monthly ? 'monthly' : 'fixed', monthlyKop: monthly ? amount : null, amountKop: monthly ? null : amount,
             validFrom: val('cfFrom'), validTo: val('cfTo'), item: val('cfItem'), boardDecision: val('cfBoard'), meetingDecision: val('cfMeeting'),
             files: [...(form.data.files || []), ...uploaded] });
-        form = null; files = [];
+        form = back ? { ...back, data: { ...back.data, contractId: r.id } } : null;
+        files = [];
+        if (back) segment = 'work';
         toast(r.status === 'approved' ? 'Договір затверджено' : 'Договір надіслано голові на затвердження', 'success');
+        if (back) loadExpensesView();
     } catch (e) { toast(e.message, 'error'); }
     finally { setBusy(btn, false); }
 }
@@ -805,7 +935,9 @@ function snapshotForm() {
         period: val('dfPeriod'), amountKop: toKop(val('dfAmount')) || null, vatKop: toKop(val('dfVat')) || 0, item: val('dfItem'), description: val('dfDesc'), linkedTo: val('dfLinked') || form.data.linkedTo || '',
         postingAcc:val('dfPosting') || '92',assetId:val('dfAsset'),ownedByOsbb:document.getElementById('dfOwned')?.checked===true,fundId:val('dfFund') || ctx.defaultFund || 'main',
         assetQty:Number(val('dfAssetQty') || 1),assetUnit:val('dfAssetUnit') || 'шт.',custodian:val('dfCustodian'),location:val('dfLocation'),
-        commissionedDate:document.getElementById('dfCommissionNow')?.checked ? (val('dfDate') || ctx.today) : '' } };
+        commissionedDate:document.getElementById('dfCommissionNow')?.checked ? (val('dfDate') || ctx.today) : '',
+        suggestedSupplier: form?.data?.suggestedSupplier || null,
+        contractName: form?.data?.contractName || '' } };
     if (form?.kind === 'contract') return { ...form, data: { ...form.data, supplierId: val('cfSupplier'), number: val('cfNumber'), date: val('cfDate'), subject: val('cfSubject'), type: val('cfType'),
         monthlyKop: toKop(val('cfAmount')), amountKop: toKop(val('cfAmount')), validFrom: val('cfFrom'), validTo: val('cfTo'), item: val('cfItem'),
         boardDecision: val('cfBoard'), meetingDecision: val('cfMeeting') } };
@@ -854,6 +986,79 @@ export function initExpensesView() {
             if (a === 'trigger-recog') { document.getElementById('exRecogInput')?.click(); return; }
             else if (a === 'trigger-contract-recog') { document.getElementById('cfRecogInput')?.click(); return; }
             else if (a === 'close') { form = null; files = []; loadExpensesView(); }
+            else if (a === 'quick-add-supplier') {
+                const s = form?.data?.suggestedSupplier;
+                if (!s || (!s.name && !s.code)) return;
+                setBusy(btn, true, 'Додаю…');
+                try {
+                    const kind = (s.code || '').length === 10 ? 'fop' : 'company';
+                    const r = await expAct({
+                        action: 'saveSupplier',
+                        name: s.name || `Контрагент ${s.code}`,
+                        code: s.code || '',
+                        iban: s.iban || '',
+                        kind,
+                        fopChecked: kind === 'fop',
+                        note: `Створено автоматично при розпізнаванні документа ${val('dfNumber') ? `№ ${val('dfNumber')}` : ''}`
+                    });
+                    ctx = await loadExpenses();
+                    form = snapshotForm();
+                    form.data.supplierId = r.id;
+                    delete form.data.suggestedSupplier;
+                    const supSelect = document.getElementById('dfSupplier');
+                    if (supSelect) {
+                        supSelect.innerHTML = `<option value="">Оберіть…</option>${ctx.suppliers.map(sup =>
+                            `<option value="${escapeHtml(sup.id)}"${sup.id === r.id ? ' selected' : ''}>${escapeHtml(sup.name)} · ${escapeHtml(sup.code)}</option>`).join('')}<option value="__new">+ Новий постачальник…</option>`;
+                        supSelect.value = r.id;
+                        flashField('dfSupplier');
+                    }
+                    const promptEl = document.getElementById('dfSuggestedSupplier');
+                    if (promptEl) {
+                        promptEl.innerHTML = `<div class="doc-supplier-confirmed">✓ Постачальника «${escapeHtml(s.name)}» (код ${escapeHtml(s.code || '—')}) додано в довідник та обрано в документі</div>`;
+                    }
+                    toast(`Постачальника «${s.name}» додано в довідник і підтягнуто в документ`, 'success');
+                } catch (err) { toast(err.message, 'error'); }
+                finally { if (btn.isConnected) setBusy(btn, false); }
+                return;
+            }
+            else if (a === 'open-edit-supplier') {
+                const s = form?.data?.suggestedSupplier || {};
+                const back = snapshotForm();
+                form = {
+                    kind: 'supplier',
+                    data: {
+                        name: s.name || '',
+                        code: s.code || '',
+                        iban: s.iban || '',
+                        kind: (s.code || '').length === 10 ? 'fop' : 'company',
+                        note: `З документа ${val('dfNumber') ? `№ ${val('dfNumber')}` : ''}`
+                    },
+                    back
+                };
+                loadExpensesView();
+                return;
+            }
+            else if (a === 'dismiss-suggested-supplier') {
+                const promptEl = document.getElementById('dfSuggestedSupplier');
+                if (promptEl) promptEl.remove();
+                if (form?.data) delete form.data.suggestedSupplier;
+                return;
+            }
+            else if (a === 'quick-add-contract') {
+                const back = snapshotForm();
+                form = {
+                    kind: 'contract',
+                    data: {
+                        supplierId: back.data.supplierId,
+                        subject: back.data.description || 'Обслуговування будинку',
+                        item: back.data.item || 'systems',
+                        number: back.data.contractName || ''
+                    },
+                    back
+                };
+                loadExpensesView();
+                return;
+            }
             else if (a === 'new-doc') openExpenses('docs', { kind: 'doc', data: {} });
             else if (a === 'new-contract') openExpenses('contracts', { kind: 'contract', data: {} });
             else if (a === 'new-supplier') openExpenses('suppliers', { kind: 'supplier', data: {} });
@@ -924,7 +1129,17 @@ export function initExpensesView() {
         }
         if ((t.id === 'dfSupplier' || t.id === 'cfSupplier') && t.value === '__new') {
             const back = snapshotForm();
-            form = { kind: 'supplier', data: {}, back };
+            const s = form?.data?.suggestedSupplier || {};
+            form = {
+                kind: 'supplier',
+                data: {
+                    name: s.name || '',
+                    code: s.code || '',
+                    iban: s.iban || '',
+                    kind: (s.code || '').length === 10 ? 'fop' : 'company'
+                },
+                back
+            };
             loadExpensesView();
             return;
         }
