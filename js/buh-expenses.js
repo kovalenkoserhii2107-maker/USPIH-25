@@ -107,14 +107,14 @@ function docRecogHtml(kind = "doc") {
                         <span class="buh-tag is-payment" style="font-size:11px;padding:2px 7px">⚡ M.E.Doc & Вчасно (XML/ZIP)</span>
                         ${hasKey
                             ? `<span class="buh-tag is-payment" style="font-size:11px;padding:2px 7px">⚡ AI Vision (…${escapeHtml(keyTail)})</span>`
-                            : `<button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:700;cursor:pointer">⚙️ Вказати ключ Gemini AI</button>`}
+                            : `<button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="color:var(--sv-amber);background:var(--sv-yellow-soft);border:1px solid transparent;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:700;cursor:pointer">⚙️ Вказати ключ Gemini AI</button>`}
                     </div>
                     <p class="buh-note" style="margin:2px 0 0">${sub}</p>
                 </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button type="button" class="sv-btn is-soft btn-compact" data-act="${btnAct}" style="white-space:nowrap">📎 Обрати файл для розпізнавання</button>
-                <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" title="Перевірити або змінити AI-ключ" style="color:#64748b;font-size:12px;padding:4px 8px">⚙️ AI-ключ</button>
+                <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" title="Перевірити або змінити AI-ключ" style="color:var(--sv-muted);font-size:12px;padding:4px 8px">⚙️ AI-ключ</button>
                 <input type="file" id="${inputId}" accept=".pdf,image/*,.txt,.xml,.zip" style="display:none">
             </div>
         </div>
@@ -394,8 +394,8 @@ function renderSuggestedSupplierCard(s, contractName = "") {
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
                 <div style="flex:1 1 260px">
                     <span class="buh-tag is-review" style="font-size:11.5px;padding:2px 8px;margin-bottom:4px;display:inline-block">⚡ Контрагент з документа відсутній у довіднику</span>
-                    <div style="font-size:15.5px;font-weight:700;color:#0f172a;margin:2px 0">${escapeHtml(supName)}</div>
-                    <div style="font-size:13px;color:#475569">
+                    <div style="font-size:15.5px;font-weight:700;color:#000;margin:2px 0">${escapeHtml(supName)}</div>
+                    <div style="font-size:13px;color:var(--sv-muted)">
                         ЄДРПОУ / РНОКПП: <b>${escapeHtml(code)}</b> · IBAN: <b>${escapeHtml(iban)}</b>
                         ${contractName ? ` · Договір: <i>«${escapeHtml(contractName)}»</i>` : ""}
                     </div>
@@ -407,7 +407,7 @@ function renderSuggestedSupplierCard(s, contractName = "") {
                     <button type="button" class="btn-soft btn-compact" data-act="open-edit-supplier" style="white-space:nowrap">
                         Перевірити в ЄДР і додати…
                     </button>
-                    <button type="button" class="btn-ghost-small" data-act="dismiss-suggested-supplier" style="color:#64748b">
+                    <button type="button" class="btn-ghost-small" data-act="dismiss-suggested-supplier" style="color:var(--sv-muted)">
                         ✕ Разово без внесення
                     </button>
                 </div>
@@ -422,8 +422,8 @@ function suggestedSupplierHtml(s, contractName = "") {
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
                 <div style="flex:1 1 260px">
                     <span class="buh-tag is-review" style="font-size:11.5px;padding:2px 8px;margin-bottom:4px;display:inline-block">⚡ Контрагент з документа відсутній у довіднику</span>
-                    <div style="font-size:15.5px;font-weight:700;color:#0f172a;margin:2px 0">${escapeHtml(s.name || "Новий контрагент")}</div>
-                    <div style="font-size:13px;color:#475569">
+                    <div style="font-size:15.5px;font-weight:700;color:#000;margin:2px 0">${escapeHtml(s.name || "Новий контрагент")}</div>
+                    <div style="font-size:13px;color:var(--sv-muted)">
                         ЄДРПОУ / РНОКПП: <b>${escapeHtml(s.code || "—")}</b> · IBAN: <b>${escapeHtml(s.iban || "—")}</b>
                         ${contractName ? ` · Договір: <i>«${escapeHtml(contractName)}»</i>` : ""}
                     </div>
@@ -435,7 +435,7 @@ function suggestedSupplierHtml(s, contractName = "") {
                     <button type="button" class="btn-soft btn-compact" data-act="open-edit-supplier" style="white-space:nowrap">
                         Перевірити в ЄДР і додати…
                     </button>
-                    <button type="button" class="btn-ghost-small" data-act="dismiss-suggested-supplier" style="color:#64748b">
+                    <button type="button" class="btn-ghost-small" data-act="dismiss-suggested-supplier" style="color:var(--sv-muted)">
                         ✕ Разово без внесення
                     </button>
                 </div>
@@ -491,7 +491,7 @@ async function recognizeUploadedDocument(file, kind = "doc") {
             if (!apiKey && !isXml && !isZip) {
                 if (status) {
                     status.hidden = false;
-                    status.innerHTML = `<span class="buh-note is-bad" style="color:#b45309">⚠️ Для розпізнавання фото/сканів потрібен ключ Google AI Studio. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ зараз ›</button></span>`;
+                    status.innerHTML = `<span class="buh-note is-bad" style="color:var(--sv-amber)">⚠️ Для розпізнавання фото/сканів потрібен ключ Google AI Studio. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#000;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ зараз ›</button></span>`;
                 }
                 toast("Вкажіть AI-ключ для розпізнавання фото/сканів", "info");
                 return;
@@ -514,7 +514,7 @@ async function recognizeUploadedDocument(file, kind = "doc") {
                         console.error("Gemini Vision failed:", aiErr);
                         if (status) {
                             status.hidden = false;
-                            status.innerHTML = `<span class="buh-note is-bad">❌ Помилка AI: ${escapeHtml(aiErr.message || "помилка виклику")}. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;display:inline;padding:0;background:none;border:none;cursor:pointer">Змінити ключ</button></span>`;
+                            status.innerHTML = `<span class="buh-note is-bad">❌ Помилка AI: ${escapeHtml(aiErr.message || "помилка виклику")}. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#000;display:inline;padding:0;background:none;border:none;cursor:pointer">Змінити ключ</button></span>`;
                         }
                         toast(`Помилка AI: ${aiErr.message?.slice(0, 90)}`, "error");
                         return;
@@ -615,7 +615,7 @@ async function recognizeUploadedDocument(file, kind = "doc") {
             const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `⚡ Новий контрагент: ${r.supplier.name} (${r.supplier.code || "код —"})` : "");
             const numDate = [r.number ? `№ ${r.number}` : "", r.date ? `від ${human(r.date)}` : ""].filter(Boolean).join(" ");
             const sumStr = r.amountKop ? `Сума: ${fmtKop(r.amountKop)} грн` : "";
-            status.innerHTML = `<span class="doc-recog-badge">${srcBadge}</span> <span style="font-size:13px;color:#1e293b;">${[supTitle, numDate, sumStr].filter(Boolean).join(" · ")}</span>`;
+            status.innerHTML = `<span class="doc-recog-badge">${srcBadge}</span> <span style="font-size:13px;color:#000;">${[supTitle, numDate, sumStr].filter(Boolean).join(" · ")}</span>`;
         }
         toast(res.source === "medoc" ? "Документ M.E.Doc успішно завантажено" : res.source?.includes("vchasno") ? "Документ Вчасно успішно завантажено" : "Реквізити документа заповнено автоматично", "success");
     } catch (err) {
@@ -645,7 +645,7 @@ function docFormHtml(d = {}) {
             <label class="field pay-wide"><span class="field-label">Договір</span>
                 <select id="dfContract" class="field-input field-select"><option value="">Без договору</option>${contracts.map(c =>
                     `<option value="${escapeHtml(c.id)}"${c.id === d.contractId ? " selected" : ""}>№ ${escapeHtml(c.number)} від ${human(c.date)} — ${escapeHtml(c.subject)}${c.status === "pending" ? " (не затверджено)" : ""}</option>`).join("")}</select>
-                ${supplierId && !contracts.length ? `<p class="buh-note" id="dfContractHelp" style="margin:4px 0 0">У постачальника ще немає договорів. Можна провести <b>разово без договору</b> (затверджує голова) або <button type="button" class="btn-ghost-small" data-act="quick-add-contract" style="display:inline;padding:0;text-decoration:underline;color:#0068cf;background:none;border:none;cursor:pointer">+ додати договір</button>.</p>` : ""}
+                ${supplierId && !contracts.length ? `<p class="buh-note" id="dfContractHelp" style="margin:4px 0 0">У постачальника ще немає договорів. Можна провести <b>разово без договору</b> (затверджує голова) або <button type="button" class="btn-ghost-small" data-act="quick-add-contract" style="display:inline;padding:0;text-decoration:underline;color:#000;background:none;border:none;cursor:pointer">+ додати договір</button>.</p>` : ""}
             </label>
             <label class="field"><span class="field-label">Вид документа</span><select id="dfType" class="field-input field-select">${options(ctx.docTypes, d.docType || 'invoice')}</select></label>
             <label class="field"><span class="field-label">Номер</span><input id="dfNumber" class="field-input" maxlength="60" value="${escapeHtml(d.number || '')}"></label>
@@ -959,8 +959,8 @@ export async function loadExpensesView() {
         </label>` : ''}
         <div class="fl-filters dc-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
             `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}
-            <button type="button" class="fl-filter" data-go="assets" title="Інвентарна книга ОЗ, МНМА, склад Запасів та МШП">Майно та ТМЦ ›</button>
-            <button type="button" class="fl-filter" data-go="advance" title="Авансові звіти та підзвітні особи (рах. 372)">Авансові звіти (372) ›</button></div>
+            <span class="dc-links"><button type="button" class="dc-link" data-go="assets" title="Інвентарна книга ОЗ, МНМА, склад Запасів та МШП">Майно та ТМЦ ›</button>
+            <button type="button" class="dc-link" data-go="advance" title="Авансові звіти та підзвітні особи (рах. 372)">Авансові звіти ›</button></span></div>
         ${formHtml()}${body}`;
     if (form) document.getElementById('exForm')?.querySelector('select, input')?.focus({ preventScroll: true });
     fillTxRows();

@@ -10,9 +10,23 @@ body.buh-mode, body.admin-sv {
     --sv-bg: #E9EEF4; --sv-ink: #000; --sv-muted: #4D4D4D; --sv-line: #ECECEC;
     --sv-soft: #EEF1F5; --sv-soft-2: #F4F6F9; --sv-yellow: #FFF0A8; --sv-yellow-ink: #4D4000;
     --sv-green: #1A7F37; --sv-green-bg: #E3F2E8; --sv-red: #B42318; --sv-red-bg: #FBE3E0;
+    --sv-amber: #8A4B00; --sv-yellow-soft: #FFF8D6;
+    --sv-ease: cubic-bezier(.2, .8, .2, 1);
+    --sv-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    --sv-shadow-up: 0 14px 34px -20px rgba(15, 23, 42, .32);
+    /* Старі токени застосунку — у ту ж палітру, щоб попередні екрани не
+       вибивалися синім і «системним» сірим. */
+    --ink: #000; --ink-2: #4D4D4D; --ink-3: #5C5C5C; --line: var(--sv-line); --bg: var(--sv-bg);
+    --surface-2: var(--sv-soft-2); --surface-3: var(--sv-soft);
+    --blue: #000; --blue-ink: #000; --blue-dark: #262626;
+    --sh-card: var(--sv-shadow); --sh-raised: var(--sv-shadow-up);
     background: var(--sv-bg); color: var(--sv-ink); font-family: var(--font);
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
 body.buh-mode .container { max-width: none; margin: 0; padding: 0; }
+/* Висота липкої шапки — для панелей, що «тримаються» під нею під час прокрутки. */
+body.buh-mode, body.admin-sv { --sv-sticky: 92px; }
+@media (max-width: 1320px) { body.buh-mode, body.admin-sv { --sv-sticky: 146px; } }
 
 .buh { min-height: 100vh; }
 .buh[hidden] { display: none; }
@@ -197,10 +211,9 @@ button.sv-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -18p
 .td-bars i { flex: 1; height: 10px; border-radius: 5px; background: var(--sv-soft); }
 .td-bars i.is-done { background: #000; }
 .td-bars i.is-work { background: #F2C94C; }
-.td-signing { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin-top: 18px; background: var(--sv-yellow); }
-.td-signing span { display: flex; flex-direction: column; gap: 2px; }
-.td-signing b { font-size: 18px; font-weight: 800; }
-.td-signing small { color: var(--sv-yellow-ink); font-size: 14.5px; font-weight: 600; }
+.td-small.is-muted { color: var(--sv-muted); }
+.td-signing { background: #000; color: #fff; }
+.td-signing .td-label { color: rgba(255, 255, 255, .72); }
 .td-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin: 18px 0; }
 
 /* ---------- Телефон ---------- */
@@ -236,3 +249,7 @@ button.sv-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -18p
     .buh-tab .buh-badge { position: absolute; top: -6px; left: 14px; min-width: 18px; height: 18px; padding: 0 5px; border: 2px solid #fff; font-size: 10px; }
     body.buh-mode .toast-host, body.admin-sv .toast-host { bottom: calc(96px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- Форми: підписи полів звичайним регістром ---------- */
+body.buh-mode .field-label, body.admin-sv .field-label { color: var(--sv-muted); font-size: 13.5px; letter-spacing: 0; text-transform: none; }
+body.buh-mode :is(button, a, summary, [tabindex]):focus-visible, body.admin-sv :is(button, a, summary, [tabindex]):focus-visible { outline: 2px solid #000; outline-offset: 2px; }

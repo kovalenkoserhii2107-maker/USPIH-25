@@ -190,8 +190,8 @@ export async function loadDashboard() {
                 </div>
             </div>
             <div class="td-row">
-                <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Надходження${finance.period ? ` · ${escapeHtml(finance.period)}` : ''}</span><b class="td-mid">${moneyText(income)}</b>
-                    <span class="td-small">внески й інші доходи</span></button>
+                <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Надходження</span><b class="td-mid">${moneyText(income)}</b>
+                    <span class="td-small is-muted">${finance.period ? escapeHtml(String(finance.period).replace(/^\d{4} рік:\s*/, '')) : 'внески й інші доходи'}</span></button>
                 <button type="button" class="sv-card" ${go('finance')}><span class="td-label">Витрати</span><b class="td-mid">${moneyText(financeReady ? spent : null)}</b>
                     ${spentShare !== null ? `<span class="sv-meter" aria-hidden="true"><i style="width:${Math.min(100, spentShare)}%"></i></span><span class="td-small">витрачено ${spentShare}% надходжень</span>` : '<span class="td-small">за звітом</span>'}</button>
                 <button type="button" class="sv-card" ${go('directory')}><span class="td-label">Борг мешканців</span><b class="td-mid">${moneyText(directoryReady ? debtSum : null)}</b>

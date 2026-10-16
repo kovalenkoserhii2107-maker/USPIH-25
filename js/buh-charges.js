@@ -8,7 +8,7 @@
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { session } from './firebase.js';
-import { loadCharges, loadStatement, loadRequisites, chargeAct, dateOnly } from './buh-data.js';
+import { loadCharges, loadStatement, loadRequisites, chargeAct, dateOnly, loadStaffNames, authorLabel } from './buh-data.js';
 import {
     periodName, periodStart, periodsBetween, fmtKop, parseOpeningLines, openingSummary, statementCsv, receiptPurpose
 } from './charges-core.js';
@@ -17,6 +17,7 @@ import { paymentLinks } from './nbu-qr.js';
 const SEGMENTS = { month: 'Місяць', statement: 'Відомість', tariffs: 'Тарифи', premises: 'Приміщення', opening: 'Вхідні залишки' };
 let segment = 'month';
 let ctx = null;
+let names = {};
 let stPeriod = null;
 let stFilter = 'all';
 let openingSign = 'overpaid';
@@ -65,7 +66,7 @@ function monthHtml() {
     const head = run
         ? `<div class="buh-card-head"><h2>${escapeHtml(cap(periodName(p.period)))}</h2><span class="buh-tag ${run.complete === false ? 'is-review' : 'is-payment'}">${run.complete === false ? 'нараховано частково' : 'нараховано'}</span></div>
            <p class="ch-big">${fmtKop(run.totalKop)} <small>грн · ${run.count} прим.</small></p>
-           <p class="buh-note">${run.at ? `${escapeHtml(dateOnly(run.at))} · ` : ''}${escapeHtml(run.by || '')}${run.recalculated ? ` · перераховано ${run.recalculated} р.` : ''}</p>
+           <p class="buh-note">${run.at ? `${escapeHtml(dateOnly(run.at))} · ` : ''}${escapeHtml(authorLabel(names, run.by))}${run.recalculated ? ` · перераховано ${run.recalculated} р.` : ''}</p>
            <div class="inbox-actions">
                <button type="button" class="btn-soft btn-compact" data-act="recalc" data-period="${p.period}">Перерахувати</button>
                ${lastRun === p.period ? `<button type="button" class="btn-ghost-small" data-act="revert" data-period="${p.period}">Скасувати нарахування</button>` : ''}
@@ -93,7 +94,7 @@ function monthHtml() {
             <div class="buh-card-head"><h2>Нараховані місяці</h2></div>
             ${ctx.runs.length ? `<table class="buh-table"><thead><tr><th>Місяць</th><th>Прим.</th><th>Хто й коли</th><th class="t-sum">Сума, ₴</th><th></th></tr></thead>
                 <tbody>${ctx.runs.map(r => `<tr><td><b>${escapeHtml(periodName(r.period))}</b></td><td>${r.count}${r.problems.length ? ` <small class="t-muted">(${r.problems.length} потребують виправлення)</small>` : ''}</td>
-                    <td class="t-muted">${escapeHtml(r.by || '')}${r.at ? ` · ${escapeHtml(dateOnly(r.at))}` : ''}</td>${kopCell(r.totalKop)}
+                    <td class="t-muted">${escapeHtml(authorLabel(names, r.by))}${r.at ? ` · ${escapeHtml(dateOnly(r.at))}` : ''}</td>${kopCell(r.totalKop)}
                     <td class="t-act"><button type="button" class="btn-ghost-small" data-act="recalc" data-period="${r.period}">Перерахувати</button></td></tr>`).join('')}</tbody></table>`
                 : '<p class="list-empty">Ще нічого не нараховано</p>'}
         </section>`;
@@ -267,7 +268,7 @@ function openingHtml() {
     const date=new Date(Date.parse(`${ctx.startDate || `${ctx.startPeriod}-01`}T12:00:00Z`)-86400000).toISOString().slice(0,10).split('-').reverse().join('.');
     return `${ctx.startDate && !ctx.startDate.endsWith('-01') && session.role==='chair'?`<section class="buh-card"><h3>Місяць переходу вже нараховано раніше?</h3><p class="buh-note">Завантажте його історію по всіх приміщеннях і підтвердьте перенос. Нові дублікати нарахувань не створюються.</p><button type="button" class="sv-btn is-soft" data-act="imported-month">Підтвердити перенесене нарахування</button></section>`:''}<section class="buh-card">
             <div class="buh-card-head"><h2>Вхідні залишки на ${date}</h2>${o?.set ? `<span class="buh-tag is-payment">внесено</span>` : '<span class="buh-tag is-review">не внесено</span>'}</div>
-            ${o?.set ? `<p class="buh-note">${o.count} кв. · борг ${fmtKop(o.debtKop)} · переплата ${fmtKop(o.overpaidKop)} грн · ${escapeHtml(o.by || '')}${o.at ? `, ${escapeHtml(dateOnly(o.at))}` : ''}.
+            ${o?.set ? `<p class="buh-note">${o.count} кв. · борг ${fmtKop(o.debtKop)} · переплата ${fmtKop(o.overpaidKop)} грн · ${escapeHtml(authorLabel(names, o.by))}${o.at ? `, ${escapeHtml(dateOnly(o.at))}` : ''}.
                 Баланс у кабінетах мешканців рахує система: залишок + оплати − нарахування.</p>
                 <div class="inbox-actions"><button type="button" class="btn-ghost-small" data-act="recompute">Перерахувати баланси з історії</button></div>`
             : `<p class="buh-note">Борги й переплати кожної квартири на кінець ${date} — з попереднього обліку. З ними система почне рахувати баланс мешканців сама.</p>`}
@@ -384,7 +385,7 @@ function downloadCsv(st) {
 // РОЗДІЛ
 // ------------------------------------------------------------
 export async function loadChargesView() {
-    ctx = await loadCharges();
+    [ctx, names] = await Promise.all([loadCharges(), loadStaffNames()]);
     const host = document.getElementById('viewCharges');
     const body = segment === 'month' ? monthHtml() : segment === 'statement' ? await statementHtml()
         : segment === 'tariffs' ? tariffsHtml() : segment === 'premises' ? premisesHtml() : openingHtml();

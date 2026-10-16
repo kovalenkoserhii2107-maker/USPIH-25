@@ -256,10 +256,10 @@ export async function loadPayrollView() {
                 <span class="sv-chip ${cls}">${escapeHtml(label)}${ctx.approvedAt && ctx.status === 'approved' ? ` ${escapeHtml(new Date(ctx.approvedAt).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }))}` : ''}</span>
             </div>
             <div class="pr-head-actions">
-                ${canSave ? `<button type="button" class="sv-btn${chair && ctx.status === 'draft' || canPayAdvance || canPayFinal ? ' is-soft' : ''}" data-act="save" title="Збережена відомість чекає затвердження голови">Зберегти відомість</button>` : ''}
+                ${canSave ? `<button type="button" class="sv-btn${chair && ctx.status === 'draft' || canPayAdvance || canPayFinal ? ' is-soft' : ''}" data-act="save" title="${ctx.status === 'approved' ? 'Зміни повернуть відомість на затвердження голові' : 'Збережена відомість чекає затвердження голови'}">${ctx.status === 'approved' ? 'Зберегти зміни' : 'Зберегти відомість'}</button>` : ''}
                 ${chair && ctx.status === 'draft' && !ctx.closed ? '<button type="button" class="sv-btn" data-act="approve">Затвердити</button>' : ''}
                 ${canPayAdvance ? '<button type="button" class="sv-btn" data-act="pay-advance">Виплатити аванс</button>' : ''}
-                ${canPayFinal ? '<button type="button" class="sv-btn" data-act="pay-final">Виплатити зарплату</button>' : ''}
+                ${canPayFinal ? `<button type="button" class="sv-btn${canPayAdvance ? ' is-soft' : ''}" data-act="pay-final">Виплатити зарплату</button>` : ''}
             </div>
         </div>
         <div class="pr-kpis">

@@ -7,7 +7,7 @@
 // системі це запис протоколу; зміни до затвердженого — лише з новим.
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
-import { loadBudget, budgetAct } from './buh-data.js';
+import { loadBudget, budgetAct, loadStaffNames, authorLabel } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
 import { opsListHtml, opsFilterHtml, opsInMonth, opsTotalKop } from './finance-ops.js';
 
@@ -164,7 +164,8 @@ function printReport() {
 // РОЗДІЛ
 // ------------------------------------------------------------
 export async function loadBudgetView() {
-    ctx = await loadBudget(year);
+    const [data, names] = await Promise.all([loadBudget(year), loadStaffNames()]);
+    ctx = data;
     const b = ctx.budget;
     const ex = ctx.execution;
     const now = Number(ctx.today.slice(0, 4));
@@ -197,7 +198,7 @@ export async function loadBudgetView() {
                 <span><b>Показувати мешканцям номери квартир</b><small>У надходженнях («Під'їзд 2, Квартира 177 — 28,30 грн») і в списку боржників, як у сервісі. Прізвищ — ніколи. Номер квартири теж персональні дані: вмикайте за рішенням правління чи зборів. Змінює голова.</small></span></label>
         </section>
         ${b?.revisions?.length ? `<section class="buh-card"><div class="buh-card-head"><h2>Редакції</h2></div>
-            <table class="buh-table is-compact"><tbody>${b.revisions.map(r => `<tr><td class="t-date">${escapeHtml(human(r.at))}</td><td>${escapeHtml(r.decision)}</td><td class="t-sum">${fmtKop(r.planKop)}</td><td class="t-muted">${escapeHtml(r.by)}</td></tr>`).join('')}</tbody></table></section>` : ''}`;
+            <table class="buh-table is-compact"><tbody>${b.revisions.map(r => `<tr><td class="t-date">${escapeHtml(human(r.at))}</td><td>${escapeHtml(r.decision)}</td><td class="t-sum">${fmtKop(r.planKop)}</td><td class="t-muted">${escapeHtml(authorLabel(names, r.by))}</td></tr>`).join('')}</tbody></table></section>` : ''}`;
     return p.stale ? 1 : 0;
 }
 

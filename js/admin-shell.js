@@ -34,7 +34,7 @@ const TOP = {
     default: ['overview', 'directory', 'requests', 'chat', 'meetings', 'polls', 'send', 'buh']
 };
 const PRIMARY = {
-    accountant: ['overview', 'finance', 'meters', 'requests'],
+    accountant: ['overview', 'buh', 'meters', 'requests'],
     default: ['overview', 'requests', 'directory', 'meetings']
 };
 const SHORT = { meetings: 'Збори' };
@@ -180,6 +180,8 @@ export function markActive(name) {
         item.classList.toggle('active', active);
         if (item.classList.contains('buh-tab') || item.classList.contains('buh-nav-item')) item.setAttribute('aria-current', active ? 'page' : 'false');
     });
+    // Розділ із меню (не з «пігулок») — підсвічуємо кнопку «Меню», як у бухгалтерії.
+    document.getElementById('adminAccountBtn')?.classList.toggle('active', Boolean(top.length) && !top.includes(name));
     const [title, subtitle] = TAB_META[name] || TAB_META.overview;
     const today = name === 'overview';
     document.getElementById('adminTitle').textContent = today ? greeting() : title;

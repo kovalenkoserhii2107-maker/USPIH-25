@@ -176,7 +176,9 @@ function refundListHtml(list) {
 function formHtml(item, dir) {
     if (item.proposal.type === 'bank-conflict') return `<button type="button" class="btn-primary btn-compact" data-act="edit">Переглянути місяць у журналі</button>${item.tx.bankConflict==='changed'&&session.role==='chair'?'<button type="button" class="btn-ghost-small" data-act="accept-changed">Звірено: прийняти нові дані й рознести повторно</button>':''}`;
     if (item.proposal.type === 'payment-link') return '<button type="button" class="btn-primary btn-compact" data-act="edit">Вибрати платіж за випискою</button>';
-    return `${decisionHtml(item, dir)}${refundHtml(item)}<div class="inbox-refund"><button type="button" class="btn-ghost-small" data-act="note-find">Оплачено нарахування за бухгалтерською довідкою…</button><div class="inbox-note-list"></div></div>`;
+    // Рідкісні випадки — під «Інші варіанти», щоб не заступати головне рішення.
+    return `${decisionHtml(item, dir)}<details class="inbox-more"><summary>Інші варіанти: ${item.tx.direction === 'in' ? 'повернення, бухгалтерська довідка' : 'зарплата, повернення переплати, довідка'}</summary>
+        ${refundHtml(item)}<div class="inbox-refund"><button type="button" class="btn-ghost-small" data-act="note-find">Оплачено нарахування за бухгалтерською довідкою…</button><div class="inbox-note-list"></div></div></details>`;
 }
 
 function decisionHtml(item, dir) {

@@ -35,10 +35,12 @@ export async function loadSignWidget() {
     // Витрати без договору чи понад нього й нові договори затверджує голова — у кабінеті бухгалтерії.
     const toApprove = docs.size + contracts.size;
     const approveHtml = toApprove ? `<a class="sign-approve" href="buh.html#inbox">
-        <b>Чекають вашого затвердження: ${toApprove}</b>
-        <span>${[docs.size ? `${docs.size} ${docs.size === 1 ? 'документ' : 'документи'} витрат на ${money(docs.docs.reduce((s, d) => s + (d.data().amountKop || 0), 0))}` : '',
-            contracts.size ? `${contracts.size} ${contracts.size === 1 ? 'договір' : 'договори'}` : ''].filter(Boolean).join(' · ')} → відкрити</span></a>` : '';
+        <span><b>Чекають вашого затвердження: ${toApprove}</b>
+        <small>${[docs.size ? `${docs.size} ${docs.size === 1 ? 'документ' : 'документи'} витрат на ${money(docs.docs.reduce((s, d) => s + (d.data().amountKop || 0), 0))}` : '',
+            contracts.size ? `${contracts.size} ${contracts.size === 1 ? 'договір' : 'договори'}` : ''].filter(Boolean).join(' · ')}</small></span><i aria-hidden="true">›</i></a>` : '';
     const total = list.reduce((s, p) => s + p.amountKop, 0);
+    // Нічого не чекає і вмикати нічого — картку не показуємо, щоб не займала головне місце.
+    if (!list.length && !toApprove && (pushEnabledHere() || pushState() === 'denied' || pushState() === 'unsupported')) { host.hidden = true; host.innerHTML = ''; return; }
     host.hidden = false;
     host.innerHTML = list.length ? `
         <section class="sign-card is-waiting">
@@ -48,7 +50,7 @@ export async function loadSignWidget() {
             </div>
             ${approveHtml}
             <ul class="sign-list">${list.slice(0, 6).map(p => `<li><span><b>${escapeHtml(p.recipient?.name || '')}</b><small>${escapeHtml(p.purpose || '')}</small></span><b>${money(p.amountKop)}</b></li>`).join('')}</ul>
-            <p class="sign-how">Бухгалтер підготував і перевірив платежі. Відкрийте <b>Приват24 для бізнесу</b> → «Платежі» → підпишіть пачку КЕП. Гроші підуть лише після вашого підпису.</p>
+            <p class="sign-how">Відкрийте <b>Приват24 для бізнесу</b> → «Платежі» → підпишіть пачку КЕП. Гроші підуть лише після вашого підпису.</p>
             <div class="sign-foot">${pushHtml()}</div>
         </section>` : `
         <section class="sign-card">

@@ -165,9 +165,9 @@ export async function loadPaymentsView() {
     const draft = pendingFill ? null : draftOf();
 
     document.getElementById('viewPayments').innerHTML = `
-        <div class="py-top">
+        ${formOpen ? '' : `<div class="py-top">
             <button type="button" class="sv-btn py-new" data-act="open-form">+ Новий платіж</button>
-        </div>
+        </div>`}
         <div class="py-grid">
             <div class="py-col">
                 ${failed.length ? `<section class="py-card is-alert"><div class="py-card-head"><h2>Банк не прийняв · ${failed.length}</h2></div>

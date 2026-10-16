@@ -101,6 +101,11 @@ export async function loadToday() {
                 : '<div class="td-clear"><b>Усе вирішено</b><span>Нових рішень немає. Система підготує наступні, щойно прийде виписка чи документ.</span></div>'}
             </section>
             <div class="td-side">
+                ${signing.length ? `<button type="button" class="sv-card td-signing" data-go="payments">
+                    <span class="td-label">На підписі голови · КЕП у Приват24</span>
+                    <b class="td-big">${escapeHtml(money(signing.reduce((s, p) => s + p.amountKop, 0)))}</b>
+                    <span class="td-small">${signing.length} ${signing.length === 1 ? 'платіж чекає' : signing.length < 5 ? 'платежі чекають' : 'платежів чекають'} ›</span>
+                </button>` : ''}
                 ${progress ? `<button type="button" class="sv-card td-month" data-go="month">
                     <span class="td-label">Закриття: ${escapeHtml(periodName(monthData.journal.period))} · <b>${progress.done} з ${progress.total}</b></span>
                     <span class="td-bars" aria-hidden="true">${monthData.steps.map(s => `<i class="is-${s.state}"></i>`).join('')}</span>
@@ -114,14 +119,10 @@ export async function loadToday() {
                 <button type="button" class="sv-card td-balance" data-go="bank">
                     <span class="td-label">На рахунку</span>
                     <b class="td-big">${accounts.length ? escapeHtml(money(total)) : '—'}</b>
-                    <span class="td-small${last?.ok === false ? ' is-bad' : ' is-good'}">${!accounts.length ? 'Банк не підключено' : last?.ok === false ? 'Помилка оновлення виписки' : last ? `Виписка о ${escapeHtml(when(last.at))}` : 'Виписку ще не отримано'}</span>
+                    <span class="td-small${last?.ok === false ? ' is-bad' : last ? ' is-good' : ' is-muted'}">${!accounts.length ? 'Банк не підключено' : last?.ok === false ? 'Помилка оновлення виписки' : last ? `Виписка о ${escapeHtml(when(last.at))}` : 'Виписку ще не отримано'}</span>
                 </button>
             </div>
         </div>
-        ${signing.length ? `<button type="button" class="sv-card td-signing" data-go="payments">
-            <span><b>${signing.length} ${signing.length === 1 ? 'платіж чекає' : 'платежі чекають'} підпису голови</b><small>Підписує голова КЕП у Приват24</small></span>
-            <b class="td-sum">${escapeHtml(money(signing.reduce((s, p) => s + p.amountKop, 0)))} ›</b>
-        </button>` : ''}
         <div class="td-row">
             <button type="button" class="sv-card" data-go="charges"><span class="td-label">Нараховано за місяць</span><b class="td-mid">${run ? escapeHtml(money(run.totalKop)) : '—'}</b>
                 <span class="td-small">${run ? `${run.count} квартир` : 'ще не нараховано'}</span></button>

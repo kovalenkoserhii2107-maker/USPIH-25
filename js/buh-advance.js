@@ -124,7 +124,7 @@ function lineRowHtml(l, idx, allLines = []) {
     return `<div class="av-line buh-card is-compact" data-line-idx="${idx}" style="margin:8px 0;padding:12px;background:var(--sv-soft-2,#f4f6f9)">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
             <b style="font-size:13.5px">Документ № ${idx + 1}</b>
-            <button type="button" class="btn-ghost-small" data-act="remove-line" data-line-idx="${idx}" style="color:#b42318;width:auto;flex:0 0 auto">Видалити рядок ✕</button>
+            <button type="button" class="btn-ghost-small" data-act="remove-line" data-line-idx="${idx}" style="color:var(--sv-red);width:auto;flex:0 0 auto">Видалити рядок ✕</button>
         </div>
         <div class="pay-grid">
             <label class="field"><span class="field-label">Вид документа</span>
@@ -295,7 +295,7 @@ function detailCardHtml(r, empty) {
             <div class="as-wear-nums">
                 <div><span>Витрачено за чеками</span><b>${fmtKop(t.spentKop)} грн</b></div>
                 <div><span>Одержано аванс</span><b>${fmtKop(t.advanceKop)} грн</b></div>
-                <div><span>${t.reimburseKop > 0 ? 'Перевитрата (ОСББ винне)' : 'Залишок (до повернення)'}</span><b style="color:${t.reimburseKop > 0 ? '#0068cf' : '#16a34a'}">${fmtKop(t.reimburseKop > 0 ? t.reimburseKop : t.returnKop)} грн</b></div>
+                <div><span>${t.reimburseKop > 0 ? 'Перевитрата (ОСББ винне)' : 'Залишок (до повернення)'}</span><b style="color:${t.reimburseKop > 0 ? '#000' : 'var(--sv-green)'}">${fmtKop(t.reimburseKop > 0 ? t.reimburseKop : t.returnKop)} грн</b></div>
             </div>
         </div>
         <dl class="dc-fields">${summaryRows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
