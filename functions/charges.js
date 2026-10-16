@@ -24,7 +24,6 @@ const core = require('./charges-core');
 const { cleanApt, fromKop } = require('./bank-core');
 
 const REGION = 'europe-central2';
-const RECOMPUTE_CONCURRENCY = 20;
 
 module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock }) {
     const settingsRef = db.doc('charges/settings');
@@ -190,10 +189,17 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             return true;
         });
 
-        for (let i = 0; i < targets.length; i += RECOMPUTE_CONCURRENCY) {
-            const chunk = targets.slice(i, i + RECOMPUTE_CONCURRENCY);
-            const results = await Promise.all(chunk.map(recomputeOne));
-            updated += results.filter(Boolean).length;
+        for (const apt of targets) {
+            for (let retry = 0; retry < 4; retry++) {
+                try {
+                    if (await recomputeOne(apt)) updated++;
+                    break;
+                } catch (e) {
+                    const isTransient = e?.code === 10 || /ABORTED|lock timeout/i.test(String(e?.message || ''));
+                    if (!isTransient || retry === 3) throw e;
+                    await new Promise(r => setTimeout(r, 40 * (retry + 1)));
+                }
+            }
         }
         return updated;
     }
