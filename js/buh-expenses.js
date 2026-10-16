@@ -72,11 +72,21 @@ const options = (map, selected) => Object.entries(map).map(([k, v]) => `<option 
 const money2 = k => (k ? (k / 100).toFixed(2).replace('.', ',') : '');
 
 
+function dataUrlToFile(dataUrl, filename) {
+    const arr = dataUrl.split(",");
+    const mime = arr[0].match(/:(.*?);/)?.[1] || "application/octet-stream";
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) u8arr[n] = bstr.charCodeAt(n);
+    return new File([u8arr], filename, { type: mime });
+}
+
 function docRecogHtml(kind = "doc") {
     const isDoc = kind === "doc";
-    const title = isDoc ? "Розумне розпізнавання рахунків, актів та накладних" : "Розпізнавання договору підряду / послуг";
-    const sub = isDoc ? "Оберіть скан або фото — AI автоматично заповнить номер, дату, постачальника, суму та статтю"
-                      : "Оберіть скан договору — AI заповнить номер, дату, предмет, суму/тариф та строки дії";
+    const title = isDoc ? "Розумне розпізнавання: скан, PDF або M.E.Doc / Вчасно (XML, ZIP)" : "Розпізнавання договору підряду / послуг";
+    const sub = isDoc ? "Оберіть скан, PDF або електронний документ M.E.Doc/Вчасно (XML чи ZIP) — система автоматично витягне реквізити та прикріпить підписаний PDF"
+                      : "Оберіть скан договору або файл M.E.Doc/Вчасно — система заповнить реквізити, предмет, суму та строки дії";
     const btnAct = isDoc ? "trigger-recog" : "trigger-contract-recog";
     const inputId = isDoc ? "exRecogInput" : "cfRecogInput";
     const barId = isDoc ? "exRecogBar" : "cfRecogBar";
@@ -94,9 +104,10 @@ function docRecogHtml(kind = "doc") {
                 <div>
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <b style="font-size:14px">${title}</b>
+                        <span class="buh-tag is-payment" style="font-size:11px;padding:2px 7px">⚡ M.E.Doc & Вчасно (XML/ZIP)</span>
                         ${hasKey
-                            ? `<span class="buh-tag is-payment" style="font-size:11px;padding:2px 7px">⚡ AI Vision увімкнено (…${escapeHtml(keyTail)})</span>`
-                            : `<button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:700;cursor:pointer">⚠️ Вказати ключ Gemini AI</button>`}
+                            ? `<span class="buh-tag is-payment" style="font-size:11px;padding:2px 7px">⚡ AI Vision (…${escapeHtml(keyTail)})</span>`
+                            : `<button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:700;cursor:pointer">⚙️ Вказати ключ Gemini AI</button>`}
                     </div>
                     <p class="buh-note" style="margin:2px 0 0">${sub}</p>
                 </div>
@@ -104,7 +115,7 @@ function docRecogHtml(kind = "doc") {
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button type="button" class="sv-btn is-soft btn-compact" data-act="${btnAct}" style="white-space:nowrap">📎 Обрати файл для розпізнавання</button>
                 <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" title="Перевірити або змінити AI-ключ" style="color:#64748b;font-size:12px;padding:4px 8px">⚙️ AI-ключ</button>
-                <input type="file" id="${inputId}" accept=".pdf,image/*,.txt" style="display:none">
+                <input type="file" id="${inputId}" accept=".pdf,image/*,.txt,.xml,.zip" style="display:none">
             </div>
         </div>
         <div id="${statusId}" class="buh-note" style="margin-top:8px" hidden></div>
@@ -442,135 +453,181 @@ async function recognizeUploadedDocument(file, kind = "doc") {
     if (bar) bar.classList.add("is-scanning");
     if (status) {
         status.hidden = false;
-        status.innerHTML = "<span>⏳ AI аналізує документ та витягує реквізити…</span>";
+        status.innerHTML = "<span>⏳ Аналізую документ (M.E.Doc / Вчасно / AI)…</span>";
     }
 
     try {
-        let localKey = "";
-        try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
-        const apiKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
+        const isZip = file.name.toLowerCase().endsWith(".zip") || file.type === "application/zip";
+        const isXml = file.name.toLowerCase().endsWith(".xml") || file.type.includes("xml");
+        const isJson = file.name.toLowerCase().endsWith(".json") || file.type.includes("json");
 
-        if (!apiKey) {
-            if (status) {
-                status.hidden = false;
-                status.innerHTML = `<span class="buh-note is-bad" style="color:#b45309">⚠️ Для розпізнавання фото/сканів потрібен ключ Google AI Studio. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ зараз ›</button></span>`;
-            }
-            toast("Вкажіть AI-ключ для розпізнавання документів", "info");
-            return;
+        let res = null;
+
+        // Для XML та ZIP спочатку викликаємо серверний ЕДО-парсер (не потребує ключа AI і працює за 0.05 с)
+        if (isXml || isJson) {
+            const textContent = await file.text();
+            res = await expAct({
+                action: "recognizeDocument",
+                textContent,
+                fileName: file.name,
+                mimeType: isXml ? "application/xml" : "application/json"
+            });
+        } else if (isZip) {
+            const base64Data = await fileToDataUrl(file);
+            res = await expAct({
+                action: "recognizeDocument",
+                base64Data,
+                fileName: file.name,
+                mimeType: "application/zip"
+            });
         }
 
-        const { base64Data, mimeType } = await prepareDocumentImageForAi(file);
-        if (!base64Data) throw new Error("Не вдалося підготувати зображення документа");
+        // Якщо це скан/PDF або якщо XML/ZIP не розпізнано сервером: викликаємо AI Vision
+        if (!res?.recognized || (!res.recognized.amountKop && !res.recognized.number && !res.recognized.supplier?.name)) {
+            let localKey = "";
+            try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
+            const apiKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
 
-        let directParsed = null;
-        try {
-            directParsed = await callGeminiVisionDirect(base64Data, mimeType, apiKey);
-        } catch (aiErr) {
-            console.error("Gemini Vision failed:", aiErr);
-            if (status) {
-                status.hidden = false;
-                status.innerHTML = `<span class="buh-note is-bad">❌ Помилка AI: ${escapeHtml(aiErr.message || "помилка виклику")}. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;display:inline;padding:0;background:none;border:none;cursor:pointer">Змінити ключ</button></span>`;
-            }
-            toast(`Помилка AI: ${aiErr.message?.slice(0, 90)}`, "error");
-            return;
-        }
-
-        if (!directParsed || (!directParsed.amountKop && !directParsed.number && !directParsed.supplier?.name && !directParsed.supplier?.code)) {
-            if (status) {
-                status.hidden = false;
-                status.innerHTML = `<span class="buh-note is-bad">AI не знайшов реквізитів на цьому фото. Перевірте читабельність документа.</span>`;
-            }
-            toast("Реквізити не знайдено на фото", "error");
-            return;
-        }
-
-        const m = matchSupplierClient(directParsed.supplier);
-        const res = {
-            ok: true,
-            recognized: directParsed,
-            matchedSupplier: m.matched,
-            matchedContract: m.contract
-        };
-
-        if (res?.ok && res.recognized) {
-            const r = res.recognized;
-            if (isDoc) {
-                if (r.docType && document.getElementById("dfType")) { document.getElementById("dfType").value = r.docType; flashField("dfType"); }
-                if (r.number && document.getElementById("dfNumber")) { document.getElementById("dfNumber").value = r.number; flashField("dfNumber"); }
-                if (r.date && document.getElementById("dfDate")) { document.getElementById("dfDate").value = r.date; flashField("dfDate"); }
-                if (r.period && document.getElementById("dfPeriod")) { document.getElementById("dfPeriod").value = r.period; flashField("dfPeriod"); }
-                if (r.amountKop && document.getElementById("dfAmount")) { document.getElementById("dfAmount").value = money2(r.amountKop); flashField("dfAmount"); }
-                if (r.vatKop !== undefined && document.getElementById("dfVat")) { document.getElementById("dfVat").value = r.vatKop ? money2(r.vatKop) : ""; flashField("dfVat"); }
-                if (r.item && document.getElementById("dfItem")) { document.getElementById("dfItem").value = r.item; flashField("dfItem"); }
-                if ((r.description || r.contractName) && document.getElementById("dfDesc")) { document.getElementById("dfDesc").value = r.description || r.contractName; flashField("dfDesc"); }
-
-                if (res.matchedSupplier && document.getElementById("dfSupplier")) {
-                    document.getElementById("dfSupplier").value = res.matchedSupplier.id;
-                    flashField("dfSupplier");
-                    if (res.matchedContract && document.getElementById("dfContract")) {
-                        document.getElementById("dfContract").value = res.matchedContract.id;
-                        flashField("dfContract");
-                    }
-                    document.getElementById("dfSuggestedSupplier")?.remove();
-                } else if (r.supplier && (r.supplier.name || r.supplier.code || r.supplier.iban)) {
-                    if (!form) form = { kind: "doc", data: {} };
-                    form.data.suggestedSupplier = r.supplier;
-                    form.data.contractName = r.contractName || "";
-                    renderSuggestedSupplierCard(r.supplier, r.contractName);
+            if (!apiKey && !isXml && !isZip) {
+                if (status) {
+                    status.hidden = false;
+                    status.innerHTML = `<span class="buh-note is-bad" style="color:#b45309">⚠️ Для розпізнавання фото/сканів потрібен ключ Google AI Studio. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ зараз ›</button></span>`;
                 }
+                toast("Вкажіть AI-ключ для розпізнавання фото/сканів", "info");
+                return;
+            }
 
-                if (r.postingAcc && r.postingAcc !== "92" && document.getElementById("dfPosting")) {
-                    document.getElementById("dfPosting").value = r.postingAcc;
-                    const details = document.getElementById("exForm")?.querySelector("details");
-                    if (details) details.open = true;
-                    const assetInput = document.getElementById("dfAsset");
-                    if (assetInput && !assetInput.value) {
-                        assetInput.value = suggestAssetId(r.postingAcc, allExistingAssetIds());
+            if (apiKey && !isXml && !isZip) {
+                const { base64Data, mimeType } = await prepareDocumentImageForAi(file);
+                if (base64Data) {
+                    try {
+                        const directParsed = await callGeminiVisionDirect(base64Data, mimeType, apiKey);
+                        const m = matchSupplierClient(directParsed?.supplier);
+                        res = {
+                            ok: true,
+                            recognized: directParsed,
+                            matchedSupplier: m.matched,
+                            matchedContract: m.contract,
+                            source: "ocr"
+                        };
+                    } catch (aiErr) {
+                        console.error("Gemini Vision failed:", aiErr);
+                        if (status) {
+                            status.hidden = false;
+                            status.innerHTML = `<span class="buh-note is-bad">❌ Помилка AI: ${escapeHtml(aiErr.message || "помилка виклику")}. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;display:inline;padding:0;background:none;border:none;cursor:pointer">Змінити ключ</button></span>`;
+                        }
+                        toast(`Помилка AI: ${aiErr.message?.slice(0, 90)}`, "error");
+                        return;
                     }
                 }
-            } else {
-                if (r.number && document.getElementById("cfNumber")) { document.getElementById("cfNumber").value = r.number; flashField("cfNumber"); }
-                if (r.date && document.getElementById("cfDate")) { document.getElementById("cfDate").value = r.date; flashField("cfDate"); }
-                if (r.date && document.getElementById("cfFrom")) { document.getElementById("cfFrom").value = r.date; flashField("cfFrom"); }
-                if (r.contractEnd && document.getElementById("cfTo")) { document.getElementById("cfTo").value = r.contractEnd; flashField("cfTo"); }
-                if (r.amountKop && document.getElementById("cfAmount")) { document.getElementById("cfAmount").value = money2(r.amountKop); flashField("cfAmount"); }
-                if (r.item && document.getElementById("cfItem")) { document.getElementById("cfItem").value = r.item; flashField("cfItem"); }
-                if ((r.description || r.contractName) && document.getElementById("cfSubject")) { document.getElementById("cfSubject").value = r.description || r.contractName; flashField("cfSubject"); }
-                if (res.matchedSupplier && document.getElementById("cfSupplier")) {
-                    document.getElementById("cfSupplier").value = res.matchedSupplier.id;
-                    flashField("cfSupplier");
+            }
+        }
+
+        if (!res?.recognized || (!res.recognized.amountKop && !res.recognized.number && !res.recognized.supplier?.name && !res.recognized.supplier?.code)) {
+            if (status) {
+                status.hidden = false;
+                status.innerHTML = `<span class="buh-note is-bad">Не вдалося знайти реквізити в цьому документі. Заповніть їх вручну або перевірте файл.</span>`;
+            }
+            toast("Реквізити не знайдено", "error");
+            return;
+        }
+
+        const r = res.recognized;
+        if (isDoc) {
+            if (r.docType && document.getElementById("dfType")) { document.getElementById("dfType").value = r.docType; flashField("dfType"); }
+            if (r.number && document.getElementById("dfNumber")) { document.getElementById("dfNumber").value = r.number; flashField("dfNumber"); }
+            if (r.date && document.getElementById("dfDate")) { document.getElementById("dfDate").value = r.date; flashField("dfDate"); }
+            if (r.period && document.getElementById("dfPeriod")) { document.getElementById("dfPeriod").value = r.period; flashField("dfPeriod"); }
+            if (r.amountKop && document.getElementById("dfAmount")) { document.getElementById("dfAmount").value = money2(r.amountKop); flashField("dfAmount"); }
+            if (r.vatKop !== undefined && document.getElementById("dfVat")) { document.getElementById("dfVat").value = r.vatKop ? money2(r.vatKop) : ""; flashField("dfVat"); }
+            if (r.item && document.getElementById("dfItem")) { document.getElementById("dfItem").value = r.item; flashField("dfItem"); }
+            if ((r.description || r.contractName) && document.getElementById("dfDesc")) { document.getElementById("dfDesc").value = r.description || r.contractName; flashField("dfDesc"); }
+
+            if (res.matchedSupplier && document.getElementById("dfSupplier")) {
+                document.getElementById("dfSupplier").value = res.matchedSupplier.id;
+                flashField("dfSupplier");
+                if (res.matchedContract && document.getElementById("dfContract")) {
+                    document.getElementById("dfContract").value = res.matchedContract.id;
+                    flashField("dfContract");
                 }
+                document.getElementById("dfSuggestedSupplier")?.remove();
+            } else if (r.supplier && (r.supplier.name || r.supplier.code || r.supplier.iban)) {
+                if (!form) form = { kind: "doc", data: {} };
+                form.data.suggestedSupplier = r.supplier;
+                form.data.contractName = r.contractName || "";
+                renderSuggestedSupplierCard(r.supplier, r.contractName);
             }
 
+            if (r.postingAcc && r.postingAcc !== "92" && document.getElementById("dfPosting")) {
+                document.getElementById("dfPosting").value = r.postingAcc;
+                const details = document.getElementById("exForm")?.querySelector("details");
+                if (details) details.open = true;
+                const assetInput = document.getElementById("dfAsset");
+                if (assetInput && !assetInput.value) {
+                    assetInput.value = suggestAssetId(r.postingAcc, allExistingAssetIds());
+                }
+            }
+        } else {
+            if (r.number && document.getElementById("cfNumber")) { document.getElementById("cfNumber").value = r.number; flashField("cfNumber"); }
+            if (r.date && document.getElementById("cfDate")) { document.getElementById("cfDate").value = r.date; flashField("cfDate"); }
+            if (r.date && document.getElementById("cfFrom")) { document.getElementById("cfFrom").value = r.date; flashField("cfFrom"); }
+            if (r.contractEnd && document.getElementById("cfTo")) { document.getElementById("cfTo").value = r.contractEnd; flashField("cfTo"); }
+            if (r.amountKop && document.getElementById("cfAmount")) { document.getElementById("cfAmount").value = money2(r.amountKop); flashField("cfAmount"); }
+            if (r.item && document.getElementById("cfItem")) { document.getElementById("cfItem").value = r.item; flashField("cfItem"); }
+            if ((r.description || r.contractName) && document.getElementById("cfSubject")) { document.getElementById("cfSubject").value = r.description || r.contractName; flashField("cfSubject"); }
+            if (res.matchedSupplier && document.getElementById("cfSupplier")) {
+                document.getElementById("cfSupplier").value = res.matchedSupplier.id;
+                flashField("cfSupplier");
+            }
+        }
+
+        // Обробка файлів: якщо з ZIP витягнуто реальний PDF чи підпис P7S, додаємо їх замість чистого ZIP
+        if (res.extractedFiles?.length) {
+            files = files.filter(f => f.name !== file.name);
+            for (const ef of res.extractedFiles) {
+                try {
+                    const extractedFile = dataUrlToFile(ef.base64Data, ef.name);
+                    if (!files.some(f => f.name === extractedFile.name && f.size === extractedFile.size)) {
+                        files.push(extractedFile);
+                    }
+                } catch (_) {}
+            }
+        } else {
             if (!files.some(f => f.name === file.name && f.size === file.size)) {
                 files = [...files, file];
             }
-            form = snapshotForm();
-
-            if (bar) {
-                bar.classList.remove("is-scanning");
-                bar.classList.add("is-recognized");
-            }
-            if (status) {
-                status.hidden = false;
-                const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `⚡ Новий контрагент: ${r.supplier.name} (${r.supplier.code || "код —"})` : "");
-                const numDate = [r.number ? `№ ${r.number}` : "", r.date ? `від ${human(r.date)}` : ""].filter(Boolean).join(" ");
-                const sumStr = r.amountKop ? `Сума: ${fmtKop(r.amountKop)} грн` : "";
-                status.innerHTML = `<span class="doc-recog-badge">✓ Успішно розпізнано</span> <span style="font-size:13px;color:#1e293b;">${[supTitle, numDate, sumStr].filter(Boolean).join(" · ")}</span>`;
-            }
-            toast("Реквізити документа розпізнано автоматично", "success");
         }
+
+        form = snapshotForm();
+
+        if (bar) {
+            bar.classList.remove("is-scanning");
+            bar.classList.add("is-recognized");
+        }
+        if (status) {
+            status.hidden = false;
+            let srcBadge = "✓ Успішно розпізнано";
+            if (res.source === "medoc") srcBadge = "✓ Імпортовано з M.E.Doc (XML)";
+            else if (res.source === "vchasno_ubl" || res.source === "vchasno_json") srcBadge = "✓ Імпортовано з Вчасно (ЕДО)";
+            else if (res.source === "commerceml") srcBadge = "✓ Імпортовано з 1С / CommerceML";
+            if (res.extractedFiles?.length) srcBadge += " (витягнуто PDF)";
+
+            const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `⚡ Новий контрагент: ${r.supplier.name} (${r.supplier.code || "код —"})` : "");
+            const numDate = [r.number ? `№ ${r.number}` : "", r.date ? `від ${human(r.date)}` : ""].filter(Boolean).join(" ");
+            const sumStr = r.amountKop ? `Сума: ${fmtKop(r.amountKop)} грн` : "";
+            status.innerHTML = `<span class="doc-recog-badge">${srcBadge}</span> <span style="font-size:13px;color:#1e293b;">${[supTitle, numDate, sumStr].filter(Boolean).join(" · ")}</span>`;
+        }
+        toast(res.source === "medoc" ? "Документ M.E.Doc успішно завантажено" : res.source?.includes("vchasno") ? "Документ Вчасно успішно завантажено" : "Реквізити документа заповнено автоматично", "success");
     } catch (err) {
         console.warn("Помилка розпізнавання:", err);
         if (status) {
             status.hidden = false;
-            status.innerHTML = `<span class="buh-note is-bad">Не вдалося розпізнати всі поля (${escapeHtml(err.message || "помилка аналізу")}). Заповніть їх вручну.</span>`;
+            status.innerHTML = `<span class="buh-note is-bad">Помилка аналізу файлу: ${escapeHtml(err.message || "невідома помилка")}.</span>`;
         }
     } finally {
         if (bar) bar.classList.remove("is-scanning");
     }
 }
-
 function docFormHtml(d = {}) {
     const supplierId = d.supplierId || "";
     const contracts = ctx.contracts.filter(c => c.supplierId === supplierId && c.status !== "rejected");
@@ -616,7 +673,7 @@ function docFormHtml(d = {}) {
             ${!d.id && supplierId ? `<label class="field pay-wide"><span class="field-label">Підтверджує документ тієї самої послуги</span>
                 <select id="dfLinked" class="field-input field-select"><option value="">Ні — це окрема витрата</option>${mainsFor({ supplierId, amountKop: 0 }).map(x =>
                     `<option value="${escapeHtml(x.id)}"${x.id === d.linkedTo ? ' selected' : ''}>${escapeHtml(docName(x))} · ${fmtKop(x.amountKop)} грн</option>`).join('')}</select></label>` : ''}
-            <label class="field pay-wide"><span class="field-label">Скан або PDF документа</span><input id="dfFiles" class="field-input" type="file" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"></label>
+            <label class="field pay-wide"><span class="field-label">Скан або PDF документа</span><input id="dfFiles" class="field-input" type="file" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.xml,.zip,.p7s"></label>
         </div>
         ${d.files?.length ? `<p class="buh-note">Уже додано: ${filesHtml(d.files)}</p>` : ''}
         ${files.length ? `<p class="buh-note">Буде додано: ${files.map(f => escapeHtml(f.name)).join(', ')}</p>` : ''}
@@ -644,7 +701,7 @@ function contractFormHtml(c = {}) {
             <label class="field pay-wide"><span class="field-label">Стаття витрат</span><select id="cfItem" class="field-input field-select">${options(ctx.items, c.item || 'other')}</select></label>
             <label class="field pay-wide"><span class="field-label">Погодження правління (протокол, дата)</span><input id="cfBoard" class="field-input" maxlength="200" value="${escapeHtml(c.boardDecision || '')}"></label>
             <label class="field pay-wide"><span class="field-label">Рішення загальних зборів — обовʼязково понад 50 000 грн</span><input id="cfMeeting" class="field-input" maxlength="200" value="${escapeHtml(c.meetingDecision || '')}"></label>
-            <label class="field pay-wide"><span class="field-label">Скан договору</span><input id="cfFiles" class="field-input" type="file" multiple accept=".pdf,image/*,.doc,.docx"></label>
+            <label class="field pay-wide"><span class="field-label">Скан договору</span><input id="cfFiles" class="field-input" type="file" multiple accept=".pdf,image/*,.doc,.docx,.xml,.zip,.p7s"></label>
         </div>
         <p class="buh-note" id="cfHint"></p>
         <div class="pay-form-actions"><button type="button" class="btn-primary" data-act="save-contract">${isChair() ? 'Зберегти й затвердити' : 'Подати голові на затвердження'}</button></div>
@@ -896,9 +953,9 @@ export async function loadExpensesView() {
     const counts = { ...docCounts(ctx.expenses), contracts: ctx.contracts.length, suppliers: ctx.suppliers.length };
     const body = docs ? docsHtml() : segment === 'contracts' ? contractsHtml() : suppliersHtml();
     host.innerHTML = `${docs ? `<label class="dc-drop" id="dcDrop">
-            <input type="file" id="dcPick" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" class="dc-pick">
+            <input type="file" id="dcPick" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.xml,.zip,.p7s" class="dc-pick">
             <span class="dc-drop-icon">${UP_ICON}</span>
-            <span class="dc-drop-copy"><b>Додати рахунок, акт чи накладну</b><small>Перетягніть файл сюди або оберіть чи сфотографуйте — відкриється форма з цим файлом</small></span>
+            <span class="dc-drop-copy"><b>Додати рахунок, акт чи накладну (M.E.Doc, Вчасно, скан)</b><small>Перетягніть XML, ZIP із ЕДО, PDF чи фото — реквізити заповняться автоматично</small></span>
         </label>` : ''}
         <div class="fl-filters dc-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
             `<button type="button" class="fl-filter${k === segment ? ' active' : ''}" role="tab" aria-selected="${k === segment}" data-seg="${k}">${v} <span>${counts[k]}</span></button>`).join('')}
