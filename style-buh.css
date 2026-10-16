@@ -1173,12 +1173,14 @@ body.chs-open { overflow: hidden; }
     }
 }
 
+/* ---------- Розділи зі селектором періоду в шапці (Майно та ТМЦ, Авансові звіти) ---------- */
 .as-top-bar {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 10px;
-    margin-bottom: 14px;
+    gap: 12px;
+    margin-bottom: 16px;
+    width: 100%;
 }
 .as-period-row {
     display: flex;
@@ -1190,19 +1192,20 @@ select.field-input.ch-period {
     min-width: 195px;
     max-width: 240px;
     min-height: 40px;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    height: 40px;
+    padding: 8px 14px;
     background-color: #fff;
-}
-@media (min-width: 901px) {
-    .as-top-bar {
-        margin-top: -76px;
-    }
+    border: 1px solid var(--sv-border, #d1d5db);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    cursor: pointer;
 }
 .as-toolbar-right {
     width: 100%;
-    justify-content: flex-end;
-    margin-bottom: 0;
+    margin: 0;
 }
 .as-toolbar-right .ch-tools {
     margin-left: auto;
@@ -1211,4 +1214,109 @@ select.field-input.ch-period {
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
+}
+.as-toolbar-right .ch-tools .sv-btn,
+.as-toolbar-right .ch-tools .btn-ghost-small,
+.as-toolbar-right .ch-tools .btn-soft {
+    min-height: 38px;
+    height: 38px;
+    padding: 0 16px;
+    font-size: 13.5px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background .15s ease, transform .1s ease;
+}
+
+@media (min-width: 901px) {
+    .buh-main {
+        position: relative;
+    }
+    .buh-head {
+        position: relative;
+        padding-right: 260px;
+    }
+    .as-period-row {
+        position: absolute;
+        top: 12px;
+        right: clamp(16px, 3vw, 40px);
+        width: auto;
+        z-index: 10;
+    }
+    .as-top-bar {
+        margin-top: 0;
+        margin-bottom: 14px;
+    }
+}
+@media (max-width: 900px) {
+    .as-top-bar {
+        margin-top: 0;
+        margin-bottom: 14px;
+        align-items: stretch;
+    }
+    .as-period-row {
+        justify-content: flex-start;
+        margin-bottom: 4px;
+    }
+    select.field-input.ch-period {
+        width: 100%;
+        max-width: 100%;
+    }
+    .as-toolbar-right .ch-tools {
+        justify-content: flex-start;
+        width: 100%;
+    }
+}
+
+/* Модальні вікна (Претензійна справа тощо) */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    animation: fade-in 0.2s ease;
+}
+
+/* ---------- Розумне розпізнавання первинних документів ---------- */
+.doc-recog-bar {
+    grid-column: 1 / -1;
+    margin-bottom: 12px;
+    padding: 14px 16px;
+    background: #f0fdf4;
+    border: 1.5px dashed #86efac;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+}
+.doc-recog-bar.is-scanning {
+    background: #eff6ff;
+    border-color: #93c5fd;
+}
+.doc-recog-bar.is-recognized {
+    background: #f0fdf4;
+    border-color: #22c55e;
+}
+.doc-recog-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 13px;
+    font-weight: 600;
+}
+.doc-field-highlight {
+    animation: fieldFlash 1.4s ease;
+}
+@keyframes fieldFlash {
+    0% { background-color: #fef08a; }
+    100% { background-color: transparent; }
 }
