@@ -3,318 +3,406 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Кабінет ОСББ — мешканці, правління та бухгалтерія</title>
-    <meta name="description" content="Можливості застосунку для ОСББ: кабінет мешканця, панель правління та бухгалтерія. Внески, лічильники, збори, банк, зарплата й звітність зі знімками інтерфейсів.">
-    <meta name="theme-color" content="#F2F2F7">
+    <title>Кабінет ОСББ — мешканці, правління та бухгалтерія в одному застосунку</title>
+    <meta name="description" content="Застосунок для ОСББ: кабінет мешканця, панель правління та бухгалтерія. Баланс і оплата, збори й голосування, банк, платежі на підпис КЕП, зарплата, звітність і закриття місяця.">
+    <meta name="theme-color" content="#EEF2F7">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="uk_UA">
     <meta property="og:title" content="Кабінет ОСББ — усі справи будинку в одному застосунку">
-    <meta property="og:description" content="Для мешканців, голів правління та бухгалтерів. Подивіться можливості кожного кабінету й реальні екрани з демонстраційними даними.">
+    <meta property="og:description" content="Мешканцю — баланс, оплата й голосування з телефона. Правлінню — рішення за хвилини. Бухгалтеру — банк, документи, зарплата й звіти за кроками.">
     <meta property="og:url" content="https://kovalenkoserhii2107-maker.github.io/USPIH-25/landing.html">
-    <meta property="og:image" content="https://kovalenkoserhii2107-maker.github.io/USPIH-25/assets/icons/icon-512x512.png">
-    <meta property="og:image:alt" content="Кабінет ОСББ">
+    <meta property="og:image" content="https://kovalenkoserhii2107-maker.github.io/USPIH-25/assets/landing/acc-today.webp">
+    <meta property="og:image:alt" content="Кабінет бухгалтера ОСББ: що зробити сьогодні">
     <link rel="canonical" href="https://kovalenkoserhii2107-maker.github.io/USPIH-25/landing.html">
     <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
+    <link rel="preload" as="image" href="assets/landing/acc-today.webp" type="image/webp">
     <link rel="stylesheet" href="style-landing.css">
     <script src="js/landing.js" defer></script>
 </head>
 <body>
     <a class="skip-link" href="#main">Перейти до вмісту</a>
+    <div class="scroll-progress" aria-hidden="true"><i></i></div>
+
     <header class="site-header">
         <div class="wrap header-inner">
-            <a class="brand" href="landing.html" aria-label="Кабінет ОСББ — головна сторінка"><img src="assets/icons/icon-192x192.png" width="40" height="40" alt=""><span>Кабінет ОСББ<small>Будинок. Люди. Порядок.</small></span></a>
-            <nav class="header-nav" aria-label="Розділи сторінки"><a href="#roles">Для кого</a><a href="#screens">Екрани</a><a href="#faq">Питання</a><a class="button button-small" href="#connect">Запуск у вашому ОСББ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a></nav>
+            <a class="brand" href="landing.html" aria-label="Кабінет ОСББ — на початок сторінки">
+                <img src="assets/icons/icon-192x192.png" width="36" height="36" alt="">
+                <span>Кабінет ОСББ<small>Будинок. Люди. Порядок.</small></span>
+            </a>
+            <nav class="header-nav" aria-label="Розділи сторінки">
+                <a href="#resident">Мешканцю</a>
+                <a href="#board">Правлінню</a>
+                <a href="#accountant">Бухгалтеру</a>
+                <a href="#flow">Як повʼязано</a>
+                <a href="#faq">Питання</a>
+            </nav>
+            <a class="button button-small" href="index.html">Відкрити застосунок</a>
         </div>
     </header>
+
     <main id="main">
-        <section class="wrap hero" aria-labelledby="hero-title">
-            <div class="hero-copy">
-                <p class="eyebrow">ДЛЯ МЕШКАНЦІВ, ПРАВЛІННЯ ТА БУХГАЛТЕРІВ</p>
-                <h1 id="hero-title">Усе ОСББ.<br><span>В одному<br>застосунку.</span></h1>
-                <p class="hero-description">Від показника лічильника до звіту бухгалтера. Від звернення мешканця до рішення зборів. Три кабінети, повʼязані одними даними будинку.</p>
-                <div class="hero-actions"><a class="button" href="#roles">Знайти свій кабінет <span aria-hidden="true">↓</span></a><a class="text-link" href="#screens">Подивитися екрани <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a></div>
-                <div class="hero-tags"><span>Телефон і компʼютер</span><span>Окремі ролі</span><span>Повʼязані операції</span></div>
+        <!-- ============ ПЕРШИЙ ЕКРАН ============ -->
+        <section class="hero" aria-labelledby="hero-title">
+            <div class="hero-glow" aria-hidden="true"></div>
+            <div class="wrap hero-inner">
+                <div class="hero-copy reveal">
+                    <p class="pill"><span class="pill-dot" aria-hidden="true"></span>Для мешканців, правління та бухгалтерії</p>
+                    <h1 id="hero-title">Усе ОСББ.<br><span class="grad">В одному застосунку.</span></h1>
+                    <p class="lead">Мешканець бачить свій баланс і голосує з телефона. Правління вирішує справи за хвилини. Бухгалтер закриває місяць за кроками. Одні дані будинку — три зручні кабінети.</p>
+                    <div class="hero-actions">
+                        <a class="button" href="#roles">Обрати свою роль <span aria-hidden="true">↓</span></a>
+                        <a class="button button-ghost" href="index.html">Відкрити застосунок</a>
+                    </div>
+                    <ul class="hero-facts" aria-label="Коротко про застосунок">
+                        <li>Працює в браузері — без встановлення</li>
+                        <li>Телефон і компʼютер</li>
+                        <li>Гроші підписує лише голова КЕП</li>
+                    </ul>
+                </div>
+
+                <div class="hero-stage" aria-label="Три кабінети: бухгалтерія на компʼютері, мешканець і правління на телефоні">
+                    <div class="device laptop hero-laptop" data-depth="0.5">
+                        <div class="laptop-screen"><img src="assets/landing/acc-today.webp" width="1600" height="1000" alt="Кабінет бухгалтера: що зробити сьогодні, найближчий строк, залишок на рахунку" fetchpriority="high"></div>
+                        <div class="laptop-base" aria-hidden="true"></div>
+                    </div>
+                    <div class="device phone hero-phone hero-phone-a" data-depth="1.1">
+                        <img src="assets/landing/res-home.webp" width="600" height="1299" alt="Кабінет квартири: баланс, реквізити й квитанції">
+                    </div>
+                    <div class="device phone hero-phone hero-phone-b" data-depth="0.8">
+                        <img src="assets/landing/board-phone.webp" width="600" height="1299" alt="Панель правління: платіж на підпис і справи на сьогодні">
+                    </div>
+                    <span class="float-chip chip-1" data-depth="1.6"><b>✓</b> Оплату рознесено · кв. 45</span>
+                    <span class="float-chip chip-2" data-depth="1.3"><b>₴</b> Платіж підписано КЕП</span>
+                    <span class="float-chip chip-3" data-depth="1.9"><b>☑</b> Голос зараховано</span>
+                </div>
             </div>
-            <div class="hero-visual" aria-label="Три кабінети застосунку ОСББ">
-                <figure class="hero-phone phone-resident"><div class="phone-label">Мешканець</div><img src="assets/landing/resident-mobile.png" width="390" height="844" alt="Кабінет мешканця з балансом квартири" fetchpriority="high"></figure>
-                <figure class="hero-phone phone-board"><div class="phone-label">Правління</div><img src="assets/landing/board-mobile.png" width="390" height="844" alt="Панель правління з поточними завданнями"></figure>
-                <figure class="hero-phone phone-accountant"><div class="phone-label">Бухгалтер</div><img src="assets/landing/accountant-mobile.png" width="390" height="844" alt="Кроки закриття місяця у кабінеті бухгалтера"></figure>
-                <p class="visual-caption">Справжні екрани · демонстраційні дані</p>
+            <p class="wrap hero-note">Справжні екрани застосунку · умовні квартири, люди й операції</p>
+        </section>
+
+        <!-- ============ ТРИ РОЛІ ============ -->
+        <section id="roles" class="section wrap" aria-labelledby="roles-title">
+            <div class="section-head reveal">
+                <p class="eyebrow">Три ролі · спільний будинок</p>
+                <h2 id="roles-title">Кожному — свій кабінет.<br><span class="muted">Дані — одні на всіх.</span></h2>
+            </div>
+            <div class="role-cards">
+                <a class="role-card tone-resident reveal" href="#resident">
+                    <span class="role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg></span>
+                    <h3>Мешканцю</h3>
+                    <p>Баланс, оплата, лічильники, звернення, чат і голосування — у телефоні.</p>
+                    <ul><li>Без пошуку квитанцій у чатах</li><li>Голос за кілька дотиків</li><li>Видно, куди йдуть гроші будинку</li></ul>
+                    <span class="role-more">Як це працює <span aria-hidden="true">→</span></span>
+                </a>
+                <a class="role-card tone-board reveal" href="#board">
+                    <span class="role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+                    <h3>Правлінню</h3>
+                    <p>Справи дня, власники, збори, документи й підпис платежів — з одного екрана.</p>
+                    <ul><li>Що чекає рішення — одразу видно</li><li>Звірений список власників для кворуму</li><li>Платежі лише після підпису КЕП</li></ul>
+                    <span class="role-more">Як це працює <span aria-hidden="true">→</span></span>
+                </a>
+                <a class="role-card tone-accountant reveal" href="#accountant">
+                    <span class="role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h6M7 17h4"/></svg></span>
+                    <h3>Бухгалтеру</h3>
+                    <p>Банк, нарахування, документи, зарплата, звіти й закриття місяця — за кроками.</p>
+                    <ul><li>Система пропонує — ви підтверджуєте</li><li>Строки ДПС і квитанції під контролем</li><li>Перевірки перед закриттям місяця</li></ul>
+                    <span class="role-more">Як це працює <span aria-hidden="true">→</span></span>
+                </a>
             </div>
         </section>
 
-        <section id="roles" class="wrap audience" aria-labelledby="roles-title">
-            <div class="section-intro"><p class="eyebrow">ТРИ РОЛІ. СПІЛЬНИЙ БУДИНОК.</p><h2 id="roles-title">Кожному — свій зручний простір.</h2></div>
-            <div class="audience-grid">
-                <a href="#residents"><span class="audience-icon blue" aria-hidden="true">⌂</span><h3>Мешканцям</h3><p>Оплата, показники, новини та звʼязок із правлінням.</p><span class="audience-link">Особистий кабінет <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></span></a>
-                <a href="#board"><span class="audience-icon purple" aria-hidden="true">✓</span><h3>Головам правління</h3><p>Збори, власники, документи й рішення команди.</p><span class="audience-link">Панель правління <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></span></a>
-                <a href="#accountants"><span class="audience-icon green" aria-hidden="true">₴</span><h3>Бухгалтерам</h3><p>Нарахування, банк, документи, зарплата та звіти.</p><span class="audience-link">Кабінет бухгалтера <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></span></a>
+        <!-- Перемикач ролей: прилипає вгорі, поки гортаєте розповіді -->
+        <nav class="role-switch" aria-label="Перейти до ролі">
+            <div class="role-switch-track">
+                <i class="role-switch-thumb" aria-hidden="true"></i>
+                <a href="#resident" data-role-link="resident">Мешканець</a>
+                <a href="#board" data-role-link="board">Правління</a>
+                <a href="#accountant" data-role-link="accountant">Бухгалтер</a>
             </div>
-        </section>
-        <nav class="role-jump" aria-label="Перейти до можливостей своєї ролі"><div class="wrap"><a href="#residents">Мешканець</a><a href="#board">Правління</a><a href="#accountants">Бухгалтерія</a></div></nav>
+        </nav>
 
-
-        <section id="residents" class="wrap role-section" aria-labelledby="residents-title">
-            <div class="role-heading"><p class="eyebrow">МЕШКАНЦЯМ І СПІВВЛАСНИКАМ</p><h2 id="residents-title">Ваш дім —<br>у вашій кишені.</h2><p>Особисті розрахунки, важливі новини й участь у житті будинку. Без пошуку квитанцій у чаті та походів до правління за кожним питанням.</p></div>
-            <div class="role-layout">
-                <figure class="role-visual">
-                    <a class="phone-frame" href="assets/landing/resident-mobile.png" data-screenshot data-caption="Кабінет квартири" aria-label="Збільшити: Кабінет квартири"><img src="assets/landing/resident-mobile.png" width="390" height="844" loading="lazy" decoding="async" alt="Кабінет квартири у застосунку ОСББ на телефоні"></a>
-                    <figcaption>Кабінет квартири<span>Екран із демонстраційними даними</span></figcaption>
-                </figure>
-                <div class="role-features">
-                    <div class="features-toolbar"><span>8 напрямів роботи</span><button type="button" hidden data-expand="residents" aria-expanded="false">Розгорнути всі</button></div>
-
-                        <details class="feature" open>
-                            <summary><span class="feature-number">01</span><span><strong>Баланс, внески та оплата</strong><span>Бачите, що нараховано, що сплачено та який залишок у квартири.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Особовий рахунок, борг або переплата й складові балансу.</li><li>Історія нарахувань і платежів із залишком після кожної операції.</li><li>Квитанції, реквізити, QR-код та перехід до оплати через Приват24 або monobank.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">02</span><span><strong>Лічильники квартири</strong><span>Показники світла й води зручно подавати просто з телефона.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Однозонний або двозонний електролічильник: день і ніч окремо.</li><li>Кілька водомірів із власними назвами: кухня, ванна тощо.</li><li>Попереднє значення з минулого періоду, великі цифри, прокрутка, +/− і ручне введення; історія та редагування.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">03</span><span><strong>Теплопостачання</strong><span>Розрахунок для квартири за її площею й загальнобудинковими даними.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Сума за квартиру, вартість квадратного метра та частка споживання.</li><li>Загальна вартість тепла будинку і пояснення розрахунку.</li><li>Площа квартири, загальна площа й тариф беруться із внесених даних.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">04</span><span><strong>Оголошення та сповіщення</strong><span>Новини правління й повідомлення, що стосуються вашого будинку.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Оголошення з матеріалами та вкладеннями.</li><li>Сповіщення на підтримуваних пристроях після надання дозволу.</li><li>Важливі повідомлення доступні в самому кабінеті.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">05</span><span><strong>Звернення та спільний чат</strong><span>Повідомте про проблему, поставте питання або обговоріть справи будинку.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Особисті звернення до правління з описом і вкладеннями.</li><li>Відповіді та історія опрацювання звернення.</li><li>Спільний чат будинку, фото, файли та обговорення з сусідами.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">06</span><span><strong>Збори, голосування та опитування</strong><span>Ознайомлюйтеся з питаннями й долучайтеся до рішень.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Дата, місце, порядок денний, проєкти рішень і додані матеріали.</li><li>Електронне голосування від квартири та перегляд доступних результатів.</li><li>Окремі швидкі опитування й доступ до опублікованих протоколів.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">07</span><span><strong>Документи, контакти та дані власників</strong><span>Потрібна інформація доступна у своєму кабінеті.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>База документів: статут, матеріали зборів, протоколи та інші файли.</li><li>Контакти правління, служб і відповіді на часті питання.</li><li>Дані співвласників, частки та подання змін із підтвердними документами на перевірку правління.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">08</span><span><strong>Світло та діяльність будинку</strong><span>Розумієте, що відбувається з будинком і його ресурсами.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Статус електропостачання, графіки ДТЕК і статистика доступності світла.</li><li>Звіт про надходження, витрати, залишок коштів і виконання кошторису.</li><li>Спільне споживання електроенергії, тепла й води та його вартість.</li></ul>
-                        </details>
+        <!-- ============ МЕШКАНЕЦЬ ============ -->
+        <section id="resident" class="story tone-resident" aria-labelledby="resident-title" data-role="resident">
+            <div class="wrap">
+                <div class="story-head reveal">
+                    <p class="eyebrow">Мешканцю й співвласнику</p>
+                    <h2 id="resident-title">Ваша квартира —<br>у вашій кишені.</h2>
+                    <p class="lead">Особисті розрахунки, новини будинку й участь у рішеннях. Без походів до правління за кожною довідкою.</p>
+                </div>
+                <div class="story-grid">
+                    <ol class="steps">
+                        <li class="step" data-shot="res-home" data-device="phone">
+                            <span class="step-num">01</span>
+                            <h3>Баланс без зайвих питань</h3>
+                            <p>Відкриваєте застосунок — і одразу бачите, чи є борг. Реквізити, QR-код і квитанції — за один дотик, оплата через Приват24 або monobank.</p>
+                            <ul><li>Історія нарахувань і оплат із залишком після кожної</li><li>Залишок коштів на рахунку будинку</li><li>Статус світла й графіки ДТЕК</li></ul>
+                            <figure class="step-shot phone-shot"><img src="assets/landing/res-home.webp" width="600" height="1299" loading="lazy" decoding="async" alt="Кабінет квартири: баланс, реквізити, квитанції"></figure>
+                        </li>
+                        <li class="step" data-shot="res-menu" data-device="phone">
+                            <span class="step-num">02</span>
+                            <h3>Усе потрібне — в одному меню</h3>
+                            <p>Чат будинку, звернення до правління, голосування, документи, лічильники, фінанси будинку й контакти служб.</p>
+                            <ul><li>Показники світла й води: попереднє значення, великі цифри</li><li>Звернення з фото — і відповідь правління там само</li><li>Електронне голосування від квартири, протоколи зборів</li></ul>
+                            <figure class="step-shot phone-shot"><img src="assets/landing/res-menu.webp" width="600" height="1299" loading="lazy" decoding="async" alt="Меню мешканця: чат, звернення, голосування, документи, лічильники"></figure>
+                        </li>
+                        <li class="step" data-shot="res-owners" data-device="phone">
+                            <span class="step-num">03</span>
+                            <h3>Співвласники й документи</h3>
+                            <p>Спочатку люди й частки, нижче — один спільний комплект правовстановлюючих документів. Правильний список підтверджуєте одним дотиком.</p>
+                            <ul><li>Зміни йдуть правлінню на перевірку — не «тихо»</li><li>Від списку залежить кворум і ваш голос</li><li>Скани й фото документів — у самій квартирі</li></ul>
+                            <figure class="step-shot phone-shot"><img src="assets/landing/res-owners.webp" width="600" height="1299" loading="lazy" decoding="async" alt="Співвласники квартири та спільні документи"></figure>
+                        </li>
+                    </ol>
+                    <div class="stage" aria-hidden="true">
+                        <div class="stage-inner">
+                            <div class="device phone stage-phone">
+                                <img data-shot="res-home" src="assets/landing/res-home.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
+                                <img data-shot="res-menu" src="assets/landing/res-menu.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
+                                <img data-shot="res-owners" src="assets/landing/res-owners.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
+                            </div>
+                            <div class="stage-dots"><i></i><i></i><i></i></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tags reveal" aria-label="Ще для мешканця">
+                    <span>Квитанції PDF</span><span>QR-оплата</span><span>Лічильники день/ніч</span><span>Теплопостачання</span><span>Оголошення</span><span>Сповіщення</span><span>Опитування</span><span>Протоколи зборів</span><span>Звіт про кошти будинку</span><span>Кошторис</span><span>Контакти служб</span><span>Статус світла</span>
                 </div>
             </div>
         </section>
 
-        <section id="board" class="wrap role-section" aria-labelledby="board-title">
-            <div class="role-heading"><p class="eyebrow">ГОЛОВАМ І ЧЛЕНАМ ПРАВЛІННЯ</p><h2 id="board-title">Керуйте справами.<br>Зберігайте звʼязок.</h2><p>Звернення, власники, збори, документи та фінансові рішення в одному робочому просторі. Команда бачить свої завдання, а мешканці — результат.</p></div>
-            <div class="role-layout">
-                <figure class="role-visual">
-                    <a class="phone-frame" href="assets/landing/board-mobile.png" data-screenshot data-caption="Панель правління" aria-label="Збільшити: Панель правління"><img src="assets/landing/board-mobile.png" width="390" height="844" loading="lazy" decoding="async" alt="Панель правління у застосунку ОСББ на телефоні"></a>
-                    <figcaption>Панель правління<span>Екран із демонстраційними даними</span></figcaption>
-                </figure>
-                <div class="role-features">
-                    <div class="features-toolbar"><span>10 напрямів роботи</span><button type="button" hidden data-expand="board" aria-expanded="false">Розгорнути всі</button></div>
-
-                        <details class="feature" open>
-                            <summary><span class="feature-number">01</span><span><strong>Сьогодні: огляд і рішення</strong><span>На початку дня видно, що потребує уваги правління.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Звернення, оновлення даних власників і поточні збори.</li><li>Показники фінансів та справи, які очікують рішення.</li><li>Платежі й документи на погодженні, перехід до відповідного кабінету.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">02</span><span><strong>Довідник квартир і співвласників</strong><span>Єдина база будинку для комунікації, розрахунків і зборів.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Квартири й нежитлові приміщення, площі, парадні, особові рахунки та власники.</li><li>Частки власності й підтвердні документи; перевірка заявок мешканців.</li><li>Пошук, імпорт списку з Excel/CSV та експорт бази.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">03</span><span><strong>Підготовка загальних зборів</strong><span>Від порядку денного до повідомлень і комплекту документів.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Дата, місце, питання, проєкти рішень і прикріплені PDF, Word або Excel.</li><li>Обрання голови й секретаря та повідомлення про скликання зборів.</li><li>Старт голосування у визначений час і перегляд участі та результатів.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">04</span><span><strong>Паперове опитування й голоси</strong><span>Електронний і паперовий процеси зведені в один облік.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Друк бланків за парадними; повторення шапки й питання на кожній сторінці.</li><li>Ручне внесення голосів окремо для кожного співвласника, пошук за квартирою або прізвищем.</li><li>Для обрання голови й секретаря — кількість присутніх і результати очного голосування без включення до обхідних бланків.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">05</span><span><strong>Протоколи зборів і правління</strong><span>Збережіть рішення разом із матеріалами, на яких вони ґрунтуються.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Формування PDF протоколу зборів із порядком денним, результатами та рішеннями.</li><li>Додавання готового протоколу правління або створення з тексту «Слухали» й «Вирішили».</li><li>Номери, присутні, голова, секретар, вкладення та публікація в базі документів.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">06</span><span><strong>Звернення, оголошення та опитування</strong><span>Комунікація з будинком стає частиною робочого процесу.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Перегляд звернень, відповіді мешканцям і контроль стану опрацювання.</li><li>Розсилка оголошень із вкладеннями та сповіщеннями.</li><li>Спільний чат і швидкі опитування мешканців.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">07</span><span><strong>База документів і контакти</strong><span>Упорядкована інформація замість розрізнених файлів.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Категорії документів, додавання файлів і матеріалів для мешканців.</li><li>Перегляд PDF, сканів, зображень та інших вкладень.</li><li>Контакти правління, комунальних служб і довідкова інформація.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">08</span><span><strong>Ресурси будинку та тарифи</strong><span>Загальнобудинковий облік світла, тепла й води.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Нові показники з автоматичним початковим значенням попереднього періоду.</li><li>Тарифи з датами дії, одиниці вимірювання та редагована загальна площа.</li><li>Споживання й вартість за місяць, заміна приладу та примітки; дані доступні мешканцям.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">09</span><span><strong>Довідки й фінансове погодження</strong><span>Правління контролює документи, виплати та інформацію для мешканців.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>PDF довідки про борг або його відсутність із особовим рахунком і балансом.</li><li>Погодження витрат, договорів і відомостей зарплати; контроль кошторису.</li><li>Бухгалтер готує платіж, а голова підписує його КЕП у Приват24.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">10</span><span><strong>Команда та журнал дій</strong><span>Кожен працює зі своїми повноваженнями.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Ролі й доступ до розділів для голови, бухгалтера та інших членів команди.</li><li>Журнал: хто, коли й яку операцію виконав.</li><li>Робочий кабінет і кабінет власної квартири відкриваються окремо.</li></ul>
-                        </details>
+        <!-- ============ ПРАВЛІННЯ ============ -->
+        <section id="board" class="story tone-board" aria-labelledby="board-title" data-role="board">
+            <div class="wrap">
+                <div class="story-head reveal">
+                    <p class="eyebrow">Голові й членам правління</p>
+                    <h2 id="board-title">Керуйте будинком.<br>Не паперами.</h2>
+                    <p class="lead">Звернення, власники, збори, документи й фінансові рішення — в одному робочому просторі. Команда бачить свої справи, а мешканці — результат.</p>
+                </div>
+                <div class="story-grid">
+                    <ol class="steps">
+                        <li class="step" data-shot="board-today" data-device="laptop">
+                            <span class="step-num">01</span>
+                            <h3>Зранку видно, що чекає рішення</h3>
+                            <p>Платежі на підпис, документи витрат на затвердження, нові звернення, збори й стан коштів будинку — на першому екрані.</p>
+                            <ul><li>Платіж іде в банк лише після підпису голови КЕП у Приват24</li><li>Документ без договору чи понад ліміт — тільки з вашим «так»</li><li>Борг мешканців і рух коштів за період</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/board-today.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Панель правління: на підпис у Приват24, що зробити, збори й кошти"></figure>
+                        </li>
+                        <li class="step" data-shot="board-owners" data-device="laptop">
+                            <span class="step-num">02</span>
+                            <h3>Звірений список власників</h3>
+                            <p>Довідник квартир і приміщень: площі, рахунки, співвласники, частки й документи. Видно, скільки квартир звірено і кому нагадати.</p>
+                            <ul><li>Заявки мешканців на зміну даних — з документами</li><li>Імпорт з Excel/CSV і вивантаження бази</li><li>Внесення даних за людей похилого віку</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/board-owners.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Довідник власників зі звіркою квартир"></figure>
+                        </li>
+                        <li class="step" data-shot="board-phone" data-device="phone">
+                            <span class="step-num">03</span>
+                            <h3>Ті самі справи — з телефона</h3>
+                            <p>Нижня панель із головними розділами й сповіщення про платежі на підпис. Рішення — там, де ви є.</p>
+                            <ul><li>Збори: порядок денний, паперові й електронні голоси, протокол</li><li>Оголошення й опитування мешканцям</li><li>Журнал дій: хто, коли й що змінив</li></ul>
+                            <figure class="step-shot phone-shot"><img src="assets/landing/board-phone.webp" width="600" height="1299" loading="lazy" decoding="async" alt="Панель правління на телефоні"></figure>
+                        </li>
+                    </ol>
+                    <div class="stage" aria-hidden="true">
+                        <div class="stage-inner">
+                            <div class="device laptop stage-laptop">
+                                <div class="laptop-screen">
+                                    <img data-shot="board-today" src="assets/landing/board-today.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="board-owners" src="assets/landing/board-owners.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                </div>
+                                <div class="laptop-base"></div>
+                            </div>
+                            <div class="device phone stage-phone">
+                                <img data-shot="board-phone" src="assets/landing/board-phone.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
+                            </div>
+                            <div class="stage-dots"><i></i><i></i><i></i></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tags reveal" aria-label="Ще для правління">
+                    <span>Збори й протоколи</span><span>Опитування</span><span>Оголошення</span><span>Звернення</span><span>Чат будинку</span><span>База документів</span><span>Контакти служб</span><span>Лічильники будинку</span><span>Команда й права</span><span>Журнал дій</span><span>Друк бланків голосування</span>
                 </div>
             </div>
         </section>
 
-        <section id="accountants" class="wrap role-section" aria-labelledby="accountants-title">
-            <div class="role-heading"><p class="eyebrow">БУХГАЛТЕРАМ ОСББ</p><h2 id="accountants-title">Від нарахування<br>до закритого місяця.</h2><p>Квартири, банк, первинні документи, зарплата й звітність повʼязані між собою. Ви бачите джерело кожної суми та стан кожної операції.</p></div>
-            <div class="role-layout">
-                <figure class="role-visual">
-                    <a class="phone-frame" href="assets/landing/accountant-mobile.png" data-screenshot data-caption="Закриття місяця" aria-label="Збільшити: Закриття місяця"><img src="assets/landing/accountant-mobile.png" width="390" height="844" loading="lazy" decoding="async" alt="Закриття місяця у застосунку ОСББ на телефоні"></a>
-                    <figcaption>Закриття місяця<span>Екран із демонстраційними даними</span></figcaption>
-                </figure>
-                <div class="role-features">
-                    <div class="features-toolbar"><span>12 напрямів роботи</span><button type="button" hidden data-expand="accountants" aria-expanded="false">Розгорнути всі</button></div>
-
-                        <details class="feature" open>
-                            <summary><span class="feature-number">01</span><span><strong>Сьогодні та черга рішень</strong><span>Починайте з незавершених справ і найближчих строків.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Завдання за видами: банк, документи, зарплата та звітність.</li><li>Платежі на підписі, кошти на рахунках, нарахування, оплати та борги.</li><li>Черга пропозицій: підтвердити рознос, обрати правильний документ або виправити дані.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">02</span><span><strong>Вхідні залишки й нарахування</strong><span>Побудуйте облік від узгодженого початкового стану.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Вхідні залишки квартир, імпорт історії та перевірка повноти даних.</li><li>Складові внесків, тарифи з датами дії, групи приміщень і параметри розрахунку.</li><li>Відомість за місяць, масові квитанції, розрахунки за площею та складовими внеску.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">03</span><span><strong>Квартири, борги та звірка</strong><span>Усі розрахунки конкретної квартири видно окремо.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Пошук за номером або власником; борги, переплати й прострочення.</li><li>Історія з нарахуваннями, оплатами та залишком після кожного запису.</li><li>PDF довідка про стан розрахунків і акт звірки у CSV для Excel.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">04</span><span><strong>Виписка та рознос ПриватБанку</strong><span>Після підключення рахунків виписка надходить автоматично.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Залишки за рахунками, синхронізація операцій, пошук і фільтри.</li><li>Розпізнавання квартири за особовим рахунком, призначенням або збереженим платником; розподіл платежу між квартирами.</li><li>Окремий облік внутрішніх переказів, невизначених надходжень, витрат, повернень і конфліктів виписки.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">05</span><span><strong>Вихідні платежі й підпис голови</strong><span>Створюйте платіж із документа або заповнюйте його вручну.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Пропозиції регулярних оплат, реквізити отримувачів і платіж за затвердженим документом.</li><li>Стани: створюється, у банку на підписі, проведено, відхилено або потрібна перевірка.</li><li>Скасування чернетки, контроль повторної відправки, нагадування голові та підтвердження списанням у виписці.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">06</span><span><strong>Первинні документи та постачальники</strong><span>Документ, погодження й оплата залишаються разом.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Рахунки, акти, накладні, фото та файли; довідник компаній і ФОП.</li><li>Категорії витрат, затвердження, стан оплати, архів і сторно.</li><li>Обʼєднання рахунку й акта однієї послуги, щоб не рахувати витрату двічі.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">07</span><span><strong>Договори й ланцюжок оплати</strong><span>Від умов договору до фактичного списання.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Реєстр договорів із сумами, строками та станом погодження.</li><li>Повʼязані документи, платежі, виписка й залишок до оплати.</li><li>Перехід по ланцюжку в обидва боки: договір → документ → платіж → банк.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">08</span><span><strong>Зарплата, табель і виплати</strong><span>Розрахунок працівників і виконавців ЦПД із податками.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Картки людей, оклади, робочий час, премії, акти ЦПД, відпустки, лікарняні й перерахунки.</li><li>ПДФО, військовий збір та ЄСВ; аванс і остаточний розрахунок.</li><li>Затвердження відомості головою, окремі зарплатні й податкові платежі, стан їх оплати та повернення.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">09</span><span><strong>Податкова звітність</strong><span>Підготовка даних і файлів для Електронного кабінету ДПС.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Розрахунок і додатки Д1, 4ДФ, Д5; таблиці, CSV та XML-пакет.</li><li>Збережені версії пакета, налаштування реквізитів, строки й нагадування.</li><li>Позначки подання, прийняття або відхилення, квитанції № 1 і № 2. Підпис і подання виконує уповноважена особа.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">10</span><span><strong>Проводки й оборотно-сальдова</strong><span>Журнал формується з підтверджених джерел обліку.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Проводки з нарахувань, виписки, документів і зарплати.</li><li>Оборотно-сальдова відомість, початкові залишки та розшифровка рахунків.</li><li>Перевірки сум і звʼязків між операціями, документами, квартирами та банком.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">11</span><span><strong>Кошторис і виконання</strong><span>Плануйте рік і порівнюйте план із фактом.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Статті кошторису, доходи й витрати, прогноз внесків із тарифами за датами.</li><li>Факт на основі операцій і документів; розшифровка сум.</li><li>Публікація зрозумілого звіту про діяльність будинку для мешканців.</li></ul>
-                        </details>
-                        <details class="feature">
-                            <summary><span class="feature-number">12</span><span><strong>Закриття місяця</strong><span>Послідовний маршрут із перевірками кожного етапу.</span></span><span class="feature-plus" aria-hidden="true">+</span></summary>
-                            <ul><li>Нарахування → банк → документи → зарплата → перевірка обліку → закриття.</li><li>Незавершені операції й розбіжності видно до фінального рішення.</li><li>Закритий період захищений від звичайного редагування; повторне відкриття — окрема контрольована дія.</li></ul>
-                        </details>
+        <!-- ============ БУХГАЛТЕР ============ -->
+        <section id="accountant" class="story tone-accountant" aria-labelledby="accountant-title" data-role="accountant">
+            <div class="wrap">
+                <div class="story-head reveal">
+                    <p class="eyebrow">Бухгалтеру ОСББ</p>
+                    <h2 id="accountant-title">Система пропонує.<br>Ви підтверджуєте.</h2>
+                    <p class="lead">Виписка, нарахування, документи, зарплата й звітність повʼязані між собою. Рутину робить застосунок, рішення — за вами.</p>
+                </div>
+                <div class="story-grid">
+                    <ol class="steps">
+                        <li class="step" data-shot="acc-today" data-device="laptop">
+                            <span class="step-num">01</span>
+                            <h3>Сьогодні: план на день</h3>
+                            <p>Скільки рішень чекає, що на підписі в голови, найближчий строк ДПС і залишок на рахунку — на одному екрані.</p>
+                            <ul><li>«Почати з першого» — і йдете по черзі</li><li>Прогрес закриття місяця</li><li>Нараховано, сплачено, борг мешканців</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-today.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Кабінет бухгалтера: що зробити сьогодні"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-inbox" data-device="laptop">
+                            <span class="step-num">02</span>
+                            <h3>Виписка розноситься сама</h3>
+                            <p>Операції ПриватБанку приходять щогодини. Система впізнає квартиру за призначенням і платником — вам лишається «Так» або «Інше рішення».</p>
+                            <ul><li>Поділ оплати між кількома квартирами</li><li>Оплата за документом постачальника — за сумою й реквізитами</li><li>Клавіші Enter і E — без миші</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-inbox.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Рішення: операції банку з пропозиціями рознесення"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-docs" data-device="laptop">
+                            <span class="step-num">03</span>
+                            <h3>Документи без ручного набору</h3>
+                            <p>Перетягніть XML із M.E.Doc чи «Вчасно», ZIP з ЕДО, PDF або фото — реквізити, суми й постачальник заповняться автоматично.</p>
+                            <ul><li>Затвердження головою, коли договору немає або сума понад нього</li><li>Скан поруч із даними документа</li><li>Звʼязок: документ → платіж → операція банку</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-docs.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Документи: завантаження й картка документа зі сканом"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-payments" data-device="laptop">
+                            <span class="step-num">04</span>
+                            <h3>Платежі — на підпис голові</h3>
+                            <p>Створюєте платіж — він зʼявляється в Приват24 і чекає підпису КЕП. Реквізити підставляються з довідника, призначення складає система.</p>
+                            <ul><li>«Нагадати голові» — сповіщенням</li><li>Що банк не прийняв — видно одразу</li><li>Проведені платежі звіряються з випискою</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-payments.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Платежі: на підписі голови, виконані, форма нового платежу"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-payroll" data-device="laptop">
+                            <span class="step-num">05</span>
+                            <h3>Зарплата за правилами</h3>
+                            <p>Табель, оклад, ПДФО 18%, військовий збір 5%, ЄСВ 22% — розрахунок для кожного. Аванс і розрахунок — двома виплатами.</p>
+                            <ul><li>Трудові договори й договори ЦПД</li><li>Відпустки, лікарняні, перерахунок</li><li>Відомість затверджує голова</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-payroll.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Зарплата: підсумки, люди, розрахунок"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-reports" data-device="laptop">
+                            <span class="step-num">06</span>
+                            <h3>Звіти — кроками до квитанції</h3>
+                            <p>Податковий розрахунок із додатками Д1, 4ДФ, Д5: перевірили суми — завантажили XML у Електронний кабінет — додали квитанцію № 2.</p>
+                            <ul><li>Календар строків і нагадування</li><li>Версії поданого пакета</li><li>Сплатити ЄСВ — нагадає вчасно</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-reports.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Звіти: податковий розрахунок по кроках і наступні строки"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-month" data-device="laptop">
+                            <span class="step-num">07</span>
+                            <h3>Закриття місяця за 6 кроків</h3>
+                            <p>Нарахування → банк → документи → зарплата → перевірка обліку → закриття. На кожному кроці видно, що лишилось і чому.</p>
+                            <ul><li>Проводки й оборотно-сальдова формуються самі</li><li>Закритий місяць захищено від змін</li><li>Розбіжності видно до фінального рішення</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-month.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Місяць: шість кроків закриття"></figure>
+                        </li>
+                        <li class="step" data-shot="acc-flats" data-device="laptop">
+                            <span class="step-num">08</span>
+                            <h3>Кожна квартира — як на долоні</h3>
+                            <p>Борг чи переплата, історія з сальдо після кожної операції, довідка про стан розрахунків і акт звірки — у два кліки.</p>
+                            <ul><li>Фільтри: з боргом, понад 3 місяці, переплата</li><li>Претензійна робота з боржниками</li><li>Ті самі цифри бачить мешканець у кабінеті</li></ul>
+                            <figure class="step-shot laptop-shot"><img src="assets/landing/acc-flats.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="Квартири: борги, історія і довідки"></figure>
+                        </li>
+                    </ol>
+                    <div class="stage" aria-hidden="true">
+                        <div class="stage-inner">
+                            <div class="device laptop stage-laptop">
+                                <div class="laptop-screen">
+                                    <img data-shot="acc-today" src="assets/landing/acc-today.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-inbox" src="assets/landing/acc-inbox.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-docs" src="assets/landing/acc-docs.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-payments" src="assets/landing/acc-payments.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-payroll" src="assets/landing/acc-payroll.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-reports" src="assets/landing/acc-reports.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-month" src="assets/landing/acc-month.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <img data-shot="acc-flats" src="assets/landing/acc-flats.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                </div>
+                                <div class="laptop-base"></div>
+                            </div>
+                            <div class="stage-dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tags reveal" aria-label="Ще для бухгалтера">
+                    <span>Нарахування й тарифи</span><span>Квитанції з QR</span><span>Вхідні залишки</span><span>Кошторис і виконання</span><span>Проводки й ОСВ</span><span>Майно та ТМЦ</span><span>Авансові звіти</span><span>Повернення й сторно</span><span>Претензійна робота</span><span>Акт звірки</span><span>Тестова бухгалтерія</span>
                 </div>
             </div>
         </section>
 
-        <section id="workflow" class="wrap section workflow" aria-labelledby="workflow-title">
-            <div class="section-heading"><p class="eyebrow">ДАНІ ПРАЦЮЮТЬ РАЗОМ</p><h2 id="workflow-title">Одна операція.<br>Зрозумілий шлях для всіх.</h2><p>Сума в кабінеті мешканця, платіж у виписці та запис у бухгалтерському звіті мають спільне джерело.</p></div>
-            <ol class="flow"><li><span>01</span><h3>Нарахування</h3><p>Бухгалтер формує внески</p></li><li><span>02</span><h3>Квитанція</h3><p>Мешканець бачить суму</p></li><li><span>03</span><h3>Оплата</h3><p>Переказ на рахунок ОСББ</p></li><li><span>04</span><h3>Виписка</h3><p>Банк підтверджує операцію</p></li><li><span>05</span><h3>Рознос</h3><p>Оновлюються облік і баланс</p></li><li><span>06</span><h3>Звіт</h3><p>Правління й мешканці бачать результат</p></li></ol>
-            <div class="connection-grid">
-                <article><span class="mini-label">ВИТРАТИ</span><h3>Документ → погодження → банк</h3><p>Бухгалтер додає акт або рахунок. Правління погоджує витрату. Голова підписує платіж у Приват24. Виписка підтверджує оплату, а сума потрапляє до обліку й звіту будинку.</p></article>
-                <article><span class="mini-label">ЗАРПЛАТА</span><h3>Табель → відомість → звітність</h3><p>Нарахування, утримання та ЄСВ формуються у відомості. Після погодження готуються виплати. Для звітності використовуються дані нарахувань і підтверджених оплат.</p></article>
-                <article><span class="mini-label">ЗБОРИ</span><h3>Питання → голоси → протокол</h3><p>Правління публікує порядок денний, збирає електронні й паперові відповіді, формує протокол та відкриває ухвалені рішення мешканцям.</p></article>
+        <!-- ============ ЯК ПОВʼЯЗАНО ============ -->
+        <section id="flow" class="section flow-section" aria-labelledby="flow-title">
+            <div class="wrap">
+                <div class="section-head reveal">
+                    <p class="eyebrow">Дані працюють разом</p>
+                    <h2 id="flow-title">Одна оплата.<br><span class="muted">Пʼять кроків — нуль ручних переписувань.</span></h2>
+                </div>
+                <ol class="flow-line">
+                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">₴</span><b>Нарахування</b><small>Бухгалтер формує внески за площею й тарифом</small></li>
+                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">⌂</span><b>Мешканець бачить суму</b><small>Квитанція, реквізити й QR — у кабінеті</small></li>
+                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">⇄</span><b>Оплата й виписка</b><small>ПриватБанк передає операцію щогодини</small></li>
+                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">✓</span><b>Рознесено</b><small>Система впізнала квартиру — бухгалтер підтвердив</small></li>
+                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">◎</span><b>Усі бачать результат</b><small>Баланс квартири, звіт будинку, проводки</small></li>
+                </ol>
+                <div class="chain-cards">
+                    <article class="reveal"><p class="eyebrow">Витрати</p><h3>Документ → затвердження → підпис → виписка</h3><p>Бухгалтер вносить акт чи рахунок, голова затверджує, платіж підписується КЕП, а виписка закриває документ і потрапляє у звіт будинку.</p></article>
+                    <article class="reveal"><p class="eyebrow">Зарплата</p><h3>Табель → відомість → виплата → звіт</h3><p>Утримання й ЄСВ рахуються у відомості. Після затвердження — виплати, а дані йдуть у податковий розрахунок.</p></article>
+                    <article class="reveal"><p class="eyebrow">Збори</p><h3>Питання → голоси → протокол</h3><p>Порядок денний, електронні й паперові відповіді, підсумки за звіреним списком співвласників і опублікований протокол.</p></article>
+                </div>
             </div>
         </section>
 
-        <section id="screens" class="wrap section" aria-labelledby="screens-title">
-            <div class="section-heading"><p class="eyebrow">ПОДИВІТЬСЯ, ЯК ЦЕ ВИГЛЯДАЄ</p><h2 id="screens-title">Екрани з робочого застосунку.</h2><p>Натисніть на зображення, щоб роздивитися деталі. На всіх знімках — тестові люди, квартири й операції.</p></div>
-            <div class="gallery-filters" hidden role="group" aria-label="Відбір екранів за роллю"><button type="button" data-filter="all" aria-pressed="true">Усі екрани</button><button type="button" data-filter="residents" aria-pressed="false">Мешканець</button><button type="button" data-filter="board" aria-pressed="false">Правління</button><button type="button" data-filter="accountants" aria-pressed="false">Бухгалтерія</button></div>
-            <p id="galleryStatus" class="sr-only" role="status" aria-live="polite"></p>
-            <div class="screen-grid">
-                <article class="screen-card" data-gallery-role="residents">
-                    <a href="assets/landing/resident-mobile.png" data-screenshot data-caption="Кабінет квартири" aria-label="Збільшити екран: Кабінет квартири"><img src="assets/landing/resident-mobile.png" width="390" height="844" loading="lazy" decoding="async" alt="Баланс, реквізити й доступ до справ будинку у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Кабінет квартири</h3><p>Баланс, реквізити й доступ до справ будинку</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="residents">
-                    <a href="assets/landing/resident-menu.png" data-screenshot data-caption="Можливості мешканця" aria-label="Збільшити екран: Можливості мешканця"><img src="assets/landing/resident-menu.png" width="390" height="844" loading="lazy" decoding="async" alt="Голосування, звернення, документи й лічильники у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Можливості мешканця</h3><p>Голосування, звернення, документи й лічильники</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="board">
-                    <a href="assets/landing/board.png" data-screenshot data-caption="Сьогодні у правління" aria-label="Збільшити екран: Сьогодні у правління"><img src="assets/landing/board.png" width="1280" height="900" loading="lazy" decoding="async" alt="Завдання, збори та фінансовий стан у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Сьогодні у правління</h3><p>Завдання, збори та фінансовий стан</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-today.png" data-screenshot data-caption="Сьогодні у бухгалтера" aria-label="Збільшити екран: Сьогодні у бухгалтера"><img src="assets/landing/accountant-today.png" width="1280" height="900" loading="lazy" decoding="async" alt="Що потребує дії та найближчі строки у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Сьогодні у бухгалтера</h3><p>Що потребує дії та найближчі строки</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-bank.png" data-screenshot data-caption="Банк" aria-label="Збільшити екран: Банк"><img src="assets/landing/accountant-bank.png" width="1280" height="900" loading="lazy" decoding="async" alt="Рахунки, виписка та черга на рознос у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Банк</h3><p>Рахунки, виписка та черга на рознос</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-charges.png" data-screenshot data-caption="Нарахування" aria-label="Збільшити екран: Нарахування"><img src="assets/landing/accountant-charges.png" width="1280" height="900" loading="lazy" decoding="async" alt="Тарифи та відомість внесків за місяць у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Нарахування</h3><p>Тарифи та відомість внесків за місяць</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-expenses.png" data-screenshot data-caption="Первинні документи" aria-label="Збільшити екран: Первинні документи"><img src="assets/landing/accountant-expenses.png" width="1280" height="900" loading="lazy" decoding="async" alt="Рахунки, акти, постачальники та оплата у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Первинні документи</h3><p>Рахунки, акти, постачальники та оплата</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-payroll.png" data-screenshot data-caption="Зарплата" aria-label="Збільшити екран: Зарплата"><img src="assets/landing/accountant-payroll.png" width="1280" height="900" loading="lazy" decoding="async" alt="Відомість, утримання й стан виплат у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Зарплата</h3><p>Відомість, утримання й стан виплат</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-reports.png" data-screenshot data-caption="Звітність" aria-label="Збільшити екран: Звітність"><img src="assets/landing/accountant-reports.png" width="1280" height="900" loading="lazy" decoding="async" alt="Календар, подання та квитанції у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Звітність</h3><p>Календар, подання та квитанції</p></div>
-                </article>
-                <article class="screen-card" data-gallery-role="accountants">
-                    <a href="assets/landing/accountant-month.png" data-screenshot data-caption="Закриття місяця" aria-label="Збільшити екран: Закриття місяця"><img src="assets/landing/accountant-month.png" width="1280" height="900" loading="lazy" decoding="async" alt="Шість кроків від нарахування до перевірки у застосунку"><span class="zoom-hint" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a>
-                    <div><h3>Закриття місяця</h3><p>Шість кроків від нарахування до перевірки</p></div>
-                </article>
+        <!-- ============ ДОВІРА ============ -->
+        <section class="section wrap trust" aria-labelledby="trust-title">
+            <div class="section-head reveal">
+                <p class="eyebrow">Безпечно за замовчуванням</p>
+                <h2 id="trust-title">Гроші й дані —<br><span class="muted">під контролем людей.</span></h2>
             </div>
+            <div class="trust-grid">
+                <article class="reveal"><span class="trust-ico" aria-hidden="true">✍︎</span><h3>Гроші підписує голова</h3><p>Застосунок готує платіж, але не відправляє гроші сам: банк проводить його лише після підпису КЕП у Приват24.</p></article>
+                <article class="reveal"><span class="trust-ico" aria-hidden="true">◐</span><h3>Кожен бачить своє</h3><p>Мешканець — лише свою квартиру й опубліковані дані будинку. Права правління й бухгалтера розділені за ролями.</p></article>
+                <article class="reveal"><span class="trust-ico" aria-hidden="true">≡</span><h3>Журнал дій</h3><p>Хто, коли й що змінив — у журналі. Закритий місяць захищено від звичайного редагування.</p></article>
+                <article class="reveal"><span class="trust-ico" aria-hidden="true">⌘</span><h3>Без встановлення</h3><p>Працює в браузері на телефоні й компʼютері; на головний екран додається як застосунок — без магазину.</p></article>
+            </div>
+            <dl class="numbers reveal">
+                <div><dt>Кабінети</dt><dd data-count="3">3</dd></div>
+                <div><dt>Груп можливостей</dt><dd data-count="30">30</dd></div>
+                <div><dt>Кроків закриття місяця</dt><dd data-count="6">6</dd></div>
+                <div><dt>Дотик, щоб підтвердити список співвласників</dt><dd data-count="1">1</dd></div>
+            </dl>
         </section>
 
-        <section class="wrap section" aria-labelledby="tools-title">
-            <div class="section-heading"><p class="eyebrow">ЗРУЧНІ ІНСТРУМЕНТИ</p><h2 id="tools-title">Звʼязок із тим,<br>чим ви вже користуєтеся.</h2></div>
-            <div class="tools-grid">
-                <article><span class="tool-mark">ПБ</span><h3>ПриватБанк</h3><p>Синхронізація виписки й залишків, платіжні чернетки на підпис голові після підключення рахунків ОСББ.</p></article>
-                <article><span class="tool-mark">XML</span><h3>Електронний кабінет ДПС</h3><p>Пакет файлів для завантаження, підпису й подання звіту уповноваженою особою. Квитанції зберігаються в обліку.</p></article>
-                <article><span class="tool-mark">QR</span><h3>Оплата мешканця</h3><p>Реквізити та QR-код для переказу; перехід до Приват24 або monobank із призначенням платежу.</p></article>
-                <article><span class="tool-mark">PDF</span><h3>Документи для друку</h3><p>Квитанції, довідки, бланки опитування та протоколи. Excel/CSV — для імпорту бази й роботи з відомостями.</p></article>
-                <article><span class="tool-mark">ДТЕК</span><h3>Електропостачання</h3><p>Статус світла, графіки відключень і статистика доступності для налаштованого будинку.</p></article>
-                <article><span class="tool-mark">PWA</span><h3>На будь-якому екрані</h3><p>Кабінет у браузері на телефоні й компʼютері. Застосунок можна додати на головний екран без магазину застосунків.</p></article>
+        <!-- ============ ЗАПУСК ============ -->
+        <section id="connect" class="section wrap connect" aria-labelledby="connect-title">
+            <div class="section-head reveal">
+                <p class="eyebrow">Запуск для вашого будинку</p>
+                <h2 id="connect-title">Починаємо з ваших даних<br><span class="muted">і ваших процесів.</span></h2>
+                <p class="lead">Застосунок показано на прикладі ОСББ «Успіх-25». Інший будинок потребує окремого налаштування бази, доступів, реквізитів і правил роботи.</p>
             </div>
-        </section>
-
-        <section id="connect" class="wrap section connect" aria-labelledby="connect-title">
-            <div class="section-heading"><p class="eyebrow">ЗАПУСК ДЛЯ ВАШОГО БУДИНКУ</p><h2 id="connect-title">Починаємо з ваших даних<br>і процесів ОСББ.</h2><p>Застосунок представлений на прикладі «Успіх-25». Впровадження в іншому будинку потребує окремого налаштування бази, доступів, реквізитів і правил роботи.</p></div>
-            <ol class="setup-steps">
-                <li><span>1</span><div><h3>База будинку</h3><p>Квартири, приміщення, власники, площі, парадні та особові рахунки.</p></div></li>
-                <li><span>2</span><div><h3>Початок обліку</h3><p>Тарифи, складові внесків, залишки, кошторис і дата переходу на облік.</p></div></li>
-                <li><span>3</span><div><h3>Команда та підключення</h3><p>Повноваження правління й бухгалтера, банківські рахунки, реквізити ОСББ і звітності.</p></div></li>
-                <li><span>4</span><div><h3>Перевірка й перший місяць</h3><p>Звірка даних, тестові нарахування, виписка, рознос і перевірка результатів у кабінетах.</p></div></li>
+            <ol class="setup">
+                <li class="reveal"><span>1</span><h3>База будинку</h3><p>Квартири, приміщення, власники, площі, парадні та особові рахунки.</p></li>
+                <li class="reveal"><span>2</span><h3>Початок обліку</h3><p>Тарифи, складові внесків, залишки, кошторис і дата переходу на облік.</p></li>
+                <li class="reveal"><span>3</span><h3>Команда й банк</h3><p>Повноваження правління й бухгалтера, рахунки ПриватБанку, реквізити ОСББ.</p></li>
+                <li class="reveal"><span>4</span><h3>Перший місяць</h3><p>Тестові нарахування, виписка, рознесення й звірка — спершу в тестовій бухгалтерії.</p></li>
             </ol>
         </section>
 
-        <section id="faq" class="wrap section faq" aria-labelledby="faq-title">
-            <div class="section-heading"><p class="eyebrow">ПИТАННЯ ПЕРЕД ЗАПУСКОМ</p><h2 id="faq-title">Що варто знати.</h2></div>
+        <!-- ============ ПИТАННЯ ============ -->
+        <section id="faq" class="section wrap faq" aria-labelledby="faq-title">
+            <div class="section-head reveal"><p class="eyebrow">Перед запуском</p><h2 id="faq-title">Що варто знати.</h2></div>
             <div class="faq-list">
                 <details><summary>Це лише застосунок для «Успіх-25»?</summary><p>На екранах показана реалізація для цього ОСББ. Сторінка знайомить із можливостями для інших будинків. Запуск нового будинку — окреме впровадження з його базою, доступами та налаштуваннями.</p></details>
                 <details><summary>Чи обовʼязково встановлювати застосунок?</summary><p>Він працює у браузері. На iPhone можна додати його через «Поширити» → «На початковий екран», на Android — через меню браузера. Для сповіщень потрібні підтримка пристрою та дозвіл користувача.</p></details>
-                <details><summary>Чи бачить мешканець бухгалтерські й особисті дані інших квартир?</summary><p>Інтерфейси й доступ розділені за ролями. Мешканець працює зі своєю квартирою та опублікованою інформацією будинку. Службові операції доступні відповідним членам команди.</p></details>
-                <details><summary>Застосунок сам підписує й відправляє гроші?</summary><p>Бухгалтер створює платіжну чернетку. Платіж підписує голова КЕП у Приват24. Фактична оплата підтверджується банківською випискою та повʼязується з документом.</p></details>
+                <details><summary>Чи бачить мешканець бухгалтерські й особисті дані інших квартир?</summary><p>Ні. Інтерфейси й доступ розділені за ролями. Мешканець працює зі своєю квартирою та опублікованою інформацією будинку. Службові операції доступні відповідним членам команди.</p></details>
+                <details><summary>Застосунок сам підписує й відправляє гроші?</summary><p>Ні. Бухгалтер створює платіж, який зʼявляється в Приват24. Підписує його голова КЕП. Фактична оплата підтверджується банківською випискою та повʼязується з документом.</p></details>
                 <details><summary>Звіти автоматично надсилаються до ДПС?</summary><p>Застосунок готує дані й XML-файли. Уповноважена особа завантажує, перевіряє, підписує та подає пакет в Електронному кабінеті ДПС. Версія пакета, статуси й квитанції зберігаються у розділі звітності.</p></details>
                 <details><summary>Можна поєднувати паперові й електронні голоси?</summary><p>Так. Є друк бланків, внесення паперових голосів кожного співвласника, електронні відповіді від квартири та формування підсумків. Електронний підпис співвласника ще не підключений; порядок юридичного оформлення голосів визначає ОСББ.</p></details>
                 <details><summary>Можна перенести вже наявний облік?</summary><p>Є інструменти імпорту бази й фінансових даних, введення залишків та звірки історії. Перед робочим запуском потрібна перевірка форматів, сум і звʼязків. Прямий імпорт файла банківської виписки поки не підключений.</p></details>
             </div>
         </section>
-        <section class="wrap closing"><div><p class="eyebrow">МЕНШЕ РОЗРІЗНЕНИХ СПРАВ</p><h2>Більше порядку в будинку.</h2><p>Почніть із можливостей, потрібних саме вашій команді.</p></div><a class="button" href="#roles">Обрати свій кабінет <span aria-hidden="true">↑</span></a></section>
+
+        <section class="wrap closing reveal">
+            <h2>Менше розрізнених справ.<br><span class="grad">Більше порядку в будинку.</span></h2>
+            <div class="hero-actions">
+                <a class="button" href="index.html">Відкрити застосунок</a>
+                <a class="button button-ghost" href="#roles">Обрати свою роль ↑</a>
+            </div>
+        </section>
     </main>
-    <footer class="wrap site-footer"><div><strong>Кабінет ОСББ</strong><span>Реалізовано на прикладі ОСББ «Успіх-25»</span></div><nav aria-label="Посилання у підвалі"><a href="#connect">Запуск в іншому будинку</a><a href="index.html">Застосунок «Успіх-25» <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></span></a></nav></footer>
-    <dialog id="screenshotDialog" aria-labelledby="screenshotTitle">
-        <div class="dialog-bar"><h2 id="screenshotTitle">Екран застосунку</h2><button type="button" data-close-dialog aria-label="Закрити зображення">✕</button></div>
-        <img id="screenshotImage" alt="">
-        <div class="dialog-footer"><span>Демонстраційні дані</span><a id="screenshotOriginal" href="#">Відкрити зображення окремо <svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"></path></svg></a></div>
+
+    <footer class="wrap site-footer">
+        <div><strong>Кабінет ОСББ</strong><span>Реалізовано на прикладі ОСББ «Успіх-25» · на знімках умовні дані</span></div>
+        <nav aria-label="Посилання у підвалі"><a href="#connect">Запуск в іншому будинку</a><a href="index.html">Застосунок «Успіх-25» →</a></nav>
+    </footer>
+
+    <dialog id="shotDialog" aria-labelledby="shotTitle">
+        <div class="dialog-bar"><h2 id="shotTitle">Екран застосунку</h2><button type="button" data-close-dialog aria-label="Закрити зображення">✕</button></div>
+        <img id="shotImage" alt="">
     </dialog>
 </body>
 </html>
