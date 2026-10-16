@@ -692,6 +692,17 @@ select.field-input {
 .owners-block .section-head { margin: 14px 10px 12px; }
 
 .owners-container { display: flex; flex-direction: column; gap: 10px; }
+/* Спільні документи квартири — окремою карткою під списком людей. */
+.owners-docs {
+    margin-top: 10px;
+    padding: 15px;
+    border-radius: var(--r-lg);
+    background: var(--surface-2);
+    border: 0.5px solid rgba(0, 0, 0, 0.05);
+}
+.owners-docs .owner-head { margin-bottom: 4px; }
+.owners-docs .owner-info { margin-top: 10px; }
+.owners-docs-hint { margin: -6px 0 14px; color: var(--ink-2); font-size: 13.5px; line-height: 1.4; }
 .owners-block .owner-card {
     background: var(--surface-2);
     box-shadow: none;
@@ -4075,3 +4086,4 @@ select.field-input {
 .lg-parts .is-debt { color: var(--red, #d70015); }
 .lg-parts .is-credit { color: var(--green, #248a3d); }
 .lg-note p { white-space: pre-line; }
+.owners-docs .owner-pending-note { color: #A85B00; }
