@@ -6,7 +6,7 @@
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadRequisites, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadRequisites, expAct, act, saveGeminiApiKey, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
 import { toKop } from './charges-core.js';
@@ -379,7 +379,7 @@ export function initSettingsView() {
             }
             setBusy(btn, true, 'Зберігаю…');
             try {
-                try { localStorage.setItem(AI_KEY_STORAGE, key); } catch (_) {}
+                await saveGeminiApiKey(key);
                 const currentSmallKop = toKop(document.getElementById('smallInput')?.value) ?? 0;
                 await expAct({ action: 'settings', smallKop: Math.max(0, currentSmallKop), geminiApiKey: key }).catch(() => {});
                 updateAiKeyUi(key);
@@ -391,7 +391,7 @@ export function initSettingsView() {
         if (btn.dataset.act === 'ai-key-clear') {
             setBusy(btn, true, 'Очищаю…');
             try {
-                try { localStorage.removeItem(AI_KEY_STORAGE); } catch (_) {}
+                await saveGeminiApiKey('');
                 const currentSmallKop = toKop(document.getElementById('smallInput')?.value) ?? 0;
                 await expAct({ action: 'settings', smallKop: Math.max(0, currentSmallKop), geminiApiKey: '' }).catch(() => {});
                 updateAiKeyUi('');

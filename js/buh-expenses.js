@@ -12,7 +12,7 @@
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import {
-    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, CONTRACT_STATUS, maskIban, when, dateOnly, loadTx, PAYMENT_STATUS
+    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, saveGeminiApiKey, CONTRACT_STATUS, maskIban, when, dateOnly, loadTx, PAYMENT_STATUS
 } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { periodName, fmtKop, toKop } from './charges-core.js';
@@ -75,23 +75,35 @@ const money2 = k => (k ? (k / 100).toFixed(2).replace('.', ',') : '');
 function docRecogHtml(kind = "doc") {
     const isDoc = kind === "doc";
     const title = isDoc ? "Розумне розпізнавання рахунків, актів та накладних" : "Розпізнавання договору підряду / послуг";
-    const sub = isDoc ? "Оберіть скан або PDF — система автоматично заповнить номер, дату, постачальника, суму, ПДВ та статтю"
-                      : "Оберіть скан договору — система заповнить номер, дату, предмет, суму/тариф та строки дії";
+    const sub = isDoc ? "Оберіть скан або фото — AI автоматично заповнить номер, дату, постачальника, суму та статтю"
+                      : "Оберіть скан договору — AI заповнить номер, дату, предмет, суму/тариф та строки дії";
     const btnAct = isDoc ? "trigger-recog" : "trigger-contract-recog";
     const inputId = isDoc ? "exRecogInput" : "cfRecogInput";
     const barId = isDoc ? "exRecogBar" : "cfRecogBar";
     const statusId = isDoc ? "exRecogStatus" : "cfRecogStatus";
+    let localKey = "";
+    try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
+    const activeKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
+    const hasKey = Boolean(activeKey);
+    const keyTail = activeKey.length >= 4 ? activeKey.slice(-4) : activeKey;
+
     return `<div class="doc-recog-bar pay-wide" id="${barId}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div style="display:flex;align-items:center;gap:10px">
                 <span style="font-size:22px">${isDoc ? "📄" : "📑"}</span>
                 <div>
-                    <b style="font-size:14px">${title}</b>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <b style="font-size:14px">${title}</b>
+                        ${hasKey
+                            ? `<span class="buh-tag is-payment" style="font-size:11px;padding:2px 7px">⚡ AI Vision увімкнено (…${escapeHtml(keyTail)})</span>`
+                            : `<button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:700;cursor:pointer">⚠️ Вказати ключ Gemini AI</button>`}
+                    </div>
                     <p class="buh-note" style="margin:2px 0 0">${sub}</p>
                 </div>
             </div>
-            <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button type="button" class="sv-btn is-soft btn-compact" data-act="${btnAct}" style="white-space:nowrap">📎 Обрати файл для розпізнавання</button>
+                <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" title="Перевірити або змінити AI-ключ" style="color:#64748b;font-size:12px;padding:4px 8px">⚙️ AI-ключ</button>
                 <input type="file" id="${inputId}" accept=".pdf,image/*,.txt" style="display:none">
             </div>
         </div>
@@ -108,6 +120,48 @@ async function fileToDataUrl(file) {
     });
 }
 
+/** Оптимізація та масштабування фото документів для швидкого передавання в Gemini API без помилок памʼяті */
+async function prepareDocumentImageForAi(file) {
+    if (file.type === "application/pdf") {
+        const base64 = await fileToDataUrl(file);
+        return { base64Data: base64, mimeType: "application/pdf" };
+    }
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                const maxDim = 1600;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx2d = canvas.getContext("2d");
+                ctx2d.drawImage(img, 0, 0, width, height);
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+                resolve({ base64Data: dataUrl, mimeType: "image/jpeg" });
+            };
+            img.onerror = () => {
+                resolve({ base64Data: reader.result, mimeType: file.type || "image/jpeg" });
+            };
+            img.src = reader.result;
+        };
+        reader.onerror = () => {
+            resolve({ base64Data: "", mimeType: "image/jpeg" });
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 function flashField(id) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -118,6 +172,7 @@ function flashField(id) {
 
 async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
     const rawBase64 = String(base64DataUrl || "").replace(/^data:[^;]+;base64,/, "").trim();
+    const cleanMime = mimeType === "application/pdf" ? "application/pdf" : "image/jpeg";
     const prompt = `Ти професійний бухгалтер та експерт з первинних документів в Україні.
 Уважно проаналізуй цей первинний документ (акт наданих послуг / виконаних робіт, рахунок на оплату, видаткову накладну, договір, фіскальний чек).
 
@@ -148,54 +203,63 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
         contents: [{
             parts: [
                 { text: prompt },
-                { inlineData: { mimeType, data: rawBase64 } }
+                { inlineData: { mimeType: cleanMime, data: rawBase64 } }
             ]
         }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
     };
-    for (const model of ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-            if (res.status === 404) continue;
-            const errTxt = await res.text();
-            throw new Error(`Gemini API HTTP ${res.status}: ${errTxt.slice(0, 120)}`);
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    let lastErr = null;
+    for (const model of models) {
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) {
+                const errTxt = await res.text();
+                lastErr = new Error(`Gemini (${model}) HTTP ${res.status}: ${errTxt.slice(0, 120)}`);
+                if (res.status === 404) continue;
+                throw lastErr;
+            }
+            const data = await res.json();
+            const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!txt) throw new Error("Порожня відповідь AI");
+            let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+            const parsed = JSON.parse(cleanTxt);
+            if (parsed.amountKop !== undefined) {
+                if (typeof parsed.amountKop === "string") parsed.amountKop = Math.round(parseFloat(parsed.amountKop.replace(",", ".")));
+                else parsed.amountKop = Math.round(Number(parsed.amountKop));
+            } else if (parsed.amount !== undefined) {
+                const num = typeof parsed.amount === "string" ? parseFloat(parsed.amount.replace(",", ".")) : Number(parsed.amount);
+                parsed.amountKop = Math.round(num * 100);
+            }
+            if (parsed.vatKop !== undefined) {
+                if (typeof parsed.vatKop === "string") parsed.vatKop = Math.round(parseFloat(parsed.vatKop.replace(",", ".")));
+                else parsed.vatKop = Math.round(Number(parsed.vatKop));
+            } else if (parsed.vat !== undefined) {
+                const num = typeof parsed.vat === "string" ? parseFloat(parsed.vat.replace(",", ".")) : Number(parsed.vat);
+                parsed.vatKop = Math.round(num * 100);
+            }
+            if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
+            if (parsed.date) {
+                parsed.date = String(parsed.date).trim();
+                if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
+            }
+            if (parsed.supplier) {
+                if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
+                if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
+                if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
+            }
+            return parsed;
+        } catch (err) {
+            lastErr = err;
+            if (String(err.message || "").includes("404")) continue;
+            throw err;
         }
-        const data = await res.json();
-        const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!txt) throw new Error("Порожня відповідь AI");
-        let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-        const parsed = JSON.parse(cleanTxt);
-        if (parsed.amountKop !== undefined) {
-            if (typeof parsed.amountKop === "string") parsed.amountKop = Math.round(parseFloat(parsed.amountKop.replace(",", ".")));
-            else parsed.amountKop = Math.round(Number(parsed.amountKop));
-        } else if (parsed.amount !== undefined) {
-            const num = typeof parsed.amount === "string" ? parseFloat(parsed.amount.replace(",", ".")) : Number(parsed.amount);
-            parsed.amountKop = Math.round(num * 100);
-        }
-        if (parsed.vatKop !== undefined) {
-            if (typeof parsed.vatKop === "string") parsed.vatKop = Math.round(parseFloat(parsed.vatKop.replace(",", ".")));
-            else parsed.vatKop = Math.round(Number(parsed.vatKop));
-        } else if (parsed.vat !== undefined) {
-            const num = typeof parsed.vat === "string" ? parseFloat(parsed.vat.replace(",", ".")) : Number(parsed.vat);
-            parsed.vatKop = Math.round(num * 100);
-        }
-        if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
-        if (parsed.date) {
-            parsed.date = String(parsed.date).trim();
-            if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
-        }
-        if (parsed.supplier) {
-            if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
-            if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
-            if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
-        }
-        return parsed;
     }
-    throw new Error("Модель Gemini недоступна");
+    throw lastErr || new Error("Моделі Gemini недоступні");
 }
 
 function matchSupplierClient(recognizedSupplier) {
@@ -287,7 +351,7 @@ function suggestedSupplierHtml(s, contractName = "") {
 
 async function recognizeUploadedDocument(file, kind = "doc") {
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { toast("Файл перевищує 20 МБ", "error"); return; }
+    if (file.size > 25 * 1024 * 1024) { toast("Файл перевищує 25 МБ", "error"); return; }
 
     const isDoc = kind === "doc";
     const bar = document.getElementById(isDoc ? "exRecogBar" : "cfRecogBar");
@@ -295,54 +359,55 @@ async function recognizeUploadedDocument(file, kind = "doc") {
     if (bar) bar.classList.add("is-scanning");
     if (status) {
         status.hidden = false;
-        status.innerHTML = "<span>⏳ Розпізнаю реквізити та умови документа…</span>";
+        status.innerHTML = "<span>⏳ AI аналізує документ та витягує реквізити…</span>";
     }
 
     try {
-        let base64Data = "";
-        let textContent = "";
-        if (file.type.startsWith("image/") || file.type === "application/pdf") {
-            base64Data = await fileToDataUrl(file);
-        } else if (file.type.startsWith("text/")) {
-            textContent = await file.text();
-        }
-
         let localKey = "";
         try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
         const apiKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
 
-        let res = null;
-        if (base64Data && apiKey) {
-            try {
-                const directParsed = await callGeminiVisionDirect(base64Data, file.type || "application/pdf", apiKey);
-                if (directParsed && (directParsed.amountKop || directParsed.number || directParsed.supplier?.name || directParsed.supplier?.code)) {
-                    const m = matchSupplierClient(directParsed.supplier);
-                    res = {
-                        ok: true,
-                        recognized: directParsed,
-                        matchedSupplier: m.matched,
-                        matchedContract: m.contract
-                    };
-                }
-            } catch (aiErr) {
-                console.warn("Direct Gemini Vision error:", aiErr);
+        if (!apiKey) {
+            if (status) {
+                status.hidden = false;
+                status.innerHTML = `<span class="buh-note is-bad" style="color:#b45309">⚠️ Для розпізнавання фото/сканів потрібен ключ Google AI Studio. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ зараз ›</button></span>`;
             }
+            toast("Вкажіть AI-ключ для розпізнавання документів", "info");
+            return;
         }
 
-        if (!res) {
-            try {
-                res = await expAct({
-                    action: "recognizeDocument",
-                    base64Data,
-                    mimeType: file.type || "application/pdf",
-                    textContent,
-                    fileName: file.name,
-                    apiKey
-                });
-            } catch (srvErr) {
-                if (!textContent) throw srvErr;
+        const { base64Data, mimeType } = await prepareDocumentImageForAi(file);
+        if (!base64Data) throw new Error("Не вдалося підготувати зображення документа");
+
+        let directParsed = null;
+        try {
+            directParsed = await callGeminiVisionDirect(base64Data, mimeType, apiKey);
+        } catch (aiErr) {
+            console.error("Gemini Vision failed:", aiErr);
+            if (status) {
+                status.hidden = false;
+                status.innerHTML = `<span class="buh-note is-bad">❌ Помилка AI: ${escapeHtml(aiErr.message || "помилка виклику")}. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#0068cf;display:inline;padding:0;background:none;border:none;cursor:pointer">Змінити ключ</button></span>`;
             }
+            toast(`Помилка AI: ${aiErr.message?.slice(0, 90)}`, "error");
+            return;
         }
+
+        if (!directParsed || (!directParsed.amountKop && !directParsed.number && !directParsed.supplier?.name && !directParsed.supplier?.code)) {
+            if (status) {
+                status.hidden = false;
+                status.innerHTML = `<span class="buh-note is-bad">AI не знайшов реквізитів на цьому фото. Перевірте читабельність документа.</span>`;
+            }
+            toast("Реквізити не знайдено на фото", "error");
+            return;
+        }
+
+        const m = matchSupplierClient(directParsed.supplier);
+        const res = {
+            ok: true,
+            recognized: directParsed,
+            matchedSupplier: m.matched,
+            matchedContract: m.contract
+        };
 
         if (res?.ok && res.recognized) {
             const r = res.recognized;
@@ -442,9 +507,6 @@ function docFormHtml(d = {}) {
                     `<option value="${escapeHtml(c.id)}"${c.id === d.contractId ? " selected" : ""}>№ ${escapeHtml(c.number)} від ${human(c.date)} — ${escapeHtml(c.subject)}${c.status === "pending" ? " (не затверджено)" : ""}</option>`).join("")}</select>
                 ${supplierId && !contracts.length ? `<p class="buh-note" id="dfContractHelp" style="margin:4px 0 0">У постачальника ще немає договорів. Можна провести <b>разово без договору</b> (затверджує голова) або <button type="button" class="btn-ghost-small" data-act="quick-add-contract" style="display:inline;padding:0;text-decoration:underline;color:#0068cf;background:none;border:none;cursor:pointer">+ додати договір</button>.</p>` : ""}
             </label>
-            <label class="field pay-wide"><span class="field-label">Договір</span>
-                <select id="dfContract" class="field-input field-select"><option value="">Без договору</option>${contracts.map(c =>
-                    `<option value="${escapeHtml(c.id)}"${c.id === d.contractId ? ' selected' : ''}>№ ${escapeHtml(c.number)} від ${human(c.date)} — ${escapeHtml(c.subject)}${c.status === 'pending' ? ' (не затверджено)' : ''}</option>`).join('')}</select></label>
             <label class="field"><span class="field-label">Вид документа</span><select id="dfType" class="field-input field-select">${options(ctx.docTypes, d.docType || 'invoice')}</select></label>
             <label class="field"><span class="field-label">Номер</span><input id="dfNumber" class="field-input" maxlength="60" value="${escapeHtml(d.number || '')}"></label>
             <label class="field"><span class="field-label">Дата</span><input id="dfDate" class="field-input" type="date" value="${escapeHtml(d.date || ctx.today)}"></label>
@@ -986,6 +1048,28 @@ export function initExpensesView() {
             if (a === 'trigger-recog') { document.getElementById('exRecogInput')?.click(); return; }
             else if (a === 'trigger-contract-recog') { document.getElementById('cfRecogInput')?.click(); return; }
             else if (a === 'close') { form = null; files = []; loadExpensesView(); }
+            else if (a === 'prompt-ai-key') {
+                let localKey = "";
+                try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
+                const current = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
+                const key = await promptDialog(
+                    "Ключ Gemini AI (Google AI Studio)",
+                    "Вставте безкоштовний ключ API (AIzaSy...) для автоматичного розпізнавання рахунків, актів та накладних за фото та сканами:",
+                    {
+                        confirmLabel: "Зберегти ключ",
+                        placeholder: "AIzaSy...",
+                        initialValue: current
+                    }
+                );
+                if (key !== null) {
+                    const clean = String(key || "").trim();
+                    await saveGeminiApiKey(clean);
+                    if (ctx?.settings) ctx.settings.geminiApiKey = clean;
+                    await loadExpensesView();
+                    toast(clean ? `AI-ключ збережено (…${clean.slice(-4)}) — розпізнавання увімкнено!` : "Ключ очищено", clean ? "success" : "info");
+                }
+                return;
+            }
             else if (a === 'quick-add-supplier') {
                 const s = form?.data?.suggestedSupplier;
                 if (!s || (!s.name && !s.code)) return;
