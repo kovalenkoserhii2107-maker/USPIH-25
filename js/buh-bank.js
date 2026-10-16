@@ -263,6 +263,18 @@ export async function loadSettingsView() {
                 <td class="t-sum">${accountBalance(a)}</td></tr>`).join('')}</tbody></table>
         </section>` : ''}
         <section class="buh-card">
+            <div class="buh-card-head">
+                <h2>Розумне розпізнавання документів (AI OCR)</h2>
+                <span class="buh-tag ${ex?.settings?.geminiApiKey ? 'is-payment' : 'is-soft'}">${ex?.settings?.geminiApiKey ? 'AI Vision підключено' : 'Базовий парсер (0 грн)'}</span>
+            </div>
+            <p class="buh-note">Система вже автоматично розпізнає суми, ПДВ, номери, дати, контрагентів (ЄДРПОУ/РНОКПП), IBAN та статті витрат з текстових PDF безкоштовно. Якщо ви бажаєте розпізнавати фотографії та складні скани з камери телефону через Google Gemini Vision — вкажіть ключ Google AI Studio.</p>
+            <div class="buh-inline-form">
+                <input id="aiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="Gemini API Key (AIzaSy...)" value="${escapeHtml(ex?.settings?.geminiApiKey || '')}"${chair ? '' : ' disabled'}>
+                ${chair ? '<button type="button" class="btn-primary btn-compact" data-act="ai-key-save">Зберегти ключ</button>' : '<span class="t-muted">змінює голова</span>'}
+            </div>
+            <p class="buh-note"><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Отримати безкоштовний ключ у Google AI Studio ↗</a> (до 1 500 запитів на добу безкоштовно).</p>
+        </section>
+        <section class="buh-card">
             <div class="buh-card-head"><h2>Хто що підтверджує</h2></div>
             <table class="buh-table"><thead><tr><th>Операція</th><th>Підтверджує</th><th>Підстава</th></tr></thead>
             <tbody>${RULES.map(([op, who, why]) => `<tr><td>${escapeHtml(op)}</td><td>${escapeHtml(who)}</td><td class="t-muted">${escapeHtml(why)}</td></tr>`).join('')}</tbody></table>
@@ -293,6 +305,17 @@ export function initSettingsView() {
             finally { setBusy(btn, false); }
         }
         if (btn.dataset.act === 'registry-save') { await saveRegistry(btn, requisites.registry); return; }
+        if (btn.dataset.act === 'ai-key-save') {
+            const key = document.getElementById('aiKeyInput').value.trim();
+            setBusy(btn, true, 'Зберігаю…');
+            try {
+                await expAct({ action: 'settings', geminiApiKey: key });
+                toast(key ? 'AI-ключ збережено — розпізнавання сканів та фото увімкнено' : 'Ключ очищено — діє базовий парсер', 'success');
+                loadSettingsView();
+            } catch (err) { toast(err.message, 'error'); }
+            finally { setBusy(btn, false); }
+            return;
+        }
         if (btn.dataset.act === 'small-save') {
             const kop = toKop(document.getElementById('smallInput').value);
             if (kop === null || kop < 0) { toast('Вкажіть суму в гривнях', 'error'); return; }

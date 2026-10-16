@@ -8,7 +8,7 @@
 // ============================================================
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
-import { loadAdvance, advanceAct, loadRequisites, loadPaymentContext, uploadExpenseFiles } from './buh-data.js';
+import { loadAdvance, advanceAct, expAct, loadRequisites, loadPaymentContext, uploadExpenseFiles } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { fmtKop, toKop, periodName } from './charges-core.js';
 import {
@@ -609,7 +609,12 @@ export function initAdvanceView() {
             const current = snapshotFormData();
             current.lines.push({ docType: 'fiscal_receipt', number: '', date: current.date || ctx.today, supplier: '', amountKop: 0, item: 'systems', postingAcc: '92' });
             form = { ...form, data: current };
-            renderAdvanceView();
+            const linesList = document.getElementById('avLinesList');
+            if (linesList) {
+                linesList.innerHTML = current.lines.map((l, idx) => lineRowHtml(l, idx, current.lines)).join('');
+            } else {
+                renderAdvanceView();
+            }
             return;
         }
         if (a === 'remove-line') {
@@ -618,7 +623,12 @@ export function initAdvanceView() {
             if (current.lines.length > 1) {
                 current.lines.splice(lineIdx, 1);
                 form = { ...form, data: current };
-                renderAdvanceView();
+                const linesList = document.getElementById('avLinesList');
+                if (linesList) {
+                    linesList.innerHTML = current.lines.map((l, idx) => lineRowHtml(l, idx, current.lines)).join('');
+                } else {
+                    renderAdvanceView();
+                }
             } else {
                 toast('У звіті має бути щонайменше один документ', 'info');
             }
@@ -691,9 +701,76 @@ export function initAdvanceView() {
                 if (document.getElementById('avPersonIban')) document.getElementById('avPersonIban').value = selectedPerson.iban || '';
             }
         }
+        if (e.target.classList.contains('av-file')) {
+            const fi = e.target;
+            const lineEl = fi.closest('.av-line');
+            if (fi.files?.length && lineEl) {
+                const file = fi.files[0];
+                toast('Розпізнаю реквізити чека…', 'info');
+                (async () => {
+                    try {
+                        let base64Data = '';
+                        let textContent = '';
+                        if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+                            base64Data = await new Promise((res, rej) => {
+                                const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+                            });
+                        } else if (file.type.startsWith('text/')) {
+                            textContent = await file.text();
+                        }
+                        const res = await expAct({
+                            action: 'recognizeDocument',
+                            base64Data,
+                            mimeType: file.type || 'application/pdf',
+                            textContent,
+                            fileName: file.name
+                        });
+                        if (res?.ok && res.recognized) {
+                            const rec = res.recognized;
+                            if (rec.number) {
+                                const numInput = lineEl.querySelector('.av-doc-num');
+                                if (numInput && !numInput.value) numInput.value = rec.number;
+                            }
+                            if (rec.date) {
+                                const dateInput = lineEl.querySelector('.av-doc-date');
+                                if (dateInput) dateInput.value = rec.date;
+                            }
+                            if (rec.amountKop) {
+                                const amtInput = lineEl.querySelector('.av-amount');
+                                if (amtInput) amtInput.value = (rec.amountKop / 100).toFixed(2).replace('.', ',');
+                            }
+                            if (rec.supplier?.name) {
+                                const supInput = lineEl.querySelector('.av-supplier');
+                                if (supInput && !supInput.value) supInput.value = rec.supplier.name;
+                            }
+                            if (rec.description) {
+                                const descInput = lineEl.querySelector('.av-desc');
+                                if (descInput && !descInput.value) descInput.value = rec.description;
+                            }
+                            if (rec.postingAcc) {
+                                const postSelect = lineEl.querySelector('.av-posting');
+                                if (postSelect) {
+                                    postSelect.value = rec.postingAcc;
+                                    form = { ...form, data: snapshotFormData() };
+                                    renderAdvanceView();
+                                }
+                            }
+                            toast(`Чек розпізнано: ${rec.supplier?.name || ''} · ${(rec.amountKop / 100).toFixed(2)} грн`, 'success');
+                        }
+                    } catch (err) {
+                        console.warn('Помилка розпізнавання чека:', err);
+                    }
+                })();
+            }
+        }
         if (e.target.classList.contains('av-posting') && form) {
             form = { ...form, data: snapshotFormData() };
-            renderAdvanceView();
+            const linesList = document.getElementById('avLinesList');
+            if (linesList) {
+                linesList.innerHTML = form.data.lines.map((l, idx) => lineRowHtml(l, idx, form.data.lines)).join('');
+            } else {
+                renderAdvanceView();
+            }
         }
     });
 

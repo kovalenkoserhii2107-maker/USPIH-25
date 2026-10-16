@@ -71,6 +71,154 @@ export function draftFromContract(c, period) {
 const options = (map, selected) => Object.entries(map).map(([k, v]) => `<option value="${escapeHtml(k)}"${k === selected ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('');
 const money2 = k => (k ? (k / 100).toFixed(2).replace('.', ',') : '');
 
+
+function docRecogHtml(kind = "doc") {
+    const isDoc = kind === "doc";
+    const title = isDoc ? "Розумне розпізнавання рахунків, актів та накладних" : "Розпізнавання договору підряду / послуг";
+    const sub = isDoc ? "Оберіть скан або PDF — система автоматично заповнить номер, дату, постачальника, суму, ПДВ та статтю"
+                      : "Оберіть скан договору — система заповнить номер, дату, предмет, суму/тариф та строки дії";
+    const btnAct = isDoc ? "trigger-recog" : "trigger-contract-recog";
+    const inputId = isDoc ? "exRecogInput" : "cfRecogInput";
+    const barId = isDoc ? "exRecogBar" : "cfRecogBar";
+    const statusId = isDoc ? "exRecogStatus" : "cfRecogStatus";
+    return `<div class="doc-recog-bar pay-wide" id="${barId}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:22px">${isDoc ? "📄" : "📑"}</span>
+                <div>
+                    <b style="font-size:14px">${title}</b>
+                    <p class="buh-note" style="margin:2px 0 0">${sub}</p>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="sv-btn is-soft btn-compact" data-act="${btnAct}" style="white-space:nowrap">📎 Обрати файл для розпізнавання</button>
+                <input type="file" id="${inputId}" accept=".pdf,image/*,.txt" style="display:none">
+            </div>
+        </div>
+        <div id="${statusId}" class="buh-note" style="margin-top:8px" hidden></div>
+    </div>`;
+}
+
+async function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function flashField(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove("doc-field-highlight");
+    void el.offsetWidth;
+    el.classList.add("doc-field-highlight");
+}
+
+async function recognizeUploadedDocument(file, kind = "doc") {
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { toast("Файл перевищує 20 МБ", "error"); return; }
+
+    const isDoc = kind === "doc";
+    const bar = document.getElementById(isDoc ? "exRecogBar" : "cfRecogBar");
+    const status = document.getElementById(isDoc ? "exRecogStatus" : "cfRecogStatus");
+    if (bar) bar.classList.add("is-scanning");
+    if (status) {
+        status.hidden = false;
+        status.innerHTML = "<span>⏳ Розпізнаю реквізити та умови документа…</span>";
+    }
+
+    try {
+        let base64Data = "";
+        let textContent = "";
+        if (file.type.startsWith("image/") || file.type === "application/pdf") {
+            base64Data = await fileToDataUrl(file);
+        } else if (file.type.startsWith("text/")) {
+            textContent = await file.text();
+        }
+
+        const res = await expAct({
+            action: "recognizeDocument",
+            base64Data,
+            mimeType: file.type || "application/pdf",
+            textContent,
+            fileName: file.name
+        });
+
+        if (res.ok && res.recognized) {
+            const r = res.recognized;
+            if (isDoc) {
+                if (r.docType && document.getElementById("dfType")) { document.getElementById("dfType").value = r.docType; flashField("dfType"); }
+                if (r.number && document.getElementById("dfNumber")) { document.getElementById("dfNumber").value = r.number; flashField("dfNumber"); }
+                if (r.date && document.getElementById("dfDate")) { document.getElementById("dfDate").value = r.date; flashField("dfDate"); }
+                if (r.period && document.getElementById("dfPeriod")) { document.getElementById("dfPeriod").value = r.period; flashField("dfPeriod"); }
+                if (r.amountKop && document.getElementById("dfAmount")) { document.getElementById("dfAmount").value = money2(r.amountKop); flashField("dfAmount"); }
+                if (r.vatKop !== undefined && document.getElementById("dfVat")) { document.getElementById("dfVat").value = r.vatKop ? money2(r.vatKop) : ""; flashField("dfVat"); }
+                if (r.item && document.getElementById("dfItem")) { document.getElementById("dfItem").value = r.item; flashField("dfItem"); }
+                if (r.description && document.getElementById("dfDesc")) { document.getElementById("dfDesc").value = r.description; flashField("dfDesc"); }
+
+                if (res.matchedSupplier && document.getElementById("dfSupplier")) {
+                    document.getElementById("dfSupplier").value = res.matchedSupplier.id;
+                    flashField("dfSupplier");
+                    if (res.matchedContract && document.getElementById("dfContract")) {
+                        document.getElementById("dfContract").value = res.matchedContract.id;
+                        flashField("dfContract");
+                    }
+                }
+
+                if (r.postingAcc && r.postingAcc !== "92" && document.getElementById("dfPosting")) {
+                    document.getElementById("dfPosting").value = r.postingAcc;
+                    const details = document.getElementById("exForm")?.querySelector("details");
+                    if (details) details.open = true;
+                    const assetInput = document.getElementById("dfAsset");
+                    if (assetInput && !assetInput.value) {
+                        assetInput.value = suggestAssetId(r.postingAcc, allExistingAssetIds());
+                    }
+                }
+            } else {
+                if (r.number && document.getElementById("cfNumber")) { document.getElementById("cfNumber").value = r.number; flashField("cfNumber"); }
+                if (r.date && document.getElementById("cfDate")) { document.getElementById("cfDate").value = r.date; flashField("cfDate"); }
+                if (r.date && document.getElementById("cfFrom")) { document.getElementById("cfFrom").value = r.date; flashField("cfFrom"); }
+                if (r.contractEnd && document.getElementById("cfTo")) { document.getElementById("cfTo").value = r.contractEnd; flashField("cfTo"); }
+                if (r.amountKop && document.getElementById("cfAmount")) { document.getElementById("cfAmount").value = money2(r.amountKop); flashField("cfAmount"); }
+                if (r.item && document.getElementById("cfItem")) { document.getElementById("cfItem").value = r.item; flashField("cfItem"); }
+                if (r.description && document.getElementById("cfSubject")) { document.getElementById("cfSubject").value = r.description; flashField("cfSubject"); }
+                if (res.matchedSupplier && document.getElementById("cfSupplier")) {
+                    document.getElementById("cfSupplier").value = res.matchedSupplier.id;
+                    flashField("cfSupplier");
+                }
+            }
+
+            if (!files.some(f => f.name === file.name && f.size === file.size)) {
+                files = [...files, file];
+            }
+
+            if (bar) {
+                bar.classList.remove("is-scanning");
+                bar.classList.add("is-recognized");
+            }
+            if (status) {
+                status.hidden = false;
+                const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `Контрагент: ${r.supplier.name} (код ${r.supplier.code || "—"})` : "");
+                const numDate = [r.number ? `№ ${r.number}` : "", r.date ? `від ${human(r.date)}` : ""].filter(Boolean).join(" ");
+                const sumStr = r.amountKop ? `Сума: ${fmtKop(r.amountKop)} грн` : "";
+                const termsStr = r.paymentDueDays ? `Відстрочка: ${r.paymentDueDays} дн.` : "";
+                status.innerHTML = `<span class="doc-recog-badge">✓ Успішно розпізнано</span> <span style="font-size:13px;color:#1e293b;">${[supTitle, numDate, sumStr, termsStr].filter(Boolean).join(" · ")}</span>`;
+            }
+            toast("Реквізити документа заповнено автоматично", "success");
+        }
+    } catch (err) {
+        console.warn("Помилка розпізнавання:", err);
+        if (status) {
+            status.hidden = false;
+            status.innerHTML = `<span class="buh-note is-bad">Не вдалося розпізнати всі поля (${escapeHtml(err.message || "помилка аналізу")}). Заповніть їх вручну.</span>`;
+        }
+    } finally {
+        if (bar) bar.classList.remove("is-scanning");
+    }
+}
+
 function docFormHtml(d = {}) {
     const supplierId = d.supplierId || '';
     const contracts = ctx.contracts.filter(c => c.supplierId === supplierId && c.status !== 'rejected');
@@ -79,6 +227,7 @@ function docFormHtml(d = {}) {
     const catalog = ctx.assetCatalog || [];
     return `<section class="buh-card ex-form" id="exForm">
         <div class="buh-card-head"><h2>${d.id ? 'Змінити документ' : 'Новий документ'}</h2><button type="button" class="btn-ghost-small" data-act="close">Закрити</button></div>
+        ${docRecogHtml('doc')}
         <div class="pay-grid">
             <label class="field pay-wide"><span class="field-label">Постачальник</span>
                 <select id="dfSupplier" class="field-input field-select"><option value="">Оберіть…</option>${ctx.suppliers.map(s =>
@@ -125,6 +274,7 @@ function contractFormHtml(c = {}) {
     const monthly = (c.type || 'monthly') === 'monthly';
     return `<section class="buh-card ex-form" id="exForm">
         <div class="buh-card-head"><h2>${c.id ? 'Змінити договір' : 'Новий договір'}</h2><button type="button" class="btn-ghost-small" data-act="close">Закрити</button></div>
+        ${docRecogHtml('contract')}
         <div class="pay-grid">
             <label class="field pay-wide"><span class="field-label">Постачальник</span>
                 <select id="cfSupplier" class="field-input field-select"><option value="">Оберіть…</option>${ctx.suppliers.map(s =>
@@ -406,11 +556,15 @@ export async function loadExpensesView() {
 }
 
 /** Файли, перетягнуті чи обрані у верхній зоні, — у форму нового документа. */
-function startWithFiles(list) {
+async function startWithFiles(list) {
     if (!list.length) return;
     files = list;
     form = { kind: 'doc', data: form?.kind === 'doc' ? form.data : {} };
-    loadExpensesView().then(() => document.getElementById('exForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    await loadExpensesView();
+    document.getElementById('exForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (list[0]) {
+        await recognizeUploadedDocument(list[0], 'doc');
+    }
 }
 
 /** Затверджений документ → платіж у Приват24 на підпис голови. */
@@ -601,7 +755,9 @@ export function initExpensesView() {
         const sup = ctx.suppliers.find(x => x.id === rowId);
         const a = btn.dataset.act;
         try {
-            if (a === 'close') { form = null; files = []; loadExpensesView(); }
+            if (a === 'trigger-recog') { document.getElementById('exRecogInput')?.click(); return; }
+            else if (a === 'trigger-contract-recog') { document.getElementById('cfRecogInput')?.click(); return; }
+            else if (a === 'close') { form = null; files = []; loadExpensesView(); }
             else if (a === 'new-doc') openExpenses('docs', { kind: 'doc', data: {} });
             else if (a === 'new-contract') openExpenses('contracts', { kind: 'contract', data: {} });
             else if (a === 'new-supplier') openExpenses('suppliers', { kind: 'supplier', data: {} });
@@ -660,15 +816,36 @@ export function initExpensesView() {
     });
     host.addEventListener('change', e => {
         const t = e.target;
+        if (t.id === 'exRecogInput' && t.files?.length) { startWithFiles([...t.files]); return; }
+        if (t.id === 'cfRecogInput' && t.files?.length) { files = [...t.files]; recognizeUploadedDocument(t.files[0], 'contract'); return; }
         if (t.id === 'dcPick') { startWithFiles([...t.files]); return; }
-        if (t.id === 'dfFiles' || t.id === 'cfFiles') { files = [...t.files]; return; }
+        if (t.id === 'dfFiles' || t.id === 'cfFiles') {
+            files = [...t.files];
+            if (t.files?.[0] && !val('dfNumber') && !val('dfAmount')) {
+                recognizeUploadedDocument(t.files[0], t.id === 'cfFiles' ? 'contract' : 'doc');
+            }
+            return;
+        }
         if ((t.id === 'dfSupplier' || t.id === 'cfSupplier') && t.value === '__new') {
             const back = snapshotForm();
             form = { kind: 'supplier', data: {}, back };
             loadExpensesView();
             return;
         }
-        if (t.id === 'dfSupplier') { form = snapshotForm(); form.data.supplierId = t.value; form.data.contractId = ''; loadExpensesView(); return; }
+        if (t.id === 'dfSupplier') {
+            const supplierId = t.value;
+            form = snapshotForm();
+            form.data.supplierId = supplierId;
+            form.data.contractId = '';
+            const contracts = ctx.contracts.filter(c => c.supplierId === supplierId && c.status !== 'rejected');
+            const contractSelect = document.getElementById('dfContract');
+            if (contractSelect) {
+                contractSelect.innerHTML = `<option value="">Без договору</option>${contracts.map(c =>
+                    `<option value="${escapeHtml(c.id)}">№ ${escapeHtml(c.number)} від ${human(c.date)} — ${escapeHtml(c.subject)}${c.status === 'pending' ? ' (не затверджено)' : ''}</option>`).join('')}`;
+                contractSelect.value = '';
+            }
+            return;
+        }
         if (t.id === 'dfContract' && t.value) {
             // Договір підставляє статтю, суму на місяць і опис.
             const c = contractOf(t.value);
