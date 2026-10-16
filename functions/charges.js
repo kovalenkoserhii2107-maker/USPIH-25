@@ -24,7 +24,6 @@ const core = require('./charges-core');
 const { cleanApt, fromKop } = require('./bank-core');
 
 const REGION = 'europe-central2';
-const RECOMPUTE_CONCURRENCY = 20;
 
 module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, lock }) {
     const settingsRef = db.doc('charges/settings');
@@ -140,13 +139,10 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
      * оплати), без apts — усі. Поки вхідні залишки не внесено, баланс
      * веде бухгалтер вручну, і сервер його не чіпає.
      *
-     * Транзакції квартир виконуються паралельними пакетами (по 20),
-     * оскільки кожна квартира оновлює власне піддерево apartments/{apt}.
-     *
-     * Спільний документ charges/settings НЕ читається всередині транзакцій:
-     * інакше 20 паралельних транзакцій чекають блокування одного документа
-     * (Transaction lock timeout). Налаштування читаються один раз до пакетів;
-     * якщо за час перерахунку вони змінилися — перерахунок повторюється.
+     * Спільний документ charges/settings читається один раз до циклу
+     * і звіряється після нього, а транзакції квартир виконуються послідовно,
+     * щоб уникнути блокувань транзакцій (Transaction lock timeout) в емуляторі
+     * та при масових імпортах.
      */
     async function recompute(apts) {
         const settings = await loadSettings();
@@ -190,10 +186,17 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             return true;
         });
 
-        for (let i = 0; i < targets.length; i += RECOMPUTE_CONCURRENCY) {
-            const chunk = targets.slice(i, i + RECOMPUTE_CONCURRENCY);
-            const results = await Promise.all(chunk.map(recomputeOne));
-            updated += results.filter(Boolean).length;
+        for (const apt of targets) {
+            for (let retry = 0; retry < 4; retry++) {
+                try {
+                    if (await recomputeOne(apt)) updated++;
+                    break;
+                } catch (e) {
+                    const isTransient = e?.code === 10 || /ABORTED|lock timeout/i.test(String(e?.message || ''));
+                    if (!isTransient || retry === 3) throw e;
+                    await new Promise(r => setTimeout(r, 40 * (retry + 1)));
+                }
+            }
         }
         return updated;
     }
@@ -210,394 +213,420 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
     async function loadRuns(limit = 24) {
         const snap = await db.collection('charges_runs').orderBy('period', 'desc').limit(limit).get();
         return snap.docs.map(d => {
-            const r = d.data();
-            return { period: r.period, count: r.count, totalKop: r.totalKop, complete: r.complete !== false && !r.problems?.length, problems: r.problems || [], by: r.by,
-                at: r.at?.toDate?.()?.toISOString() || null, recalculated: r.recalculated || 0 };
+            const x = d.data();
+            return {
+                period: d.id, totalKop: x.totalKop || 0, count: x.count || 0,
+                byGroup: x.byGroup || {}, byComponent: x.byComponent || {}, problems: x.problems || [],
+                status: x.status || 'complete', complete: x.complete !== false,
+                expectedCount: (x.expectedApts || []).length || x.count || 0,
+                createdBy: x.createdBy || '', createdAt: x.createdAt?.toDate ? x.createdAt.toDate().toISOString() : null
+            };
         });
     }
 
-    async function context() {
-        const [settings, apartments, runs] = await Promise.all([loadSettings(), loadApartments(), loadRuns()]);
-        const done = new Set((await db.collection('charges_runs').select('complete', 'problems').get()).docs
-            .filter(d => d.data().complete !== false && !d.data().problems?.length).map(d => d.id));
-        const current = core.currentPeriod();
-        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
-        const due = core.duePeriods({ startPeriod: settings.startPeriod, current, done, today });
-        const period = due[0] || current;
-        const preview = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period });
+    async function context(reqPeriod) {
+        const [settings, apartments, runs, pending] = await Promise.all([loadSettings(), loadApartments(), loadRuns(), unfinished()]);
+        const now = core.currentPeriod();
+        const period = core.validPeriod(reqPeriod) && reqPeriod >= settings.startPeriod && reqPeriod <= now ? reqPeriod : now;
+        const preview = core.computeCharges({ ...settings, apartments, period });
+        const done = new Set(runs.map(r => r.period));
+        const due = core.periodsBetween(settings.startPeriod, now).filter(p => !done.has(p));
+        const forecast = core.yearForecast({ ...settings, apartments, year: Number(period.slice(0, 4)) });
         return {
-            groups: settings.groups, components: settings.components, tariffs: settings.tariffs, premises: settings.premises,
-            startPeriod: settings.startPeriod, startDate:settings.startDate, opening: settings.opening ? { ...settings.opening, at: settings.opening.at?.toDate?.()?.toISOString() || null } : null,
-            apartments: apartments.map(a => ({ apt: a.apt, area: a.area, residents: a.residents, balance: a.balance, personalAccount: a.personalAccount })),
-            runs, due, current, unfinished: await unfinished(),
-            preview: { period, done: done.has(period), ...preview }
+            ...settings, period, current: now, due, runs, unfinished: pending,
+            apartments: apartments.sort((a, b) => a.apt.localeCompare(b.apt, 'uk', { numeric: true })),
+            preview: { period, totalKop: preview.totalKop, count: preview.rows.length, byGroup: preview.byGroup, byComponent: preview.byComponent, problems: preview.problems, rows: preview.rows.slice(0, 500) },
+            forecast, items: require('./expenses-core').ITEMS
         };
     }
 
-    async function preview({ period }) {
-        if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
-        const [settings, apartments] = await Promise.all([loadSettings(), loadApartments()]);
-        return { period, ...core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period }) };
-    }
-
-    async function confirmImportedStartMonth(actor,role,{note}) {
-        if(role!=='chair')fail('permission-denied','Повноту нарахування місяця переходу підтверджує голова');
-        if(String(note||'').trim().length<5)fail('invalid-argument','Укажіть підставу: місяць уже повністю нараховано в попередній системі');
-        const [settings,apartments,ledgers]=await Promise.all([loadSettings(),loadApartments(),allLedgers()]);
-        const period=settings.startPeriod,amounts={},importedAmounts={},importedRecordIds={};
-        await lock?.assertOpen(period,'Підтвердження перенесеного місяця');
-        if((await db.doc(`charges_runs/${period}`).get()).exists)fail('failed-precondition','Місяць уже має відомість нарахування');
-        for(const apt of apartments) {
-            const entries=(ledgers.get(apt.id)||[]).filter(e=>e.kind==='charge'&&e.period===period);
-            const before=entries.filter(e=>e.source==='historical'&&e.at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate())<settings.startDate);
-            if(!before.length||before.length!==entries.length)fail('failed-precondition',`Прим. ${apt.apt}: потрібна повна історія нарахування місяця до дати переходу без нового дубля`);
-            amounts[apt.apt]=0;importedAmounts[apt.apt]=before.reduce((s,e)=>s+core.entryKop(e),0);importedRecordIds[apt.apt]=before.map(e=>e._id);
-        }
-        await db.doc(`charges_runs/${period}`).create({period,complete:true,source:'migration',count:apartments.length,expectedApts:apartments.map(a=>a.apt),totalKop:0,amounts,importedAmounts,importedRecordIds,
-            note:String(note).trim().slice(0,300),by:actor,at:FieldValue.serverTimestamp()});
-        await audit(actor,role,'charges.importedMonth',`charges_runs/${period}`,'Місяць уже нараховано до переходу; повторного нарахування не створено',{period,count:apartments.length});
-        return {ok:true};
-    }
-
     // --------------------------------------------------------
-    // НАРАХУВАННЯ
+    // НАЛАШТУВАННЯ ТАРИФІВ І ГРУП
     // --------------------------------------------------------
-    /**
-     * Нарахувати внески за місяць. expectTotalKop — сума, яку людина
-     * бачила, коли підтверджувала: якщо дані відтоді змінилися (площа,
-     * тариф), нічого не пишемо й просимо подивитися ще раз.
-     * Повторний запуск за той самий місяць — перерахунок коректних
-     * рядків. Проблемні рядки зберігають попереднє нарахування.
-     */
-    async function run(actor, role, { period, expectTotalKop, allowPartial }) {
-        const settings = await loadSettings();
-        const previousRun=(await db.doc(`charges_runs/${period}`).get()).data();
-        if(previousRun?.source==='migration')fail('failed-precondition','Місяць переходу вже нарахований у попередній системі — повторне нарахування не потрібне');
-        if(period===settings.startPeriod && !settings.startDate.endsWith('-01')) {
-            const ledgers=await allLedgers();
-            if([...ledgers.values()].some(list=>list.some(e=>e.kind==='charge'&&e.period===period&&e.at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(e.at.toDate())<settings.startDate)))fail('failed-precondition','За місяць переходу є попередні нарахування. Голова має підтвердити повний перенос місяця, щоб не нарахувати його двічі');
-        }
-        if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
-        if (period < settings.startPeriod) fail('failed-precondition', `Облік у застосунку починається з ${core.periodName(settings.startPeriod)}`);
-        if (period > core.currentPeriod()) fail('failed-precondition', 'Нараховувати наперед не можна');
-        await lock?.assertOpen(period, 'Нарахування');
-        const apartments = await loadApartments();
-        const result = core.computeCharges({ apartments, premises: settings.premises, tariffs: settings.tariffs, groups: settings.groups, components: settings.components, period });
-        if (!result.rows.length) fail('failed-precondition', 'Нема кому нараховувати: внесіть тарифи й площі приміщень');
-        if (Number.isInteger(expectTotalKop) && expectTotalKop !== result.totalKop) {
-            fail('aborted', `Дані змінилися: тепер ${fromKop(result.totalKop)} грн замість ${fromKop(expectTotalKop)}. Перегляньте ще раз.`);
-        }
-        const runRef = db.doc(`charges_runs/${period}`);
-        const previous = await runRef.get();
-        const before = previous.exists ? previous.data().amounts || {} : {};
-        const ids = new Map(apartments.map(a => [a.apt, a.id]));
-        for (const apt of Object.keys(before)) if (!ids.has(apt)) result.problems.push({ apt, reason: 'приміщення з попереднім нарахуванням відсутнє в довіднику' });
-        if (result.problems.length && allowPartial !== true) fail('failed-precondition', `Нарахування неповне: ${result.problems.length} прим. мають помилки. Виправте дані або явно підтвердьте часткове нарахування.`);
-        await assertNoUnfinished({ kind: 'run', period });
-        const amounts = {};
-        const byComponent = {};
-        const addParts = parts => { for (const p of parts || []) byComponent[p.component] = (byComponent[p.component] || 0) + p.amountKop; };
-        const at = Timestamp.fromDate(core.chargeDate(period));
-        const plan = [];
-        for (const r of result.rows) {
-            amounts[r.apt] = r.amountKop;
-            addParts(r.parts);
-            plan.push({ id: ids.get(r.apt), data: {
-                at, period, kind: 'charge', amount: fromKop(r.amountKop), amountKop: r.amountKop,
-                note: core.chargeNote(r, period), source: 'charges', group: r.group, areaCenti: r.areaCenti, rate4: r.rate4,
-                parts: r.parts.map(p => ({ component: p.component, name: p.name, base: p.base, rate4: p.rate4, amountKop: p.amountKop,
-                    ...(p.residents !== undefined ? { residents: p.residents } : {}) }))
-            } });
-        }
-        // Помилка площі/тарифу не скасовує вже нарахований внесок.
-        const preserved = Object.keys(before).filter(apt => !(apt in amounts));
-        for (const apt of preserved) {
-            amounts[apt] = before[apt];
-            const old = (await db.doc(`apartments/${ids.get(apt) || apt}/ledger/charge-${period}`).get()).data();
-            addParts(old?.parts?.length ? old.parts : [{ component: 'main', amountKop: before[apt] }]);
-        }
-        const totalKop = Object.values(amounts).reduce((sum, amount) => sum + amount, 0);
-        const count = Object.keys(amounts).length;
-        // Спершу план і позначка «записується», потім записи історії, потім «завершено».
-        await planRef(period).set({ rows: plan, by: actor, at: FieldValue.serverTimestamp() });
-        await runRef.set({
-            status: 'writing', period, count, totalKop, amounts, complete: result.problems.length === 0, expectedApts: apartments.map(a => a.apt),
-            tariffs: [...new Set([...(preserved.length ? previous.data()?.tariffs || [] : []), ...result.rows.flatMap(r => r.parts.map(p => p.tariffId)).filter(Boolean)])],
-            // Скільки нараховано за кожною складовою — для кошторису й звірки.
-            byComponent, problems: result.problems, by: actor, at: FieldValue.serverTimestamp(),
-            recalculated: previous.exists ? (previous.data().recalculated || 0) + 1 : 0
-        });
-        await finishRun(period, actor);
-        const changed = previous.exists ? Object.keys(amounts).filter(a => before[a] !== amounts[a]).length : result.rows.length;
-        await audit(actor, role, previous.exists ? 'charges.recalc' : 'charges.run', `charges_runs/${period}`,
-            `${previous.exists ? 'Перераховано' : 'Нараховано'} внески за ${core.periodName(period)}: ${count} прим., ${fromKop(totalKop)} грн`,
-            { period, count, totalKop, problems: result.problems.length, changed, preserved });
-        const balances = await recompute();
-        return { ok: true, count, totalKop, complete: !result.problems.length, problems: result.problems, preserved, changed, balances: balances.updated || 0 };
-    }
-
-    /** Дописати записи історії за планом і позначити нарахування завершеним (і для відновлення після обриву). */
-    async function finishRun(period, actor) {
-        const plan = (await planRef(period).get()).data();
-        if (!plan) fail('failed-precondition', 'План нарахування не знайдено — запустіть нарахування знову');
-        await writeAll(plan.rows.map(r => ({ ref: db.doc(`apartments/${r.id}/ledger/charge-${period}`), data: r.data })), actor);
-        await db.doc(`charges_runs/${period}`).update({ status: 'complete', writtenAt: FieldValue.serverTimestamp() });
-        await planRef(period).delete();
-    }
-
-    /** Видалити записи скасованого нарахування й сам запис відомості (і для відновлення). */
-    async function finishRevert(period) {
-        const runRef = db.doc(`charges_runs/${period}`);
-        const runDoc = await runRef.get();
-        if (!runDoc.exists) return;
-        const ids = new Map((await loadApartments()).map(a => [a.apt, a.id]));
-        await writeAll(Object.keys(runDoc.data().amounts || {}).map(apt => ({ ref: db.doc(`apartments/${ids.get(apt) || apt}/ledger/charge-${period}`), delete: true })));
-        await planRef(period).delete();
-        await runRef.delete();
-    }
-
-    /** Записати вхідні залишки за планом і позначити їх внесеними (і для відновлення). */
-    async function finishOpening(actor) {
-        const plan = (await openingPlanRef.get()).data();
-        if (!plan) return;
-        const settings = await loadSettings();
-        const at = Timestamp.fromDate(core.openingDate(settings.startDate));
-        await writeAll(plan.rows.map(r => ({ ref: db.doc(`apartments/${r.id}/ledger/${core.OPENING_ID}`), data: {
-            at, period: new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(at.toDate()).slice(0,7),cutoffDate:settings.startDate, kind: 'opening', amount: fromKop(r.kop), amountKop: r.kop,
-            ...(r.parts ? { parts: r.parts } : {}), note: core.openingNote(r.kop,settings.startDate), source: 'opening'
-        } })), actor);
-        await settingsRef.set({ opening: { ...plan.summary, set: true, by: plan.by, at: FieldValue.serverTimestamp() } }, { merge: true });
-        await openingPlanRef.delete();
-    }
-
-    /** «Завершити операцію»: доводить перервані нарахування, скасування й вхідні залишки до кінця. */
-    async function resume(actor, role) {
-        const list = await unfinished();
-        if (!list.length) return { ok: true, resumed: 0 };
-        for (const u of list) {
-            if (u.kind === 'run') await finishRun(u.period, actor);
-            else if (u.kind === 'revert') await finishRevert(u.period);
-            else await finishOpening(actor);
-        }
-        await audit(actor, role, 'charges.resume', 'charges_runs', `Завершено перервані операції: ${list.map(u => `${u.kind} ${u.period}`).join(', ')}`, { list });
-        const balances = await recompute();
-        return { ok: true, resumed: list.length, balances: balances.updated || 0 };
-    }
-
-    /** Скасувати нарахування — лише за останній нарахований місяць. */
-    async function revert(actor, role, { period }) {
-        if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
-        const last = await db.collection('charges_runs').orderBy('period', 'desc').limit(1).get();
-        if (last.empty || last.docs[0].id !== period) fail('failed-precondition', 'Скасувати можна лише нарахування за останній місяць');
-        await lock?.assertOpen(period, 'Скасування нарахування');
-        await assertNoUnfinished({ kind: 'revert', period });
-        const runDoc = last.docs[0];
-        const amounts = runDoc.data().amounts || {};
-        // Позначка «скасовується» до видалень: обрив не лишить напівскасований місяць непоміченим.
-        await runDoc.ref.update({ status: 'reverting', revertBy: actor });
-        await finishRevert(period);
-        await audit(actor, role, 'charges.revert', `charges_runs/${period}`,
-            `Скасовано нарахування за ${core.periodName(period)}: ${Object.keys(amounts).length} прим., ${fromKop(runDoc.data().totalKop || 0)} грн`,
-            { period, count: Object.keys(amounts).length, totalKop: runDoc.data().totalKop || 0 });
-        await recompute();
-        return { ok: true };
-    }
-
-    // --------------------------------------------------------
-    // ТАРИФИ Й ГРУПИ
-    // --------------------------------------------------------
-    async function addTariff(actor, role, { group, component, rate, from, decision }) {
-        const settings = await loadSettings();
-        const comp = settings.components.find(c => c.id === (component || 'main'));
-        if (!comp) fail('invalid-argument', 'Невідома складова внеску');
-        const tariff = { group: String(group || ''), component: comp.id, base: comp.base, rate4: core.parseRate(rate), from: String(from || ''), decision: String(decision || '').replace(/\s+/g, ' ').trim() };
-        const error = core.checkTariff(tariff, settings.groups, settings.tariffs);
-        if (error) fail('invalid-argument', error);
-        tariff.id = db.collection('_').doc().id.slice(0, 12);
-        tariff.by = actor;
-        tariff.at = new Date().toISOString();
-        await settingsRef.set({ tariffs: [...settings.tariffs, tariff], groups: settings.groups, components: settings.components }, { merge: true });
-        const name = settings.groups.find(g => g.id === tariff.group)?.name;
-        await audit(actor, role, 'charges.tariff', 'charges/settings',
-            `Тариф «${comp.name}», ${name}: ${core.formatRate(tariff.rate4)} грн ${core.BASES[comp.base]} з ${core.periodName(tariff.from)}`, tariff);
-        return { ok: true, id: tariff.id };
-    }
-
-    /** Нова складова внеску (освітлення МЗК, ліфти, вивезення ТПВ…). */
-    async function addComponent(actor, role, { name, base, item }) {
-        const settings = await loadSettings();
-        const c = { name: String(name || '').trim(), base: String(base || ''), item: String(item || 'other') };
-        const error = core.checkComponent(c, settings.components);
-        if (error) fail('invalid-argument', error);
-        c.id = `c${db.collection('_').doc().id}`;
-        await settingsRef.set({ components: [...settings.components, c], groups: settings.groups }, { merge: true });
-        await audit(actor, role, 'charges.component', 'charges/settings', `Складова внеску «${c.name}» (${core.BASES[c.base]})`, c);
-        return { ok: true, id: c.id };
-    }
-
-    /** Прибрати можна лише тариф, за яким ще нічого не нараховано. */
-    async function removeTariff(actor, role, { id }) {
-        const settings = await loadSettings();
-        const tariff = settings.tariffs.find(t => t.id === id);
-        if (!tariff) fail('not-found', 'Тариф не знайдено');
-        const used = await db.collection('charges_runs').where('tariffs', 'array-contains', id).limit(1).get();
-        if (!used.empty) fail('failed-precondition', `За цим тарифом уже нараховано (${core.periodName(used.docs[0].id)}). Щоб змінити ставку, додайте новий тариф з наступного місяця.`);
-        await settingsRef.set({ tariffs: settings.tariffs.filter(t => t.id !== id) }, { merge: true });
-        await audit(actor, role, 'charges.tariff.remove', 'charges/settings', `Тариф ${core.formatRate(tariff.rate4)} грн/м² з ${core.periodName(tariff.from)} прибрано`, tariff);
-        return { ok: true };
-    }
-
     async function addGroup(actor, role, { name }) {
         const settings = await loadSettings();
-        const error = core.checkGroupName(name, settings.groups);
-        if (error) fail('invalid-argument', error);
-        const group = { id: `g${db.collection('_').doc().id}`, name: String(name).trim() };
-        await settingsRef.set({ groups: [...settings.groups, group] }, { merge: true });
-        await audit(actor, role, 'charges.group', 'charges/settings', `Група приміщень «${group.name}»`, group);
-        return { ok: true, id: group.id };
+        const checked = core.checkGroup(name, settings.groups);
+        if (checked.error) fail('invalid-argument', checked.error);
+        const groups = [...settings.groups, checked.group];
+        await settingsRef.set({ groups, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await audit(actor, role, 'charges.group', 'charges/settings', `Додано групу «${checked.group.name}»`, checked.group);
+        return { ok: true, id: checked.group.id };
     }
 
-    /** Перейменувати складову (напр. «Утримання будинку» → як у квитанції сервісу). */
-    async function renameComponent(actor, role, { id, name }) {
+    async function addComponent(actor, role, data) {
         const settings = await loadSettings();
-        const c = settings.components.find(x => x.id === id);
-        if (!c) fail('not-found', 'Складову не знайдено');
-        const n = String(name || '').trim();
-        if (n.length < 2 || n.length > 60) fail('invalid-argument', 'Назва складової — від 2 до 60 символів');
-        if (settings.components.some(x => x.id !== id && x.name.toLowerCase() === n.toLowerCase())) fail('invalid-argument', 'Така складова вже є');
-        await settingsRef.set({ components: settings.components.map(x => (x.id === id ? { ...x, name: n } : x)), groups: settings.groups }, { merge: true });
-        await audit(actor, role, 'charges.component', 'charges/settings', `Складова «${c.name}» → «${n}»`, { id, name: n });
+        const checked = core.checkComponent(data, settings.components);
+        if (checked.error) fail('invalid-argument', checked.error);
+        const components = [...settings.components, checked.component];
+        await settingsRef.set({ components, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await audit(actor, role, 'charges.component', 'charges/settings', `Додано складову внеску «${checked.component.name}»`, checked.component);
+        return { ok: true, id: checked.component.id };
+    }
+
+    async function renameComponent(actor, role, { id, name, item }) {
+        const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (clean.length < 2) fail('invalid-argument', 'Вкажіть назву складової');
+        const settings = await loadSettings();
+        const idx = settings.components.findIndex(c => c.id === id);
+        if (idx < 0) fail('not-found', 'Складову не знайдено');
+        const components = settings.components.map((c, i) => i === idx ? { ...c, name: clean, ...(item ? { item } : {}) } : c);
+        await settingsRef.set({ components, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await audit(actor, role, 'charges.component.rename', 'charges/settings', `Складову «${id}» перейменовано на «${clean}»`, { id, name: clean, item });
         return { ok: true };
     }
 
-    /**
-     * Кількість проживаючих — для складових «з проживаючого» (вивезення
-     * побутових відходів). rows: [{ apt, residents }]; порожнє — прибрати.
-     */
     async function setResidents(actor, role, { rows }) {
-        const ids = new Map((await loadApartments()).map(a => [a.apt, a.id]));
-        const list = (Array.isArray(rows) ? rows : []).slice(0, 2000).map(r => ({ apt: cleanApt(r?.apt), residents: r?.residents === '' || r?.residents === null ? null : core.parseResidents(r?.residents) }));
-        if (!list.length) fail('invalid-argument', 'Немає жодного рядка');
-        const bad = list.find(r => !ids.has(r.apt));
-        if (bad) fail('invalid-argument', `Квартири ${bad.apt} немає в довіднику`);
-        if (list.some((r, i) => rows[i]?.residents !== '' && rows[i]?.residents !== null && r.residents === null)) fail('invalid-argument', 'Кількість проживаючих — ціле число від 0 до 30');
+        if (!Array.isArray(rows) || !rows.length || rows.length > 600) fail('invalid-argument', 'Передайте список приміщень');
+        const apartments = await loadApartments();
+        const byApt = new Map(apartments.map(a => [a.apt, a.id]));
         let batch = db.batch(), ops = 0;
-        for (const r of list) {
-            batch.set(db.doc(`apartments/${ids.get(r.apt)}`), { residents: r.residents === null ? FieldValue.delete() : r.residents }, { merge: true });
+        for (const r of rows) {
+            const apt = cleanApt(r?.apt);
+            const id = byApt.get(apt);
+            if (!id) fail('not-found', `Приміщення ${apt || '?'} немає в довіднику`);
+            const n = Number(r.residents);
+            if (!Number.isInteger(n) || n < 0 || n > 50) fail('invalid-argument', `Кв. ${apt}: кількість мешканців — ціле число від 0 до 50`);
+            batch.update(db.doc(`apartments/${id}`), { residents: n });
             if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
         }
         if (ops) await batch.commit();
-        await audit(actor, role, 'charges.residents', 'apartments', `Кількість проживаючих: ${list.length} кв.`, { count: list.length });
-        return { ok: true, count: list.length };
+        await audit(actor, role, 'charges.residents', 'apartments', `Оновлено кількість мешканців: ${rows.length} приміщень`, { count: rows.length });
+        return { ok: true, count: rows.length };
+    }
+
+    async function addTariff(actor, role, data) {
+        const settings = await loadSettings();
+        const checked = core.checkTariff(data, settings.groups, settings.tariffs, settings.components);
+        if (checked.error) fail('invalid-argument', checked.error);
+        const tariffs = [...settings.tariffs, { ...checked.tariff, createdBy: actor, createdAt: new Date().toISOString() }];
+        await settingsRef.set({ tariffs, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        const groupName = settings.groups.find(g => g.id === checked.tariff.group)?.name || checked.tariff.group;
+        const comp = settings.components.find(c => c.id === checked.tariff.component);
+        const unit = comp?.base === 'residents' ? 'грн/особу' : comp?.base === 'fixed' ? 'грн/прим.' : 'грн/м²';
+        await audit(actor, role, 'charges.tariff', 'charges/settings',
+            `Тариф для «${groupName}» (${comp?.name || 'внесок'}) з ${core.periodName(checked.tariff.from)}: ${fromKop(checked.tariff.rateKop)} ${unit} (${checked.tariff.decision})`, checked.tariff);
+        return { ok: true };
+    }
+
+    async function removeTariff(actor, role, { id }) {
+        const settings = await loadSettings();
+        const t = settings.tariffs.find(x => x.id === id);
+        if (!t) fail('not-found', 'Тариф не знайдено');
+        const used = await db.collection('charges_runs').where('period', '>=', t.from).limit(1).get();
+        if (!used.empty) fail('failed-precondition', `За цим тарифом уже нараховано внески (${core.periodName(used.docs[0].id)}). Додайте новий тариф з потрібного місяця — історія залишиться точною.`);
+        const tariffs = settings.tariffs.filter(x => x.id !== id);
+        await settingsRef.set({ tariffs, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await audit(actor, role, 'charges.tariff.remove', 'charges/settings', `Прибрано тариф ${fromKop(t.rateKop)} грн з ${t.from}`, t);
+        return { ok: true };
     }
 
     async function setPremises(actor, role, { apts, group }) {
-        const settings = await loadSettings();
-        if (!settings.groups.some(g => g.id === group)) fail('invalid-argument', 'Невідома група приміщень');
-        const known = new Set((await loadApartments()).map(a => a.apt));
-        const list = (Array.isArray(apts) ? apts : [apts]).map(cleanApt).filter(Boolean);
-        if (!list.length || list.length > 500) fail('invalid-argument', 'Вкажіть приміщення');
+        const list = (Array.isArray(apts) ? apts : String(apts || '').split(/[,;\s]+/)).map(cleanApt).filter(Boolean);
+        if (!list.length) fail('invalid-argument', 'Вкажіть номери приміщень');
+        const [settings, apartments] = await Promise.all([loadSettings(), loadApartments()]);
+        if (group !== 'res' && !settings.groups.some(g => g.id === group)) fail('invalid-argument', 'Оберіть групу зі списку');
+        const known = new Set(apartments.map(a => a.apt));
         const unknown = list.filter(a => !known.has(a));
-        if (unknown.length) fail('invalid-argument', `Немає в довіднику: ${unknown.slice(0, 5).join(', ')}`);
+        if (unknown.length) fail('not-found', `У довіднику немає приміщень: ${unknown.slice(0, 10).join(', ')}`);
         const premises = { ...settings.premises };
-        list.forEach(a => { if (group === 'res') delete premises[a]; else premises[a] = group; });
-        await settingsRef.set({ premises, groups: settings.groups }, { mergeFields: ['premises', 'groups'] });
-        const name = settings.groups.find(g => g.id === group).name;
-        await audit(actor, role, 'charges.premises', 'charges/settings', `${list.length === 1 ? `Прим. ${list[0]}` : `${list.length} прим.`} → «${name}»`, { apts: list, group });
+        for (const a of list) { if (group === 'res') delete premises[a]; else premises[a] = group; }
+        await settingsRef.set({ premises, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        const groupName = settings.groups.find(g => g.id === group)?.name || 'Квартири';
+        await audit(actor, role, 'charges.premises', 'charges/settings', `${list.join(', ')} → група «${groupName}»`, { apts: list, group });
         return { ok: true };
     }
 
     // --------------------------------------------------------
     // ВХІДНІ ЗАЛИШКИ НА 30.09.2026
     // --------------------------------------------------------
-    /**
-     * Повний список залишків замінює попередній: квартира, якої в
-     * списку немає, вважається розрахованою (0). Після цього баланс
-     * рахує сервер.
-     */
-    async function setOpening(actor, role, { rows }) {
-        if (await lock?.anyClosed()) fail('failed-precondition', 'Вхідні залишки змінювати не можна: уже є закритий місяць');
-        const apartments = await loadApartments();
-        const ids = new Map(apartments.map(a => [a.apt, a.id]));
-        const settings = await loadSettings();
-        const known = new Set(settings.components.map(c => c.id));
-        const list = (rows || []).map(r => {
-            const row = { apt: cleanApt(r?.apt), amountKop: Number(r?.amountKop) };
-            // Залишок за складовими (необовʼязково): { складова: коп }, разом — рівно залишок.
-            if (r?.parts && typeof r.parts === 'object') row.parts = Object.fromEntries(Object.entries(r.parts).filter(([c]) => known.has(c)).map(([c, v]) => [c, Number(v)]));
-            return row;
-        });
-        const error = core.checkOpening(list, new Set(ids.keys()));
-        if (error) fail('invalid-argument', error);
-        const amounts = new Map(list.map(r => [r.apt, r.amountKop]));
-        const partsOf = new Map(list.filter(r => r.parts).map(r => [r.apt, r.parts]));
+    async function setOpening(actor, role, { rows, date }) {
+        return withOperation('opening', () => setOpeningInner(actor, role, { rows, date }));
+    }
+    async function setOpeningInner(actor, role, { rows, date }) {
         await assertNoUnfinished({ kind: 'opening', period: core.OPENING_PERIOD });
-        const debt = list.reduce((s, r) => s + Math.min(0, r.amountKop), 0);
-        const overpaid = list.reduce((s, r) => s + Math.max(0, r.amountKop), 0);
-        // План усіх квартир, потім записи, потім позначка «внесено» (finishOpening).
-        await openingPlanRef.set({ by: actor, at: FieldValue.serverTimestamp(), summary: { count: list.length, debtKop: debt, overpaidKop: overpaid },
-            rows: [...ids].map(([apt, id]) => ({ id, kop: amounts.get(apt) || 0, ...(partsOf.has(apt) ? { parts: partsOf.get(apt) } : {}) })) });
-        await finishOpening(actor);
-        await audit(actor, role, 'charges.opening', 'charges/settings',
-            `Вхідні залишки на 30.09.2026: ${list.length} кв., борг ${fromKop(-debt)} грн, переплата ${fromKop(overpaid)} грн`,
-            { count: list.length, debtKop: debt, overpaidKop: overpaid });
-        const balances = await recompute();
-        return { ok: true, balances: balances.updated || 0 };
-    }
-
-    async function getStatement({ period }) {
-        if (!core.validPeriod(period)) fail('invalid-argument', 'Невідомий місяць');
-        const settings = await loadSettings();
-        const [apartments, ledgers] = await Promise.all([loadApartments(), allLedgers()]);
-        const byApt = new Map(apartments.map(a => [a.apt, ledgers.get(a.id) || []]));
-        return { period, opening: Boolean(settings.opening?.set), components: settings.components.map(c => ({ id: c.id, name: c.name })),
-            ...core.statement(byApt, period, settings.startPeriod, settings.components.map(c => c.id),settings.startDate) };
-    }
-
-    async function importHistory(actor,role,{rows}) {
-        if(!Array.isArray(rows)||rows.length>400)fail('invalid-argument','Історію переносять частинами до 400 записів');
-        const [settings,apartments]=await Promise.all([loadSettings(),loadApartments()]);
-        const ids=new Map(apartments.map(a=>[a.apt,a.id]));
-        const clean=rows.map(r=>{
-            const apt=cleanApt(r.apt),at=new Date(r.at),entryId=String(r.entryId||'');
-            if(!ids.has(apt)||!['charge','payment'].includes(r.kind)||!Number.isSafeInteger(r.amountKop)||r.amountKop<=0||r.amountKop>100000000000
-                ||!Number.isFinite(at.getTime())||!/^[\w.-]{1,160}$/.test(entryId))fail('invalid-argument','У файлі історії неправильне приміщення, дата, вид чи сума');
-            const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(at);
-            if(day>=settings.startDate||day.slice(0,7)!==r.period)fail('invalid-argument','Історичний запис має передувати даті переходу й відповідати своєму місяцю');
-            return{ref:db.doc(`apartments/${ids.get(apt)}/ledger/${entryId}`),data:{at:Timestamp.fromDate(at),period:r.period,kind:r.kind,amount:fromKop(r.amountKop),amountKop:r.amountKop,note:String(r.note||'').slice(0,500),source:'historical'}};
-        });
-        if(new Set(clean.map(r=>r.ref.path)).size!==clean.length)fail('invalid-argument','Ідентифікатори записів історії повторюються');
-        await db.runTransaction(async t=>{
-            const old=await Promise.all(clean.map(r=>t.get(r.ref)));
-            for(let i=0;i<clean.length;i++) {
-                const previous=old[i].data(),next=clean[i].data;
-                if(previous&&(previous.kind!==next.kind||previous.period!==next.period||core.entryKop(previous)!==next.amountKop||previous.at?.toMillis?.()!==next.at.toMillis()))fail('failed-precondition','Запис з цим ключем уже має інші дані. Історію не переписують іншим змістом');
-                t.set(clean[i].ref,{...next,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+        if (!Array.isArray(rows) || !rows.length || rows.length > 600) fail('invalid-argument', 'Передайте список приміщень із залишками');
+        const [apartments, settings] = await Promise.all([loadApartments(), loadSettings()]);
+        const startDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : settings.startDate || `${core.START_PERIOD}-01`;
+        const startPeriod = startDate.slice(0, 7);
+        await lock?.assertOpen(startPeriod, 'Вхідні залишки');
+        const cutDate = new Date(`${startDate}T00:00:00Z`); cutDate.setUTCDate(cutDate.getUTCDate() - 1);
+        const cutIso = cutDate.toISOString().slice(0, 10);
+        const cutHuman = cutIso.split('-').reverse().join('.');
+        const cutPeriod = cutIso.slice(0, 7);
+        const validIds = new Set(settings.components.map(c => c.id));
+        const byApt = new Map(apartments.map(a => [a.apt, a.id]));
+        const values = new Map();
+        const rowParts = new Map();
+        for (const r of rows) {
+            const apt = cleanApt(r?.apt);
+            if (!byApt.has(apt)) fail('not-found', `Приміщення ${apt || '?'} немає в довіднику`);
+            const kop = Number(r.amountKop);
+            if (!Number.isInteger(kop) || Math.abs(kop) > 100_000_000) fail('invalid-argument', `Кв. ${apt}: некоректна сума залишку`);
+            if (r.parts && typeof r.parts === 'object') {
+                const clean = {};
+                let sum = 0;
+                for (const [k, v] of Object.entries(r.parts)) {
+                    if (!validIds.has(k)) fail('invalid-argument', `Кв. ${apt}: невідома складова «${k}»`);
+                    const pk = Number(v);
+                    if (!Number.isInteger(pk)) fail('invalid-argument', `Кв. ${apt}: некоректна сума за складовою`);
+                    if (pk) { clean[k] = pk; sum += pk; }
+                }
+                if (sum !== kop) fail('invalid-argument', `Кв. ${apt}: сума за складовими (${fromKop(sum)} грн) не дорівнює загальному залишку (${fromKop(kop)} грн)`);
+                rowParts.set(apt, clean);
             }
-            t.create(db.collection('audit_log').doc(),{actor,role,action:'charges.history',target:'apartments/ledger',summary:'Перенесено історію до дати переходу; поточні залишки не змінено',details:{count:clean.length,startDate:settings.startDate},at:FieldValue.serverTimestamp()});
+            values.set(apt, kop);
+        }
+        const at = Timestamp.fromDate(new Date(`${cutIso}T21:00:00Z`));
+        let debtKop = 0, overpaidKop = 0;
+        const planRows = [];
+        for (const [apt, id] of byApt) {
+            const kop = values.get(apt) ?? 0;
+            if (kop < 0) debtKop += -kop; else overpaidKop += kop;
+            const parts = rowParts.get(apt) || null;
+            planRows.push({ id, kop, ...(parts ? { parts } : {}) });
+        }
+        const summary = { set: true, count: byApt.size, debtKop, overpaidKop, cutDate: cutIso, by: actor, at: new Date().toISOString() };
+        await openingPlanRef.set({ rows: planRows, summary, startDate, startPeriod, cutIso, cutHuman, cutPeriod, actor, createdAt: FieldValue.serverTimestamp() });
+        await writeAll(planRows.map(r => ({
+            ref: db.doc(`apartments/${r.id}/ledger/opening`),
+            data: { at, period: cutPeriod, kind: 'opening', amount: fromKop(r.kop), amountKop: r.kop, ...(r.parts ? { parts: r.parts } : {}),
+                note: `Вхідний залишок на ${cutHuman}: ${r.kop < 0 ? `борг ${fromKop(-r.kop)}` : r.kop > 0 ? `переплата ${fromKop(r.kop)}` : '0'} грн`, source: 'opening' }
+        })), actor);
+        await settingsRef.set({ opening: summary, startDate, startPeriod, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await openingPlanRef.delete();
+        const balances = await recompute();
+        await audit(actor, role, 'charges.opening', 'charges/settings',
+            `Вхідні залишки на ${cutHuman}: борг ${fromKop(debtKop)} грн, переплата ${fromKop(overpaidKop)} грн (${byApt.size} прим.)`, summary);
+        return { ok: true, ...summary, updated: balances.updated };
+    }
+
+    // --------------------------------------------------------
+    // НАРАХУВАННЯ ЗА МІСЯЦЬ І СКАСУВАННЯ
+    // --------------------------------------------------------
+    async function run(actor, role, { period, expectTotalKop, allowPartial }) {
+        return withOperation('run', () => runInner(actor, role, { period, expectTotalKop, allowPartial }), period);
+    }
+    async function runInner(actor, role, { period, expectTotalKop, allowPartial }) {
+        if (!core.validPeriod(period)) fail('invalid-argument', 'Вкажіть місяць у форматі РРРР-ММ');
+        await assertNoUnfinished({ kind: 'run', period });
+        const [settings, apartments, ledgers] = await Promise.all([loadSettings(), loadApartments(), allLedgers()]);
+        if (period < settings.startPeriod) fail('invalid-argument', `Облік у застосунку починається з ${core.periodName(settings.startPeriod)}`);
+        if (period > core.currentPeriod()) fail('invalid-argument', 'Наперед нарахування не проводиться');
+        const importedMonth = [...ledgers.values()].some(list => list.some(e => e.period === period && e.kind === 'charge' && e.source === 'import'));
+        if (importedMonth) fail('failed-precondition', `За ${core.periodName(period)} внески вже перенесено зі старої бази при переході. Повторне нарахування подвоїло б борги.`);
+        const calc = core.computeCharges({ ...settings, apartments, period });
+        if (!calc.rows.length) fail('failed-precondition', calc.problems[0]?.reason || 'Немає приміщень з площею й тарифом для нарахування');
+        if (calc.problems.length && allowPartial !== true) {
+            fail('failed-precondition', `Не всі приміщення готові до нарахування (${calc.problems.length}: ${calc.problems.slice(0, 5).map(p => `кв. ${p.apt} — ${p.reason}`).join('; ')}). Виправте довідник/тарифи або явно підтвердьте часткове нарахування.`);
+        }
+        if (expectTotalKop !== undefined && Number(expectTotalKop) !== calc.totalKop) {
+            fail('aborted', 'Дані змінилися під час перегляду. Оновіть сторінку й перевірте суму ще раз.');
+        }
+
+        const runRef = db.doc(`charges_runs/${period}`);
+        const prev = await runRef.get();
+        const prevAmounts = prev.exists ? prev.data().amounts || {} : {};
+        const prevByComp = prev.exists ? prev.data().byComponentIds || {} : {};
+        const at = Timestamp.fromDate(core.periodEndDate(period));
+        const amounts = {}, byComponentIds = {};
+        let changed = 0;
+        const planRows = [];
+        for (const r of calc.rows) {
+            amounts[r.apt] = r.amountKop;
+            byComponentIds[r.apt] = Object.fromEntries(r.parts.map(p => [p.component, p.amountKop]));
+            const sameParts = JSON.stringify(prevByComp[r.apt] || null) === JSON.stringify(byComponentIds[r.apt]);
+            if (prevAmounts[r.apt] !== r.amountKop || !sameParts) changed++;
+            planRows.push({ id: r.id, apt: r.apt, amountKop: r.amountKop, parts: r.parts, note: r.note });
+        }
+        const removed = apartments.filter(a => prevAmounts[a.apt] !== undefined && amounts[a.apt] === undefined).map(a => ({ id: a.id, apt: a.apt }));
+        changed += removed.length;
+
+        const runData = {
+            period, totalKop: calc.totalKop, count: calc.rows.length,
+            expectedApts: calc.rows.map(r => r.apt), complete: calc.problems.length === 0,
+            byGroup: calc.byGroup, byComponent: calc.byComponent, byComponentIds, problems: calc.problems, amounts
+        };
+        await planRef(period).set({ rows: planRows, removed, runData, at, actor, createdAt: FieldValue.serverTimestamp() });
+        await runRef.set({ ...runData, status: 'writing', createdBy: actor, createdAt: FieldValue.serverTimestamp() });
+        await writeAll([
+            ...planRows.map(r => ({
+                ref: db.doc(`apartments/${r.id}/ledger/charge-${period}`),
+                data: { at, period, kind: 'charge', amount: fromKop(r.amountKop), amountKop: r.amountKop, parts: r.parts, note: r.note, source: 'charges' }
+            })),
+            ...removed.map(a => ({ ref: db.doc(`apartments/${a.id}/ledger/charge-${period}`), delete: true }))
+        ], actor);
+        await runRef.update({ status: 'complete' });
+        await planRef(period).delete();
+
+        const balances = await recompute();
+        await audit(actor, role, prev.exists ? 'charges.recalc' : 'charges.run', `charges_runs/${period}`,
+            `${prev.exists ? 'Перераховано' : 'Нараховано'} внески за ${core.periodName(period)}: ${fromKop(calc.totalKop)} грн (${calc.rows.length} прим.)`,
+            { period, totalKop: calc.totalKop, count: calc.rows.length, changed, problems: calc.problems.length });
+        return { ok: true, period, totalKop: calc.totalKop, count: calc.rows.length, changed, problems: calc.problems, balancesUpdated: balances.updated };
+    }
+
+    async function revert(actor, role, { period }) {
+        return withOperation('revert', () => revertInner(actor, role, { period }), period);
+    }
+    async function revertInner(actor, role, { period }) {
+        if (!core.validPeriod(period)) fail('invalid-argument', 'Вкажіть місяць');
+        await assertNoUnfinished({ kind: 'revert', period });
+        const runRef = db.doc(`charges_runs/${period}`);
+        const snap = await runRef.get();
+        if (!snap.exists) fail('not-found', `За ${core.periodName(period)} нарахування немає`);
+        const apartments = await loadApartments();
+        await runRef.update({ status: 'reverting', revertBy: actor, revertAt: FieldValue.serverTimestamp() });
+        await writeAll(apartments.map(a => ({ ref: db.doc(`apartments/${a.id}/ledger/charge-${period}`), delete: true })), actor);
+        await runRef.delete();
+        await planRef(period).delete();
+        await recompute();
+        await audit(actor, role, 'charges.revert', `charges_runs/${period}`,
+            `Скасовано нарахування за ${core.periodName(period)} (${fromKop(snap.data().totalKop || 0)} грн)`, { period });
+        return { ok: true };
+    }
+
+    /** Дописати перерване нарахування, скасування або вхідні залишки тим самим планом. */
+    async function resume(actor, role) {
+        return withOperation('resume', () => resumeInner(actor, role));
+    }
+    async function resumeInner(actor, role) {
+        const list = await unfinished();
+        if (!list.length) return { ok: true, resumed: 0 };
+        for (const u of list) {
+            if (u.kind !== 'opening') await lock?.assertOpen(u.period, 'Нарахування');
+            if (u.kind === 'opening') {
+                const p = (await openingPlanRef.get()).data();
+                if (!p) continue;
+                const at = Timestamp.fromDate(new Date(`${p.cutIso}T21:00:00Z`));
+                await writeAll(p.rows.map(r => ({
+                    ref: db.doc(`apartments/${r.id}/ledger/opening`),
+                    data: { at, period: p.cutPeriod, kind: 'opening', amount: fromKop(r.kop), amountKop: r.kop, ...(r.parts ? { parts: r.parts } : {}),
+                        note: `Вхідний залишок на ${p.cutHuman}: ${r.kop < 0 ? `борг ${fromKop(-r.kop)}` : r.kop > 0 ? `переплата ${fromKop(r.kop)}` : '0'} грн`, source: 'opening' }
+                })), actor);
+                await settingsRef.set({ opening: p.summary, startDate: p.startDate, startPeriod: p.startPeriod, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+                await openingPlanRef.delete();
+            } else if (u.kind === 'run') {
+                const p = (await planRef(u.period).get()).data();
+                if (!p) fail('failed-precondition', `Немає плану нарахування за ${core.periodName(u.period)}. Скасуйте або проведіть місяць заново.`);
+                await writeAll([
+                    ...p.rows.map(r => ({
+                        ref: db.doc(`apartments/${r.id}/ledger/charge-${u.period}`),
+                        data: { at: p.at, period: u.period, kind: 'charge', amount: fromKop(r.amountKop), amountKop: r.amountKop, parts: r.parts, note: r.note, source: 'charges' }
+                    })),
+                    ...(p.removed || []).map(a => ({ ref: db.doc(`apartments/${a.id}/ledger/charge-${u.period}`), delete: true }))
+                ], actor);
+                await db.doc(`charges_runs/${u.period}`).set({ ...p.runData, status: 'complete', createdBy: p.actor || actor, createdAt: FieldValue.serverTimestamp() });
+                await planRef(u.period).delete();
+            } else if (u.kind === 'revert') {
+                const apartments = await loadApartments();
+                await writeAll(apartments.map(a => ({ ref: db.doc(`apartments/${a.id}/ledger/charge-${u.period}`), delete: true })), actor);
+                await db.doc(`charges_runs/${u.period}`).delete();
+                await planRef(u.period).delete();
+            }
+        }
+        const balances = await recompute();
+        await audit(actor, role, 'charges.resume', 'charges/settings', `Завершено перервані операції: ${list.length}`, { list });
+        return { ok: true, resumed: list.length, balancesUpdated: balances.updated };
+    }
+
+    // --------------------------------------------------------
+    // ВІДОМІСТЬ ЗА МІСЯЦЬ
+    // --------------------------------------------------------
+    async function getStatement({ period }) {
+        if (!core.validPeriod(period)) fail('invalid-argument', 'Вкажіть місяць');
+        const [settings, apartments, ledgers] = await Promise.all([loadSettings(), loadApartments(), allLedgers()]);
+        const rows = core.statementRows({ apartments, ledgers, period, startPeriod: settings.startPeriod, startDate: settings.startDate, premises: settings.premises, groups: settings.groups });
+        const totals = rows.reduce((t, r) => ({
+            opening: t.opening + r.opening, charged: t.charged + r.charged, paid: t.paid + r.paid, closing: t.closing + r.closing,
+            debtors: t.debtors + (r.closing < 0 ? 1 : 0), debtKop: t.debtKop + (r.closing < 0 ? -r.closing : 0)
+        }), { opening: 0, charged: 0, paid: 0, closing: 0, debtors: 0, debtKop: 0 });
+        return { period, rows, totals };
+    }
+
+    /**
+     * Історія особових рахунків із попередньої програми: старі нарахування й
+     * оплати для картки квартири, акта звірки та річного звіту за рік переходу.
+     * Якщо вхідні залишки вже внесено, поточний баланс не змінюється, бо всі
+     * операції до startPeriod уже враховані у вхідному залишку.
+     */
+    async function importHistory(actor, role, { rows }) {
+        return withOperation('importHistory', () => importHistoryInner(actor, role, { rows }));
+    }
+    async function importHistoryInner(actor, role, { rows }) {
+        const [apartments, settings] = await Promise.all([loadApartments(), loadSettings()]);
+        const byApt = new Map(apartments.map(a => [a.apt, a.id]));
+        const checked = core.checkHistoryImport(rows, byApt, settings.startPeriod, settings.components, settings.startDate);
+        if (checked.error) fail('invalid-argument', checked.error);
+        const startMonthCharges = checked.entries.filter(e => e.period === settings.startPeriod && e.kind === 'charge');
+        if (startMonthCharges.length) {
+            const existingRun = await db.doc(`charges_runs/${settings.startPeriod}`).get();
+            if (existingRun.exists) fail('failed-precondition', `За ${core.periodName(settings.startPeriod)} вже проведено нарахування в застосунку. Не імпортуйте старі нарахування за цей самий місяць.`);
+        }
+        await writeAll(checked.entries.map(e => ({
+            ref: db.doc(`apartments/${e.aptId}/ledger/import-${e.key}`),
+            data: {
+                at: Timestamp.fromDate(new Date(`${e.date}T12:00:00Z`)),
+                period: e.period, kind: e.kind, amount: fromKop(e.amountKop), amountKop: e.amountKop,
+                ...(e.parts ? { parts: e.parts } : {}), note: e.note, source: 'import'
+            }
+        })), actor);
+        const touchedStart = checked.entries.some(e => e.period >= settings.startPeriod);
+        const balances = touchedStart ? await recompute() : { updated: 0 };
+        await audit(actor, role, 'charges.history.import', 'apartments',
+            `Імпортовано історію особових рахунків: ${checked.entries.length} записів`, { count: checked.entries.length });
+        return { ok: true, count: checked.entries.length, balancesUpdated: balances.updated };
+    }
+
+    async function confirmImportedStartMonth(actor, role, { period, note }) {
+        if (role !== 'chair') fail('permission-denied', 'Підтвердити перенесені нарахування може лише голова');
+        const [settings, apartments, ledgers] = await Promise.all([loadSettings(), loadApartments(), allLedgers()]);
+        const target = period || settings.startPeriod;
+        if (target !== settings.startPeriod) fail('invalid-argument', 'Підтвердження стосується лише місяця переходу');
+        await lock?.assertOpen(target, 'Підтвердження перенесених нарахувань');
+        if (String(note || '').trim().length < 5) fail('invalid-argument', 'Вкажіть підставу: у якій системі нараховано місяць переходу до дати зрізу');
+        const amounts = {}, byComponent = {};
+        let totalKop = 0;
+        for (const a of apartments) {
+            const entries = (ledgers.get(a.id) || []).filter(e => e.period === target && e.kind === 'charge' && e.source === 'import'
+                && (!settings.startDate || !e.at?.toDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(e.at.toDate()) >= settings.startDate));
+            if (!entries.length) continue;
+            const kop = entries.reduce((s, e) => s + Number(e.amountKop || 0), 0);
+            amounts[a.apt] = kop; totalKop += kop;
+            for (const e of entries) for (const p of e.parts || [{ component: 'main', amountKop: e.amountKop }]) byComponent[p.component] = (byComponent[p.component] || 0) + p.amountKop;
+        }
+        if (!Object.keys(amounts).length) fail('failed-precondition', `У місяці ${core.periodName(target)} немає імпортованих нарахувань після дати переходу`);
+        await db.runTransaction(async t=>{
+            await lock?.assertOpen(target, 'Підтвердження перенесених нарахувань', t);
+            t.set(db.doc(`charges_runs/${target}`), {
+                period: target, status: 'complete', complete: true, source: 'import-confirmed',
+                totalKop, count: Object.keys(amounts).length, expectedApts: Object.keys(amounts),
+                amounts, byComponent, problems: [], note: String(note).trim().slice(0, 300),
+                confirmedBy: actor, confirmedAt: FieldValue.serverTimestamp(), createdBy: actor, createdAt: FieldValue.serverTimestamp()
+            });
         });
-        return{written:clean.length};
+        await audit(actor, role, 'charges.import.confirm', `charges_runs/${target}`, `Підтверджено перенесені нарахування за ${core.periodName(target)}: ${fromKop(totalKop)} грн`, { period: target, totalKop, count: Object.keys(amounts).length, note: String(note).trim().slice(0, 300) });
+        return { ok: true, period: target, totalKop, count: Object.keys(amounts).length };
     }
 
     const changes = { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, recompute, resume, importHistory, confirmImportedStartMonth };
-    const actions = { context, preview, getStatement, ...Object.fromEntries(Object.entries(changes).map(([name, fn]) =>
-        [name, (...args) => withOperation(name, () => fn(...args), args[2]?.period)])) };
+    const actions = {
+        context, preview: async ({ period }) => core.computeCharges({ ...(await loadSettings()), apartments: await loadApartments(), period }),
+        getStatement, ...changes
+    };
 
-    const chargesAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('chargesAction', async request => {
+    const chargesAction = onCall({ region: REGION, maxInstances: 5, timeoutSeconds: 120 }, callGuard('chargesAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
         switch (data.action) {
-            case 'context': return context();
-            case 'importHistory': return actions.importHistory(actor,role,data);
-            case 'confirmImportedStartMonth': return actions.confirmImportedStartMonth(actor,role,data);
-            case 'preview': return preview(data);
+            case 'context': return context(data.period);
             case 'statement': return getStatement(data);
-            case 'run': case 'revert': case 'addTariff': case 'removeTariff': case 'addGroup': case 'addComponent':
-            case 'setResidents': case 'renameComponent': case 'setPremises': case 'setOpening': case 'resume': return actions[data.action](actor, role, data);
+            case 'addGroup': case 'addComponent': case 'renameComponent': case 'setResidents':
+            case 'addTariff': case 'removeTariff': case 'setPremises':
+            case 'setOpening': case 'run': case 'revert': case 'resume': case 'importHistory': case 'confirmImportedStartMonth':
+                return changes[data.action](actor, role, data);
             case 'recompute': {
                 const r = await actions.recompute();
-                if (r.skipped) fail('failed-precondition', 'Спершу внесіть вхідні залишки на 30.09.2026');
                 await audit(actor, role, 'charges.recompute', 'apartments', `Баланси перераховано з історії: ${r.updated} змін`, r);
                 return r;
             }
