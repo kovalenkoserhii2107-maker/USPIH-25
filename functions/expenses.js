@@ -581,9 +581,18 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
                 temperature: 0.1
             }
         };
-        const models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+        const models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
         let lastErr = null;
         let tried = new Set();
+
+        function isServerFallback(status, txt) {
+            if ([404, 429, 500, 502, 503, 504].includes(status)) return true;
+            const m = String(txt || "").toLowerCase();
+            return m.includes("404") || m.includes("503") || m.includes("429") || m.includes("500") ||
+                   m.includes("demand") || m.includes("overload") || m.includes("temporary") ||
+                   m.includes("quota") || m.includes("unavailable");
+        }
+
         async function tryServerModel(model) {
             tried.add(model);
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -595,7 +604,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             if (!res.ok) {
                 const err = await res.text();
                 lastErr = new Error(`Gemini API (${model}) HTTP ${res.status}: ${err.slice(0, 150)}`);
-                if (res.status === 404) return null;
+                if (isServerFallback(res.status, err)) return null;
                 throw lastErr;
             }
             const data = await res.json();

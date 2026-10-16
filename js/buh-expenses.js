@@ -234,11 +234,11 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
     try { cachedModel = String(localStorage.getItem("uspih25_working_gemini_model") || "").trim(); } catch (_) {}
 
     const defaultCandidates = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-3.8-flash",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
         "gemini-1.5-pro"
@@ -252,6 +252,16 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
 
     const triedModels = new Set();
     let lastErr = null;
+
+    function isFallbackError(err) {
+        if (!err) return false;
+        const st = Number(err.status || 0);
+        if ([404, 429, 500, 502, 503, 504].includes(st)) return true;
+        const m = String(err.message || "").toLowerCase();
+        return m.includes("404") || m.includes("503") || m.includes("429") || m.includes("500") ||
+               m.includes("demand") || m.includes("overload") || m.includes("temporary") ||
+               m.includes("quota") || m.includes("unavailable") || m.includes("not found");
+    }
 
     async function tryOneModel(model) {
         triedModels.add(model);
@@ -309,7 +319,10 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
             return await tryOneModel(model);
         } catch (err) {
             lastErr = err;
-            if (err.status === 404 || String(err.message || "").includes("404")) continue;
+            if (isFallbackError(err)) {
+                try { if (localStorage.getItem("uspih25_working_gemini_model") === model) localStorage.removeItem("uspih25_working_gemini_model"); } catch (_) {}
+                continue;
+            }
             throw err;
         }
     }
@@ -321,7 +334,10 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
             return await tryOneModel(model);
         } catch (err) {
             lastErr = err;
-            if (err.status === 404 || String(err.message || "").includes("404")) continue;
+            if (isFallbackError(err)) {
+                try { if (localStorage.getItem("uspih25_working_gemini_model") === model) localStorage.removeItem("uspih25_working_gemini_model"); } catch (_) {}
+                continue;
+            }
             throw err;
         }
     }
