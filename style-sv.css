@@ -114,10 +114,13 @@ body.buh-mode .container { max-width: none; margin: 0; padding: 0; }
     font: inherit; text-align: left; text-decoration: none; cursor: pointer; transition: background .2s ease; }
 .mn-row + .mn-row { box-shadow: inset 0 1px 0 var(--sv-line); }
 .mn-sheet .mn-row { border-radius: 0; }
-.mn-row:hover, .mn-row.active { background: var(--sv-soft-2); }
+.mn-row:hover, .mn-row.active, .mn-sheet .mn-row.active, .mn-row.buh-nav-item.active { background: var(--sv-soft-2); color: #000; }
+.mn-row b, .mn-row.active b, .mn-sheet .mn-row.active b, .mn-row.buh-nav-item.active b { color: #000; }
+.mn-row small, .mn-row.active small, .mn-sheet .mn-row.active small, .mn-row.buh-nav-item.active small { color: var(--sv-muted); }
 .mn-ico { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--sv-soft); color: #000; }
-.mn-row.active .mn-ico { background: #000; color: #fff; }
+.mn-row.active .mn-ico, .mn-sheet .mn-row.active .mn-ico, .mn-row.buh-nav-item.active .mn-ico { background: #000; color: #fff; }
 .mn-chev { color: var(--sv-muted); font-size: 22px; line-height: 1; }
+.mn-row.active .mn-chev, .mn-sheet .mn-row.active .mn-chev, .mn-row.buh-nav-item.active .mn-chev { color: #000; }
 .mn-badge { display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--sv-yellow); color: #000; font-size: 12.5px; font-weight: 800; }
 .mn-badge[hidden] { display: none; }
 @media (min-width: 901px) {
