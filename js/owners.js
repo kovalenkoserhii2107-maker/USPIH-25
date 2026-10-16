@@ -78,8 +78,10 @@ async function renderProposed(apt) {
 
         // Для порівняння «чи змінилися дані» шукаємо ту саму людину в «було»
         const beforeBy = new Map((req.before || []).map(o => [key(o), o]));
-        const same = (a, b) => a.shareFrac === b.shareFrac && a.docInfo === b.docInfo
-            && String(a.fileUrls || '') === String(b.fileUrls || '');
+        const same = (a, b) => a.shareFrac === b.shareFrac;
+        initShared(req.after || []);
+        const was = sharedFrom(req.before || []), now = sharedFrom(req.after || []);
+        if (was.docInfo !== now.docInfo || was.urls.join(',') !== now.urls.join(',')) renderDocs('view', 'Змінено — чекає підтвердження правління');
 
         let i = 1;
         (req.after || []).forEach(o => {
@@ -118,6 +120,7 @@ export async function loadOwners(apt) {
 
     const snap = await getDocs(collection(db, 'apartments', apt, 'owners'));
 
+    initShared(snap.docs.map(d => d.data()));
     if (snap.empty) {
         host.innerHTML = `<div class="empty-state">
             <span class="empty-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span>
@@ -177,17 +180,12 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
     if (ownerData?.id) card.dataset.id = ownerData.id;
 
     const name = ownerData?.name || '';
-    const docInfo = ownerData?.docInfo || '';
     const shareFrac = ownerData?.shareFrac || '';
     const sharePerc = ownerData?.sharePerc || '';
 
-    // Стан файлів живе на самому елементі, а не в прихованому input —
-    // так їх можна додавати й видаляти до збереження.
-    const existingUrls = String(ownerData?.fileUrls || '').split(',').map(u => u.trim()).filter(Boolean);
-    card._existingFiles = existingUrls.map((url, i) => ({ name: fileNameFromUrl(url, i), url, type: '', size: 0 }));
-    card._pendingFiles = [];
     // Вихідні дані — щоб потім побачити, чи щось насправді змінилося.
-    card._original = { name, docInfo, shareFrac, sharePerc, fileUrls: String(ownerData?.fileUrls || '') };
+    // Документи тут не живуть: вони спільні для квартири (див. «Спільні документи»).
+    card._original = { name, shareFrac, sharePerc };
 
     const percNum = parseFloat(sharePerc);
     const hasShare = sharePerc !== '' && !isNaN(percNum);
@@ -240,13 +238,6 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
                 </div>
             </div>
 
-            <div class="owner-info">
-                <span class="owner-info-label">Правовстановлюючий документ</span>
-                <span class="owner-info-value">${escapeHtml(docInfo) || '—'}</span>
-            </div>
-
-            <div class="owner-attachments attach-block"></div>
-
             <button type="button" class="delete-btn owner-delete">Видалити співвласника</button>
         </div>
 
@@ -272,22 +263,6 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
                 </select>
                 <input type="text" class="i-share-custom field-input field-input-lg"${isCustom ? '' : ' hidden'}
                        placeholder="Дріб (1/6) або відсоток (15)" value="${escapeHtml(isCustom ? shareFrac : '')}">
-            </div>
-
-            <div class="field">
-                <label class="field-label">Дані документа</label>
-                <input type="text" class="i-doc field-input" value="${escapeHtml(docInfo)}" placeholder="Договір купівлі-продажу №123">
-            </div>
-
-            <div class="field">
-                <span class="field-label">Скани та фото документів</span>
-                <label class="dropzone">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                    <span class="dropzone-text">Додати файли</span>
-                    <span class="dropzone-hint">Фото або PDF</span>
-                    <input type="file" class="i-files hidden-file-input" multiple accept="image/*,application/pdf">
-                </label>
-                <div class="file-chips owner-file-chips"></div>
             </div>
 
             <div class="btn-row">
@@ -322,22 +297,14 @@ function acceptCardEdit(card) {
         [shareFrac, sharePerc] = preset.split('|');
     }
 
-    const pendingFiles = card._pendingFiles || [];
-    const existingFiles = card._existingFiles || [];
-
     const fresh = renderOwnerCard({
         id: card.dataset.id || undefined,
         name: val('.i-name'),
-        docInfo: val('.i-doc'),
-        shareFrac, sharePerc,
-        fileUrls: existingFiles.map(f => f.url).join(',')
+        shareFrac, sharePerc
     }, 1, false);
 
     // renderOwnerCard дописує картку в кінець — ставимо її на місце старої
     card.replaceWith(fresh);
-    fresh._pendingFiles = pendingFiles;
-    fresh._existingFiles = existingFiles;
-    refreshFileChips(fresh);
 
     // Вихідні дані беремо зі СТАРОЇ картки: у нової вони вже нові.
     fresh._original = card._original;
@@ -347,21 +314,8 @@ function acceptCardEdit(card) {
         markCard(fresh, 'add');
     } else {
         const o = card._original || {};
-        const changed = o.name !== val('.i-name')
-            || o.docInfo !== val('.i-doc')
-            || o.shareFrac !== shareFrac
-            || pendingFiles.length > 0
-            || o.fileUrls !== existingFiles.map(f => f.url).join(',');
+        const changed = o.name !== val('.i-name') || o.shareFrac !== shareFrac;
         if (changed) markCard(fresh, 'edit');
-    }
-
-    // Файли ще не вивантажені, тож у перегляді їх немає. Кажемо про це
-    // прямо, інакше здається, що вкладення зникло.
-    if (pendingFiles.length) {
-        const note = document.createElement('p');
-        note.className = 'owner-pending-files';
-        note.textContent = `${pendingFiles.length} файл(ів) буде додано після надсилання`;
-        fresh.querySelector('.view-mode')?.appendChild(note);
     }
     renumberOwners();
     return fresh;
@@ -419,7 +373,6 @@ function wireOwnerCard(card, isNew) {
     card.querySelector('.edit-btn').addEventListener('click', () => {
         view.hidden = true;
         edit.hidden = false;
-        refreshFileChips(card);
     });
 
     card.querySelector('.cancel-btn').addEventListener('click', async () => {
@@ -434,7 +387,6 @@ function wireOwnerCard(card, isNew) {
             // як зміна.
             const o = card._original || {};
             card.querySelector('.i-name').value = o.name || '';
-            card.querySelector('.i-doc').value = o.docInfo || '';
             const preset = card.querySelector('.i-share-preset');
             const custom = card.querySelector('.i-share-custom');
             const isCustom = o.shareFrac && !PRESETS.includes(o.shareFrac);
@@ -444,9 +396,6 @@ function wireOwnerCard(card, isNew) {
 
             card.querySelectorAll('.field-error').forEach(e => e.remove());
             card.querySelectorAll('.field-invalid').forEach(e => e.classList.remove('field-invalid'));
-            card._pendingFiles = [];
-            refreshFileChips(card);
-
             edit.hidden = true;
             view.hidden = false;
             recomputeDirty();
@@ -464,7 +413,7 @@ function wireOwnerCard(card, isNew) {
             return;
         }
         const ok = await confirmDialog('Видалити співвласника?',
-            'Дані та прикріплені документи цього співвласника буде видалено.');
+            'Співвласника буде прибрано зі списку. Спільні документи квартири лишаються.');
         if (!ok) return;
         // Картку не прибираємо, а позначаємо. Інакше після надсилання
         // мешканець не бачить, що саме він запропонував прибрати, —
@@ -483,14 +432,6 @@ function wireOwnerCard(card, isNew) {
         if (isCustom) { custom.value = ''; custom.focus(); }
     });
 
-    // Керування файлами: додавання й видалення до збереження
-    const fileInput = card.querySelector('.i-files');
-    fileInput.addEventListener('change', () => {
-        card._pendingFiles.push(...Array.from(fileInput.files));
-        fileInput.value = '';
-        refreshFileChips(card);
-    });
-
     card.querySelector('.save-ok-btn').addEventListener('click', async function () {
         // Перевіряємо все одразу, а не лише ПІБ. Раніше картка
         // «зберігалася» без документа, і людина дізнавалася про це аж при
@@ -506,20 +447,131 @@ function wireOwnerCard(card, isNew) {
         acceptCardEdit(card);
         markDirty();
     });
-
-    refreshFileChips(card);
 }
 
-function refreshFileChips(card) {
-    renderFileManager(
-        card.querySelector('.owner-file-chips'),
-        card._existingFiles,
-        card._pendingFiles,
-        (idx) => { card._existingFiles.splice(idx, 1); refreshFileChips(card); },
-        (idx) => { card._pendingFiles.splice(idx, 1); refreshFileChips(card); }
-    );
-    const attachHost = card.querySelector('.owner-attachments');
-    if (attachHost) renderAttachments(attachHost, card._existingFiles);
+// ------------------------------------------------------------
+// СПІЛЬНІ ДОКУМЕНТИ
+// Правовстановлюючий документ один на квартиру: договір чи свідоцтво,
+// що стосується одного співвласника, стосується й решти. Тому
+// документи — окремим блоком під списком людей, а не в кожній картці.
+// У базі вони, як і раніше, лежать у кожного співвласника (заявки,
+// звірка правлінням і кворум працюють без змін) — записуємо всім однакові.
+// ------------------------------------------------------------
+let shared = { docInfo: '', files: [], pending: [] };
+
+/** Документи з кількох записів: різні описи через «;», файли без повторів. */
+function sharedFrom(list) {
+    const infos = [...new Set(list.map(o => String(o.docInfo || '').trim()).filter(Boolean))];
+    const urls = [...new Set(list.flatMap(o => String(o.fileUrls || '').split(',').map(u => u.trim()).filter(Boolean)))];
+    return { docInfo: infos.join('; '), urls };
+}
+
+function initShared(list) {
+    const { docInfo, urls } = sharedFrom(list);
+    shared = { docInfo, files: urls.map((url, i) => ({ name: fileNameFromUrl(url, i), url, type: '', size: 0 })), pending: [] };
+    renderDocs('view');
+}
+
+/** Блок документів живе одразу під списком співвласників — і в кабінеті, і в редакторі правління. */
+function docsHost() {
+    const id = `${hostId}Docs`;
+    let el = document.getElementById(id);
+    if (!el) {
+        el = document.createElement('section');
+        el.id = id;
+        el.className = 'owners-docs';
+        container().insertAdjacentElement('afterend', el);
+    }
+    return el;
+}
+
+const docsMissing = () => !shared.docInfo.trim();
+
+function showDocsGap() {
+    renderDocs('edit');
+    const host = docsHost();
+    const input = host.querySelector('.d-info');
+    input.classList.add('field-invalid');
+    input.insertAdjacentHTML('afterend', '<span class="field-error">Вкажіть документ про право власності</span>');
+    host.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => input.focus(), 250);
+    toast('Заповніть правовстановлюючий документ — без цього підтвердити не можна', 'error');
+}
+
+const EDIT_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
+
+function renderDocs(mode, note = '') {
+    const host = docsHost();
+    const count = shared.files.length + shared.pending.length;
+    if (mode === 'view') {
+        host.innerHTML = `
+            <div class="owner-head">
+                <div class="owner-head-text">
+                    <span class="owner-index">Спільні для всіх співвласників</span>
+                    <h3 class="owner-name">Правовстановлюючі документи</h3>
+                </div>
+                <button type="button" class="icon-btn edit-btn" data-docs="edit" aria-label="Змінити документи">${EDIT_ICON}</button>
+            </div>
+            <div class="owner-info">
+                <span class="owner-info-label">Документ</span>
+                <span class="owner-info-value">${escapeHtml(shared.docInfo) || '—'}</span>
+            </div>
+            <div class="owner-attachments attach-block"></div>
+            ${shared.pending.length ? `<p class="owner-pending-files">${shared.pending.length} файл(ів) буде додано після надсилання</p>` : ''}
+            ${note ? `<p class="owner-pending-note">${escapeHtml(note)}</p>` : ''}`;
+        renderAttachments(host.querySelector('.owner-attachments'), shared.files);
+        host.querySelector('[data-docs="edit"]').addEventListener('click', () => renderDocs('edit'));
+        return;
+    }
+    const before = { docInfo: shared.docInfo, files: [...shared.files], pending: [...shared.pending] };
+    host.innerHTML = `
+        <h3 class="owner-edit-title">Правовстановлюючі документи</h3>
+        <p class="owners-docs-hint">Один комплект на квартиру — стосується всіх співвласників.</p>
+        <div class="field">
+            <label class="field-label">Дані документа</label>
+            <input type="text" class="d-info field-input" value="${escapeHtml(shared.docInfo)}" placeholder="Договір купівлі-продажу №123 від 01.02.2010">
+        </div>
+        <div class="field">
+            <span class="field-label">Скани та фото документів${count ? ` · ${count}` : ''}</span>
+            <label class="dropzone">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span class="dropzone-text">Додати файли</span>
+                <span class="dropzone-hint">Фото або PDF</span>
+                <input type="file" class="d-files hidden-file-input" multiple accept="image/*,application/pdf">
+            </label>
+            <div class="file-chips owner-file-chips"></div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn-soft" data-docs="cancel">Скасувати</button>
+            <button type="button" class="btn-primary" data-docs="save">Зберегти</button>
+        </div>`;
+    const chips = () => renderFileManager(host.querySelector('.owner-file-chips'), shared.files, shared.pending,
+        (idx) => { shared.files.splice(idx, 1); chips(); },
+        (idx) => { shared.pending.splice(idx, 1); chips(); });
+    chips();
+    const files = host.querySelector('.d-files');
+    files.addEventListener('change', () => { shared.pending.push(...Array.from(files.files)); files.value = ''; chips(); });
+    host.querySelector('[data-docs="cancel"]').addEventListener('click', () => {
+        Object.assign(shared, before);
+        renderDocs('view');
+        recomputeDirty();
+    });
+    host.querySelector('[data-docs="save"]').addEventListener('click', () => {
+        const info = host.querySelector('.d-info').value.trim();
+        if (!info) {
+            host.querySelectorAll('.field-error').forEach(e => e.remove());
+            const input = host.querySelector('.d-info');
+            input.classList.add('field-invalid');
+            input.insertAdjacentHTML('afterend', '<span class="field-error">Вкажіть документ про право власності</span>');
+            input.focus();
+            return;
+        }
+        shared.docInfo = info;
+        const changed = info !== before.docInfo || shared.pending.length !== before.pending.length
+            || shared.files.map(f => f.url).join(',') !== before.files.map(f => f.url).join(',');
+        renderDocs('view', changed ? (isBoardEditing() ? 'Змінено — збережіть список' : 'Змінено — надішліть зміни правлінню') : '');
+        markDirty();
+    });
 }
 
 // ------------------------------------------------------------
@@ -535,7 +587,21 @@ async function collectOwners() {
 
     const cards = Array.from(container().querySelectorAll('.owner-card'));
 
-    // 1. Спершу вивантажуємо файли (найдовша операція) — до будь-яких змін у базі
+    // 1. Спершу вивантажуємо файли (найдовша операція) — до будь-яких змін у базі.
+    // Документи спільні: вивантажуємо один раз і записуємо кожному співвласнику.
+    const uploaded = await Promise.all(shared.pending.map(async (file) => {
+        const fileRef = sRef(storage, `apartments/${apt}/${Date.now()}_${file.name}`);
+        await uploadBytes(fileRef, file);
+        return getDownloadURL(fileRef);
+    }));
+    if (uploaded.length) {
+        shared.files.push(...uploaded.map((url, i) => ({ name: fileNameFromUrl(url, i), url, type: '', size: 0 })));
+        shared.pending = [];
+        renderDocs('view');
+    }
+    const docInfo = shared.docInfo.trim();
+    const fileUrls = shared.files.map(f => f.url).join(',');
+
     const payloads = [];
     for (const card of cards) {
         if (card.dataset.removed) continue;         // запропоновано прибрати
@@ -552,17 +618,9 @@ async function collectOwners() {
             [shareFrac, sharePerc] = presetValue.split('|');
         }
 
-        const urls = (card._existingFiles || []).map(f => f.url);
-        const uploads = (card._pendingFiles || []).map(async (file) => {
-            const fileRef = sRef(storage, `apartments/${apt}/${Date.now()}_${file.name}`);
-            await uploadBytes(fileRef, file);
-            return getDownloadURL(fileRef);
-        });
-        urls.push(...await Promise.all(uploads)); // паралельно, а не по черзі
-
         payloads.push({
             id: card.dataset.id || null,
-            data: { name, docInfo: card.querySelector('.i-doc').value.trim(), shareFrac, sharePerc, fileUrls: urls.join(',') }
+            data: { name, docInfo, shareFrac, sharePerc, fileUrls }
         });
     }
 
@@ -636,7 +694,7 @@ export async function submitOwnerChanges(reason) {
 // один дотик, а редагування — це виняток, у який заходить меншість.
 // ------------------------------------------------------------
 let dirty = false;
-let baseline = [];      // стан списку, з яким порівнюємо
+let baseline = null;    // стан списку, з яким порівнюємо
 
 /**
  * Знімок того, що зараз у картках.
@@ -646,7 +704,7 @@ let baseline = [];      // стан списку, з яким порівнюєм
  * редагування), у знімок не входять — вони ще не частина пропозиції.
  */
 function snapshotOwners() {
-    return [...container().querySelectorAll('.owner-card')]
+    const owners = [...container().querySelectorAll('.owner-card')]
         .filter(c => !c.dataset.removed && c.dataset.new !== '1')
         .map(c => {
             const val = (sel) => (c.querySelector(sel)?.value || '').trim();
@@ -654,18 +712,11 @@ function snapshotOwners() {
             let shareFrac = '';
             if (preset === 'custom') shareFrac = calculateShares(val('.i-share-custom')).frac;
             else if (preset) shareFrac = preset.split('|')[0];
-            return {
-                name: val('.i-name'),
-                docInfo: val('.i-doc'),
-                shareFrac,
-                files: (c._existingFiles || []).map(f => f.url).join(','),
-                pending: (c._pendingFiles || []).length
-            };
+            return { name: val('.i-name'), shareFrac };
         })
         .sort((a, b) => normName(a.name).localeCompare(normName(b.name), 'uk'));
+    return { owners, docs: { docInfo: shared.docInfo.trim(), files: shared.files.map(f => f.url).join(',') } };
 }
-
-const withoutPending = (list) => list.map(o => ({ ...o, pending: 0 }));
 
 /** Запамʼятати поточний стан як «незмінений». */
 export function setOwnersBaseline() {
@@ -681,9 +732,7 @@ export function setOwnersBaseline() {
  * співвласника й повернув назад. Тепер порівнюємо з початковим станом.
  */
 function recomputeDirty() {
-    const now = snapshotOwners();
-    dirty = now.some(o => o.pending > 0)
-        || JSON.stringify(withoutPending(now)) !== JSON.stringify(withoutPending(baseline));
+    dirty = shared.pending.length > 0 || JSON.stringify(snapshotOwners()) !== JSON.stringify(baseline);
     renderOwnersStatus();
 }
 
@@ -692,8 +741,7 @@ function recomputeDirty() {
 // іменем нічого не пояснює.
 const REQUIRED = [
     { sel: '.i-name', label: 'ПІБ', msg: 'Вкажіть прізвище, імʼя та по батькові' },
-    { sel: '.i-share-preset', label: 'частку', msg: 'Оберіть частку власності' },
-    { sel: '.i-doc', label: 'документ', msg: 'Вкажіть документ про право власності' }
+    { sel: '.i-share-preset', label: 'частку', msg: 'Оберіть частку власності' }
 ];
 
 /** Чого бракує саме в цій картці. */
@@ -744,6 +792,13 @@ function ownerProblems() {
     return out;
 }
 
+/** Чого бракує загалом: поля карток і спільний документ квартири. */
+function missingLabels() {
+    const labels = new Set(ownerProblems().flatMap(p => p.missing));
+    if (docsMissing() && container().querySelector('.owner-card')) labels.add('документ');
+    return [...labels];
+}
+
 /** Показує, де саме бракує даних, і веде до першої такої картки. */
 function showProblems(problems) {
     container().querySelectorAll('.owner-card').forEach(c => c.classList.remove('owner-incomplete'));
@@ -769,6 +824,7 @@ async function confirmOwners(btn) {
     if (!container().querySelectorAll('.owner-card:not([data-removed])').length) {
         return toast('Спочатку додайте хоча б одного співвласника', 'error');
     }
+    if (docsMissing()) return showDocsGap();
     const problems = ownerProblems();
     if (problems.length) return showProblems(problems);
 
@@ -798,6 +854,7 @@ async function sendChanges(btn) {
     if (!remaining) {
         return toast('У квартири має лишитися хоча б один власник', 'error');
     }
+    if (docsMissing()) return showDocsGap();
     const problems = ownerProblems();
     if (problems.length) return showProblems(problems);
 
@@ -855,11 +912,10 @@ export function renderOwnersStatus() {
     renderStatusChip(dirty ? '' : session.ownersStatus);
 
     if (dirty) {
-        const gaps = ownerProblems();
+        const gaps = missingLabels();
         host.innerHTML = `<div class="own-status own-status-edit">
             <p class="own-status-text">Зміни ще не надіслано. Правління звірить їх із документами.</p>
-            ${gaps.length ? `<p class="own-status-text own-status-gap">Бракує: ${escapeHtml(
-                [...new Set(gaps.flatMap(g => g.missing))].join(', '))}. Без цього надіслати не можна.</p>` : ''}
+            ${gaps.length ? `<p class="own-status-text own-status-gap">Бракує: ${escapeHtml(gaps.join(', '))}. Без цього надіслати не можна.</p>` : ''}
             <button type="button" class="btn-primary" id="sendOwnerChangesBtn">Надіслати на перевірку</button>
         </div>`;
         document.getElementById('sendOwnerChangesBtn')
@@ -888,10 +944,9 @@ export function renderOwnersStatus() {
 
     // Одразу кажемо, чого бракує, — щоб людина не тицяла кнопку
     // й не отримувала відмову.
-    const gaps = ownerProblems();
+    const gaps = missingLabels();
     const gapNote = gaps.length
-        ? `<p class="own-status-text own-status-gap">Бракує: ${escapeHtml(
-              [...new Set(gaps.flatMap(g => g.missing))].join(', '))}.
+        ? `<p class="own-status-text own-status-gap">Бракує: ${escapeHtml(gaps.join(', '))}.
            Заповніть, і кнопка спрацює.</p>`
         : '';
 
