@@ -581,9 +581,11 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
                 temperature: 0.1
             }
         };
-        const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        const models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
         let lastErr = null;
-        for (const model of models) {
+        let tried = new Set();
+        async function tryServerModel(model) {
+            tried.add(model);
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             const res = await fetch(url, {
                 method: "POST",
@@ -593,7 +595,7 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             if (!res.ok) {
                 const err = await res.text();
                 lastErr = new Error(`Gemini API (${model}) HTTP ${res.status}: ${err.slice(0, 150)}`);
-                if (res.status === 404) continue;
+                if (res.status === 404) return null;
                 throw lastErr;
             }
             const data = await res.json();
@@ -623,7 +625,29 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             }
             return parsed;
         }
-        throw lastErr || new Error("Не вдалося викликати Gemini Vision");
+
+        for (const model of models) {
+            const r = await tryServerModel(model);
+            if (r) return r;
+        }
+
+        try {
+            const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+            if (listRes.ok) {
+                const listData = await listRes.json();
+                const discovered = (listData.models || [])
+                    .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+                    .map(m => String(m.name || "").replace(/^models\//, ""))
+                    .filter(Boolean);
+                for (const model of discovered) {
+                    if (tried.has(model)) continue;
+                    const r = await tryServerModel(model);
+                    if (r) return r;
+                }
+            }
+        } catch (_) {}
+
+        throw lastErr || new Error("Не вдалося викликати Gemini Vision: моделі недоступні");
     }
 
     async function recognizeDocument(actor, role, data) {

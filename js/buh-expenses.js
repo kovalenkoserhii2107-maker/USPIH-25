@@ -170,6 +170,27 @@ function flashField(id) {
     el.classList.add("doc-field-highlight");
 }
 
+async function getAvailableGeminiModels(apiKey) {
+    try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        const list = (data.models || [])
+            .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+            .map(m => String(m.name || "").replace(/^models\//, ""))
+            .filter(Boolean);
+        list.sort((a, b) => {
+            const aFlash = a.includes("flash") ? 1 : 0;
+            const bFlash = b.includes("flash") ? 1 : 0;
+            if (aFlash !== bFlash) return bFlash - aFlash;
+            return b.localeCompare(a, undefined, { numeric: true });
+        });
+        return list;
+    } catch (_) {
+        return [];
+    }
+}
+
 async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
     const rawBase64 = String(base64DataUrl || "").replace(/^data:[^;]+;base64,/, "").trim();
     const cleanMime = mimeType === "application/pdf" ? "application/pdf" : "image/jpeg";
@@ -208,58 +229,104 @@ async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
         }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
     };
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+
+    let cachedModel = "";
+    try { cachedModel = String(localStorage.getItem("uspih25_working_gemini_model") || "").trim(); } catch (_) {}
+
+    const defaultCandidates = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
+    ];
+
+    const modelsToTry = [];
+    if (cachedModel && !modelsToTry.includes(cachedModel)) modelsToTry.push(cachedModel);
+    for (const m of defaultCandidates) {
+        if (!modelsToTry.includes(m)) modelsToTry.push(m);
+    }
+
+    const triedModels = new Set();
     let lastErr = null;
-    for (const model of models) {
+
+    async function tryOneModel(model) {
+        triedModels.add(model);
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const errTxt = await res.text();
+            let parsedMsg = errTxt.slice(0, 150);
+            try {
+                const j = JSON.parse(errTxt);
+                if (j?.error?.message) parsedMsg = j.error.message;
+            } catch (_) {}
+            const err = new Error(`Gemini (${model}) HTTP ${res.status}: ${parsedMsg}`);
+            err.status = res.status;
+            throw err;
+        }
+        const data = await res.json();
+        const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!txt) throw new Error("Порожня відповідь AI");
+        let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+        const parsed = JSON.parse(cleanTxt);
+        if (parsed.amountKop !== undefined) {
+            if (typeof parsed.amountKop === "string") parsed.amountKop = Math.round(parseFloat(parsed.amountKop.replace(",", ".")));
+            else parsed.amountKop = Math.round(Number(parsed.amountKop));
+        } else if (parsed.amount !== undefined) {
+            const num = typeof parsed.amount === "string" ? parseFloat(parsed.amount.replace(",", ".")) : Number(parsed.amount);
+            parsed.amountKop = Math.round(num * 100);
+        }
+        if (parsed.vatKop !== undefined) {
+            if (typeof parsed.vatKop === "string") parsed.vatKop = Math.round(parseFloat(parsed.vatKop.replace(",", ".")));
+            else parsed.vatKop = Math.round(Number(parsed.vatKop));
+        } else if (parsed.vat !== undefined) {
+            const num = typeof parsed.vat === "string" ? parseFloat(parsed.vat.replace(",", ".")) : Number(parsed.vat);
+            parsed.vatKop = Math.round(num * 100);
+        }
+        if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
+        if (parsed.date) {
+            parsed.date = String(parsed.date).trim();
+            if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
+        }
+        if (parsed.supplier) {
+            if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
+            if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
+            if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
+        }
+        try { localStorage.setItem("uspih25_working_gemini_model", model); } catch (_) {}
+        return parsed;
+    }
+
+    for (const model of modelsToTry) {
         try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
-            if (!res.ok) {
-                const errTxt = await res.text();
-                lastErr = new Error(`Gemini (${model}) HTTP ${res.status}: ${errTxt.slice(0, 120)}`);
-                if (res.status === 404) continue;
-                throw lastErr;
-            }
-            const data = await res.json();
-            const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!txt) throw new Error("Порожня відповідь AI");
-            let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-            const parsed = JSON.parse(cleanTxt);
-            if (parsed.amountKop !== undefined) {
-                if (typeof parsed.amountKop === "string") parsed.amountKop = Math.round(parseFloat(parsed.amountKop.replace(",", ".")));
-                else parsed.amountKop = Math.round(Number(parsed.amountKop));
-            } else if (parsed.amount !== undefined) {
-                const num = typeof parsed.amount === "string" ? parseFloat(parsed.amount.replace(",", ".")) : Number(parsed.amount);
-                parsed.amountKop = Math.round(num * 100);
-            }
-            if (parsed.vatKop !== undefined) {
-                if (typeof parsed.vatKop === "string") parsed.vatKop = Math.round(parseFloat(parsed.vatKop.replace(",", ".")));
-                else parsed.vatKop = Math.round(Number(parsed.vatKop));
-            } else if (parsed.vat !== undefined) {
-                const num = typeof parsed.vat === "string" ? parseFloat(parsed.vat.replace(",", ".")) : Number(parsed.vat);
-                parsed.vatKop = Math.round(num * 100);
-            }
-            if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
-            if (parsed.date) {
-                parsed.date = String(parsed.date).trim();
-                if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
-            }
-            if (parsed.supplier) {
-                if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
-                if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
-                if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
-            }
-            return parsed;
+            return await tryOneModel(model);
         } catch (err) {
             lastErr = err;
-            if (String(err.message || "").includes("404")) continue;
+            if (err.status === 404 || String(err.message || "").includes("404")) continue;
             throw err;
         }
     }
-    throw lastErr || new Error("Моделі Gemini недоступні");
+
+    const discovered = await getAvailableGeminiModels(apiKey);
+    for (const model of discovered) {
+        if (triedModels.has(model)) continue;
+        try {
+            return await tryOneModel(model);
+        } catch (err) {
+            lastErr = err;
+            if (err.status === 404 || String(err.message || "").includes("404")) continue;
+            throw err;
+        }
+    }
+
+    throw lastErr || new Error("Не знайдено доступної моделі Gemini для вашого ключа");
 }
 
 function matchSupplierClient(recognizedSupplier) {
