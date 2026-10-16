@@ -4,8 +4,8 @@
 // «internal», і причину видно тільки в логах. Пишемо її в лог з назвою
 // дії й повертаємо коротким текстом — бухгалтер бачить, що саме сталося.
 // ============================================================
-const { HttpsError } = require('firebase-functions/v2/https');
-const logger = require('firebase-functions/logger');
+let HttpsError; try { ({ HttpsError } = require('firebase-functions/v2/https')); } catch { HttpsError = class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }; }
+let logger; try { logger = require('firebase-functions/logger'); } catch { logger = console; }
 
 module.exports = function guard(name, handler) {
     return async request => {
@@ -20,3 +20,5 @@ module.exports = function guard(name, handler) {
         }
     };
 };
+
+module.exports.HttpsError = HttpsError;

@@ -25,6 +25,8 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const callGuard = require('./call-guard');
 const logger = require('firebase-functions/logger');
 const core = require('./expenses-core');
+const docRecogCore = require('./doc-recognition-core');
+
 const assetsCore = require('./assets-core');
 const { normIban, fromKop, safeId } = require('./bank-core');
 
@@ -534,9 +536,110 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         }));
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         const policy=require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
-        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0 }, today,
+        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0, geminiApiKey: settings.data()?.geminiApiKey || "" }, today,
             missing: core.missingDocs(list.contracts, list.expenses, today), items: core.ITEMS, docTypes: core.DOC_TYPES, kinds: core.SUPPLIER_KINDS,
             limitKop: core.CONTRACT_LIMIT_KOP };
+    }
+
+
+    async function callGeminiVision(base64Data, mimeType, apiKey) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const prompt = `Ти професійний бухгалтер ОСББ в Україні.
+Проаналізуй цей первинний документ (рахунок на оплату, акт виконаних робіт, видаткову накладну, договір або фіскальний чек).
+Поверни виключно валідний JSON у такому форматі:
+{
+  "docType": "invoice" | "act" | "waybill" | "contract" | "receipt",
+  "number": "номер документа",
+  "date": "YYYY-MM-DD",
+  "supplier": {
+    "name": "назва постачальника або ФОП",
+    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)",
+    "iban": "UA..."
+  },
+  "amountKop": 125000,
+  "vatKop": 25000,
+  "item": "lift" | "cleaning" | "waste" | "power" | "water" | "systems" | "repair" | "services" | "other",
+  "postingAcc": "92" | "20" | "22" | "11" | "10",
+  "paymentDueDays": 5,
+  "contractEnd": "YYYY-MM-DD",
+  "description": "короткий опис товару чи послуг"
+}`;
+        const body = {
+            contents: [{
+                parts: [
+                    { text: prompt },
+                    { inlineData: { mimeType, data: base64Data } }
+                ]
+            }],
+            generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.1
+            }
+        };
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(`Gemini API HTTP ${res.status}: ${err.slice(0, 150)}`);
+        }
+        const data = await res.json();
+        const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!txt) throw new Error("Порожня відповідь");
+        return JSON.parse(txt);
+    }
+
+    async function recognizeDocument(actor, role, data) {
+        const textContent = String(data.textContent || "").trim();
+        const rawBase64 = String(data.base64Data || "").replace(/^data:[^;]+;base64,/, "").trim();
+        const mimeType = String(data.mimeType || "application/pdf");
+
+        const [supSnap, conSnap, finSnap] = await Promise.all([
+            db.collection("suppliers").get(),
+            db.collection("contracts").get(),
+            db.doc("osbb_settings/finance").get()
+        ]);
+        const suppliers = supSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const contracts = conSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const fin = finSnap.exists ? finSnap.data() : {};
+        const apiKey = process.env.GEMINI_API_KEY || fin.geminiApiKey || "";
+
+        let parsed = null;
+
+        if (rawBase64 && apiKey) {
+            try {
+                parsed = await callGeminiVision(rawBase64, mimeType, apiKey);
+            } catch (err) {
+                logger.warn("Gemini OCR fallback to text parser:", err.message);
+            }
+        }
+
+        if (!parsed && textContent) {
+            parsed = docRecogCore.parseDocumentText(textContent);
+        } else if (!parsed && rawBase64) {
+            try {
+                const decoded = Buffer.from(rawBase64, "base64").toString("utf8");
+                if (/[\wа-яіїєґ]/i.test(decoded)) {
+                    parsed = docRecogCore.parseDocumentText(decoded);
+                }
+            } catch (_) {}
+        }
+
+        if (!parsed) {
+            parsed = docRecogCore.parseDocumentText(textContent || "");
+        }
+
+        const match = docRecogCore.matchSupplierWithDatabase(parsed.supplier, suppliers, contracts);
+
+        return {
+            ok: true,
+            recognized: parsed,
+            matchedSupplier: match.matched,
+            matchedContract: match.contract,
+            isNewSupplier: match.isNew
+        };
     }
 
     async function setSettings(actor, role, { smallKop }) {
@@ -566,11 +669,12 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             case 'storno': return storno(actor, role, data);
             case 'pay': return pay(actor, role, data);
             case 'linkTx': return linkTx(actor, role, data);
+                        case 'recognizeDocument': return recognizeDocument(actor, role, data);
             case 'settings': return setSettings(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
     return { expenseAction, linkUpdate, release, openForMatching,
-        actions: { checkSupplier, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, context } };
+        actions: { checkSupplier, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, recognizeDocument, context } };
 };
