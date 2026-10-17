@@ -300,9 +300,13 @@ async function refreshSchedule() {
         try {
             res = await fetch(URL_SHUTDOWNS, {
                 signal: AbortSignal.timeout(12000),
+                // Як звичайний браузер: сайт ДТЕК стоїть за захистом від ботів
+                // і на «машинний» запит може віддати сторінку без графіка.
                 headers: {
-                    'User-Agent': 'OSBB-Uspih-25/1.0 (+https://kovalenkoserhii2107-maker.github.io/USPIH-25)',
-                    'Accept': 'text/html'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.6',
+                    'Cache-Control': 'no-cache'
                 }
             });
             if (res.ok || res.status < 500) break;
@@ -316,8 +320,14 @@ async function refreshSchedule() {
     if (!res) throw lastError || new Error('ДТЕК не відповів');
     if (!res.ok) throw new Error(`ДТЕК відповів ${res.status}`);
 
-    const parsed = parseSchedule(await res.text());
-    if (!parsed) throw new Error('Не вдалося знайти графік у сторінці');
+    const html = await res.text();
+    const parsed = parseSchedule(html);
+    if (!parsed) {
+        // Кажемо, що саме прийшло замість графіка: заголовок сторінки
+        // одразу видає захист від ботів чи зміну сайту.
+        const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || '').trim().slice(0, 80);
+        throw new Error(`На сторінці ДТЕК немає графіка${title ? ` (сторінка «${title}»)` : ''}, ${html.length} байт`);
+    }
 
     const week = parsed.week[group] || null;
     const days = parsed.fact?.days[group] || null;
