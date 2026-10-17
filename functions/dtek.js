@@ -93,6 +93,37 @@ function daySlots(hours) {
     }));
 }
 
+// Дата доби в Києві: ключі фактичного графіка — unix-час початку доби.
+const kyivDate = (sec) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date(Number(sec) * 1000));
+
+/**
+ * Фактичний графік на сьогодні й завтра (`DisconSchedule.fact`).
+ *
+ * `preset` — це лише тижневий шаблон «можливих» відключень. Коли діють
+ * погодинні графіки, ДТЕК показує мешканцям саме `fact`: які години
+ * сьогодні й завтра без світла для кожної черги. Без нього застосунок
+ * показував шаблон і розходився з сайтом ДТЕК.
+ * @returns {{updated: string, today: string, days: Object}|null}
+ *   days: { 'GPV3.1': { '2026-10-17': [ {from,to,hours,maybe} ], ... } }
+ */
+function parseFact(html) {
+    const fact = extractAssignment(html, 'fact');
+    if (!fact || !fact.data || typeof fact.data !== 'object') return null;
+    const days = {};
+    for (const [stamp, groups] of Object.entries(fact.data)) {
+        if (!/^\d+$/.test(stamp) || !groups || typeof groups !== 'object') continue;
+        const date = kyivDate(stamp);
+        for (const [group, hours] of Object.entries(groups)) {
+            (days[group] ||= {})[date] = daySlots(hours || {});
+        }
+    }
+    return {
+        updated: String(fact.update || ''),
+        today: /^\d+$/.test(String(fact.today || '')) ? kyivDate(fact.today) : '',
+        days
+    };
+}
+
 /**
  * @param {string} html сторінка графіків ДТЕК
  * @returns {{groups: string[], names: Object, week: Object, updatedText: string}|null}
@@ -101,11 +132,12 @@ function daySlots(hours) {
  */
 function parseSchedule(html) {
     const preset = extractAssignment(html, 'preset');
-    if (!preset || !preset.data) return null;
+    const fact = parseFact(html);
+    if ((!preset || !preset.data) && !fact) return null;
 
     const week = {};
     const totals = {};
-    for (const [group, days] of Object.entries(preset.data)) {
+    for (const [group, days] of Object.entries(preset?.data || {})) {
         week[group] = {};
         let sum = 0;
         for (let d = 1; d <= 7; d++) {
@@ -117,12 +149,13 @@ function parseSchedule(html) {
     }
 
     return {
-        groups: Object.keys(preset.data).sort(),
-        names: preset.sch_names || {},
+        groups: [...new Set([...Object.keys(week), ...Object.keys(fact?.days || {})])].sort(),
+        names: preset?.sch_names || {},
         week,
         totals,
-        updatedText: preset.updateFact || ''
+        fact,
+        updatedText: fact?.updated || preset?.updateFact || ''
     };
 }
 
-module.exports = { URL_SHUTDOWNS, STATES, parseSchedule, daySlots, extractAssignment };
+module.exports = { URL_SHUTDOWNS, STATES, parseSchedule, parseFact, daySlots, extractAssignment, kyivDate };
