@@ -23,6 +23,38 @@ const GROUPS = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2',
 
 const SETTINGS = 'osbb_settings/power';
 
+// Дата за Києвом — ключ фактичного графіка ДТЕК («2026-10-17»).
+const kyivDate = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d);
+const dayLabel = (d) => new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv', weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+
+/**
+ * Відключення на добу: фактичний графік ДТЕК на цю дату (те, що сайт
+ * ДТЕК показує в таблиці «на сьогодні / на завтра»), а якщо його немає —
+ * тижневий шаблон «можливих» відключень.
+ */
+export function slotsFor(data, date) {
+    const key = kyivDate(date);
+    if (data?.days && Object.prototype.hasOwnProperty.call(data.days, key)) return { slots: data.days[key] || [], fact: true };
+    const dow = date.getDay() === 0 ? 7 : date.getDay();
+    return { slots: data?.week?.[String(dow)] || [], fact: false };
+}
+
+const slotsText = (slots) => slots.length
+    ? slots.map(s => `${escapeHtml(s.from)}–${escapeHtml(s.to)}${s.maybe ? ' (можливо)' : ''}`).join(', ')
+    : '';
+
+/** Сьогодні й завтра за фактичним графіком — так само, як на сайті ДТЕК. */
+function factDaysHtml(data, cls) {
+    const now = new Date();
+    const days = [now, new Date(now.getTime() + 86400000)]
+        .map(d => ({ d, ...slotsFor(data, d) }))
+        .filter(x => x.fact);
+    if (!days.length) return '';
+    return `<div class="${cls}-fact">${days.map(({ d, slots }, i) => `<div class="${cls}-fact-day${i === 0 ? ' is-today' : ''}">
+        <span>${i === 0 ? 'Сьогодні' : 'Завтра'} · ${escapeHtml(dayLabel(d))}</span>
+        <b>${slots.length ? slotsText(slots) : 'без відключень'}</b></div>`).join('')}</div>`;
+}
+
 function renderState(data) {
     const host = document.getElementById('dtekState');
     if (!host) return;
@@ -37,18 +69,19 @@ function renderState(data) {
         const slots = week[d] || [];
         return `<div class="dtek-row">
             <b>${days[d]}</b>
-            <span>${slots.length
-                ? slots.map(s => `${escapeHtml(s.from)}–${escapeHtml(s.to)}`).join(', ')
-                : '<i>без відключень</i>'}</span>
+            <span>${slots.length ? slotsText(slots) : '<i>без відключень</i>'}</span>
         </div>`;
     }).join('');
+    const fact = factDaysHtml(data, 'dtek');
 
     host.innerHTML = `
         <div class="dtek-head">
             <b>${escapeHtml(data.groupName || data.group || '')}</b>
             <span>${data.sourceUpdated ? `дані ДТЕК від ${escapeHtml(data.sourceUpdated)}` : ''}</span>
         </div>
-        <div class="dtek-rows">${rows}</div>
+        ${fact || '<p class="dtek-note">Фактичного графіка на сьогодні ДТЕК не публікує — нижче тижневий графік можливих відключень.</p>'}
+        ${Object.keys(week).length ? `<details class="dtek-week"${fact ? '' : ' open'}><summary>Тижневий графік можливих відключень</summary><div class="dtek-rows">${rows}</div></details>` : ''}
+        ${data.lastError ? `<p class="dtek-note dtek-error">Останнє оновлення не вдалося: ${escapeHtml(data.lastError)}</p>` : ''}
         <p class="dtek-note">Оновлено ${data.fetchedAt ? escapeHtml(formatDateTime(data.fetchedAt)) : '—'}</p>`;
 }
 
@@ -67,7 +100,7 @@ async function save(btn) {
             return;
         }
 
-        // Тягнемо графік одразу: чекати три години до наступного
+        // Тягнемо графік одразу: чекати годину до наступного
         // запуску за розкладом — і не перевірити, чи вибрано правильно.
         setBusy(btn, true, 'Тягнемо графік…');
         const call = httpsCallable(getFunctions(app, 'europe-central2'), 'refreshDtekSchedule');
@@ -82,8 +115,9 @@ async function save(btn) {
         // Чергу вже записано — про це кажемо окремо, щоб правління не
         // тиснуло кнопку вдруге, гадаючи, що нічого не збереглося.
         toast(e?.code
-            ? 'Чергу збережено, але графік не завантажився. Спробуйте ще раз.'
+            ? `Чергу збережено, але графік не завантажився${e.message && e.code === 'functions/unavailable' ? `: ${e.message}` : ''}. Спробуйте ще раз.`
             : 'Не вдалося зберегти', 'error');
+        getDoc(doc(db, 'status', 'schedule')).then(snap => renderState(snap.exists() ? snap.data() : null)).catch(() => {});
     } finally {
         setBusy(btn, false);
     }
@@ -165,9 +199,9 @@ const dtekDay = (d) => d.getDay() === 0 ? 7 : d.getDay();
  * Тиждень таблицею — це довідка, а на головному екрані потрібна
  * відповідь на одне питання: коли вимкнуть і чи вимкнено вже.
  */
-export function scheduleNow(week, now = new Date()) {
-    if (!week) return null;
-    const today = week[String(dtekDay(now))] || [];
+export function scheduleNow(data, now = new Date()) {
+    if (!data || (!data.week && !data.days)) return null;
+    const today = slotsFor(data, now).slots;
     const mins = now.getHours() * 60 + now.getMinutes();
 
     const current = today.find(s => hhmmToMin(s.from) <= mins && mins < hhmmToMin(s.to));
@@ -178,7 +212,7 @@ export function scheduleNow(week, now = new Date()) {
 
     // Сьогодні більше нічого — дивимось на завтра, інакше ввечері
     // блок мовчав би, хоч уранці відключення вже заплановане.
-    const tomorrow = week[String(dtekDay(new Date(now.getTime() + 86400000)))] || [];
+    const tomorrow = slotsFor(data, new Date(now.getTime() + 86400000)).slots;
     if (tomorrow.length) return { state: 'tomorrow', from: tomorrow[0].from, to: tomorrow[0].to };
     return { state: 'clear' };
 }
@@ -191,7 +225,7 @@ export async function loadPowerSchedule() {
         const snap = await getDoc(doc(db, 'status', 'schedule'));
         if (!snap.exists()) { host.innerHTML = ''; return; }
         const data = snap.data();
-        const s = scheduleNow(data.week);
+        const s = scheduleNow(data);
         if (!s) { host.innerHTML = ''; return; }
 
         // Кожен рядок сам називає свій предмет. «Сьогодні о 20:30» без
@@ -235,9 +269,12 @@ function renderScheduleSheet(data) {
     const week = data.week || {};
     const todayKey = String(dtekDay(new Date()));
 
+    const fact = factDaysHtml(data, 'sched');
     host.innerHTML = `
         <p class="sched-src">${escapeHtml(data.groupName || '')} · графік ДТЕК${
             data.sourceUpdated ? ` від ${escapeHtml(data.sourceUpdated)}` : ''}</p>
+        ${fact}
+        <details class="sched-week"${fact ? '' : ' open'}><summary>Тижневий графік можливих відключень</summary>
         <div class="sched-days">
             ${Object.keys(DAYS_FULL).map(d => {
                 const slots = week[d] || [];
@@ -248,7 +285,7 @@ function renderScheduleSheet(data) {
                         : '<span class="sched-none">без відключень</span>'}</div>
                 </div>`;
             }).join('')}
-        </div>
-        <p class="sched-note">Це графік можливих відключень. Фактичне відключення
-            може не збігтися з ним — застосунок показує реальний стан світла вгорі екрана.</p>`;
+        </div></details>
+        <p class="sched-note">${fact ? 'Сьогодні й завтра — фактичний графік ДТЕК для черги будинку.' : 'Це графік можливих відключень.'} Реальне відключення
+            може не збігтися з графіком — застосунок показує справжній стан світла вгорі екрана.</p>`;
 }

@@ -300,9 +300,13 @@ async function refreshSchedule() {
         try {
             res = await fetch(URL_SHUTDOWNS, {
                 signal: AbortSignal.timeout(12000),
+                // Як звичайний браузер: сайт ДТЕК стоїть за захистом від ботів
+                // і на «машинний» запит може віддати сторінку без графіка.
                 headers: {
-                    'User-Agent': 'OSBB-Uspih-25/1.0 (+https://kovalenkoserhii2107-maker.github.io/USPIH-25)',
-                    'Accept': 'text/html'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.6',
+                    'Cache-Control': 'no-cache'
                 }
             });
             if (res.ok || res.status < 500) break;
@@ -316,32 +320,46 @@ async function refreshSchedule() {
     if (!res) throw lastError || new Error('ДТЕК не відповів');
     if (!res.ok) throw new Error(`ДТЕК відповів ${res.status}`);
 
-    const parsed = parseSchedule(await res.text());
-    if (!parsed) throw new Error('Не вдалося знайти графік у сторінці');
+    const html = await res.text();
+    const parsed = parseSchedule(html);
+    if (!parsed) {
+        // Кажемо, що саме прийшло замість графіка: заголовок сторінки
+        // одразу видає захист від ботів чи зміну сайту.
+        const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || '').trim().slice(0, 80);
+        throw new Error(`На сторінці ДТЕК немає графіка${title ? ` (сторінка «${title}»)` : ''}, ${html.length} байт`);
+    }
 
-    const week = parsed.week[group];
-    if (!week) throw new Error(`Черги ${group} немає у графіку`);
+    const week = parsed.week[group] || null;
+    const days = parsed.fact?.days[group] || null;
+    if (!week && !days) throw new Error(`Черги ${group} немає у графіку ДТЕК`);
 
     await db.doc('status/schedule').set({
         group,
         groupName: parsed.names[group] || group,
-        week,
+        // Тижневий шаблон «можливих» відключень — довідка.
+        week: week || {},
         hoursPerWeek: parsed.totals[group] ?? null,
+        daysToday: parsed.fact?.today || '',
         // Дата з самого ДТЕК: наш час оновлення нічого не каже про те,
         // наскільки свіжий графік — сторінку могли не міняти тижнями.
         sourceUpdated: parsed.updatedText || '',
         fetchedAt: FieldValue.serverTimestamp(),
         source: URL_SHUTDOWNS
     }, { merge: true });
+    // Фактичний графік на сьогодні й завтра — саме він на сайті ДТЕК у
+    // таблиці «Графік відключень». update замінює поле цілком (set із
+    // merge злив би мапи), тож учорашній день не лишається.
+    await db.doc('status/schedule').update({ days: days || {} });
 
-    logger.info('Графік оновлено', { group, hours: parsed.totals[group] });
-    return { group, hours: parsed.totals[group] };
+    logger.info('Графік оновлено', { group, hours: parsed.totals[group], days: Object.keys(days || {}) });
+    return { group, hours: parsed.totals[group] ?? null, days: Object.keys(days || {}) };
 }
 
-// Кожні три години: ДТЕК і сам не міняє графік частіше, а зайві
-// звернення до чужого сайту — погані манери.
+// Щогодини: фактичний графік на сьогодні ДТЕК міняє протягом дня
+// (стабілізаційні відключення), тож три години — забагато. Частіше —
+// зайві звернення до чужого сайту.
 exports.pullDtekSchedule = onSchedule(
-    { schedule: 'every 3 hours', timeZone: 'Europe/Kyiv', region: SCHEDULE_REGION, maxInstances: 1,
+    { schedule: 'every 60 minutes', timeZone: 'Europe/Kyiv', region: SCHEDULE_REGION, maxInstances: 1,
       timeoutSeconds: 60, retryCount: 2 },
     async () => {
         if ((await db.doc('_maintenance/reset').get()).data()?.active) return;
@@ -362,7 +380,7 @@ exports.pullDtekSchedule = onSchedule(
     }
 );
 
-// Ручне оновлення — щоб не чекати три години після зміни черги.
+// Ручне оновлення — щоб не чекати наступного запуску після зміни черги.
 exports.pullDtekScheduleNow = onRequest(
     { region: SCHEDULE_REGION, secrets: [POWER_SECRET], maxInstances: 1 },
     async (req, res) => {
@@ -393,9 +411,14 @@ exports.refreshDtekSchedule = onCall(
     async (request) => {
         await requireAdmin(request);
         try {
-            return await refreshSchedule();
+            const result = await refreshSchedule();
+            if (!result.skipped) await db.doc('status/schedule').set({ lastError: FieldValue.delete(), lastErrorAt: FieldValue.delete() }, { merge: true });
+            return result;
         } catch (e) {
             logger.error('Оновлення графіка на вимогу:', e);
+            await db.doc('status/schedule').set({
+                lastError: String(e.message || e).slice(0, 500), lastErrorAt: FieldValue.serverTimestamp()
+            }, { merge: true }).catch(() => {});
             throw new HttpsError('unavailable', String(e.message || e));
         }
     }

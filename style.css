@@ -3411,6 +3411,16 @@ select.field-input {
 .dtek-row span { color: var(--ink); min-width: 0; }
 .dtek-row i { color: var(--ink-3); font-style: normal; }
 .dtek-note { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-3); }
+.dtek-error { color: var(--danger, #B42318); }
+/* Фактичний графік на сьогодні й завтра — головне; тиждень — довідка під ним. */
+.dtek-fact, .sched-fact { display: grid; gap: 8px; margin-bottom: 10px; }
+.dtek-fact-day, .sched-fact-day { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }
+.dtek-fact-day.is-today, .sched-fact-day.is-today { background: rgba(255, 240, 168, .55); }
+.dtek-fact-day span, .sched-fact-day span { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.dtek-fact-day b, .sched-fact-day b { font-size: 16px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.dtek-week, .sched-week { margin-top: 6px; }
+.dtek-week > summary, .sched-week > summary { padding: 8px 0; font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.sched-week > .sched-days { margin-top: 4px; }
 
 /* ---------- Графік відключень: рядок у картці світла ----------
    Раніше це була окрема картка — і читалася як щось стороннє:
