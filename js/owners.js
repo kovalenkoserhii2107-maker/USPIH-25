@@ -156,15 +156,12 @@ function renderShareSummary() {
         name: c.querySelector('.owner-name')?.textContent || '' }));
     const total = Math.round(parts.reduce((a, p) => a + p.perc, 0) * 100) / 100;
     const whole = Math.abs(total - 100) < 0.1;
-    const word = n => n === 1 ? 'співвласник' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'співвласники' : 'співвласників';
     el.innerHTML = `
         <div class="owners-summary-bar" role="img" aria-label="${parts.map(p => `${escapeHtml(p.name)} — ${p.perc}%`).join('; ')}">
             ${parts.filter(p => p.perc > 0).map(p => `<span style="flex:${p.perc} 0 0;background:${p.color}"></span>`).join('')}
             ${total < 99.9 ? `<span class="owners-summary-gap" style="flex:${Math.max(0, 100 - total)} 0 0"></span>` : ''}
         </div>
-        <p class="owners-summary-text${whole ? '' : ' is-warn'}">${cards.length} ${word(cards.length)} · ${whole
-            ? 'частки складають усю квартиру'
-            : `частки складають ${String(total).replace('.', ',')}% — разом має бути 100%`}</p>`;
+        ${whole ? '' : `<p class="owners-summary-text is-warn">Частки складають ${String(total).replace('.', ',')}% — разом має бути 100%</p>`}`;
 }
 
 export function updateOwnersCount() {
@@ -234,7 +231,6 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
             <div class="owner-head">
                 <div class="owner-avatar" style="background: ${avatarGradient(name)};" aria-hidden="true">${escapeHtml(getInitials(name))}</div>
                 <div class="owner-head-text">
-                    <span class="owner-index">Співвласник ${number}</span>
                     <h3 class="owner-name">${escapeHtml(name) || 'Без імені'}</h3>
                     <span class="owner-share${shareFrac ? '' : ' owner-share-empty'}">${shareFrac
                         ? `Частка <b>${escapeHtml(shareFrac)}</b>${percLabel && shareFrac !== '1/1' ? ` · ${percLabel}` : shareFrac === '1/1' ? ' · одноосібна' : ''}`
@@ -373,15 +369,9 @@ function restoreOwner(card) {
     markDirty();
 }
 
-/** Нумерація «Співвласник N» після перестановки чи видалення. */
+/** Після додавання, правки чи видалення — перерахувати смугу часток. */
 function renumberOwners() {
     renderShareSummary();
-    let i = 1;
-    container().querySelectorAll('.owner-card').forEach(card => {
-        const el = card.querySelector('.owner-index');
-        if (!el) return;
-        el.textContent = card.dataset.removed ? 'Прибирається' : `Співвласник ${i++}`;
-    });
 }
 
 function wireOwnerCard(card, isNew) {
@@ -527,7 +517,6 @@ function renderDocs(mode, note = '') {
             <div class="owner-head">
                 <div class="owners-docs-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg></div>
                 <div class="owner-head-text">
-                    <span class="owner-index">Спільний для всіх співвласників</span>
                     <h3 class="owner-name">Правовстановлюючий документ</h3>
                     <span class="owner-share${shared.docInfo ? '' : ' owner-share-empty'}">${escapeHtml(shared.docInfo) || 'Не вказано — додайте договір чи свідоцтво'}</span>
                 </div>

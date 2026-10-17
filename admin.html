@@ -28,14 +28,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=186">
-    <link rel="stylesheet" href="style-chat.css?v=186">
-    <link rel="stylesheet" href="style-sv.css?v=186">
-    <link rel="stylesheet" href="style-admin.css?v=186">
+    <link rel="stylesheet" href="style.css?v=187">
+    <link rel="stylesheet" href="style-chat.css?v=187">
+    <link rel="stylesheet" href="style-sv.css?v=187">
+    <link rel="stylesheet" href="style-admin.css?v=187">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=186">
+    <link rel="modulepreload" href="js/admin-main.js?v=187">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -1119,11 +1119,9 @@
             <div class="section-head">
                 <div class="section-head-text">
                     <h2 class="section-head-title">Співвласники</h2>
-                    <span class="section-head-sub">Хто власник і на якій підставі</span>
                 </div>
                 <button id="addOwnerAdminBtn" class="btn-add-pill" type="button" aria-label="Додати співвласника">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    Додати
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 </button>
             </div>
 
@@ -1407,7 +1405,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=186' : './js/admin-main.js?v=186').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=187' : './js/admin-main.js?v=187').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

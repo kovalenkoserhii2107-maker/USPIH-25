@@ -217,43 +217,69 @@ export function scheduleNow(data, now = new Date()) {
     return { state: 'clear' };
 }
 
-/** Смужка на головному екрані під карткою світла. */
+/** «через 1 год 40 хв» — скільки лишилося до часу HH:MM (сьогодні чи завтра). */
+export function untilText(hhmm, now = new Date(), nextDay = false) {
+    let left = hhmmToMin(hhmm) + (nextDay ? 1440 : 0) - (now.getHours() * 60 + now.getMinutes());
+    if (left <= 0) return 'зараз';
+    const h = Math.floor(left / 60), m = left % 60;
+    return `через ${h ? `${h} год` : ''}${h && m ? ' ' : ''}${m ? `${m} хв` : ''}`;
+}
+
+const CLOCK = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>';
+const BOLT = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M13 2 4 14h7l-1 8 9-12h-7z"></path></svg>';
+const CHEVRON = '<svg class="row-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+
+/**
+ * Наступне відключення — помітною плашкою з часом і зворотним
+ * відліком: це те, заради чого картку світла й відкривають. Спокійний
+ * стан «сьогодні без відключень» лишається тихим рядком.
+ */
+function scheduleHtml(s, now = new Date()) {
+    if (s.state === 'clear') {
+        return `<button type="button" class="pw-sched pw-sched-clear" id="openScheduleBtn">
+            <span class="pw-sched-icon">${CLOCK}</span>
+            <span class="pw-sched-text"><b>Сьогодні відключень немає</b><span>за графіком ДТЕК</span></span>
+            ${CHEVRON}
+        </button>`;
+    }
+    const v = {
+        off: { label: 'Зараз за графіком без світла', time: `до ${escapeHtml(s.to)}`, when: untilText(s.to, now).replace('через', 'ще') },
+        soon: { label: 'Наступне відключення', time: `${escapeHtml(s.from)} – ${escapeHtml(s.to)}`, when: untilText(s.from, now) },
+        tomorrow: { label: 'Наступне відключення', time: `${escapeHtml(s.from)} – ${escapeHtml(s.to)}`, when: 'завтра' }
+    }[s.state];
+    return `<button type="button" class="pw-next pw-next-${s.state}" id="openScheduleBtn" aria-label="${v.label}: ${v.time}, ${v.when}. Відкрити графік">
+        <span class="pw-next-icon">${BOLT}</span>
+        <span class="pw-next-text">
+            <span class="pw-next-label">${v.label}</span>
+            <b class="pw-next-time">${v.time}</b>
+            <span class="pw-next-when">${escapeHtml(v.when)}</span>
+        </span>
+        ${CHEVRON}
+    </button>`;
+}
+
+let scheduleTimer = null;
+
+/** Плашка графіка в картці світла; відлік оновлюється щохвилини. */
 export async function loadPowerSchedule() {
     const host = document.getElementById('powerScheduleHost');
     if (!host) return;
+    clearInterval(scheduleTimer);
     try {
         const snap = await getDoc(doc(db, 'status', 'schedule'));
         if (!snap.exists()) { host.innerHTML = ''; return; }
         const data = snap.data();
-        const s = scheduleNow(data);
-        if (!s) { host.innerHTML = ''; return; }
-
-        // Кожен рядок сам називає свій предмет. «Сьогодні о 20:30» без
-        // слова «світло» читалося як що завгодно — збори, голосування,
-        // прийом. Тепер смужка лежить усередині картки світла, але
-        // текст усе одно каже прямо: припущення на здогад тут зайве.
-        const TEXT = {
-            off:      () => `<b>Зараз має бути без світла</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
-            soon:     () => `<b>Наступне відключення о ${escapeHtml(s.from)}</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
-            // Коротше, ніж «Наступне відключення завтра о 06:00»: те
-            // переносилося на другий рядок і ламало рівний ритм картки.
-            tomorrow: () => `<b>Наступне — завтра о ${escapeHtml(s.from)}</b><span>за графіком до ${escapeHtml(s.to)}</span>`,
-            clear:    () => `<b>Сьогодні відключень немає</b><span>за графіком ДТЕК</span>`
+        const render = () => {
+            const s = scheduleNow(data);
+            host.innerHTML = s ? scheduleHtml(s) : '';
+            document.getElementById('openScheduleBtn')?.addEventListener('click', async () => {
+                const { openSheet } = await import('./ui.js');
+                renderScheduleSheet(data);
+                openSheet('schedulePopup');
+            });
         };
-
-        host.innerHTML = `<button type="button" class="pw-sched pw-sched-${s.state}" id="openScheduleBtn">
-            <span class="pw-sched-icon">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
-            </span>
-            <span class="pw-sched-text">${TEXT[s.state]()}</span>
-            <svg class="row-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </button>`;
-
-        document.getElementById('openScheduleBtn')?.addEventListener('click', async () => {
-            const { openSheet } = await import('./ui.js');
-            renderScheduleSheet(data);
-            openSheet('schedulePopup');
-        });
+        render();
+        scheduleTimer = setInterval(() => { if (document.body.contains(host)) render(); else clearInterval(scheduleTimer); }, 60000);
     } catch (e) {
         console.warn('Графік відключень:', e);
         host.innerHTML = '';

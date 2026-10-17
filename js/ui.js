@@ -318,20 +318,13 @@ const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
                  'ledgerSection', 'ownersEditSection', 'financeSection', 'metersSection'];
 
 /**
- * Значок у шапці — сума всіх значків у меню. Так мешканець бачить,
- * що всередині щось нове, не відкриваючи меню, а кожен розділ
- * керує лише своїм числом і нічого не знає про решту.
+ * Значок на «⋯» — сума значків усередині меню. Чат, звернення й
+ * голосування живуть на головному екрані зі своїми значками, тож
+ * у суму не входять: інакше «⋯» кликав би туди, де їх немає.
  */
 export function updateNavBadge() {
-    const total = [...document.querySelectorAll('.menu-badge')]
+    const total = [...document.querySelectorAll('#menuPopup .menu-badge')]
         .reduce((s, el) => s + (parseInt(el.textContent, 10) || 0), 0);
-    // Значки на швидких діях головного екрана повторюють значки меню.
-    document.querySelectorAll('[data-badge-for]').forEach(el => {
-        const src = document.getElementById(el.dataset.badgeFor);
-        const n = parseInt(src?.textContent, 10) || 0;
-        el.textContent = n > 99 ? '99+' : n;
-        el.hidden = !n || src?.style.display === 'none';
-    });
     const nav = document.getElementById('pollsNavBadge');
     if (!nav) return;
     nav.textContent = total > 99 ? '99+' : total;
