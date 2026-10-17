@@ -134,7 +134,7 @@ function renderStaffEntry() {
     if (!tile) return;
     tile.hidden = !session.role || session.serviceAccount;
     const label = tile.querySelector('.menu-tile-label');
-    if (label) label.textContent = session.role === 'accountant' ? 'Бухгалтерія' : 'Правління';
+    if (label) label.textContent = session.role === 'accountant' ? 'Бухгалтерія' : 'Панель правління';
 }
 
 /** Панель правління чи бухгалтерія — окремі сторінки зі своїм кодом. */

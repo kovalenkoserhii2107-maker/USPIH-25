@@ -1561,30 +1561,29 @@ select.field-input {
     .qa-label { font-size: 10.5px; }
 }
 
-/* Меню мешканця — плитками по дві в ряд: пунктів небагато, і широка
-   плитка з підписом поруч читається швидше за сітку дрібних іконок. */
-#menuPopup .menu-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 4px 0; }
+/* Меню мешканця — великими плитками по дві в ряд. Іконки ті самі,
+   що й у швидких діях головного екрана (кольоровий «сквиркл» iOS),
+   лише більші: так меню й головний екран читаються як одне ціле. */
+#menuPopup .menu-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 4px 0; }
 #menuPopup .menu-tile {
-    flex-direction: row; justify-content: flex-start; gap: 12px;
-    min-height: 64px; padding: 10px 12px; box-sizing: border-box;
-    border-radius: var(--r-md);
+    flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 14px;
+    min-height: 118px; padding: 16px; box-sizing: border-box;
+    border-radius: var(--r-lg);
     background: var(--surface-2);
     text-align: left;
 }
 #menuPopup .menu-tile[hidden] { display: none; }
 #menuPopup .menu-tile:active { background: var(--surface-3); }
-#menuPopup .menu-tile-art { width: 44px; height: 44px; flex-shrink: 0; }
-/* Іконки меню — у фірмовому синьому, як «Додати» та іконка документа:
-   на сірій плитці різнобарвні градієнти виглядали чужими. */
-#menuPopup .menu-tile-icon {
-    clip-path: none; border-radius: 12px;
-    background: rgba(0, 122, 255, 0.1); color: var(--blue-ink);
-}
-#menuPopup .menu-tile-icon svg { width: 22px; height: 22px; }
+#menuPopup .menu-tile-art { width: 56px; height: 56px; flex-shrink: 0; }
+#menuPopup .menu-tile-icon svg { width: 27px; height: 27px; }
 #menuPopup .menu-tile-label {
     padding: 0; text-align: left;
-    font-size: 15px; font-weight: 600; line-height: 1.2;
+    font-size: 16px; font-weight: 600; line-height: 1.2;
     white-space: normal;
+}
+@media (max-width: 359px) {
+    #menuPopup .menu-tile { min-height: 104px; padding: 14px; }
+    #menuPopup .menu-tile-art { width: 48px; height: 48px; }
 }
 
 /* На вузьких екранах підписи сусідніх іконок майже стикалися. */
