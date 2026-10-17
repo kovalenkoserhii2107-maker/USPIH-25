@@ -8,7 +8,7 @@
 // ============================================================
 import { db } from './firebase.js';
 import {
-    collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter, Timestamp, setDoc
+    collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { callBackend } from './backend.js';
 import { fetchDirectory, invalidateDirectory } from './directory.js';
@@ -223,43 +223,16 @@ export const EXPENSE_STATUS = {
 };
 export const CONTRACT_STATUS = { pending: ['Чекає голову', 'is-review'], approved: ['Затверджено', 'is-payment'], rejected: ['Відхилено', 'is-error'] };
 
-/** Постачальники, договори, документи, поріг і нагадування — із сервера. */
-export async function saveGeminiApiKey(key) {
-    const cleanKey = String(key || "").trim();
-    try {
-        if (cleanKey) localStorage.setItem("uspih25_gemini_api_key", cleanKey);
-        else localStorage.removeItem("uspih25_gemini_api_key");
-    } catch (_) {}
-    try {
-        await setDoc(doc(db, "osbb_settings", "finance"), { geminiApiKey: cleanKey }, { merge: true });
-        delete cache.requisites;
-        delete cache.expenses;
-    } catch (e) {
-        console.warn("saveGeminiApiKey to Firestore failed:", e);
-    }
-}
-
-/** Постачальники, договори, документи, поріг і нагадування — із сервера та налаштувань. */
-export const loadExpenses = () => once("expenses", async () => {
-    const [ex, req] = await Promise.all([
-        callBackend("expenseAction", { action: "context" }),
-        loadRequisites().catch(() => ({}))
-    ]);
-    if (ex) {
-        if (!ex.settings) ex.settings = {};
-        let localKey = "";
-        try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
-        ex.settings.geminiApiKey = ex.settings.geminiApiKey || req?.geminiApiKey || localKey || "";
-        if (ex.settings.geminiApiKey && !localKey) {
-            try { localStorage.setItem("uspih25_gemini_api_key", ex.settings.geminiApiKey); } catch (_) {}
-        }
-    }
-    return ex;
+/** Постачальники, договори, документи й поріг — із сервера. Ключ AI сюди не приходить: лише «є» і 4 останні символи. */
+export const loadExpenses = () => once("expenses", () => {
+    // Колишня копія ключа в браузері більше не потрібна.
+    try { localStorage.removeItem("uspih25_gemini_api_key"); localStorage.removeItem("uspih25_working_gemini_model"); } catch { /* приватний режим */ }
+    return callBackend("expenseAction", { action: "context" });
 });
 
 /** Дія з витратами — на сервері, з журналом; голові — push, коли потрібне його рішення. */
 export async function expAct(payload, timeoutMs = 60000) {
-    const quiet = payload?.action === 'recognizeDocument' || (payload?.action === 'settings' && payload?.geminiApiKey !== undefined);
+    const quiet = payload?.action === 'recognizeDocument' || payload?.action === 'aiKey';
     try {
         return await callBackend('expenseAction', payload, timeoutMs);
     } finally {

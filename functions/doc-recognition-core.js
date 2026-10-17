@@ -27,6 +27,45 @@ const UKR_MONTHS = {
     'грудня': '12', 'грудень': '12'
 };
 
+// Власні реквізити ОСББ: у документі вони стоять поруч із реквізитами
+// постачальника, і без цього списку парсер міг узяти код чи рахунок
+// самого будинку («Замовник: ОСББ…») за постачальника.
+let OWN = { codes: new Set(), ibans: new Set() };
+function setOwnRequisites({ codes = [], ibans = [] } = {}) {
+    OWN = {
+        codes: new Set(codes.map(c => String(c || '').replace(/\D/g, '')).filter(Boolean)),
+        ibans: new Set(ibans.map(i => normIban(i || '')).filter(Boolean))
+    };
+}
+const isOwnCode = (code) => OWN.codes.has(String(code || '').replace(/\D/g, ''));
+const isOwnIban = (iban) => OWN.ibans.has(normIban(iban || ''));
+
+/**
+ * Число з документа: «4 800,00», «4800.00», «1.234,56», «1,234.56».
+ * Коли є і крапка, і кома, десятковий — останній із них.
+ */
+function parseMoney(raw) {
+    let t = String(raw ?? '').replace(/[\s\u00A0\u202F']/g, '');
+    if (!t) return NaN;
+    const lastDot = t.lastIndexOf('.'), lastComma = t.lastIndexOf(',');
+    if (lastDot >= 0 && lastComma >= 0) {
+        const dec = lastDot > lastComma ? '.' : ',';
+        const thou = dec === '.' ? ',' : '.';
+        t = t.split(thou).join('').replace(dec, '.');
+    } else if (lastComma >= 0) {
+        t = t.replace(',', '.');
+    }
+    return parseFloat(t);
+}
+
+const validYmd = (y, m, d) => {
+    const yy = Number(y), mm = Number(m), dd = Number(d);
+    if (!(yy >= 1990 && yy <= 2100 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)) return false;
+    const dt = new Date(Date.UTC(yy, mm - 1, dd));
+    return dt.getUTCMonth() === mm - 1 && dt.getUTCDate() === dd;
+};
+const ymd = (y, m, d) => validYmd(y, m, d) ? `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '';
+
 function cleanText(raw) {
     return String(raw || '')
         .replace(/[\u00A0\u200B\u202F]/g, ' ')
@@ -54,36 +93,41 @@ function detectDocType(text) {
     return 'invoice';
 }
 
+// Заголовок документа: номер і дата біля нього важливіші за перші-ліпші
+// в тексті (там часто спершу йде «Договір № 5 від 01.01.2025»).
+const TITLE_RX = /(?:рахунок(?:-фактура)?(?:\s+на\s+оплату)?|акт\s+(?:надання\s+послуг|виконаних\s+робіт|приймання[\s-]+передачі)?|видатков\w*\s+накладн\w*|товарн\w*\s+накладн\w*|накладн\w*|фіскальн\w*\s+чек|чек)/i;
+
 function extractDocNumber(text) {
     const s = cleanText(text);
+    const titled = s.match(new RegExp(TITLE_RX.source + '[^\\n№]{0,25}№\\s*([A-Za-zА-Яа-яІіЇїЄєҐґ0-9\\-_/]{1,30})', 'i'));
+    if (titled) return titled[1].trim();
     const m = s.match(/(?:№|номер|ном\.?|no\.?)\s*[:.]?\s*([A-Za-zА-Яа-яІіЇїЄє0-9\-_/]{1,30})/i)
         || s.match(/\b(?:СФ|РХ|АКТ|ВН|ЧЕК|ФЧ)[-\s]?([0-9\-_/]{1,25})\b/i);
     return m ? m[1].trim() : '';
 }
 
+function firstDate(s) {
+    const textDate = s.match(/[«"]?(\d{1,2})[»"]?\s+([а-яіїєґ]+)\s+(\d{4})/i);
+    const numDate = s.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b/);
+    const isoDate = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    // Береться та, що стоїть раніше в тексті.
+    const found = [
+        textDate && UKR_MONTHS[textDate[2].toLowerCase()] && { at: textDate.index, v: ymd(textDate[3], UKR_MONTHS[textDate[2].toLowerCase()], textDate[1]) },
+        numDate && { at: numDate.index, v: ymd(numDate[3], numDate[2], numDate[1]) },
+        isoDate && { at: isoDate.index, v: ymd(isoDate[1], isoDate[2], isoDate[3]) }
+    ].filter(x => x && x.v).sort((a, b) => a.at - b.at);
+    return found[0]?.v || '';
+}
+
 function extractDocDate(text) {
     const s = cleanText(text);
-
-    const textDate = s.match(/[«"]?(\d{1,2})[»"]?\s+([а-яіїєґ]+)\s+(\d{4})/i);
-    if (textDate) {
-        const day = String(textDate[1]).padStart(2, '0');
-        const month = UKR_MONTHS[textDate[2].toLowerCase()];
-        const year = textDate[3];
-        if (month) return `${year}-${month}-${day}`;
+    // Спершу — дата в рядку заголовка документа («Акт № 12 від 30.09.2026»).
+    const title = s.match(TITLE_RX);
+    if (title) {
+        const near = firstDate(s.slice(title.index, title.index + 120));
+        if (near) return near;
     }
-
-    const numDate = s.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b/);
-    if (numDate) {
-        const d = String(numDate[1]).padStart(2, '0');
-        const m = String(numDate[2]).padStart(2, '0');
-        const y = numDate[3];
-        return `${y}-${m}-${d}`;
-    }
-
-    const isoDate = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
-    if (isoDate) return isoDate[0];
-
-    return '';
+    return firstDate(s);
 }
 
 function extractIban(text) {
@@ -92,7 +136,7 @@ function extractIban(text) {
     let fallback = '';
     for (const m of matches) {
         const clean = normIban(m);
-        if (/^UA\d{27}$/.test(clean)) {
+        if (/^UA\d{27}$/.test(clean) && !isOwnIban(clean)) {
             if (validIban(clean)) return clean;
             if (!fallback) fallback = clean;
         }
@@ -103,37 +147,36 @@ function extractIban(text) {
 function extractEdrpou(text) {
     const s = cleanText(text);
 
-    const labelled = s.match(/(?:єДРПОУ|едрпоу|код\s+за\s+єдрпоу|код\s+єдрпоу|рнокпп|ідентифікаційний\s+код|код\s+платника|код)[\s:№.]*(\d{8,10})\b/i);
-    if (labelled) {
-        const code = labelled[1];
-        if (code.length === 8 && validEdrpou(code)) return code;
-        if (code.length === 10 && validRnokpp(code)) return code;
-        return code;
+    const valid = (c) => (c.length === 8 && validEdrpou(c)) || (c.length === 10 && validRnokpp(c));
+    const rx = /(?:єДРПОУ|едрпоу|код\s+за\s+єдрпоу|код\s+єдрпоу|рнокпп|іпн|ідентифікаційний\s+код|код\s+платника|код)[\s:№./]*(\d{8,10})\b/gi;
+    let firstLabelled = '';
+    for (const m of s.matchAll(rx)) {
+        const code = m[1];
+        if (isOwnCode(code)) continue;
+        if (valid(code)) return code;
+        if (!firstLabelled) firstLabelled = code;
     }
+    if (firstLabelled) return firstLabelled;
 
-    const words = s.match(/\b\d{8}\b/g) || [];
-    for (const w of words) {
-        if (validEdrpou(w)) return w;
+    for (const w of s.match(/\b\d{8}\b/g) || []) {
+        if (!isOwnCode(w) && validEdrpou(w)) return w;
     }
-
-    const fopCodes = s.match(/\b\d{10}\b/g) || [];
-    for (const w of fopCodes) {
-        if (validRnokpp(w)) return w;
+    for (const w of s.match(/\b\d{10}\b/g) || []) {
+        if (!isOwnCode(w) && validRnokpp(w)) return w;
     }
-
     return '';
 }
 
 function extractSupplierName(text) {
     const s = cleanText(text);
 
-    const m = s.match(/\b(?:ТОВ|ПП|ПрАТ|ПАТ|КП|ТзОВ)\s*(?:«[^»]+»|"[^"]+"|[А-ЯІЇЄҐ][\w\s\-]+)/i)
+    const m = s.match(/(?:^|[\s,;:(])((?:ТОВ|ПП|ПрАТ|ПАТ|АТ|КП|ТзОВ)\s*(?:«[^»\n]+»|"[^"\n]+"|“[^”\n]+”|[А-ЯІЇЄҐA-Z][А-Яа-яІіЇїЄєҐґA-Za-z0-9'’\- ]{1,60}))/)
         || s.match(/\bФОП\s+[А-ЯІЇЄҐ][а-яіїєґ']+\s+[А-ЯІЇЄҐ]\.?\s*[А-ЯІЇЄҐ]?\.?/i)
         || s.match(/Постачальник[:\s]+([^\n,;]{3,80})/i)
         || s.match(/Виконавець[:\s]+([^\n,;]{3,80})/i);
 
     if (m) {
-        return m[1] ? m[1].trim() : m[0].trim();
+        return (m[1] ? m[1] : m[0]).trim();
     }
     return '';
 }
@@ -144,15 +187,17 @@ function extractAmounts(text) {
     let totalKop = 0;
     let vatKop = 0;
 
-    // Пріоритет: 1) "Всього до сплати" / "Разом до сплати" 2) "Всього" / "Разом" 3) "Сума"
-    const sumMatch = s.match(/(?:всього\s+до\s+сплати|разом\s+до\s+сплати|до\s+сплати)(?:[^\n:]{0,35})[:\s]+(\d+[\d\s\u00A0.,]*\d)\s*(?:грн|uah)?/i)
-        || s.match(/(?:разом|всього|загальна\s+вартість)(?:[^\n:]{0,35})[:\s]+(\d+[\d\s\u00A0.,]*\d)\s*(?:грн|uah)?/i)
-        || s.match(/(?<!без\s+)(?:сума|вартість|ціна)(?:[^\n:]{0,35})[:\s]+(\d+[\d\s\u00A0.,]*\d)\s*(?:грн|uah)?/i)
-        || s.match(/\b(\d+[\d\s\u00A0]*[.,]\d{2})\s*(?:грн|uah)\b/i);
+    // Пріоритет: 1) "Всього до сплати" / "Разом до сплати" 2) "Всього" / "Разом" 3) "Сума".
+    // Число не переходить на інший рядок: інакше «Разом 300» і рік на
+    // наступному рядку злипалися в одне число.
+    const N = '(\\d[\\d \\u00A0.,]*\\d|\\d)';
+    const sumMatch = s.match(new RegExp('(?:всього\\s+до\\s+сплати|разом\\s+до\\s+сплати|до\\s+сплати)(?:[^\\n:]{0,35})[: \\t]+' + N + '[ \\t]*(?:грн|uah)?', 'i'))
+        || s.match(new RegExp('(?:разом|всього|загальна\\s+вартість)(?:[^\\n:]{0,35})[: \\t]+' + N + '[ \\t]*(?:грн|uah)?', 'i'))
+        || s.match(new RegExp('(?<!без\\s+)(?:сума|вартість|ціна)(?:[^\\n:]{0,35})[: \\t]+' + N + '[ \\t]*(?:грн|uah)?', 'i'))
+        || s.match(/\b(\d[\d \u00A0]*[.,]\d{2})[ \t]*(?:грн|uah)\b/i);
 
     if (sumMatch) {
-        const cleanNum = sumMatch[1].replace(/[\s\u00A0]/g, '').replace(',', '.');
-        const parsed = parseFloat(cleanNum);
+        const parsed = parseMoney(sumMatch[1]);
         if (Number.isFinite(parsed) && parsed > 0) {
             totalKop = Math.round(parsed * 100);
         }
@@ -161,10 +206,9 @@ function extractAmounts(text) {
     // Шукаємо суму ПДВ порядково, ігноруючи "без ПДВ"
     for (const line of s.split('\n')) {
         if (/без\s+пдв/i.test(line)) continue;
-        const vm = line.match(/(?:у\s+т\.?ч\.?\s+)?(?<![а-яіїєґ])пдв(?![а-яіїєґ])(?:\s*(?:20\s*%|\(20%\)))?[:\s]*(\d+[\d\s\u00A0.,]*\d)/i);
+        const vm = line.match(/(?:у\s+т\.?ч\.?\s+)?(?<![а-яіїєґ])пдв(?![а-яіїєґ])(?:\s*(?:\d{1,2}\s*%|\(\d{1,2}%\)))?[:\s]*(\d[\d \u00A0.,]*\d)/i);
         if (vm) {
-            const cleanVat = vm[1].replace(/[\s\u00A0]/g, '').replace(',', '.');
-            const parsedVat = parseFloat(cleanVat);
+            const parsedVat = parseMoney(vm[1]);
             if (Number.isFinite(parsedVat) && parsedVat > 0) {
                 vatKop = Math.round(parsedVat * 100);
                 break;
@@ -287,76 +331,150 @@ function getAllXmlTags(xml, tag) {
 function normalizeDate(raw) {
     if (!raw) return "";
     const s = String(raw).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    const dot = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-    if (dot) return `${dot[3]}-${dot[2].padStart(2, "0")}-${dot[1].padStart(2, "0")}`;
-    const isoComp = s.match(/^(\d{4})(\d{2})(\d{2})$/);
-    if (isoComp) return `${isoComp[1]}-${isoComp[2]}-${isoComp[3]}`;
-    const ddmmyyyy = s.match(/^(\d{2})(\d{2})(\d{4})$/);
-    if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+    const full = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (full) return ymd(full[1], full[2], full[3]);
+    const dot = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+    if (dot) return ymd(dot[3], dot[2], dot[1]);
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return ymd(iso[1], iso[2], iso[3]);
+    // Вісім цифр: M.E.Doc пише ддммрррр («30092026»), інші — ррррммдд.
+    // Раніше першим перевірявся ррррммдд, і 30092026 ставало «3009-20-26».
+    const eight = s.match(/^(\d{8})$/);
+    if (eight) {
+        const v = eight[1];
+        return ymd(v.slice(4), v.slice(2, 4), v.slice(0, 2)) || ymd(v.slice(0, 4), v.slice(4, 6), v.slice(6));
+    }
     return "";
 }
 
 function parseKop(raw) {
     if (raw === undefined || raw === null || raw === "") return 0;
-    const clean = String(raw).replace(/[\s\u00A0]/g, "").replace(",", ".");
-    const n = parseFloat(clean);
+    const n = parseMoney(raw);
     return Number.isFinite(n) ? Math.round(n * 100) : 0;
 }
 
 function decodeTextBuffer(buffer) {
     if (!buffer) return "";
-    const head = buffer.slice(0, 150).toString("latin1");
+    const head = buffer.slice(0, 200).toString("latin1");
+    const cp1251 = () => { try { return new TextDecoder("windows-1251").decode(buffer); } catch (_) { return null; } };
     if (/windows-1251|cp1251/i.test(head)) {
-        try {
-            return new TextDecoder("windows-1251").decode(buffer);
-        } catch (_) {}
+        const t = cp1251();
+        if (t !== null) return t;
     }
+    // UTF-8 з BOM або без; якщо байти не є коректним UTF-8 (типово для
+    // старих файлів M.E.Doc без оголошення кодування) — пробуємо 1251.
     try {
-        return new TextDecoder("utf-8").decode(buffer);
+        return new TextDecoder("utf-8", { fatal: true }).decode(buffer).replace(/^\uFEFF/, "");
     } catch (_) {
-        return buffer.toString("utf8");
+        return cp1251() ?? buffer.toString("utf8");
     }
 }
 
+/**
+ * XML, вкладений у підписаний контейнер (.p7s, «.xml.p7s» з ЕДО).
+ * Підпис CMS зберігає документ як є, тож XML можна знайти в байтах.
+ */
+function extractXmlFromSigned(buffer) {
+    if (!buffer || !buffer.length) return "";
+    // Корінь документа шукаємо в байтах: латинські теги (DECLAR, Invoice)
+    // і кириличний корінь 1С у UTF-8 чи 1251.
+    const roots = [["<?xml", null], ["<DECLAR", "DECLAR"], ["<Invoice", "Invoice"], ["<КоммерческаяИнформация", "КоммерческаяИнформация"]];
+    let start = -1, rootName = null;
+    for (const [marker, name] of roots) {
+        for (const enc of ["utf8", "latin1"]) {
+            const at = buffer.indexOf(Buffer.from(marker, enc === "utf8" ? "utf8" : "latin1"));
+            if (at >= 0 && (start < 0 || at < start)) { start = at; rootName = name; }
+        }
+        if (start >= 0 && marker === "<?xml") break;
+    }
+    if (start < 0) return "";
+    const tail = buffer.slice(start);
+    if (!rootName) {
+        // За оголошенням <?xml …?> іде корінь — беремо його назву.
+        const m = tail.slice(0, 400).toString("latin1").replace(/^<\?xml[^>]*>\s*/, "").match(/^<([A-Za-z_][\w.:-]*)/);
+        rootName = m ? m[1] : null;
+        if (!rootName) {
+            const u = tail.slice(0, 400).toString("utf8").replace(/^<\?xml[^>]*>\s*/, "").match(/^<([^\s>/]+)/);
+            rootName = u ? u[1] : null;
+        }
+    }
+    if (!rootName) return "";
+    // Кінець — останній закривальний тег кореня в будь-якому з кодувань.
+    let end = -1;
+    for (const enc of ["utf8", "latin1"]) {
+        const close = Buffer.from(`</${rootName}>`, enc);
+        const at = tail.lastIndexOf(close);
+        if (at >= 0) { end = Math.max(end, at + close.length); }
+    }
+    return end > 0 ? decodeTextBuffer(tail.slice(0, end)) : "";
+}
+
+const ZIP_MAX_ENTRY = 50 * 1024 * 1024;
+
+function inflateEntry(method, comp) {
+    if (method === 0) return comp;
+    if (method !== 8) return null;
+    try { return zlib.inflateRawSync(comp, { maxOutputLength: ZIP_MAX_ENTRY }); } catch (_) { return null; }
+}
+
+function zipName(buf, utf8Flag) {
+    if (utf8Flag) return buf.toString("utf8");
+    // Без прапорця UTF-8 Windows пише імена в CP866; ASCII-розширення
+    // (.xml, .pdf) читаються однаково, тож назва лише для показу.
+    try { return new TextDecoder("ibm866").decode(buf); } catch (_) { return buf.toString("latin1"); }
+}
+
+/**
+ * Розпаковує ZIP за центральним каталогом. Розмір у локальному заголовку
+ * буває нульовим (запис «потоком», з дескриптором даних після файлу) —
+ * так пакують чимало систем ЕДО, і старий розбір такі файли губив.
+ */
 function unpackZip(buffer) {
-    if (!buffer || buffer.length < 30) return [];
+    if (!buffer || buffer.length < 22) return [];
+    let eocd = -1;
+    for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65557); i--) {
+        if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) return unpackZipLocal(buffer);
+    const count = buffer.readUInt16LE(eocd + 10);
+    let p = buffer.readUInt32LE(eocd + 16);
+    const files = [];
+    for (let n = 0; n < count && p + 46 <= buffer.length; n++) {
+        if (buffer.readUInt32LE(p) !== 0x02014b50) break;
+        const flags = buffer.readUInt16LE(p + 8);
+        const method = buffer.readUInt16LE(p + 10);
+        const compSize = buffer.readUInt32LE(p + 20);
+        const size = buffer.readUInt32LE(p + 24);
+        const nameLen = buffer.readUInt16LE(p + 28);
+        const extraLen = buffer.readUInt16LE(p + 30);
+        const commentLen = buffer.readUInt16LE(p + 32);
+        const local = buffer.readUInt32LE(p + 42);
+        const name = zipName(buffer.slice(p + 46, p + 46 + nameLen), flags & 0x800);
+        p += 46 + nameLen + extraLen + commentLen;
+        if (name.endsWith("/") || size > ZIP_MAX_ENTRY || local + 30 > buffer.length || buffer.readUInt32LE(local) !== 0x04034b50) continue;
+        const dataAt = local + 30 + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
+        const data = inflateEntry(method, buffer.slice(dataAt, dataAt + compSize));
+        if (data) files.push({ name, data, size: data.length });
+    }
+    return files.length ? files : unpackZipLocal(buffer);
+}
+
+/** Запасний розбір за локальними заголовками — для пошкоджених архівів без каталогу. */
+function unpackZipLocal(buffer) {
     const files = [];
     let offset = 0;
     while (offset < buffer.length - 30) {
-        if (buffer[offset] === 0x50 && buffer[offset + 1] === 0x4B && buffer[offset + 2] === 0x03 && buffer[offset + 3] === 0x04) {
-            const compMethod = buffer.readUInt16LE(offset + 8);
-            const compSize = buffer.readUInt32LE(offset + 18);
-            const uncompSize = buffer.readUInt32LE(offset + 22);
-            const fnLen = buffer.readUInt16LE(offset + 26);
-            const extraLen = buffer.readUInt16LE(offset + 28);
-
-            const fnBuffer = buffer.slice(offset + 30, offset + 30 + fnLen);
-            let filename = "";
-            try { filename = new TextDecoder("utf-8").decode(fnBuffer); } catch (_) { filename = fnBuffer.toString("utf8"); }
-
-            const dataOffset = offset + 30 + fnLen + extraLen;
-            const compData = buffer.slice(dataOffset, dataOffset + compSize);
-
-            let data = null;
-            if (compMethod === 0) {
-                data = compData;
-            } else if (compMethod === 8) {
-                try {
-                    data = zlib.inflateRawSync(compData);
-                } catch (_) {
-                    try { data = zlib.inflateSync(compData); } catch (_) {}
-                }
-            }
-            if (data) {
-                files.push({ name: filename, data, size: uncompSize });
-            }
-            offset = dataOffset + compSize;
-        } else if (buffer[offset] === 0x50 && buffer[offset + 1] === 0x4B && (buffer[offset + 2] === 0x01 || buffer[offset + 2] === 0x05)) {
-            break;
-        } else {
-            offset++;
-        }
+        if (buffer.readUInt32LE(offset) !== 0x04034b50) { offset++; continue; }
+        const flags = buffer.readUInt16LE(offset + 6);
+        const method = buffer.readUInt16LE(offset + 8);
+        const compSize = buffer.readUInt32LE(offset + 18);
+        const fnLen = buffer.readUInt16LE(offset + 26);
+        const extraLen = buffer.readUInt16LE(offset + 28);
+        const name = zipName(buffer.slice(offset + 30, offset + 30 + fnLen), flags & 0x800);
+        const dataOffset = offset + 30 + fnLen + extraLen;
+        const data = compSize ? inflateEntry(method, buffer.slice(dataOffset, dataOffset + compSize)) : null;
+        if (data && !name.endsWith("/")) files.push({ name, data, size: data.length });
+        offset = dataOffset + Math.max(compSize, 1);
     }
     return files;
 }
@@ -387,14 +505,17 @@ function parseEdiXml(xml) {
         number = getXmlTag(body, "HNUM") || getXmlTag(head, "HNUM") || getXmlTag(head, "C_DOC_CNT");
         date = normalizeDate(getXmlTag(body, "HDATE") || getXmlTag(head, "D_FILL") || getXmlTag(head, "HFILL"));
 
-        const tina = getXmlTag(body, "HTIN") || getXmlTag(head, "TIN");
-        const tinb = getXmlTag(body, "HTIN_B") || getXmlTag(body, "TIN_B");
-        const namea = getXmlTag(body, "HNAME") || getXmlTag(body, "NAME");
-        const nameb = getXmlTag(body, "HNAME_B") || getXmlTag(body, "NAME_B");
+        // HTINSEL/HNAMESEL/HTINBUY/HNAMEBUY — назви полів у документах
+        // M.E.Doc із розділами «продавець/покупець».
+        const tina = getXmlTag(body, "HTINSEL") || getXmlTag(body, "HTIN") || getXmlTag(head, "TIN");
+        const tinb = getXmlTag(body, "HTINBUY") || getXmlTag(body, "HTIN_B") || getXmlTag(body, "TIN_B");
+        const namea = getXmlTag(body, "HNAMESEL") || getXmlTag(body, "HNAME") || getXmlTag(body, "NAME");
+        const nameb = getXmlTag(body, "HNAMEBUY") || getXmlTag(body, "HNAME_B") || getXmlTag(body, "NAME_B");
         const ibana = getXmlTag(body, "HIBAN") || getXmlTag(body, "IBAN");
         const ibanb = getXmlTag(body, "HIBAN_B") || getXmlTag(body, "IBAN_B");
 
-        if (tina === "40562894" && tinb && tinb !== "40562894") {
+        // Сторони: та, що не є самим ОСББ, — постачальник.
+        if (isOwnCode(tina) && tinb && !isOwnCode(tinb)) {
             supplierCode = tinb;
             supplierName = nameb;
             supplierIban = ibanb;
@@ -404,8 +525,9 @@ function parseEdiXml(xml) {
             supplierIban = ibana;
         }
 
-        amountKop = parseKop(getXmlTag(body, "R01G11") || getXmlTag(body, "R03G1") || getXmlTag(body, "SUM") || getXmlTag(body, "TOTAL"));
-        vatKop = parseKop(getXmlTag(body, "R01G10") || getXmlTag(body, "R02G1") || getXmlTag(body, "PDV") || getXmlTag(body, "VAT"));
+        // Податкова накладна: R04G11 — усього з ПДВ, R03G11 — сума ПДВ.
+        amountKop = parseKop(getXmlTag(body, "R04G11") || getXmlTag(body, "R01G11") || getXmlTag(body, "R03G1") || getXmlTag(body, "SUM") || getXmlTag(body, "TOTAL"));
+        vatKop = parseKop(getXmlTag(body, "R03G11") || getXmlTag(body, "R01G10") || getXmlTag(body, "R02G1") || getXmlTag(body, "PDV") || getXmlTag(body, "VAT"));
 
         desc = getXmlTag(body, "R03G1S") || getXmlTag(body, "DOC_NAME") || getXmlTag(body, "SUBJECT");
         const itemRows = getAllXmlTags(body, "T1RXXXXG4S").concat(getAllXmlTags(body, "T1RXXXXG3S"));
@@ -431,8 +553,10 @@ function parseEdiXml(xml) {
         const counterparties = getAllXmlTags(doc, "Контрагент");
         for (const cp of counterparties) {
             const role = getXmlTag(cp, "Роль").toLowerCase();
-            const edr = getXmlTag(cp, "ЕГРПОУ") || getXmlTag(cp, "ИНН") || getXmlTag(cp, "Ид");
-            if (role.includes("постав") || role.includes("продавец") || (edr && edr !== "40562894")) {
+            // «Ид» — службовий GUID 1С, не код: беремо лише ЄДРПОУ/ІПН.
+            const edr = [getXmlTag(cp, "ЕГРПОУ"), getXmlTag(cp, "ЄДРПОУ"), getXmlTag(cp, "ИНН")].map(v => String(v || "").replace(/\D/g, "")).find(v => /^\d{8}$|^\d{10}$/.test(v)) || "";
+            if (isOwnCode(edr)) continue;
+            if (role.includes("постав") || role.includes("продавец") || role.includes("продавець") || edr) {
                 supplierName = getXmlTag(cp, "ОфициальноеНаименование") || getXmlTag(cp, "Наименование");
                 supplierCode = edr;
                 supplierIban = getXmlTag(cp, "НомерСчета") || getXmlTag(cp, "РасчетныйСчет");
@@ -474,11 +598,13 @@ function parseEdiXml(xml) {
     if (!number && !supplierName && !amountKop && !supplierCode) return null;
 
     supplierCode = String(supplierCode || "").replace(/\D/g, "").slice(0, 10);
+    if (isOwnCode(supplierCode)) supplierCode = "";
     supplierIban = String(supplierIban || "").replace(/\s+/g, "").toUpperCase();
-    if (supplierIban && !supplierIban.startsWith("UA")) {
+    if (supplierIban && !/^UA\d{27}$/.test(supplierIban)) {
         const uaM = supplierIban.match(/UA\d{27}/);
         supplierIban = uaM ? uaM[0] : "";
     }
+    if (isOwnIban(supplierIban)) supplierIban = "";
 
     number = String(number || "").replace(/^[№N#]\s*/i, "").trim();
 
@@ -594,6 +720,71 @@ function parseDocumentText(rawText) {
     };
 }
 
+const DOC_TYPES = ['invoice', 'act', 'waybill', 'contract', 'receipt'];
+const ITEMS = ['lift', 'cleaning', 'waste', 'power', 'water', 'systems', 'repair', 'services', 'other'];
+const POSTING = ['92', '20', '22', '11', '10'];
+
+/**
+ * Відповідь AI → той самий вигляд, що й у парсерів. Суми AI дає в
+ * гривнях (у копійках моделі часто помиляються на порядок); свої код
+ * та IBAN ОСББ відкидаються, решта перевіряється на формат.
+ */
+function normalizeAiResult(j) {
+    if (!j || typeof j !== 'object') return null;
+    const s = j.supplier && typeof j.supplier === 'object' ? j.supplier : {};
+    let code = String(s.code ?? '').replace(/\D/g, '');
+    if (![8, 10].includes(code.length) || isOwnCode(code)) code = '';
+    let iban = String(s.iban ?? '').replace(/\s+/g, '').toUpperCase();
+    iban = (iban.match(/UA\d{27}/) || [''])[0];
+    if (isOwnIban(iban)) iban = '';
+    const money = (uah, kopV) => {
+        if (uah !== undefined && uah !== null && uah !== '') {
+            const v = parseMoney(uah);
+            return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : 0;
+        }
+        const k = Math.round(Number(kopV));
+        return Number.isFinite(k) && k > 0 ? k : 0;
+    };
+    const date = normalizeDate(j.date);
+    const docType = DOC_TYPES.includes(j.docType) ? j.docType : detectDocType(String(j.docType || '') + ' ' + String(j.description || ''));
+    const description = String(j.description || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const guess = suggestCategoryAndAccount(description, docType);
+    return {
+        docType,
+        number: String(j.number ?? '').replace(/^[№N#]\s*/i, '').trim().slice(0, 40),
+        date,
+        period: /^\d{4}-\d{2}$/.test(String(j.period || '')) ? j.period : date.slice(0, 7),
+        supplier: { name: String(s.name || '').replace(/\s+/g, ' ').trim().slice(0, 160), code, iban },
+        amountKop: money(j.amount, j.amountKop),
+        vatKop: money(j.vat, j.vatKop),
+        item: ITEMS.includes(j.item) ? j.item : guess.item,
+        postingAcc: POSTING.includes(String(j.postingAcc)) ? String(j.postingAcc) : guess.postingAcc,
+        contractName: String(j.contractName || '').trim().slice(0, 160),
+        contractEnd: normalizeDate(j.contractEnd),
+        description,
+        source: 'ai'
+    };
+}
+
+/**
+ * Що в розпізнаному варто перевірити очима. Не блокує — лише підказує
+ * бухгалтеру, де розпізнавання могло схибити.
+ */
+function reviewRecognized(r, today = new Date().toISOString().slice(0, 10)) {
+    const warnings = [];
+    if (!r) return warnings;
+    const code = String(r.supplier?.code || '');
+    if (code && !((code.length === 8 && validEdrpou(code)) || (code.length === 10 && validRnokpp(code)))) warnings.push(`Код ${code} не пройшов перевірку контрольної цифри`);
+    if (code && isOwnCode(code)) warnings.push('Код постачальника збігається з кодом ОСББ');
+    const iban = String(r.supplier?.iban || '');
+    if (iban && !validIban(iban)) warnings.push('IBAN не пройшов перевірку');
+    if (r.vatKop && r.amountKop && r.vatKop >= r.amountKop) warnings.push('ПДВ не менший за суму документа');
+    if (r.date && r.date > today) warnings.push('Дата документа в майбутньому');
+    if (r.date && r.date < '2015-01-01') warnings.push('Дата документа надто давня');
+    if (!r.amountKop) warnings.push('Суму не знайдено');
+    return warnings;
+}
+
 function matchSupplierWithDatabase(recognizedSupplier, existingSuppliers = [], existingContracts = []) {
     if (!recognizedSupplier) return { matched: null, isNew: true, contract: null };
 
@@ -636,6 +827,12 @@ function matchSupplierWithDatabase(recognizedSupplier, existingSuppliers = [], e
 }
 
 module.exports = {
+    setOwnRequisites,
+    parseMoney,
+    normalizeDate,
+    extractXmlFromSigned,
+    reviewRecognized,
+    normalizeAiResult,
     detectDocType,
     extractDocNumber,
     extractDocDate,

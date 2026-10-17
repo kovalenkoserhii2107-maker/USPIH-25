@@ -26,7 +26,7 @@ before(() => {
     bank = bankFunctions({ ...deps, expenses: ex });
 });
 const wipe = async () => {
-    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_secrets', 'audit_log', 'payments', 'suppliers', 'contracts', 'expenses', 'expense_settings']) {
+    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_secrets', 'audit_log', 'payments', 'suppliers', 'contracts', 'expenses', 'expense_settings', 'osbb_settings', 'ai_secrets']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -147,4 +147,41 @@ test('списання без платежу через API: точна сума
     await assert.rejects(a().linkTx(...A, { txId: `${OWN}_C`, expenseId: e2 }), /більше за залишок/);
     const log = (await db.collection('audit_log').get()).docs.map(d => d.data().action);
     assert.ok(log.includes('expenses.link'));
+});
+
+test('розпізнавання: ключ Gemini переїжджає з відкритих налаштувань, у браузер — лише хвіст', async () => {
+    const KEY = 'AIzaSyTEST_key_for_emulator_only_0042';
+    await db.doc('osbb_settings/finance').set({ edrpou: '40000005', iban: OWN, geminiApiKey: KEY });
+    const ctx = await a().context();
+    assert.deepEqual(ctx.settings.aiKey, { set: true, tail: '0042' });
+    assert.equal(JSON.stringify(ctx).includes(KEY), false);
+    assert.equal((await db.doc('osbb_settings/finance').get()).data().geminiApiKey, undefined);
+    assert.equal((await db.doc('ai_secrets/gemini').get()).data().key, KEY);
+    await assert.rejects(a().setAiKey(...A, { key: 'короткий' }), /не схоже/);
+    const cleared = await a().setAiKey(...A, { key: '' });
+    assert.deepEqual(cleared.aiKey, { set: false, tail: '' });
+    assert.equal((await db.doc('ai_secrets/gemini').get()).exists, false);
+});
+
+test('розпізнавання: XML M.E.Doc у windows-1251 і з підписаного .p7s, ОСББ не стає постачальником', async () => {
+    await setup();
+    await db.doc('osbb_settings/finance').set({ edrpou: '40000005', iban: OWN });
+    // Покупець і продавець переплутані місцями — свій код ОСББ має бути відкинутий.
+    const body = '<DECLAR><DECLARBODY><HNUM>101</HNUM><HFILL>31102026</HFILL><HNAMESEL>ОСББ Тест</HNAMESEL><HTINSEL>40000005</HTINSEL>'
+        + '<HNAMEBUY>ТОВ Ліфт-Сервіс</HNAMEBUY><HTINBUY>14360570</HTINBUY><R04G11>4250,00</R04G11></DECLARBODY></DECLAR>';
+    const xml = `<?xml version="1.0" encoding="windows-1251"?>${body}`;
+    // Кирилиця А–я → 0xC0–0xFF, І/і → 0xB2/0xB3 (windows-1251).
+    const enc = Buffer.from([...xml].map(ch => { const c = ch.charCodeAt(0); return c < 128 ? c : c >= 0x410 && c <= 0x44f ? c - 0x350 : ch === 'І' ? 0xb2 : ch === 'і' ? 0xb3 : 0x3f; }));
+    const r = await a().recognizeDocument(...A, { base64Data: enc.toString('base64'), fileName: 'act.xml', mimeType: 'application/xml' });
+    assert.equal(r.recognized.number, '101');
+    assert.equal(r.recognized.supplier.code, '14360570');
+    assert.equal(r.matchedSupplier?.code, '14360570');
+    assert.ok(Array.isArray(r.warnings));
+    const p7s = Buffer.concat([Buffer.from([0x30, 0x82, 0x10, 0x00]), Buffer.from(`<?xml version="1.0" encoding="utf-8"?>${body}`, 'utf8'), Buffer.from([0xa0, 0x82, 0x01])]);
+    const s = await a().recognizeDocument(...A, { base64Data: p7s.toString('base64'), fileName: 'act.xml.p7s', mimeType: 'application/pkcs7-signature' });
+    assert.equal(s.recognized.number, '101');
+    // Скан без ключа — чесна підказка замість порожнього результату.
+    const scan = await a().recognizeDocument(...A, { base64Data: Buffer.from('fake').toString('base64'), fileName: 'scan.jpg', mimeType: 'image/jpeg' });
+    assert.equal(scan.recognized, null);
+    assert.ok(scan.notes.some(n => n.includes('ключ')));
 });

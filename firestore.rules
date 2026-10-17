@@ -538,7 +538,9 @@ service cloud.firestore {
     // Читають усі мешканці — без реквізитів немає як заплатити.
     match /osbb_settings/{docId} {
       allow read: if validSession() && (isSignedIn());
-      allow write: if !maintenanceActive() && validSession() && (docId == 'finance' ? canAccount() : canManage());
+      // Ключ AI тут не зберігається: документ читає кожен мешканець.
+      allow write: if !maintenanceActive() && validSession() && (docId == 'finance' ? canAccount() : canManage())
+        && (request.resource == null || !request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys().hasAny(['geminiApiKey']));
     }
 
     // ---------- РЕКВІЗИТИ ЗВІТІВ ДЛЯ ДПС ----------
@@ -586,6 +588,11 @@ service cloud.firestore {
       allow write: if false;
     }
     match /bank_secrets/{docId} {
+      allow read, write: if false;
+    }
+
+    // Ключ Gemini для розпізнавання документів — лише сервер
+    match /ai_secrets/{docId} {
       allow read, write: if false;
     }
 
