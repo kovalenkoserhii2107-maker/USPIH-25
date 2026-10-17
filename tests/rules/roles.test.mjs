@@ -182,7 +182,11 @@ test('банк: читають голова й бухгалтер, пише ли
         await assertFails(updateDoc(doc(db, 'bank_tx/t1'), { status: 'matched' }));
         await assertFails(getDoc(doc(db, 'bank_secrets/privat')));
         await assertFails(setDoc(doc(db, 'bank_secrets/privat'), { token: 'x' }));
+        await assertFails(getDoc(doc(db, 'ai_secrets/gemini')));
+        await assertFails(setDoc(doc(db, 'ai_secrets/gemini'), { key: 'x' }));
     }
+    // Ключ AI не можна покласти в реквізити, які читають усі мешканці.
+    await assertFails(setDoc(doc(as('900').firestore(), 'osbb_settings/finance'), { geminiApiKey: 'AIza' }, { merge: true }));
     for (const login of ['11', '45']) {
         await assertFails(getDoc(doc(as(login).firestore(), 'bank/settings')));
         await assertFails(getDocs(collection(as(login).firestore(), 'bank_tx')));

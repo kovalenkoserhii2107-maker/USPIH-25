@@ -324,3 +324,118 @@ test("розпакування пакета ZIP з M.E.Doc (XML + PDF + P7S)", (
     assert.equal(parsed.number, "777");
     assert.equal(parsed.amountKop, 500000);
 });
+
+test('дата M.E.Doc ддммрррр не плутається з ррррммдд', () => {
+    assert.equal(core.normalizeDate('30092026'), '2026-09-30');
+    assert.equal(core.normalizeDate('20260930'), '2026-09-30');
+    assert.equal(core.normalizeDate('31.02.2026'), '');
+    assert.equal(core.normalizeDate('2026-10-17T10:00:00'), '2026-10-17');
+});
+
+test('суми з різними роздільниками', () => {
+    assert.equal(core.parseMoney('4 800,00'), 4800);
+    assert.equal(core.parseMoney('1.234,56'), 1234.56);
+    assert.equal(core.parseMoney('1,234.56'), 1234.56);
+    assert.equal(core.parseMoney('2450'), 2450);
+});
+
+test('сума не злипається з числом на наступному рядку', () => {
+    const r = core.parseDocumentText('Акт № 7 від 01.10.2026\nРазом: 300\n2026 р. підписано');
+    assert.equal(r.amountKop, 30000);
+});
+
+test('реквізити ОСББ не беруться за постачальника', () => {
+    core.setOwnRequisites({ codes: ['40562894'], ibans: ['UA213052990000026005000000001'] });
+    try {
+        const r = core.parseDocumentText(`Рахунок на оплату № 15 від 03.10.2026
+            Покупець: ОСББ «Успіх-25», код ЄДРПОУ 40562894, IBAN UA213052990000026005000000001
+            Постачальник: ТОВ «Ліфт-Сервіс», код ЄДРПОУ 38245674, IBAN UA213283840000026007123456789
+            Всього до сплати: 1 200,00 грн`);
+        assert.equal(r.supplier.code, '38245674');
+        assert.equal(r.supplier.iban, 'UA213283840000026007123456789');
+        assert.equal(r.number, '15');
+        assert.equal(r.date, '2026-10-03');
+    } finally { core.setOwnRequisites(); }
+});
+
+test('номер і дата — з заголовка, а не з посилання на договір', () => {
+    const r = core.parseDocumentText('Згідно з договором № 5 від 01.01.2025\nАКТ НАДАННЯ ПОСЛУГ № 112 від 30.09.2026\nРазом: 500,00 грн');
+    assert.equal(r.number, '112');
+    assert.equal(r.date, '2026-09-30');
+});
+
+test('XML у кодуванні 1251 без оголошення читається', () => {
+    const iconv = new TextEncoder();
+    const cp1251 = Buffer.from([0x3c, 0x61, 0x3e, 0xc0, 0xea, 0xf2, 0x3c, 0x2f, 0x61, 0x3e]); // <a>Акт</a>
+    assert.equal(core.decodeTextBuffer(cp1251), '<a>Акт</a>');
+    assert.equal(core.decodeTextBuffer(Buffer.from(iconv.encode('﻿<a>Акт</a>'))), '<a>Акт</a>');
+});
+
+test('ZIP із дескриптором даних (розмір 0 у локальному заголовку) розпаковується', () => {
+    const zlib = require('zlib');
+    const content = Buffer.from('<DECLAR><DECLARBODY><HNUM>9</HNUM></DECLARBODY></DECLAR>');
+    const comp = zlib.deflateRawSync(content);
+    const name = Buffer.from('doc.xml');
+    const crc = zlib.crc32 ? zlib.crc32(content) : 0;
+    const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x08, 6); local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(name.length, 26);
+    const desc = Buffer.alloc(16); desc.writeUInt32LE(0x08074b50, 0); desc.writeUInt32LE(crc, 4); desc.writeUInt32LE(comp.length, 8); desc.writeUInt32LE(content.length, 12);
+    const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(0x08, 8); cd.writeUInt16LE(8, 10); cd.writeUInt32LE(crc, 16);
+    cd.writeUInt32LE(comp.length, 20); cd.writeUInt32LE(content.length, 24); cd.writeUInt16LE(name.length, 28); cd.writeUInt32LE(0, 42);
+    const cdAt = 30 + name.length + comp.length + 16;
+    const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10); eocd.writeUInt32LE(46 + name.length, 12); eocd.writeUInt32LE(cdAt, 16);
+    const zip = Buffer.concat([local, name, comp, desc, cd, name, eocd]);
+    const files = core.unpackZip(zip);
+    assert.equal(files.length, 1);
+    assert.equal(files[0].name, 'doc.xml');
+    assert.equal(core.parseEdiXml(files[0].data.toString()).number, '9');
+});
+
+test('XML дістається з підписаного контейнера .p7s', () => {
+    const xml = '<?xml version="1.0" encoding="utf-8"?><DECLAR><DECLARBODY><HNUM>77</HNUM><HNAME>ТОВ «Вода»</HNAME></DECLARBODY></DECLAR>';
+    const p7s = Buffer.concat([Buffer.from([0x30, 0x82, 0x10, 0x00, 0x06, 0x09]), Buffer.from(xml, 'utf8'), Buffer.from([0xa0, 0x82, 0x01, 0x02, 0x03])]);
+    const got = core.extractXmlFromSigned(p7s);
+    assert.equal(got, xml);
+    assert.equal(core.parseEdiXml(got).number, '77');
+});
+
+test('CommerceML: службовий Ид не стає кодом постачальника', () => {
+    const xml = `<КоммерческаяИнформация><Документ><Номер>5</Номер><Дата>2026-10-01</Дата><Сумма>100</Сумма>
+        <Контрагенты><Контрагент><Ид>a1b2c3d4-5678-90ab-cdef-1234567890ab</Ид><Наименование>ТОВ Тест</Наименование><Роль>Продавец</Роль></Контрагент></Контрагенты></Документ></КоммерческаяИнформация>`;
+    const r = core.parseEdiXml(xml);
+    assert.equal(r.supplier.code, '');
+    assert.equal(r.supplier.name, 'ТОВ Тест');
+});
+
+test('попередження до розпізнаного', () => {
+    const w = core.reviewRecognized({ supplier: { code: '12345670', iban: '' }, amountKop: 1000, vatKop: 2000, date: '2099-01-01' }, '2026-10-17');
+    assert.ok(w.some(x => x.includes('контрольної')));
+    assert.ok(w.some(x => x.includes('ПДВ')));
+    assert.ok(w.some(x => x.includes('майбутньому')));
+});
+
+test('відповідь AI: суми в гривнях, свій код відкинуто, хибна дата порожня', () => {
+    core.setOwnRequisites({ codes: ['40000000'], ibans: [] });
+    const r = core.normalizeAiResult({
+        docType: 'act', number: '№ 15', date: '2026-02-31', amount: '44 992,17', vat: 0,
+        supplier: { name: ' ТОВ  «Ліфт» ', code: '40000000', iban: 'ua 21 3283 8400 0002 6007 1234 5678 9' },
+        item: 'lift', postingAcc: 92, description: 'Обслуговування ліфтів'
+    });
+    core.setOwnRequisites({});
+    assert.equal(r.amountKop, 4499217);
+    assert.equal(r.vatKop, 0);
+    assert.equal(r.number, '15');
+    assert.equal(r.date, '');
+    assert.equal(r.supplier.code, '');
+    assert.equal(r.supplier.name, 'ТОВ «Ліфт»');
+    assert.equal(r.supplier.iban, 'UA213283840000026007123456789');
+    assert.equal(r.postingAcc, '92');
+    assert.equal(core.normalizeAiResult({ amountKop: 12345 }).amountKop, 12345);
+    assert.equal(core.normalizeAiResult('x'), null);
+});
+
+test('податкова накладна M.E.Doc: сума з ПДВ і ПДВ', () => {
+    const r = core.parseEdiXml('<DECLAR><DECLARBODY><HNUM>7</HNUM><HNAMESEL>ТОВ Вода</HNAMESEL><R01G11>1000,00</R01G11><R03G11>200,00</R03G11><R04G11>1200,00</R04G11></DECLARBODY></DECLAR>');
+    assert.equal(r.amountKop, 120000);
+    assert.equal(r.vatKop, 20000);
+});

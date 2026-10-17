@@ -12,7 +12,7 @@
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import {
-    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, saveGeminiApiKey, CONTRACT_STATUS, maskIban, when, dateOnly, loadTx, PAYMENT_STATUS
+    loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, CONTRACT_STATUS, maskIban, when, dateOnly, loadTx, PAYMENT_STATUS
 } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { periodName, fmtKop, toKop } from './charges-core.js';
@@ -82,6 +82,9 @@ function dataUrlToFile(dataUrl, filename) {
     return new File([u8arr], filename, { type: mime });
 }
 
+const RECOG_ACCEPT = ".pdf,image/*,.xml,.zip,.p7s,.p7m,.json,.txt";
+const RECOG_MAX = 7 * 1024 * 1024;
+
 function docRecogHtml(kind = "doc") {
     const isDoc = kind === "doc";
     const title = isDoc ? "Розумне розпізнавання: скан, PDF або M.E.Doc / Вчасно (XML, ZIP)" : "Розпізнавання договору підряду / послуг";
@@ -91,11 +94,8 @@ function docRecogHtml(kind = "doc") {
     const inputId = isDoc ? "exRecogInput" : "cfRecogInput";
     const barId = isDoc ? "exRecogBar" : "cfRecogBar";
     const statusId = isDoc ? "exRecogStatus" : "cfRecogStatus";
-    let localKey = "";
-    try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
-    const activeKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
-    const hasKey = Boolean(activeKey);
-    const keyTail = activeKey.length >= 4 ? activeKey.slice(-4) : activeKey;
+    const hasKey = Boolean(ctx?.settings?.aiKey?.set);
+    const keyTail = ctx?.settings?.aiKey?.tail || "";
 
     return `<div class="doc-recog-bar pay-wide" id="${barId}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -115,7 +115,7 @@ function docRecogHtml(kind = "doc") {
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button type="button" class="sv-btn is-soft btn-compact" data-act="${btnAct}" style="white-space:nowrap">📎 Обрати файл для розпізнавання</button>
                 <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" title="Перевірити або змінити AI-ключ" style="color:var(--sv-muted);font-size:12px;padding:4px 8px">⚙️ AI-ключ</button>
-                <input type="file" id="${inputId}" accept=".pdf,image/*,.txt,.xml,.zip" style="display:none">
+                <input type="file" id="${inputId}" accept="${RECOG_ACCEPT}" style="display:none">
             </div>
         </div>
         <div id="${statusId}" class="buh-note" style="margin-top:8px" hidden></div>
@@ -179,202 +179,6 @@ function flashField(id) {
     el.classList.remove("doc-field-highlight");
     void el.offsetWidth;
     el.classList.add("doc-field-highlight");
-}
-
-async function getAvailableGeminiModels(apiKey) {
-    try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        if (!res.ok) return [];
-        const data = await res.json();
-        const list = (data.models || [])
-            .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
-            .map(m => String(m.name || "").replace(/^models\//, ""))
-            .filter(Boolean);
-        list.sort((a, b) => {
-            const aFlash = a.includes("flash") ? 1 : 0;
-            const bFlash = b.includes("flash") ? 1 : 0;
-            if (aFlash !== bFlash) return bFlash - aFlash;
-            return b.localeCompare(a, undefined, { numeric: true });
-        });
-        return list;
-    } catch (_) {
-        return [];
-    }
-}
-
-async function callGeminiVisionDirect(base64DataUrl, mimeType, apiKey) {
-    const rawBase64 = String(base64DataUrl || "").replace(/^data:[^;]+;base64,/, "").trim();
-    const cleanMime = mimeType === "application/pdf" ? "application/pdf" : "image/jpeg";
-    const prompt = `Ти професійний бухгалтер та експерт з первинних документів в Україні.
-Уважно проаналізуй цей первинний документ (акт наданих послуг / виконаних робіт, рахунок на оплату, видаткову накладну, договір, фіскальний чек).
-
-ВАЖЛИВО ПРО СТОРОНИ ДОКУМЕНТА:
-• Замовник / покупець — це ОСББ «Успіх-25» (код ЄДРПОУ 40562894). Не вказуй ОСББ як постачальника!
-• Постачальник (виконавець / продавець) — це ІНША сторона (підприємство, ТОВ, ПП, ФОП), яка надає послуги чи продає товари. Вкажи саме її реквізити в обʼєкті "supplier" (назва, ЄДРПОУ/РНОКПП, IBAN).
-
-Поверни виключно валідний JSON у такому форматі без будь-яких зайвих слів:
-{
-  "docType": "act" | "invoice" | "waybill" | "contract" | "receipt",
-  "number": "номер документа без символу № (наприклад, 666)",
-  "date": "YYYY-MM-DD",
-  "period": "YYYY-MM",
-  "supplier": {
-    "name": "повна назва постачальника / виконавця (наприклад, КК ЗАТИШОК ТОВ)",
-    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр) постачальника",
-    "iban": "IBAN постачальника (UA... 29 символів, якщо вказано)"
-  },
-  "amountKop": 4499217,
-  "vatKop": 0,
-  "item": "lift" | "cleaning" | "waste" | "power" | "water" | "systems" | "repair" | "services" | "other",
-  "postingAcc": "92" | "20" | "22" | "11" | "10",
-  "contractName": "назва чи номер договору, якщо зазначено в документі (наприклад, основний договір)",
-  "contractEnd": "YYYY-MM-DD",
-  "description": "короткий опис наданих послуг чи товару"
-}`;
-    const body = {
-        contents: [{
-            parts: [
-                { text: prompt },
-                { inlineData: { mimeType: cleanMime, data: rawBase64 } }
-            ]
-        }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-    };
-
-    let cachedModel = "";
-    try { cachedModel = String(localStorage.getItem("uspih25_working_gemini_model") || "").trim(); } catch (_) {}
-
-    const defaultCandidates = [
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro"
-    ];
-
-    const modelsToTry = [];
-    if (cachedModel && !modelsToTry.includes(cachedModel)) modelsToTry.push(cachedModel);
-    for (const m of defaultCandidates) {
-        if (!modelsToTry.includes(m)) modelsToTry.push(m);
-    }
-
-    const triedModels = new Set();
-    let lastErr = null;
-
-    function isFallbackError(err) {
-        if (!err) return false;
-        const st = Number(err.status || 0);
-        if ([404, 429, 500, 502, 503, 504].includes(st)) return true;
-        const m = String(err.message || "").toLowerCase();
-        return m.includes("404") || m.includes("503") || m.includes("429") || m.includes("500") ||
-               m.includes("demand") || m.includes("overload") || m.includes("temporary") ||
-               m.includes("quota") || m.includes("unavailable") || m.includes("not found");
-    }
-
-    async function tryOneModel(model) {
-        triedModels.add(model);
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-            const errTxt = await res.text();
-            let parsedMsg = errTxt.slice(0, 150);
-            try {
-                const j = JSON.parse(errTxt);
-                if (j?.error?.message) parsedMsg = j.error.message;
-            } catch (_) {}
-            const err = new Error(`Gemini (${model}) HTTP ${res.status}: ${parsedMsg}`);
-            err.status = res.status;
-            throw err;
-        }
-        const data = await res.json();
-        const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!txt) throw new Error("Порожня відповідь AI");
-        let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-        const parsed = JSON.parse(cleanTxt);
-        if (parsed.amountKop !== undefined) {
-            if (typeof parsed.amountKop === "string") parsed.amountKop = Math.round(parseFloat(parsed.amountKop.replace(",", ".")));
-            else parsed.amountKop = Math.round(Number(parsed.amountKop));
-        } else if (parsed.amount !== undefined) {
-            const num = typeof parsed.amount === "string" ? parseFloat(parsed.amount.replace(",", ".")) : Number(parsed.amount);
-            parsed.amountKop = Math.round(num * 100);
-        }
-        if (parsed.vatKop !== undefined) {
-            if (typeof parsed.vatKop === "string") parsed.vatKop = Math.round(parseFloat(parsed.vatKop.replace(",", ".")));
-            else parsed.vatKop = Math.round(Number(parsed.vatKop));
-        } else if (parsed.vat !== undefined) {
-            const num = typeof parsed.vat === "string" ? parseFloat(parsed.vat.replace(",", ".")) : Number(parsed.vat);
-            parsed.vatKop = Math.round(num * 100);
-        }
-        if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
-        if (parsed.date) {
-            parsed.date = String(parsed.date).trim();
-            if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
-        }
-        if (parsed.supplier) {
-            if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
-            if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
-            if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
-        }
-        try { localStorage.setItem("uspih25_working_gemini_model", model); } catch (_) {}
-        return parsed;
-    }
-
-    for (const model of modelsToTry) {
-        try {
-            return await tryOneModel(model);
-        } catch (err) {
-            lastErr = err;
-            if (isFallbackError(err)) {
-                try { if (localStorage.getItem("uspih25_working_gemini_model") === model) localStorage.removeItem("uspih25_working_gemini_model"); } catch (_) {}
-                continue;
-            }
-            throw err;
-        }
-    }
-
-    const discovered = await getAvailableGeminiModels(apiKey);
-    for (const model of discovered) {
-        if (triedModels.has(model)) continue;
-        try {
-            return await tryOneModel(model);
-        } catch (err) {
-            lastErr = err;
-            if (isFallbackError(err)) {
-                try { if (localStorage.getItem("uspih25_working_gemini_model") === model) localStorage.removeItem("uspih25_working_gemini_model"); } catch (_) {}
-                continue;
-            }
-            throw err;
-        }
-    }
-
-    throw lastErr || new Error("Не знайдено доступної моделі Gemini для вашого ключа");
-}
-
-function matchSupplierClient(recognizedSupplier) {
-    if (!recognizedSupplier || !ctx) return { matched: null, contract: null };
-    const code = String(recognizedSupplier.code || "").trim();
-    const iban = String(recognizedSupplier.iban || "").replace(/\s+/g, "").toUpperCase();
-    const nameLower = String(recognizedSupplier.name || "").trim().toLowerCase();
-    const suppliers = ctx.suppliers || [];
-    const contracts = ctx.contracts || [];
-    let found = null;
-    if (code) found = suppliers.find(s => String(s.code || "").trim() === code);
-    if (!found && iban) found = suppliers.find(s => String(s.iban || "").replace(/\s+/g, "").toUpperCase() === iban);
-    if (!found && nameLower.length > 3) {
-        const clean = nameLower.replace(/(?:тов|пп|фоп|прат|пат|кп|«|»|")/gi, "").trim();
-        found = suppliers.find(s => {
-            const sn = String(s.name || "").toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|кп|«|»|")/gi, "").trim();
-            return clean && sn && (sn.includes(clean) || clean.includes(sn));
-        });
-    }
-    const contract = found ? (contracts.find(c => c.supplierId === found.id && c.status === "approved") || null) : null;
-    return { matched: found, contract };
 }
 
 function renderSuggestedSupplierCard(s, contractName = "") {
@@ -445,90 +249,47 @@ function suggestedSupplierHtml(s, contractName = "") {
 
 async function recognizeUploadedDocument(file, kind = "doc") {
     if (!file) return;
-    if (file.size > 25 * 1024 * 1024) { toast("Файл перевищує 25 МБ", "error"); return; }
-
     const isDoc = kind === "doc";
     const bar = document.getElementById(isDoc ? "exRecogBar" : "cfRecogBar");
     const status = document.getElementById(isDoc ? "exRecogStatus" : "cfRecogStatus");
-    if (bar) bar.classList.add("is-scanning");
-    if (status) {
-        status.hidden = false;
-        status.innerHTML = "<span>⏳ Аналізую документ (M.E.Doc / Вчасно / AI)…</span>";
+    const say = html => { if (status) { status.hidden = false; status.innerHTML = html; } };
+    const name = file.name.toLowerCase();
+    const isImage = file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/.test(name);
+    // Word/Excel не розпізнаються — файл просто лишається прикріпленим.
+    if (!isImage && !/\.(pdf|xml|zip|p7s|p7m|json|txt)$/.test(name) && !/pdf|xml|zip|json|pkcs7/.test(file.type)) {
+        say(`<span class="buh-note">Файл прикріплено. Реквізити з ${escapeHtml(file.name.split(".").pop().toUpperCase())} не читаються — заповніть поля або додайте PDF, фото чи файл M.E.Doc / Вчасно.</span>`);
+        return;
     }
+    if (!isImage && file.size > RECOG_MAX) {
+        say(`<span class="buh-note">Файл понад 7 МБ — прикріплено без розпізнавання. Заповніть поля вручну.</span>`);
+        return;
+    }
+    if (bar) bar.classList.add("is-scanning");
+    say("<span>⏳ Аналізую документ (M.E.Doc / Вчасно / AI)…</span>");
 
     try {
-        const isZip = file.name.toLowerCase().endsWith(".zip") || file.type === "application/zip";
-        const isXml = file.name.toLowerCase().endsWith(".xml") || file.type.includes("xml");
-        const isJson = file.name.toLowerCase().endsWith(".json") || file.type.includes("json");
-
-        let res = null;
-
-        // Для XML та ZIP спочатку викликаємо серверний ЕДО-парсер (не потребує ключа AI і працює за 0.05 с)
-        if (isXml || isJson) {
-            const textContent = await file.text();
-            res = await expAct({
-                action: "recognizeDocument",
-                textContent,
-                fileName: file.name,
-                mimeType: isXml ? "application/xml" : "application/json"
-            });
-        } else if (isZip) {
-            const base64Data = await fileToDataUrl(file);
-            res = await expAct({
-                action: "recognizeDocument",
-                base64Data,
-                fileName: file.name,
-                mimeType: "application/zip"
-            });
+        // Усе розпізнається на сервері: там ключ AI, свої реквізити ОСББ
+        // і правильне кодування XML (windows-1251 у M.E.Doc).
+        let payload;
+        if (/\.txt$/.test(name)) payload = { textContent: await file.text() };
+        else if (isImage) payload = await prepareDocumentImageForAi(file);
+        else payload = { base64Data: await fileToDataUrl(file), mimeType: file.type || "" };
+        if (!payload.textContent && !payload.base64Data) throw new Error("файл не прочитався");
+        if ((payload.base64Data || "").length > RECOG_MAX * 4 / 3 + 100) {
+            say(`<span class="buh-note">Файл понад 7 МБ — прикріплено без розпізнавання. Заповніть поля вручну.</span>`);
+            if (!files.some(f => f.name === file.name && f.size === file.size)) files = [...files, file];
+            return;
         }
+        const res = await expAct({ action: "recognizeDocument", fileName: file.name, ...payload }, 120000);
+        const notes = res?.notes || [];
+        const r0 = res?.recognized;
 
-        // Якщо це скан/PDF або якщо XML/ZIP не розпізнано сервером: викликаємо AI Vision
-        if (!res?.recognized || (!res.recognized.amountKop && !res.recognized.number && !res.recognized.supplier?.name)) {
-            let localKey = "";
-            try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
-            const apiKey = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
-
-            if (!apiKey && !isXml && !isZip) {
-                if (status) {
-                    status.hidden = false;
-                    status.innerHTML = `<span class="buh-note is-bad" style="color:var(--sv-amber)">⚠️ Для розпізнавання фото/сканів потрібен ключ Google AI Studio. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#000;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ зараз ›</button></span>`;
-                }
-                toast("Вкажіть AI-ключ для розпізнавання фото/сканів", "info");
-                return;
-            }
-
-            if (apiKey && !isXml && !isZip) {
-                const { base64Data, mimeType } = await prepareDocumentImageForAi(file);
-                if (base64Data) {
-                    try {
-                        const directParsed = await callGeminiVisionDirect(base64Data, mimeType, apiKey);
-                        const m = matchSupplierClient(directParsed?.supplier);
-                        res = {
-                            ok: true,
-                            recognized: directParsed,
-                            matchedSupplier: m.matched,
-                            matchedContract: m.contract,
-                            source: "ocr"
-                        };
-                    } catch (aiErr) {
-                        console.error("Gemini Vision failed:", aiErr);
-                        if (status) {
-                            status.hidden = false;
-                            status.innerHTML = `<span class="buh-note is-bad">❌ Помилка AI: ${escapeHtml(aiErr.message || "помилка виклику")}. <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#000;display:inline;padding:0;background:none;border:none;cursor:pointer">Змінити ключ</button></span>`;
-                        }
-                        toast(`Помилка AI: ${aiErr.message?.slice(0, 90)}`, "error");
-                        return;
-                    }
-                }
-            }
-        }
-
-        if (!res?.recognized || (!res.recognized.amountKop && !res.recognized.number && !res.recognized.supplier?.name && !res.recognized.supplier?.code)) {
-            if (status) {
-                status.hidden = false;
-                status.innerHTML = `<span class="buh-note is-bad">Не вдалося знайти реквізити в цьому документі. Заповніть їх вручну або перевірте файл.</span>`;
-            }
-            toast("Реквізити не знайдено", "error");
+        if (!r0 || (!r0.amountKop && !r0.number && !r0.supplier?.name && !r0.supplier?.code)) {
+            const needKey = notes.some(n => n.includes("ключ Gemini"));
+            say(`<span class="buh-note is-bad">${escapeHtml(notes[0] || "Не вдалося знайти реквізити в цьому документі.")} Заповніть поля вручну.${needKey
+                ? ` <button type="button" class="btn-ghost-small" data-act="prompt-ai-key" style="text-decoration:underline;color:#000;font-weight:700;display:inline;padding:0;background:none;border:none;cursor:pointer">Вказати ключ ›</button>` : ""}</span>`);
+            if (!files.some(f => f.name === file.name && f.size === file.size)) files = [...files, file];
+            toast(needKey ? "Для сканів потрібен ключ Gemini AI" : "Реквізити не знайдено", needKey ? "info" : "error");
             return;
         }
 
@@ -610,12 +371,15 @@ async function recognizeUploadedDocument(file, kind = "doc") {
             if (res.source === "medoc") srcBadge = "✓ Імпортовано з M.E.Doc (XML)";
             else if (res.source === "vchasno_ubl" || res.source === "vchasno_json") srcBadge = "✓ Імпортовано з Вчасно (ЕДО)";
             else if (res.source === "commerceml") srcBadge = "✓ Імпортовано з 1С / CommerceML";
-            if (res.extractedFiles?.length) srcBadge += " (витягнуто PDF)";
+            else if (res.source === "ai") srcBadge = "✓ Розпізнано AI — звірте з документом";
+            if (res.extractedFiles?.some(f => f.mimeType === "application/pdf")) srcBadge += " (витягнуто PDF)";
 
             const supTitle = res.matchedSupplier ? `Постачальник: ${res.matchedSupplier.name}` : (r.supplier?.name ? `⚡ Новий контрагент: ${r.supplier.name} (${r.supplier.code || "код —"})` : "");
             const numDate = [r.number ? `№ ${r.number}` : "", r.date ? `від ${human(r.date)}` : ""].filter(Boolean).join(" ");
             const sumStr = r.amountKop ? `Сума: ${fmtKop(r.amountKop)} грн` : "";
-            status.innerHTML = `<span class="doc-recog-badge">${srcBadge}</span> <span style="font-size:13px;color:#000;">${[supTitle, numDate, sumStr].filter(Boolean).join(" · ")}</span>`;
+            const checks = [...(res.warnings || []), ...(res.notes || [])];
+            status.innerHTML = `<span class="doc-recog-badge">${srcBadge}</span> <span style="font-size:13px;color:#000;">${escapeHtml([supTitle, numDate, sumStr].filter(Boolean).join(" · "))}</span>${checks.length
+                ? `<span class="buh-note is-bad" style="display:block;margin-top:4px">⚠️ Перевірте: ${escapeHtml(checks.join("; "))}</span>` : ""}`;
         }
         toast(res.source === "medoc" ? "Документ M.E.Doc успішно завантажено" : res.source?.includes("vchasno") ? "Документ Вчасно успішно завантажено" : "Реквізити документа заповнено автоматично", "success");
     } catch (err) {
@@ -1189,25 +953,18 @@ export function initExpensesView() {
             else if (a === 'trigger-contract-recog') { document.getElementById('cfRecogInput')?.click(); return; }
             else if (a === 'close') { form = null; files = []; loadExpensesView(); }
             else if (a === 'prompt-ai-key') {
-                let localKey = "";
-                try { localKey = String(localStorage.getItem("uspih25_gemini_api_key") || "").trim(); } catch (_) {}
-                const current = String(ctx?.settings?.geminiApiKey || localKey || "").trim();
+                const cur = ctx?.settings?.aiKey;
                 const key = await promptDialog(
                     "Ключ Gemini AI (Google AI Studio)",
-                    "Вставте безкоштовний ключ API (AIzaSy...) для автоматичного розпізнавання рахунків, актів та накладних за фото та сканами:",
-                    {
-                        confirmLabel: "Зберегти ключ",
-                        placeholder: "AIzaSy...",
-                        initialValue: current
-                    }
+                    `${cur?.set ? `Зараз підключено ключ …${cur.tail}. Щоб замінити — вставте новий.` : "Вставте безкоштовний ключ API (AIzaSy…) — скани, фото й PDF розпізнаватимуться автоматично."} Ключ зберігається лише на сервері.`,
+                    { confirmLabel: "Перевірити й зберегти", placeholder: "AIzaSy..." }
                 );
-                if (key !== null) {
-                    const clean = String(key || "").trim();
-                    await saveGeminiApiKey(clean);
-                    if (ctx?.settings) ctx.settings.geminiApiKey = clean;
-                    await loadExpensesView();
-                    toast(clean ? `AI-ключ збережено (…${clean.slice(-4)}) — розпізнавання увімкнено!` : "Ключ очищено", clean ? "success" : "info");
-                }
+                const clean = String(key || "").trim();
+                if (!clean) return;
+                const r = await expAct({ action: "aiKey", key: clean });
+                if (ctx?.settings) ctx.settings.aiKey = r.aiKey;
+                await loadExpensesView();
+                toast(`AI-ключ збережено (…${r.aiKey.tail}) — розпізнавання сканів увімкнено`, "success");
                 return;
             }
             else if (a === 'quick-add-supplier') {

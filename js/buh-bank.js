@@ -6,7 +6,7 @@
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { session } from './firebase.js';
 import {
-    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadRequisites, expAct, act, saveGeminiApiKey, money, signed, when, dateOnly, tagOf, maskIban,
+    loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadRequisites, expAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     ACCOUNT_PURPOSES, METHOD
 } from './buh-data.js';
 import { toKop } from './charges-core.js';
@@ -223,40 +223,24 @@ function testModeHtml() {
         <p class="buh-note">Попередні тестові дані у робочій базі автоматично не видаляються. За потреби голова може використати повне очищення з резервною копією — нижче.</p></section>`;
 }
 
-const AI_KEY_STORAGE = 'uspih25_gemini_api_key';
-
-function getStoredAiKey(serverKey = '') {
-    const srv = String(serverKey || '').trim();
-    if (srv) {
-        try { localStorage.setItem(AI_KEY_STORAGE, srv); } catch (_) {}
-        return srv;
-    }
-    try { return String(localStorage.getItem(AI_KEY_STORAGE) || '').trim(); } catch (_) { return ''; }
-}
-
-function updateAiKeyUi(key) {
-    const clean = String(key || '').trim();
-    const tail = clean.length >= 4 ? clean.slice(-4) : clean;
+/** Стан ключа AI: сам ключ лише на сервері, тут — «є» і 4 останні символи. */
+function updateAiKeyUi(info) {
+    const set = Boolean(info?.set), tail = info?.tail || '';
     const badge = document.getElementById('aiKeyBadge');
     if (badge) {
-        badge.className = `buh-tag ${clean ? 'is-payment' : 'is-soft'}`;
-        badge.textContent = clean ? `✓ AI Vision підключено (…${tail})` : 'Базовий парсер (0 грн)';
+        badge.className = `buh-tag ${set ? 'is-payment' : 'is-soft'}`;
+        badge.textContent = set ? `✓ AI Vision підключено (…${tail})` : 'AI не підключено';
     }
     const note = document.getElementById('aiKeyStatusNote');
-    if (note) {
-        note.style.color = clean ? '#15803d' : '';
-        note.style.fontWeight = clean ? '600' : '';
-        note.textContent = clean
-            ? `✓ Ключ збережено та активний (закінчується на …${tail}). Фотографії та скани розпізнаються через Google Gemini Vision.`
-            : 'Ключ ще не збережено — зараз діє безкоштовний текстовий парсер PDF.';
-    }
+    if (note) note.textContent = aiKeyNote(set, tail);
     const input = document.getElementById('aiKeyInput');
-    if (input && input.value !== clean) input.value = clean;
-    const toggleBtn = document.getElementById('aiKeyToggleBtn');
-    if (toggleBtn) toggleBtn.hidden = !clean;
+    if (input) { input.value = ''; input.placeholder = set ? `Новий ключ, щоб замінити …${tail}` : 'Gemini API Key (AIzaSy...)'; }
     const clearBtn = document.getElementById('aiKeyClearBtn');
-    if (clearBtn) clearBtn.hidden = !clean;
+    if (clearBtn) clearBtn.hidden = !set;
 }
+const aiKeyNote = (set, tail) => set
+    ? `Ключ (…${tail}) зберігається лише на сервері. Скани, фото й PDF розпізнаються через Google Gemini.`
+    : 'Без ключа читаються лише електронні документи M.E.Doc / Вчасно (XML, ZIP, .p7s). Для сканів і фото потрібен ключ.';
 
 export async function loadSettingsView() {
     const hostEl = document.getElementById('viewSettings');
@@ -270,8 +254,7 @@ export async function loadSettingsView() {
     const connected = settings.tokenSet === true;
     const last = settings.lastSync;
     const accounts = Object.entries(settings.accounts || {});
-    const savedAiKey = getStoredAiKey(ex?.settings?.geminiApiKey);
-    const keyTail = savedAiKey.length >= 4 ? savedAiKey.slice(-4) : savedAiKey;
+    const aiKey = ex?.settings?.aiKey || { set: false, tail: '' };
     hostEl.innerHTML = `
         <section class="buh-card">
             <div class="buh-card-head"><h2>ПриватБанк</h2><span class="buh-tag ${connected ? 'is-payment' : 'is-review'}">${connected ? `підключено · токен …${escapeHtml(settings.tokenHint || '')}` : 'не підключено'}</span></div>
@@ -306,18 +289,15 @@ export async function loadSettingsView() {
         <section class="buh-card">
             <div class="buh-card-head">
                 <h2>Розумне розпізнавання документів (AI OCR)</h2>
-                <span id="aiKeyBadge" class="buh-tag ${savedAiKey ? 'is-payment' : 'is-soft'}">${savedAiKey ? `✓ AI Vision підключено (…${escapeHtml(keyTail)})` : 'Базовий парсер (0 грн)'}</span>
+                <span id="aiKeyBadge" class="buh-tag ${aiKey.set ? 'is-payment' : 'is-soft'}">${aiKey.set ? `✓ AI Vision підключено (…${escapeHtml(aiKey.tail)})` : 'AI не підключено'}</span>
             </div>
-            <p class="buh-note">Система вже автоматично розпізнає суми, ПДВ, номери, дати, контрагентів (ЄДРПОУ/РНОКПП), IBAN та статті витрат з текстових PDF безкоштовно. Якщо ви бажаєте розпізнавати фотографії та складні скани з камери телефону через Google Gemini Vision — вкажіть ключ Google AI Studio.</p>
+            <p class="buh-note">Електронні документи M.E.Doc і Вчасно (XML, ZIP, підписані .p7s) читаються без AI і безкоштовно. Скани, фото з телефону й PDF розпізнає Google Gemini — для цього потрібен ключ Google AI Studio. Після розпізнавання система підказує, що варто перевірити: контрольну цифру коду, IBAN, ПДВ, дату.</p>
             <div class="buh-inline-form">
-                <input id="aiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="Gemini API Key (AIzaSy...)" value="${escapeHtml(savedAiKey)}"${chair ? '' : ' disabled'}>
-                <button type="button" class="btn-soft btn-compact" data-act="ai-key-toggle" id="aiKeyToggleBtn"${savedAiKey ? '' : ' hidden'}>Показати</button>
-                ${chair ? '<button type="button" class="btn-primary btn-compact" data-act="ai-key-save">Зберегти ключ</button>' : '<span class="t-muted">змінює голова</span>'}
-                ${chair ? `<button type="button" class="btn-ghost-small" data-act="ai-key-clear" id="aiKeyClearBtn"${savedAiKey ? '' : ' hidden'}>Очистити</button>` : ''}
+                <input id="aiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="${aiKey.set ? `Новий ключ, щоб замінити …${escapeHtml(aiKey.tail)}` : 'Gemini API Key (AIzaSy...)'}">
+                <button type="button" class="btn-primary btn-compact" data-act="ai-key-save">Перевірити й зберегти</button>
+                <button type="button" class="btn-ghost-small" data-act="ai-key-clear" id="aiKeyClearBtn"${aiKey.set ? '' : ' hidden'}>Видалити ключ</button>
             </div>
-            <p class="buh-note" id="aiKeyStatusNote" style="${savedAiKey ? 'color:var(--sv-green);font-weight:600;' : ''}">${savedAiKey
-                ? `✓ Ключ збережено та активний (закінчується на …${escapeHtml(keyTail)}). Фотографії та скани розпізнаються через Google Gemini Vision.`
-                : 'Ключ ще не збережено — зараз діє безкоштовний текстовий парсер PDF.'}</p>
+            <p class="buh-note" id="aiKeyStatusNote">${escapeHtml(aiKeyNote(aiKey.set, aiKey.tail))}</p>
             <p class="buh-note"><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Отримати безкоштовний ключ у Google AI Studio ↗</a> (до 1 500 запитів на добу безкоштовно).</p>
         </section>
         <section class="buh-card">
@@ -345,10 +325,6 @@ export async function loadSettingsView() {
 export function initSettingsView() {
     const host = document.getElementById('viewSettings');
     host.addEventListener('input', e => {
-        if (e.target.id === 'aiKeyInput') {
-            const toggleBtn = document.getElementById('aiKeyToggleBtn');
-            if (toggleBtn) toggleBtn.hidden = !e.target.value.trim();
-        }
     });
     host.addEventListener('click', async e => {
         const btn = e.target.closest('[data-act]');
@@ -362,41 +338,26 @@ export function initSettingsView() {
             finally { setBusy(btn, false); }
         }
         if (btn.dataset.act === 'registry-save') { await saveRegistry(btn, requisites.registry); return; }
-        if (btn.dataset.act === 'ai-key-toggle') {
-            const input = document.getElementById('aiKeyInput');
-            if (!input) return;
-            const show = input.type === 'password';
-            input.type = show ? 'text' : 'password';
-            btn.textContent = show ? 'Сховати' : 'Показати';
-            return;
-        }
         if (btn.dataset.act === 'ai-key-save') {
             const inputEl = document.getElementById('aiKeyInput');
             const key = inputEl?.value.trim() || '';
-            if (!key) {
-                toast('Вставте ключ Google AI Studio у поле', 'error');
-                inputEl?.focus();
-                return;
-            }
-            setBusy(btn, true, 'Зберігаю…');
+            if (!key) { toast('Вставте ключ Google AI Studio у поле', 'error'); inputEl?.focus(); return; }
+            setBusy(btn, true, 'Перевіряю в Google…');
             try {
-                await saveGeminiApiKey(key);
-                const currentSmallKop = toKop(document.getElementById('smallInput')?.value) ?? 0;
-                await expAct({ action: 'settings', smallKop: Math.max(0, currentSmallKop), geminiApiKey: key }).catch(() => {});
-                updateAiKeyUi(key);
-                toast(`AI-ключ збережено (…${key.slice(-4)}) — розпізнавання сканів та фото увімкнено`, 'success');
+                const r = await expAct({ action: 'aiKey', key });
+                updateAiKeyUi(r.aiKey);
+                toast(`AI-ключ збережено (…${r.aiKey.tail}) — розпізнавання сканів і фото увімкнено`, 'success');
             } catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
             return;
         }
         if (btn.dataset.act === 'ai-key-clear') {
-            setBusy(btn, true, 'Очищаю…');
+            if (!await confirmDialog('Видалити ключ AI?', 'Скани й фото перестануть розпізнаватися; файли M.E.Doc і Вчасно — читатимуться далі.', 'Видалити')) return;
+            setBusy(btn, true, 'Видаляю…');
             try {
-                await saveGeminiApiKey('');
-                const currentSmallKop = toKop(document.getElementById('smallInput')?.value) ?? 0;
-                await expAct({ action: 'settings', smallKop: Math.max(0, currentSmallKop), geminiApiKey: '' }).catch(() => {});
-                updateAiKeyUi('');
-                toast('Ключ очищено — діє безкоштовний базовий парсер', 'info');
+                const r = await expAct({ action: 'aiKey', key: '' });
+                updateAiKeyUi(r.aiKey);
+                toast('Ключ AI видалено', 'info');
             } catch (err) { toast(err.message, 'error'); }
             finally { setBusy(btn, false); }
             return;

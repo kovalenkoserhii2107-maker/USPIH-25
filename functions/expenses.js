@@ -20,6 +20,7 @@
 //                       linkedTo (основний документ тієї самої операції), linkedIds,
 //                       stornoOf / stornoKop, stornoIds (коригування), refundTxIds (повернені банком оплати) }
 //   expense_settings/main — { smallKop } (поріг дрібних витрат, задає голова)
+//   ai_secrets/gemini     — { key, tail } ключ Gemini (лише сервер)
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const callGuard = require('./call-guard');
@@ -536,242 +537,227 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         }));
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         const policy=require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
-        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0, geminiApiKey: settings.data()?.geminiApiKey || "" }, today,
+        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0, aiKey: aiKeyInfo(await readAiKey()) }, today,
             missing: core.missingDocs(list.contracts, list.expenses, today), items: core.ITEMS, docTypes: core.DOC_TYPES, kinds: core.SUPPLIER_KINDS,
             limitKop: core.CONTRACT_LIMIT_KOP };
     }
 
 
-    async function callGeminiVision(base64Data, mimeType, apiKey) {
-        const prompt = `Ти професійний бухгалтер та експерт з первинних документів в Україні.
-Уважно проаналізуй цей первинний документ (акт наданих послуг / виконаних робіт, рахунок на оплату, видаткову накладну, договір, фіскальний чек).
+    // ---------- Розпізнавання документів ----------
+    // Ключ Gemini лежить лише в ai_secrets/gemini (правила закривають
+    // колекцію повністю): у браузер іде тільки «є/немає» і останні 4
+    // символи. Раніше ключ зберігався в osbb_settings/finance, який
+    // читає кожен мешканець, — переносимо й стираємо звідти.
+    const aiKeyRef = db.doc('ai_secrets/gemini');
+    const financeRef = db.doc('osbb_settings/finance');
+    const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
+    const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    const MAX_FILE = 7 * 1024 * 1024;
+    let workingModel = '';
 
-ВАЖЛИВО ПРО СТОРОНИ ДОКУМЕНТА:
-• Замовник / покупець — це ОСББ «Успіх-25» (код ЄДРПОУ 40562894). Не вказуй ОСББ як постачальника!
-• Постачальник (виконавець / продавець) — це ІНША сторона (підприємство, ТОВ, ПП, ФОП), яка надає послуги чи продає товари. Вкажи саме її реквізити в обʼєкті "supplier" (назва, ЄДРПОУ/РНОКПП, IBAN).
+    async function readAiKey() {
+        const [own, legacySet, legacyFin] = await Promise.all([aiKeyRef.get(), settingsRef.get(), financeRef.get()]);
+        let key = String(own.data()?.key || '').trim();
+        const legacy = String(legacySet.data()?.geminiApiKey || legacyFin.data()?.geminiApiKey || '').trim();
+        if (!key && legacy) {
+            key = legacy;
+            await aiKeyRef.set({ key, tail: key.slice(-4), migratedAt: FieldValue.serverTimestamp() });
+        }
+        if (legacySet.data()?.geminiApiKey !== undefined) await settingsRef.update({ geminiApiKey: FieldValue.delete() });
+        if (legacyFin.data()?.geminiApiKey !== undefined) await financeRef.update({ geminiApiKey: FieldValue.delete() });
+        return key || String(process.env.GEMINI_API_KEY || '').trim();
+    }
+    const aiKeyInfo = key => ({ set: Boolean(key), tail: key ? key.slice(-4) : '' });
 
-Поверни ТІЛЬКИ валідний JSON у такому форматі без зайвого тексту:
+    async function gemini(path, key, init = {}, ms = 45000) {
+        return fetch(`${GEMINI}${path}`, {
+            ...init, signal: AbortSignal.timeout(ms),
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }
+        });
+    }
+
+    /** Ключ, голова чи бухгалтер; Google перевіряє його одразу, а не при першому скані. */
+    async function setAiKey(actor, role, { key } = {}) {
+        const clean = String(key || '').trim();
+        if (clean) {
+            if (!/^[A-Za-z0-9_-]{20,200}$/.test(clean)) fail('invalid-argument', 'Це не схоже на ключ Google AI Studio');
+            const res = await gemini('?pageSize=1', clean, {}, 15000).catch(() => null);
+            if (res && [400, 401, 403].includes(res.status)) fail('invalid-argument', 'Google не прийняв цей ключ — перевірте, що скопійовано повністю');
+            await aiKeyRef.set({ key: clean, tail: clean.slice(-4), by: actor, at: FieldValue.serverTimestamp() });
+        } else {
+            await aiKeyRef.delete();
+        }
+        workingModel = '';
+        await readAiKey();
+        await audit(actor, role, 'expenses.settings.ai', 'ai_secrets/gemini',
+            clean ? `Підключено ключ Gemini AI Vision (…${clean.slice(-4)})` : 'Ключ Gemini AI Vision очищено', { aiKeySet: Boolean(clean) });
+        return { ok: true, aiKey: aiKeyInfo(clean) };
+    }
+
+    function aiPrompt(org) {
+        const name = org.name || 'ОСББ (обʼєднання співвласників)';
+        return `Ти бухгалтер, експерт з первинних документів в Україні.
+Проаналізуй документ (акт наданих послуг / виконаних робіт, рахунок на оплату, видаткову накладну, договір, фіскальний чек).
+
+СТОРОНИ ДОКУМЕНТА:
+• Замовник / покупець — ${name}${org.code ? ` (код ЄДРПОУ ${org.code})` : ''}. Не вказуй ОСББ як постачальника і не бери його код чи IBAN.
+• Постачальник (виконавець, продавець) — ІНША сторона: ТОВ, ПП, ФОП тощо. Її назву, ЄДРПОУ/РНОКПП та IBAN вкажи в "supplier".
+
+Суми — у гривнях числом з крапкою (наприклад 44992.17), "amount" — загальна сума до сплати разом з ПДВ.
+Якщо поле не видно в документі — порожній рядок, не вигадуй.
+Поверни ТІЛЬКИ JSON:
 {
   "docType": "act" | "invoice" | "waybill" | "contract" | "receipt",
-  "number": "номер документа без символу № (наприклад, 666)",
+  "number": "номер документа без №",
   "date": "YYYY-MM-DD",
-  "period": "YYYY-MM",
-  "supplier": {
-    "name": "повна назва постачальника / виконавця",
-    "code": "код ЄДРПОУ (8 цифр) або РНОКПП (10 цифр) постачальника",
-    "iban": "IBAN постачальника (UA... 29 символів, якщо вказано)"
-  },
-  "amountKop": 4499217,
-  "vatKop": 0,
+  "period": "YYYY-MM — місяць, за який надано послуги",
+  "supplier": { "name": "назва постачальника", "code": "ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)", "iban": "UA + 27 цифр" },
+  "amount": 0,
+  "vat": 0,
   "item": "lift" | "cleaning" | "waste" | "power" | "water" | "systems" | "repair" | "services" | "other",
   "postingAcc": "92" | "20" | "22" | "11" | "10",
-  "contractName": "назва чи номер договору, якщо зазначено в документі",
+  "contractName": "номер і дата договору, якщо згадано",
   "contractEnd": "YYYY-MM-DD",
-  "description": "короткий опис наданих послуг чи товару"
+  "description": "коротко, що надано чи продано"
 }`;
-        const body = {
-            contents: [{
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType, data: base64Data } }
-                ]
-            }],
-            generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.1
-            }
-        };
-        const models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    }
+
+    async function callGeminiVision(base64Data, mimeType, apiKey, org) {
+        const body = JSON.stringify({
+            contents: [{ parts: [{ text: aiPrompt(org) }, { inlineData: { mimeType, data: base64Data } }] }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
+        });
+        const tried = new Set();
         let lastErr = null;
-        let tried = new Set();
-
-        function isServerFallback(status, txt) {
-            if ([404, 429, 500, 502, 503, 504].includes(status)) return true;
-            const m = String(txt || "").toLowerCase();
-            return m.includes("404") || m.includes("503") || m.includes("429") || m.includes("500") ||
-                   m.includes("demand") || m.includes("overload") || m.includes("temporary") ||
-                   m.includes("quota") || m.includes("unavailable");
-        }
-
-        async function tryServerModel(model) {
+        const busy = status => [404, 429, 500, 502, 503, 504].includes(status);
+        async function tryModel(model) {
             tried.add(model);
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            const res = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
+            let res;
+            try { res = await gemini(`/${model}:generateContent`, apiKey, { method: 'POST', body }); }
+            catch (e) { lastErr = new Error(`Gemini (${model}): ${e.name === 'TimeoutError' ? 'не відповів вчасно' : e.message}`); return null; }
             if (!res.ok) {
-                const err = await res.text();
-                lastErr = new Error(`Gemini API (${model}) HTTP ${res.status}: ${err.slice(0, 150)}`);
-                if (isServerFallback(res.status, err)) return null;
+                const err = await res.text().catch(() => '');
+                let msg = err.slice(0, 150);
+                try { msg = JSON.parse(err)?.error?.message || msg; } catch { /* не JSON */ }
+                lastErr = new Error(`Gemini (${model}) HTTP ${res.status}: ${msg}`);
+                if (busy(res.status)) return null;
                 throw lastErr;
             }
             const data = await res.json();
-            const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!txt) throw new Error("Порожня відповідь AI");
-            let cleanTxt = String(txt || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-            const parsed = JSON.parse(cleanTxt);
-            if (parsed.amountKop !== undefined) {
-                parsed.amountKop = Math.round(Number(parsed.amountKop));
-            } else if (parsed.amount !== undefined) {
-                parsed.amountKop = Math.round(Number(parsed.amount) * 100);
-            }
-            if (parsed.vatKop !== undefined) {
-                parsed.vatKop = Math.round(Number(parsed.vatKop));
-            } else if (parsed.vat !== undefined) {
-                parsed.vatKop = Math.round(Number(parsed.vat) * 100);
-            }
-            if (parsed.number) parsed.number = String(parsed.number).replace(/^[№N#]\s*/i, "").trim();
-            if (parsed.date) {
-                parsed.date = String(parsed.date).trim();
-                if (!parsed.period) parsed.period = parsed.date.slice(0, 7);
-            }
-            if (parsed.supplier) {
-                if (parsed.supplier.code) parsed.supplier.code = String(parsed.supplier.code).replace(/\D/g, "").slice(0, 10);
-                if (parsed.supplier.iban) parsed.supplier.iban = String(parsed.supplier.iban).replace(/\s+/g, "").toUpperCase();
-                if (parsed.supplier.name) parsed.supplier.name = String(parsed.supplier.name).trim();
-            }
+            const txt = String(data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
+                .replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+            if (!txt) { lastErr = new Error('Порожня відповідь AI'); return null; }
+            const parsed = docRecogCore.normalizeAiResult(JSON.parse(txt));
+            if (parsed) workingModel = model;
             return parsed;
         }
-
-        for (const model of models) {
-            const r = await tryServerModel(model);
+        for (const model of [...new Set([workingModel, ...MODELS].filter(Boolean))]) {
+            const r = await tryModel(model);
             if (r) return r;
         }
-
-        try {
-            const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-            if (listRes.ok) {
-                const listData = await listRes.json();
-                const discovered = (listData.models || [])
-                    .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
-                    .map(m => String(m.name || "").replace(/^models\//, ""))
-                    .filter(Boolean);
-                for (const model of discovered) {
-                    if (tried.has(model)) continue;
-                    const r = await tryServerModel(model);
-                    if (r) return r;
-                }
-            }
-        } catch (_) {}
-
-        throw lastErr || new Error("Не вдалося викликати Gemini Vision: моделі недоступні");
+        // Google перейменовує моделі — беремо з його ж списку кілька «flash».
+        const list = await gemini('?pageSize=100', apiKey, {}, 15000).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+        const found = (list.models || [])
+            .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+            .map(m => String(m.name || '').replace(/^models\//, ''))
+            .filter(m => /flash/.test(m) && !/image|tts|audio|live|thinking/.test(m) && !tried.has(m))
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+            .slice(0, 3);
+        for (const model of found) {
+            const r = await tryModel(model);
+            if (r) return r;
+        }
+        throw lastErr || new Error('Немає доступної моделі Gemini для цього ключа');
     }
 
-    async function recognizeDocument(actor, role, data) {
-        let textContent = String(data.textContent || "").trim();
-        let rawBase64 = String(data.base64Data || "").replace(/^data:[^;]+;base64,/, "").trim();
-        let mimeType = String(data.mimeType || "application/pdf");
-        const fileName = String(data.fileName || "").trim().toLowerCase();
-        let extractedFiles = [];
+    const dataUrl = (mime, buf) => `data:${mime};base64,${buf.toString('base64')}`;
 
-        const [supSnap, conSnap, setSnap, finSnap] = await Promise.all([
-            db.collection("suppliers").get(),
-            db.collection("contracts").get(),
-            settingsRef.get(),
-            db.doc("osbb_settings/finance").get()
+    async function recognizeDocument(actor, role, data) {
+        const textContent = String(data.textContent || '').trim();
+        let rawBase64 = String(data.base64Data || '').replace(/^data:[^;]+;base64,/, '').trim();
+        let mimeType = String(data.mimeType || '').toLowerCase();
+        const fileName = String(data.fileName || '').trim().toLowerCase();
+        // Телефон іноді не передає тип файлу — визначаємо за розширенням.
+        if (!mimeType || mimeType === 'application/octet-stream') {
+            const ext = fileName.split('.').pop();
+            mimeType = ({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif' })[ext] || mimeType;
+        }
+        if (rawBase64.length > Math.ceil(MAX_FILE / 3) * 4 + 4) fail('invalid-argument', 'Файл завеликий для розпізнавання (до 7 МБ)');
+        const extractedFiles = [];
+        const notes = [];
+
+        const [supSnap, conSnap, finSnap, bankSnap] = await Promise.all([
+            db.collection('suppliers').get(), db.collection('contracts').get(),
+            financeRef.get(), db.doc('bank/settings').get()
         ]);
         const suppliers = supSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const contracts = conSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const setDoc = setSnap.exists ? setSnap.data() : {};
-        const fin = finSnap.exists ? finSnap.data() : {};
-        const apiKey = String(data.apiKey || process.env.GEMINI_API_KEY || setDoc.geminiApiKey || fin.geminiApiKey || "").trim();
+        const fin = finSnap.data() || {};
+        const org = { name: String(fin.registry?.legalName || fin.registry?.name || fin.payeeName || '').trim(), code: String(fin.edrpou || fin.registry?.code || '').trim() };
+        // Свої реквізити — щоб ОСББ-покупець не став «постачальником».
+        docRecogCore.setOwnRequisites({
+            codes: [org.code, fin.registry?.code].filter(Boolean),
+            ibans: [fin.iban, ...Object.keys(bankSnap.data()?.accounts || {})].filter(Boolean)
+        });
 
-        let parsed = null;
+        const buf = rawBase64 ? Buffer.from(rawBase64, 'base64') : null;
+        const isZip = fileName.endsWith('.zip') || mimeType.includes('zip') || (buf?.length >= 4 && buf.readUInt32LE(0) === 0x04034b50);
+        const isSigned = /\.(p7s|p7m|sign)$/.test(fileName) || mimeType.includes('pkcs7');
+        let xmlText = '';
 
-        // 1. Перевірка на ZIP-пакет (M.E.Doc / Вчасно)
-        if (fileName.endsWith(".zip") || mimeType === "application/zip" || rawBase64.startsWith("UEsDB")) {
+        if (isZip && buf) {
             try {
-                const zipBuffer = Buffer.from(rawBase64, "base64");
-                const unzipped = docRecogCore.unpackZip(zipBuffer);
-                if (unzipped.length > 0) {
-                    const xmlEntry = unzipped.find(f => f.name.toLowerCase().endsWith(".xml"));
-                    const pdfEntry = unzipped.find(f => f.name.toLowerCase().endsWith(".pdf"));
-                    const p7sEntries = unzipped.filter(f => f.name.toLowerCase().endsWith(".p7s") || f.name.toLowerCase().endsWith(".sign"));
-
-                    if (pdfEntry) {
-                        extractedFiles.push({
-                            name: pdfEntry.name,
-                            base64Data: "data:application/pdf;base64," + pdfEntry.data.toString("base64"),
-                            mimeType: "application/pdf",
-                            size: pdfEntry.data.length
-                        });
-                    }
-                    for (const p7 of p7sEntries) {
-                        extractedFiles.push({
-                            name: p7.name,
-                            base64Data: "data:application/pkcs7-signature;base64," + p7.data.toString("base64"),
-                            mimeType: "application/pkcs7-signature",
-                            size: p7.data.length
-                        });
-                    }
-
-                    if (xmlEntry) {
-                        const xmlText = docRecogCore.decodeTextBuffer(xmlEntry.data);
-                        parsed = docRecogCore.parseEdiXml(xmlText);
-                        extractedFiles.unshift({
-                            name: xmlEntry.name,
-                            base64Data: "data:application/xml;base64," + xmlEntry.data.toString("base64"),
-                            mimeType: "application/xml",
-                            size: xmlEntry.data.length
-                        });
-                    } else if (pdfEntry) {
-                        rawBase64 = pdfEntry.data.toString("base64");
-                        mimeType = "application/pdf";
-                    }
+                const entries = docRecogCore.unpackZip(buf);
+                const lower = f => f.name.toLowerCase();
+                const xmlEntry = entries.find(f => lower(f).endsWith('.xml'));
+                const pdfEntry = entries.find(f => lower(f).endsWith('.pdf'));
+                const signed = entries.filter(f => /\.(p7s|p7m|sign)$/.test(lower(f)));
+                if (xmlEntry) {
+                    xmlText = docRecogCore.decodeTextBuffer(xmlEntry.data);
+                    extractedFiles.push({ name: xmlEntry.name, base64Data: dataUrl('application/xml', xmlEntry.data), mimeType: 'application/xml', size: xmlEntry.data.length });
+                } else {
+                    for (const s of signed) { xmlText = docRecogCore.extractXmlFromSigned(s.data); if (xmlText) break; }
                 }
-            } catch (zipErr) {
-                logger.warn("ZIP unpack in recognizeDocument:", zipErr.message);
+                if (pdfEntry) extractedFiles.push({ name: pdfEntry.name, base64Data: dataUrl('application/pdf', pdfEntry.data), mimeType: 'application/pdf', size: pdfEntry.data.length });
+                for (const s of signed) extractedFiles.push({ name: s.name, base64Data: dataUrl('application/pkcs7-signature', s.data), mimeType: 'application/pkcs7-signature', size: s.data.length });
+                if (!xmlText && pdfEntry && pdfEntry.data.length <= MAX_FILE) { rawBase64 = pdfEntry.data.toString('base64'); mimeType = 'application/pdf'; }
+                if (!entries.length) notes.push('Архів порожній або пошкоджений');
+            } catch (e) {
+                logger.warn('ZIP у recognizeDocument', e.message);
+                notes.push('Архів не вдалося розпакувати');
+            }
+        } else if (isSigned && buf) {
+            xmlText = docRecogCore.extractXmlFromSigned(buf);
+            if (!xmlText) notes.push('У підписаному файлі немає XML — завантажте PDF або архів документа');
+        } else if (fileName.endsWith('.xml') || mimeType.includes('xml') || textContent.startsWith('<')) {
+            xmlText = textContent || (buf ? docRecogCore.decodeTextBuffer(buf) : '');
+        }
+
+        let parsed = xmlText ? docRecogCore.parseEdiXml(xmlText) : null;
+
+        if (!parsed && (fileName.endsWith('.json') || mimeType.includes('json') || textContent.startsWith('{'))) {
+            parsed = docRecogCore.parseEdiJson(textContent || (buf ? docRecogCore.decodeTextBuffer(buf) : ''));
+        }
+
+        const visual = /^image\/|^application\/pdf$/.test(mimeType);
+        let aiUsed = false;
+        if (!parsed && rawBase64 && visual) {
+            const apiKey = await readAiKey();
+            if (!apiKey) notes.push('Для сканів і PDF потрібен ключ Gemini AI');
+            else {
+                try { parsed = await callGeminiVision(rawBase64, mimeType, apiKey, org); aiUsed = true; }
+                catch (e) {
+                    logger.warn('Gemini OCR', e.message);
+                    notes.push(`AI не розпізнав документ: ${e.message.slice(0, 160)}`);
+                }
             }
         }
 
-        // 2. Перевірка на прямий XML (M.E.Doc / CommerceML / UBL)
-        if (!parsed && (fileName.endsWith(".xml") || mimeType.includes("xml") || textContent.startsWith("<") || textContent.startsWith("<?xml"))) {
-            let xmlText = textContent;
-            if (!xmlText && rawBase64) {
-                try {
-                    xmlText = docRecogCore.decodeTextBuffer(Buffer.from(rawBase64, "base64"));
-                } catch (_) {}
-            }
-            if (xmlText) {
-                parsed = docRecogCore.parseEdiXml(xmlText);
-            }
-        }
-
-        // 3. Перевірка на JSON
-        if (!parsed && (fileName.endsWith(".json") || mimeType.includes("json") || (textContent.startsWith("{") && textContent.endsWith("}")))) {
-            let jsonText = textContent;
-            if (!jsonText && rawBase64) {
-                try {
-                    jsonText = Buffer.from(rawBase64, "base64").toString("utf8");
-                } catch (_) {}
-            }
-            if (jsonText) {
-                parsed = docRecogCore.parseEdiJson(jsonText);
-            }
-        }
-
-        // 4. Якщо не розпізнано як XML/JSON — викликаємо Gemini Vision OCR для PDF/фото
-        if (!parsed && rawBase64 && apiKey && !mimeType.includes("zip") && !mimeType.includes("xml")) {
-            try {
-                parsed = await callGeminiVision(rawBase64, mimeType, apiKey);
-            } catch (err) {
-                logger.warn("Gemini OCR fallback to text parser:", err.message);
-            }
-        }
-
-        // 5. Запасний варіант: текстовий евристичний парсер
-        if (!parsed && textContent) {
-            parsed = docRecogCore.parseDocumentText(textContent);
-        }
-
-        if (!parsed) {
-            parsed = docRecogCore.parseDocumentText(textContent || "");
-        }
+        if (!parsed && textContent) parsed = docRecogCore.parseDocumentText(textContent);
+        if (!parsed) return { ok: true, recognized: null, extractedFiles, notes, source: '' };
 
         const match = docRecogCore.matchSupplierWithDatabase(parsed.supplier, suppliers, contracts);
-
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         return {
             ok: true,
             recognized: parsed,
@@ -779,30 +765,22 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             matchedContract: match.contract,
             isNewSupplier: match.isNew,
             extractedFiles,
-            source: parsed.source || "ocr"
+            warnings: docRecogCore.reviewRecognized(parsed, today),
+            notes,
+            source: parsed.source || (aiUsed ? 'ai' : 'text')
         };
     }
 
-    async function setSettings(actor, role, { smallKop, geminiApiKey } = {}) {
+    async function setSettings(actor, role, { smallKop } = {}) {
         if (role !== 'chair') fail('permission-denied', 'Поріг задає голова');
-        if (geminiApiKey !== undefined && smallKop === undefined) {
-            const cleanKey = String(geminiApiKey || '').trim().slice(0, 200);
-            await settingsRef.set({ geminiApiKey: cleanKey, by: actor, at: FieldValue.serverTimestamp() }, { merge: true });
-            await audit(actor, role, 'expenses.settings.ai', 'expense_settings/main',
-                cleanKey ? `Підключено ключ Gemini AI Vision (…${cleanKey.slice(-4)})` : 'Ключ Gemini AI Vision очищено',
-                { aiKeySet: Boolean(cleanKey) });
-            return { ok: true, geminiApiKey: cleanKey };
-        }
         const v = Number(smallKop);
         if (!Number.isInteger(v) || v < 0 || v > 2_000_000) fail('invalid-argument', 'Поріг — від 0 до 20 000 грн');
-        const payload = { smallKop: v, by: actor, at: FieldValue.serverTimestamp() };
-        if (geminiApiKey !== undefined) payload.geminiApiKey = String(geminiApiKey || '').trim().slice(0, 200);
-        await settingsRef.set(payload, { merge: true });
-        await audit(actor, role, 'expenses.settings', 'expense_settings/main', `Дрібні витрати без договору до ${fromKop(v)} грн затверджує бухгалтер`, { smallKop: v, ...(geminiApiKey !== undefined ? { aiKeySet: Boolean(payload.geminiApiKey) } : {}) });
-        return { ok: true, ...(geminiApiKey !== undefined ? { geminiApiKey: payload.geminiApiKey } : {}) };
+        await settingsRef.set({ smallKop: v, by: actor, at: FieldValue.serverTimestamp() }, { merge: true });
+        await audit(actor, role, 'expenses.settings', 'expense_settings/main', `Дрібні витрати без договору до ${fromKop(v)} грн затверджує бухгалтер`, { smallKop: v });
+        return { ok: true };
     }
 
-    const expenseAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 60 }, callGuard('expenseAction', async request => {
+    const expenseAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120, memory: '512MiB' }, callGuard('expenseAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -820,12 +798,13 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             case 'storno': return storno(actor, role, data);
             case 'pay': return pay(actor, role, data);
             case 'linkTx': return linkTx(actor, role, data);
-                        case 'recognizeDocument': return recognizeDocument(actor, role, data);
+            case 'recognizeDocument': return recognizeDocument(actor, role, data);
+            case 'aiKey': return setAiKey(actor, role, data);
             case 'settings': return setSettings(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
     return { expenseAction, linkUpdate, release, openForMatching,
-        actions: { checkSupplier, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, recognizeDocument, context } };
+        actions: { checkSupplier, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, setAiKey, recognizeDocument, context } };
 };
