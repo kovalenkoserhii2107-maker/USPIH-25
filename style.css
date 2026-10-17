@@ -674,6 +674,48 @@ select.field-input {
 .power-since-label { font-size: 13px; color: var(--ink-2); font-weight: 600; }
 .power-duration-label { font-size: 12px; color: var(--ink-2); }
 
+/* Стан світла в кабінеті — суцільною плашкою, як і наступне
+   відключення: зелена — світло є, графітова — світла немає.
+   Читається з одного погляду, навіть на сонці. */
+#powerCard, #powerCard.power-on, #powerCard.power-off { background: var(--surface); padding: 12px; }
+#powerCard .power-card-inner {
+    padding: 14px 12px 14px 14px;
+    border-radius: var(--r-md);
+    color: #fff;
+    transition: background 0.35s ease;
+}
+#powerCard.power-on .power-card-inner {
+    background: linear-gradient(135deg, #34C759, #1E9E46);
+    box-shadow: 0 6px 16px rgba(30, 158, 70, 0.26);
+}
+#powerCard.power-off .power-card-inner {
+    background: linear-gradient(135deg, #48484A, #1C1C1E);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+}
+#powerCard .power-icon-circle,
+#powerCard.power-on .power-icon-circle,
+#powerCard.power-off .power-icon-circle {
+    width: 44px; height: 44px;
+    background: rgba(255, 255, 255, 0.22); color: #fff; box-shadow: none;
+}
+#powerCard .power-status-label,
+#powerCard.power-on .power-status-label,
+#powerCard.power-off .power-status-label { font-size: 24px; color: #fff; letter-spacing: -0.5px; }
+#powerCard .power-since-label { color: rgba(255, 255, 255, 0.92); font-size: 13px; }
+#powerCard .power-duration-label:not(:empty) {
+    align-self: flex-start; margin-top: 4px; padding: 3px 9px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22); color: #fff;
+    font-size: 12.5px; font-weight: 700;
+}
+#powerCard .power-stats-btn,
+#powerCard.power-on .power-stats-btn,
+#powerCard.power-off .power-stats-btn {
+    background: rgba(255, 255, 255, 0.22); color: #fff;
+    border: none; box-shadow: none;
+}
+#powerCard .pw-next { margin-top: 10px; }
+#powerCard .pw-sched { margin-top: 10px; padding: 10px 4px 2px; }
+
 /* ---------- СПІВВЛАСНИКИ ---------- */
 /* Співвласники живуть в одному блоці: картка квартири містить своїх
    власників, а не розсипає їх окремими картками по всьому екрану.
@@ -1517,6 +1559,26 @@ select.field-input {
 @media (max-width: 359px) {
     .qa-art { width: 44px; height: 44px; }
     .qa-label { font-size: 10.5px; }
+}
+
+/* Меню мешканця — плитками по дві в ряд: пунктів небагато, і широка
+   плитка з підписом поруч читається швидше за сітку дрібних іконок. */
+#menuPopup .menu-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 4px 0; }
+#menuPopup .menu-tile {
+    flex-direction: row; justify-content: flex-start; gap: 12px;
+    min-height: 64px; padding: 10px 12px; box-sizing: border-box;
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    text-align: left;
+}
+#menuPopup .menu-tile[hidden] { display: none; }
+#menuPopup .menu-tile:active { background: var(--surface-3); }
+#menuPopup .menu-tile-art { width: 44px; height: 44px; flex-shrink: 0; }
+#menuPopup .menu-tile-icon svg { width: 22px; height: 22px; }
+#menuPopup .menu-tile-label {
+    padding: 0; text-align: left;
+    font-size: 15px; font-weight: 600; line-height: 1.2;
+    white-space: normal;
 }
 
 /* На вузьких екранах підписи сусідніх іконок майже стикалися. */
