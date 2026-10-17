@@ -25,12 +25,12 @@
     <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=189">
-    <link rel="stylesheet" href="style-chat.css?v=189">
+    <link rel="stylesheet" href="style.css?v=190">
+    <link rel="stylesheet" href="style-chat.css?v=190">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самого app.js: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/app.js?v=189">
+    <link rel="modulepreload" href="js/app.js?v=190">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -108,14 +108,14 @@
                 <span class="menu-tile-label">Правління</span>
             </button>
             <button id="menuMetersBtn" class="menu-tile" type="button">
-                <span class="menu-tile-art"><span class="menu-tile-icon mi-blue"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg></span></span>
+                <span class="menu-tile-art"><span class="menu-tile-icon mi-indigo"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18a9 9 0 1 1 16 0"></path><path d="m12 13 5-5"></path><circle cx="12" cy="13" r="2"></circle></svg></span></span>
                 <span class="menu-tile-label">Лічильники</span>
             </button>
             <button id="menuBoardBtn" class="menu-tile" type="button">
                 <span class="menu-tile-art">
                     <span class="menu-tile-icon mi-orange"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
                 </span>
-                <span class="menu-tile-label">Правління</span>
+                <span class="menu-tile-label">Контакти правління</span>
             </button>
             <button id="menuInstallBtn" class="menu-tile" type="button">
                 <span class="menu-tile-art">
@@ -895,7 +895,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/app.js?v=189').catch(error => {
+    import('./js/app.js?v=190').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
