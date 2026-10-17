@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Кабінет ОСББ — мешканці, правління та бухгалтерія в одному застосунку</title>
-    <meta name="description" content="Застосунок для ОСББ: кабінет мешканця, панель правління та бухгалтерія. Баланс і оплата, збори й голосування, банк, платежі на підпис КЕП, зарплата, звітність і закриття місяця.">
+    <meta name="description" content="Застосунок для ОСББ: кабінет мешканця, панель правління та бухгалтерія. Баланс, квитанції з QR, збори й голосування, банк, платежі на підпис КЕП, зарплата, звітність і закриття місяця.">
     <meta name="theme-color" content="#EEF2F7">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="uk_UA">
     <meta property="og:title" content="Кабінет ОСББ — усі справи будинку в одному застосунку">
-    <meta property="og:description" content="Мешканцю — баланс, оплата й голосування з телефона. Правлінню — рішення за хвилини. Бухгалтеру — банк, документи, зарплата й звіти за кроками.">
+    <meta property="og:description" content="Мешканцю — баланс, квитанція з QR і голосування з телефона. Правлінню — рішення за хвилини. Бухгалтеру — банк, документи, зарплата й звіти за кроками.">
     <meta property="og:url" content="https://kovalenkoserhii2107-maker.github.io/USPIH-25/landing.html">
     <meta property="og:image" content="https://kovalenkoserhii2107-maker.github.io/USPIH-25/assets/landing/acc-today.webp">
     <meta property="og:image:alt" content="Кабінет бухгалтера ОСББ: що зробити сьогодні">
@@ -21,6 +21,7 @@
 </head>
 <body>
     <a class="skip-link" href="#main">Перейти до вмісту</a>
+    <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="scroll-progress" aria-hidden="true"><i></i></div>
 
     <header class="site-header">
@@ -31,6 +32,7 @@
             </a>
             <nav class="header-nav" aria-label="Розділи сторінки">
                 <a href="#resident">Мешканцю</a>
+                <a href="#receipt">Квитанція</a>
                 <a href="#board">Правлінню</a>
                 <a href="#accountant">Бухгалтеру</a>
                 <a href="#flow">Як повʼязано</a>
@@ -41,66 +43,77 @@
     </header>
 
     <main id="main">
-        <!-- ============ ПЕРШИЙ ЕКРАН ============ -->
+        <!-- ============ ПЕРШИЙ ЕКРАН: 3D-сцена ============ -->
         <section class="hero" aria-labelledby="hero-title">
-            <div class="hero-glow" aria-hidden="true"></div>
             <div class="wrap hero-inner">
-                <div class="hero-copy reveal">
-                    <p class="pill"><span class="pill-dot" aria-hidden="true"></span>Для мешканців, правління та бухгалтерії</p>
-                    <h1 id="hero-title">Усе ОСББ.<br><span class="grad">В одному застосунку.</span></h1>
-                    <p class="lead">Мешканець бачить свій баланс і голосує з телефона. Правління вирішує справи за хвилини. Бухгалтер закриває місяць за кроками. Одні дані будинку — три зручні кабінети.</p>
-                    <div class="hero-actions">
+                <div class="hero-copy">
+                    <p class="pill intro" style="--d:0"><span class="pill-dot" aria-hidden="true"></span>Для мешканців, правління та бухгалтерії</p>
+                    <h1 id="hero-title" class="split intro-words">Усе ОСББ.<br><span class="grad">В одному застосунку.</span></h1>
+                    <p class="lead intro" style="--d:5">Мешканець бачить свій баланс і платить за QR. Правління вирішує справи за хвилини. Бухгалтер закриває місяць за кроками. Одні дані будинку — три зручні кабінети.</p>
+                    <div class="hero-actions intro" style="--d:6">
                         <a class="button" href="#roles">Обрати свою роль <span aria-hidden="true">↓</span></a>
-                        <a class="button button-ghost" href="index.html">Відкрити застосунок</a>
+                        <a class="button button-ghost" href="#receipt">Подивитися квитанцію</a>
                     </div>
-                    <ul class="hero-facts" aria-label="Коротко про застосунок">
+                    <ul class="hero-facts intro" style="--d:7" aria-label="Коротко про застосунок">
                         <li>Працює в браузері — без встановлення</li>
                         <li>Телефон і компʼютер</li>
                         <li>Гроші підписує лише голова КЕП</li>
                     </ul>
                 </div>
 
-                <div class="hero-stage" aria-label="Три кабінети: бухгалтерія на компʼютері, мешканець і правління на телефоні">
-                    <div class="device laptop hero-laptop" data-depth="0.5">
-                        <div class="laptop-screen"><img src="assets/landing/acc-today.webp" width="1600" height="1000" alt="Кабінет бухгалтера: що зробити сьогодні, найближчий строк, залишок на рахунку" fetchpriority="high"></div>
-                        <div class="laptop-base" aria-hidden="true"></div>
+                <div class="hero-scene" aria-label="Три кабінети: бухгалтерія на компʼютері, мешканець і правління на телефоні">
+                    <div class="scene-floor" aria-hidden="true"></div>
+                    <div class="scene" data-tilt-scene>
+                        <div class="device laptop hero-laptop fly" style="--d:2">
+                            <div class="laptop-screen"><img src="assets/landing/acc-today.webp" width="1600" height="1000" alt="Кабінет бухгалтера: що зробити сьогодні, найближчий строк, залишок на рахунку" fetchpriority="high"><span class="glass-sheen" aria-hidden="true"></span></div>
+                            <div class="laptop-base" aria-hidden="true"></div>
+                        </div>
+                        <div class="device phone hero-phone hero-phone-a fly" style="--d:4">
+                            <img src="assets/landing/res-home.webp" width="600" height="1299" alt="Кабінет квартири: баланс, реквізити й квитанції"><span class="glass-sheen" aria-hidden="true"></span>
+                        </div>
+                        <div class="device phone hero-phone hero-phone-b fly" style="--d:5">
+                            <img src="assets/landing/board-phone.webp" width="600" height="1299" alt="Панель правління: платіж на підпис і справи на сьогодні"><span class="glass-sheen" aria-hidden="true"></span>
+                        </div>
+                        <span class="float-chip chip-1 pop" style="--d:8"><b>✓</b> Оплату рознесено · кв. 45</span>
+                        <span class="float-chip chip-2 pop" style="--d:9"><b>₴</b> Платіж підписано КЕП</span>
+                        <span class="float-chip chip-3 pop" style="--d:10"><b>☑</b> Голос зараховано</span>
                     </div>
-                    <div class="device phone hero-phone hero-phone-a" data-depth="1.1">
-                        <img src="assets/landing/res-home.webp" width="600" height="1299" alt="Кабінет квартири: баланс, реквізити й квитанції">
-                    </div>
-                    <div class="device phone hero-phone hero-phone-b" data-depth="0.8">
-                        <img src="assets/landing/board-phone.webp" width="600" height="1299" alt="Панель правління: платіж на підпис і справи на сьогодні">
-                    </div>
-                    <span class="float-chip chip-1" data-depth="1.6"><b>✓</b> Оплату рознесено · кв. 45</span>
-                    <span class="float-chip chip-2" data-depth="1.3"><b>₴</b> Платіж підписано КЕП</span>
-                    <span class="float-chip chip-3" data-depth="1.9"><b>☑</b> Голос зараховано</span>
                 </div>
             </div>
             <p class="wrap hero-note">Справжні екрани застосунку · умовні квартири, люди й операції</p>
         </section>
 
+        <!-- Стрічки можливостей: дві, назустріч одна одній -->
+        <section class="ticker" aria-label="Можливості застосунку">
+            <div class="ticker-row"><div class="ticker-track"><span>Баланс квартири</span><span>Квитанції з QR</span><span>Лічильники</span><span>Голосування</span><span>Звернення</span><span>Чат будинку</span><span>Оголошення</span><span>Статус світла</span><span>Протоколи зборів</span><span>Звіт про кошти</span></div></div>
+            <div class="ticker-row is-reverse"><div class="ticker-track"><span>Виписка ПриватБанку</span><span>Рознесення оплат</span><span>Платежі на підпис КЕП</span><span>M.E.Doc і «Вчасно»</span><span>Зарплата й ЄСВ</span><span>Звіти в Е-кабінет</span><span>Проводки й ОСВ</span><span>Закриття місяця</span><span>Кошторис</span><span>Журнал дій</span></div></div>
+        </section>
+
         <!-- ============ ТРИ РОЛІ ============ -->
         <section id="roles" class="section wrap" aria-labelledby="roles-title">
-            <div class="section-head reveal">
-                <p class="eyebrow">Три ролі · спільний будинок</p>
-                <h2 id="roles-title">Кожному — свій кабінет.<br><span class="muted">Дані — одні на всіх.</span></h2>
+            <div class="section-head">
+                <p class="eyebrow reveal" data-anim="blur">Три ролі · спільний будинок</p>
+                <h2 id="roles-title" class="split">Кожному — свій кабінет.<br><span class="muted">Дані — одні на всіх.</span></h2>
             </div>
             <div class="role-cards">
-                <a class="role-card tone-resident reveal" href="#resident">
+                <a class="role-card tone-resident reveal" data-anim="flip" data-tilt href="#resident">
+                    <span class="card-glare" aria-hidden="true"></span>
                     <span class="role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg></span>
                     <h3>Мешканцю</h3>
-                    <p>Баланс, оплата, лічильники, звернення, чат і голосування — у телефоні.</p>
+                    <p>Баланс, квитанція з QR, лічильники, звернення, чат і голосування — у телефоні.</p>
                     <ul><li>Без пошуку квитанцій у чатах</li><li>Голос за кілька дотиків</li><li>Видно, куди йдуть гроші будинку</li></ul>
                     <span class="role-more">Як це працює <span aria-hidden="true">→</span></span>
                 </a>
-                <a class="role-card tone-board reveal" href="#board">
+                <a class="role-card tone-board reveal" data-anim="flip" data-tilt href="#board">
+                    <span class="card-glare" aria-hidden="true"></span>
                     <span class="role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
                     <h3>Правлінню</h3>
                     <p>Справи дня, власники, збори, документи й підпис платежів — з одного екрана.</p>
                     <ul><li>Що чекає рішення — одразу видно</li><li>Звірений список власників для кворуму</li><li>Платежі лише після підпису КЕП</li></ul>
                     <span class="role-more">Як це працює <span aria-hidden="true">→</span></span>
                 </a>
-                <a class="role-card tone-accountant reveal" href="#accountant">
+                <a class="role-card tone-accountant reveal" data-anim="flip" data-tilt href="#accountant">
+                    <span class="card-glare" aria-hidden="true"></span>
                     <span class="role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h6M7 17h4"/></svg></span>
                     <h3>Бухгалтеру</h3>
                     <p>Банк, нарахування, документи, зарплата, звіти й закриття місяця — за кроками.</p>
@@ -110,7 +123,6 @@
             </div>
         </section>
 
-        <!-- Перемикач ролей: прилипає вгорі, поки гортаєте розповіді -->
         <nav class="role-switch" aria-label="Перейти до ролі">
             <div class="role-switch-track">
                 <i class="role-switch-thumb" aria-hidden="true"></i>
@@ -120,13 +132,13 @@
             </div>
         </nav>
 
-        <!-- ============ МЕШКАНЕЦЬ ============ -->
-        <section id="resident" class="story tone-resident" aria-labelledby="resident-title" data-role="resident">
+        <!-- ============ МЕШКАНЕЦЬ (перехід «гортання» в 3D) ============ -->
+        <section id="resident" class="story tone-resident" data-role="resident" data-swap="flip" aria-labelledby="resident-title">
             <div class="wrap">
-                <div class="story-head reveal">
-                    <p class="eyebrow">Мешканцю й співвласнику</p>
-                    <h2 id="resident-title">Ваша квартира —<br>у вашій кишені.</h2>
-                    <p class="lead">Особисті розрахунки, новини будинку й участь у рішеннях. Без походів до правління за кожною довідкою.</p>
+                <div class="story-head">
+                    <p class="eyebrow reveal" data-anim="blur">Мешканцю й співвласнику</p>
+                    <h2 id="resident-title" class="split">Ваша квартира —<br>у вашій кишені.</h2>
+                    <p class="lead reveal" data-anim="rise">Особисті розрахунки, новини будинку й участь у рішеннях. Без походів до правління за кожною довідкою.</p>
                 </div>
                 <div class="story-grid">
                     <ol class="steps">
@@ -154,28 +166,81 @@
                     </ol>
                     <div class="stage" aria-hidden="true">
                         <div class="stage-inner">
+                            <div class="stage-orbit"></div>
                             <div class="device phone stage-phone">
                                 <img data-shot="res-home" src="assets/landing/res-home.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
                                 <img data-shot="res-menu" src="assets/landing/res-menu.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
                                 <img data-shot="res-owners" src="assets/landing/res-owners.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
+                                <span class="glass-sheen"></span>
                             </div>
                             <div class="stage-dots"><i></i><i></i><i></i></div>
                         </div>
                     </div>
                 </div>
-                <div class="tags reveal" aria-label="Ще для мешканця">
-                    <span>Квитанції PDF</span><span>QR-оплата</span><span>Лічильники день/ніч</span><span>Теплопостачання</span><span>Оголошення</span><span>Сповіщення</span><span>Опитування</span><span>Протоколи зборів</span><span>Звіт про кошти будинку</span><span>Кошторис</span><span>Контакти служб</span><span>Статус світла</span>
+            </div>
+        </section>
+
+        <!-- ============ КВИТАНЦІЯ ============ -->
+        <section id="receipt" class="receipt-section" aria-labelledby="receipt-title">
+            <div class="wrap receipt-grid">
+                <div class="receipt-copy">
+                    <p class="eyebrow reveal" data-anim="blur">Зразок квитанції</p>
+                    <h2 id="receipt-title" class="split">Квитанція, яку<br><span class="grad">оплачують камерою.</span></h2>
+                    <p class="lead reveal" data-anim="rise">Нарахування за складовими, борг чи переплата на початок місяця й сума до сплати. QR відкриває переказ у банку вже заповненим — без ручного набору IBAN.</p>
+                    <ul class="spec-list">
+                        <li class="reveal" data-anim="slide-r"><b>QR-переказ</b><span>Отримувач, сума й призначення з номером квартири — банк рознесе оплату сам.</span></li>
+                        <li class="reveal" data-anim="slide-r"><b>Складові внеску</b><span>Утримання будинку, ремонтний фонд та інші статті — площа × тариф видно в кожному рядку.</span></li>
+                        <li class="reveal" data-anim="slide-r"><b>Цифри з обліку</b><span>Ті самі суми, що в кабінеті мешканця й у бухгалтера: залишок, нараховано, сплачено.</span></li>
+                        <li class="reveal" data-anim="slide-r"><b>Друк пачкою</b><span>Бухгалтер формує квитанції всього будинку одним натиском — або мешканець бере свою в кабінеті.</span></li>
+                    </ul>
+                </div>
+
+                <div class="receipt-stage">
+                    <div class="printer" aria-hidden="true"><span class="printer-led"></span><span class="printer-slot"></span></div>
+                    <article class="receipt" data-tilt aria-label="Зразок рахунку-квитанції з умовними даними">
+                        <span class="card-glare" aria-hidden="true"></span>
+                        <header class="rc-head">
+                            <img src="assets/icons/icon-192x192.png" width="40" height="40" alt="">
+                            <div><b>ОСББ «Успіх-25»</b><span>Рахунок-квитанція за жовтень 2026</span></div>
+                            <span class="rc-stamp">Зразок</span>
+                        </header>
+                        <p class="rc-apt"><b>Кв. 45</b> · о/р 10045 · 40,5 м² · Власник Тестовий 45</p>
+                        <table class="rc-table">
+                            <thead><tr><th>Стаття</th><th>Розрахунок</th><th>Нараховано</th></tr></thead>
+                            <tbody>
+                                <tr><td>Утримання будинку</td><td>40,5 м² × 9,80</td><td>396,90</td></tr>
+                                <tr><td>Ремонтний фонд</td><td>40,5 м² × 1,50</td><td>60,75</td></tr>
+                                <tr><td>Вивезення побутових відходів</td><td>2 прож. × 25,00</td><td>50,00</td></tr>
+                            </tbody>
+                        </table>
+                        <dl class="rc-sum">
+                            <div><dt>Залишок на 01.10.2026</dt><dd>0,00</dd></div>
+                            <div><dt>Нараховано за жовтень</dt><dd>507,65</dd></div>
+                            <div><dt>Сплачено за місяць</dt><dd>0,00</dd></div>
+                            <div class="rc-total"><dt>До сплати</dt><dd><span data-count-money="507.65">507,65</span> грн</dd></div>
+                        </dl>
+                        <div class="rc-pay">
+                            <div class="rc-qr"><svg viewBox="-2 -2 45 45" aria-hidden="true" shape-rendering="crispEdges"><rect x="-2" y="-2" width="45" height="45" fill="#fff"/><path d="M0 0h7v1H0zM9 0h2v1H9zM12 0h2v1H12zM15 0h2v1H15zM22 0h1v1H22zM26 0h1v1H26zM29 0h1v1H29zM32 0h1v1H32zM34 0h7v1H34zM0 1h1v1H0zM6 1h1v1H6zM8 1h1v1H8zM12 1h1v1H12zM16 1h2v1H16zM20 1h2v1H20zM23 1h1v1H23zM29 1h2v1H29zM34 1h1v1H34zM40 1h1v1H40zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h3v1H8zM14 2h2v1H14zM19 2h2v1H19zM23 2h1v1H23zM25 2h4v1H25zM34 2h1v1H34zM36 2h3v1H36zM40 2h1v1H40zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM9 3h1v1H9zM12 3h1v1H12zM14 3h1v1H14zM16 3h2v1H16zM21 3h1v1H21zM25 3h6v1H25zM34 3h1v1H34zM36 3h3v1H36zM40 3h1v1H40zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM11 4h3v1H11zM18 4h3v1H18zM26 4h3v1H26zM31 4h2v1H31zM34 4h1v1H34zM36 4h3v1H36zM40 4h1v1H40zM0 5h1v1H0zM6 5h1v1H6zM9 5h4v1H9zM14 5h1v1H14zM22 5h5v1H22zM29 5h1v1H29zM31 5h2v1H31zM34 5h1v1H34zM40 5h1v1H40zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h1v1H18zM20 6h1v1H20zM22 6h1v1H22zM24 6h1v1H24zM26 6h1v1H26zM28 6h1v1H28zM30 6h1v1H30zM32 6h1v1H32zM34 6h7v1H34zM10 7h1v1H10zM13 7h1v1H13zM15 7h2v1H15zM20 7h2v1H20zM23 7h1v1H23zM28 7h4v1H28zM1 8h3v1H1zM5 8h2v1H5zM9 8h1v1H9zM11 8h1v1H11zM13 8h1v1H13zM15 8h1v1H15zM19 8h3v1H19zM26 8h1v1H26zM28 8h4v1H28zM38 8h2v1H38zM2 9h1v1H2zM4 9h1v1H4zM7 9h1v1H7zM10 9h1v1H10zM13 9h1v1H13zM16 9h1v1H16zM18 9h1v1H18zM20 9h2v1H20zM23 9h1v1H23zM28 9h9v1H28zM38 9h3v1H38zM0 10h1v1H0zM2 10h3v1H2zM6 10h1v1H6zM11 10h1v1H11zM14 10h3v1H14zM21 10h1v1H21zM25 10h2v1H25zM29 10h2v1H29zM33 10h2v1H33zM38 10h2v1H38zM0 11h2v1H0zM3 11h1v1H3zM8 11h1v1H8zM10 11h1v1H10zM13 11h1v1H13zM17 11h1v1H17zM19 11h1v1H19zM22 11h4v1H22zM30 11h1v1H30zM32 11h1v1H32zM36 11h1v1H36zM40 11h1v1H40zM1 12h3v1H1zM5 12h2v1H5zM13 12h1v1H13zM18 12h2v1H18zM21 12h2v1H21zM24 12h2v1H24zM29 12h1v1H29zM31 12h1v1H31zM35 12h1v1H35zM37 12h2v1H37zM0 13h1v1H0zM3 13h2v1H3zM7 13h1v1H7zM11 13h1v1H11zM17 13h1v1H17zM20 13h5v1H20zM26 13h4v1H26zM31 13h1v1H31zM34 13h2v1H34zM38 13h3v1H38zM1 14h1v1H1zM4 14h6v1H4zM12 14h1v1H12zM15 14h2v1H15zM19 14h3v1H19zM23 14h1v1H23zM25 14h2v1H25zM31 14h2v1H31zM34 14h2v1H34zM37 14h4v1H37zM3 15h1v1H3zM5 15h1v1H5zM7 15h2v1H7zM10 15h1v1H10zM12 15h1v1H12zM14 15h2v1H14zM17 15h2v1H17zM23 15h1v1H23zM26 15h1v1H26zM30 15h1v1H30zM32 15h1v1H32zM34 15h1v1H34zM37 15h1v1H37zM39 15h1v1H39zM0 16h2v1H0zM3 16h1v1H3zM6 16h1v1H6zM8 16h5v1H8zM15 16h1v1H15zM17 16h1v1H17zM20 16h1v1H20zM22 16h1v1H22zM25 16h2v1H25zM28 16h4v1H28zM36 16h1v1H36zM40 16h1v1H40zM4 17h1v1H4zM7 17h1v1H7zM9 17h1v1H9zM11 17h1v1H11zM15 17h2v1H15zM23 17h2v1H23zM27 17h2v1H27zM31 17h3v1H31zM35 17h1v1H35zM39 17h1v1H39zM4 18h5v1H4zM11 18h1v1H11zM13 18h1v1H13zM17 18h3v1H17zM22 18h1v1H22zM27 18h4v1H27zM32 18h2v1H32zM36 18h2v1H36zM2 19h1v1H2zM5 19h1v1H5zM9 19h4v1H9zM14 19h1v1H14zM17 19h3v1H17zM22 19h2v1H22zM28 19h3v1H28zM34 19h2v1H34zM37 19h3v1H37zM0 20h1v1H0zM2 20h3v1H2zM6 20h2v1H6zM9 20h1v1H9zM13 20h1v1H13zM16 20h1v1H16zM18 20h3v1H18zM24 20h1v1H24zM26 20h7v1H26zM34 20h1v1H34zM36 20h5v1H36zM0 21h1v1H0zM2 21h2v1H2zM5 21h1v1H5zM8 21h2v1H8zM11 21h1v1H11zM16 21h1v1H16zM21 21h3v1H21zM25 21h2v1H25zM28 21h2v1H28zM31 21h1v1H31zM34 21h1v1H34zM36 21h1v1H36zM38 21h3v1H38zM0 22h2v1H0zM3 22h1v1H3zM5 22h2v1H5zM8 22h1v1H8zM11 22h1v1H11zM13 22h1v1H13zM15 22h1v1H15zM17 22h1v1H17zM19 22h1v1H19zM21 22h1v1H21zM23 22h3v1H23zM28 22h1v1H28zM30 22h1v1H30zM32 22h3v1H32zM36 22h4v1H36zM2 23h3v1H2zM7 23h2v1H7zM14 23h1v1H14zM18 23h2v1H18zM22 23h1v1H22zM25 23h1v1H25zM27 23h2v1H27zM30 23h2v1H30zM33 23h1v1H33zM35 23h1v1H35zM39 23h2v1H39zM0 24h1v1H0zM3 24h4v1H3zM9 24h1v1H9zM13 24h1v1H13zM16 24h2v1H16zM20 24h2v1H20zM23 24h1v1H23zM25 24h2v1H25zM29 24h1v1H29zM33 24h1v1H33zM38 24h3v1H38zM0 25h2v1H0zM3 25h3v1H3zM8 25h1v1H8zM10 25h1v1H10zM12 25h2v1H12zM15 25h1v1H15zM17 25h3v1H17zM24 25h5v1H24zM30 25h3v1H30zM34 25h1v1H34zM37 25h2v1H37zM40 25h1v1H40zM0 26h1v1H0zM2 26h1v1H2zM6 26h2v1H6zM10 26h1v1H10zM18 26h1v1H18zM20 26h3v1H20zM24 26h1v1H24zM26 26h1v1H26zM30 26h3v1H30zM36 26h2v1H36zM39 26h2v1H39zM0 27h1v1H0zM8 27h1v1H8zM11 27h1v1H11zM18 27h1v1H18zM20 27h1v1H20zM22 27h2v1H22zM27 27h1v1H27zM31 27h3v1H31zM35 27h1v1H35zM37 27h1v1H37zM39 27h2v1H39zM3 28h2v1H3zM6 28h1v1H6zM8 28h2v1H8zM11 28h2v1H11zM14 28h2v1H14zM17 28h2v1H17zM20 28h3v1H20zM25 28h1v1H25zM30 28h4v1H30zM35 28h3v1H35zM39 28h2v1H39zM1 29h1v1H1zM3 29h1v1H3zM7 29h1v1H7zM9 29h1v1H9zM11 29h1v1H11zM13 29h4v1H13zM18 29h2v1H18zM21 29h1v1H21zM27 29h1v1H27zM29 29h1v1H29zM32 29h2v1H32zM35 29h1v1H35zM37 29h2v1H37zM0 30h1v1H0zM6 30h2v1H6zM14 30h3v1H14zM20 30h1v1H20zM22 30h1v1H22zM24 30h5v1H24zM30 30h1v1H30zM33 30h4v1H33zM2 31h1v1H2zM4 31h1v1H4zM10 31h2v1H10zM14 31h2v1H14zM17 31h4v1H17zM23 31h2v1H23zM28 31h3v1H28zM34 31h5v1H34zM1 32h2v1H1zM4 32h1v1H4zM6 32h2v1H6zM10 32h2v1H10zM15 32h1v1H15zM21 32h2v1H21zM26 32h1v1H26zM28 32h1v1H28zM30 32h11v1H30zM8 33h1v1H8zM13 33h1v1H13zM17 33h3v1H17zM21 33h1v1H21zM23 33h1v1H23zM30 33h3v1H30zM36 33h1v1H36zM39 33h2v1H39zM0 34h7v1H0zM9 34h5v1H9zM16 34h1v1H16zM18 34h1v1H18zM21 34h3v1H21zM26 34h1v1H26zM32 34h1v1H32zM34 34h1v1H34zM36 34h1v1H36zM39 34h1v1H39zM0 35h1v1H0zM6 35h1v1H6zM8 35h6v1H8zM17 35h3v1H17zM22 35h1v1H22zM24 35h2v1H24zM28 35h1v1H28zM32 35h1v1H32zM36 35h2v1H36zM39 35h1v1H39zM0 36h1v1H0zM2 36h3v1H2zM6 36h1v1H6zM9 36h3v1H9zM13 36h1v1H13zM15 36h2v1H15zM19 36h1v1H19zM22 36h5v1H22zM29 36h1v1H29zM32 36h5v1H32zM38 36h2v1H38zM0 37h1v1H0zM2 37h3v1H2zM6 37h1v1H6zM8 37h1v1H8zM12 37h1v1H12zM15 37h1v1H15zM20 37h3v1H20zM24 37h2v1H24zM27 37h3v1H27zM31 37h1v1H31zM36 37h2v1H36zM0 38h1v1H0zM2 38h3v1H2zM6 38h1v1H6zM8 38h4v1H8zM17 38h1v1H17zM19 38h2v1H19zM24 38h1v1H24zM29 38h2v1H29zM32 38h1v1H32zM35 38h1v1H35zM37 38h4v1H37zM0 39h1v1H0zM6 39h1v1H6zM8 39h3v1H8zM12 39h2v1H12zM17 39h1v1H17zM20 39h4v1H20zM26 39h2v1H26zM30 39h4v1H30zM36 39h2v1H36zM39 39h1v1H39zM0 40h7v1H0zM9 40h2v1H9zM12 40h1v1H12zM14 40h2v1H14zM23 40h1v1H23zM25 40h1v1H25zM30 40h1v1H30zM32 40h2v1H32zM39 40h1v1H39z" fill="#000"/></svg><span class="rc-qr-mark" aria-hidden="true">₴</span><i class="scan-line" aria-hidden="true"></i></div>
+                            <div class="rc-pay-copy">
+                                <b>Наведіть камеру телефону</b>
+                                <span>переказ відкриється заповненим: Приват24, monobank та інші банки</span>
+                                <small>На зразку QR веде на цю сторінку</small>
+                            </div>
+                        </div>
+                        <p class="rc-req">IBAN UA•• •••• •••• •••• •••• •••• •789 · ЄДРПОУ •••••••• · реквізити на зразку приховано<br>Призначення: внесок на утримання будинку, кв. 45, о/р 10045, жовтень 2026</p>
+                        <span class="rc-tear" aria-hidden="true"></span>
+                    </article>
                 </div>
             </div>
         </section>
 
-        <!-- ============ ПРАВЛІННЯ ============ -->
-        <section id="board" class="story tone-board" aria-labelledby="board-title" data-role="board">
+        <!-- ============ ПРАВЛІННЯ (перехід «глибина») ============ -->
+        <section id="board" class="story tone-board" data-role="board" data-swap="depth" aria-labelledby="board-title">
             <div class="wrap">
-                <div class="story-head reveal">
-                    <p class="eyebrow">Голові й членам правління</p>
-                    <h2 id="board-title">Керуйте будинком.<br>Не паперами.</h2>
-                    <p class="lead">Звернення, власники, збори, документи й фінансові рішення — в одному робочому просторі. Команда бачить свої справи, а мешканці — результат.</p>
+                <div class="story-head">
+                    <p class="eyebrow reveal" data-anim="blur">Голові й членам правління</p>
+                    <h2 id="board-title" class="split">Керуйте будинком.<br>Не паперами.</h2>
+                    <p class="lead reveal" data-anim="rise">Звернення, власники, збори, документи й фінансові рішення — в одному робочому просторі. Команда бачить свої справи, а мешканці — результат.</p>
                 </div>
                 <div class="story-grid">
                     <ol class="steps">
@@ -203,33 +268,33 @@
                     </ol>
                     <div class="stage" aria-hidden="true">
                         <div class="stage-inner">
+                            <div class="stage-orbit"></div>
                             <div class="device laptop stage-laptop">
                                 <div class="laptop-screen">
                                     <img data-shot="board-today" src="assets/landing/board-today.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
                                     <img data-shot="board-owners" src="assets/landing/board-owners.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <span class="glass-sheen"></span>
                                 </div>
                                 <div class="laptop-base"></div>
                             </div>
                             <div class="device phone stage-phone">
                                 <img data-shot="board-phone" src="assets/landing/board-phone.webp" width="600" height="1299" loading="lazy" decoding="async" alt="">
+                                <span class="glass-sheen"></span>
                             </div>
                             <div class="stage-dots"><i></i><i></i><i></i></div>
                         </div>
                     </div>
                 </div>
-                <div class="tags reveal" aria-label="Ще для правління">
-                    <span>Збори й протоколи</span><span>Опитування</span><span>Оголошення</span><span>Звернення</span><span>Чат будинку</span><span>База документів</span><span>Контакти служб</span><span>Лічильники будинку</span><span>Команда й права</span><span>Журнал дій</span><span>Друк бланків голосування</span>
-                </div>
             </div>
         </section>
 
-        <!-- ============ БУХГАЛТЕР ============ -->
-        <section id="accountant" class="story tone-accountant" aria-labelledby="accountant-title" data-role="accountant">
+        <!-- ============ БУХГАЛТЕР (перехід «стрічка») ============ -->
+        <section id="accountant" class="story tone-accountant" data-role="accountant" data-swap="slide" aria-labelledby="accountant-title">
             <div class="wrap">
-                <div class="story-head reveal">
-                    <p class="eyebrow">Бухгалтеру ОСББ</p>
-                    <h2 id="accountant-title">Система пропонує.<br>Ви підтверджуєте.</h2>
-                    <p class="lead">Виписка, нарахування, документи, зарплата й звітність повʼязані між собою. Рутину робить застосунок, рішення — за вами.</p>
+                <div class="story-head">
+                    <p class="eyebrow reveal" data-anim="blur">Бухгалтеру ОСББ</p>
+                    <h2 id="accountant-title" class="split">Система пропонує.<br>Ви підтверджуєте.</h2>
+                    <p class="lead reveal" data-anim="rise">Виписка, нарахування, документи, зарплата й звітність повʼязані між собою. Рутину робить застосунок, рішення — за вами.</p>
                 </div>
                 <div class="story-grid">
                     <ol class="steps">
@@ -292,6 +357,7 @@
                     </ol>
                     <div class="stage" aria-hidden="true">
                         <div class="stage-inner">
+                            <div class="stage-orbit"></div>
                             <div class="device laptop stage-laptop">
                                 <div class="laptop-screen">
                                     <img data-shot="acc-today" src="assets/landing/acc-today.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
@@ -302,6 +368,7 @@
                                     <img data-shot="acc-reports" src="assets/landing/acc-reports.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
                                     <img data-shot="acc-month" src="assets/landing/acc-month.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
                                     <img data-shot="acc-flats" src="assets/landing/acc-flats.webp" width="1600" height="1000" loading="lazy" decoding="async" alt="">
+                                    <span class="glass-sheen"></span>
                                 </div>
                                 <div class="laptop-base"></div>
                             </div>
@@ -309,84 +376,83 @@
                         </div>
                     </div>
                 </div>
-                <div class="tags reveal" aria-label="Ще для бухгалтера">
-                    <span>Нарахування й тарифи</span><span>Квитанції з QR</span><span>Вхідні залишки</span><span>Кошторис і виконання</span><span>Проводки й ОСВ</span><span>Майно та ТМЦ</span><span>Авансові звіти</span><span>Повернення й сторно</span><span>Претензійна робота</span><span>Акт звірки</span><span>Тестова бухгалтерія</span>
-                </div>
             </div>
         </section>
 
-        <!-- ============ ЯК ПОВʼЯЗАНО ============ -->
-        <section id="flow" class="section flow-section" aria-labelledby="flow-title">
+        <!-- ============ ЯК ПОВʼЯЗАНО: темна «технічна» сцена ============ -->
+        <section id="flow" class="flow-section" aria-labelledby="flow-title">
+            <div class="flow-grid-bg" aria-hidden="true"></div>
             <div class="wrap">
-                <div class="section-head reveal">
-                    <p class="eyebrow">Дані працюють разом</p>
-                    <h2 id="flow-title">Одна оплата.<br><span class="muted">Пʼять кроків — нуль ручних переписувань.</span></h2>
+                <div class="section-head">
+                    <p class="eyebrow reveal" data-anim="blur">Дані працюють разом</p>
+                    <h2 id="flow-title" class="split">Одна оплата.<br><span class="muted">Пʼять кроків — нуль ручних переписувань.</span></h2>
                 </div>
                 <ol class="flow-line">
                     <li class="flow-node"><span class="flow-ico" aria-hidden="true">₴</span><b>Нарахування</b><small>Бухгалтер формує внески за площею й тарифом</small></li>
-                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">⌂</span><b>Мешканець бачить суму</b><small>Квитанція, реквізити й QR — у кабінеті</small></li>
+                    <li class="flow-node"><span class="flow-ico" aria-hidden="true">⌂</span><b>Квитанція з QR</b><small>Мешканець бачить суму й платить камерою</small></li>
                     <li class="flow-node"><span class="flow-ico" aria-hidden="true">⇄</span><b>Оплата й виписка</b><small>ПриватБанк передає операцію щогодини</small></li>
                     <li class="flow-node"><span class="flow-ico" aria-hidden="true">✓</span><b>Рознесено</b><small>Система впізнала квартиру — бухгалтер підтвердив</small></li>
                     <li class="flow-node"><span class="flow-ico" aria-hidden="true">◎</span><b>Усі бачать результат</b><small>Баланс квартири, звіт будинку, проводки</small></li>
                 </ol>
                 <div class="chain-cards">
-                    <article class="reveal"><p class="eyebrow">Витрати</p><h3>Документ → затвердження → підпис → виписка</h3><p>Бухгалтер вносить акт чи рахунок, голова затверджує, платіж підписується КЕП, а виписка закриває документ і потрапляє у звіт будинку.</p></article>
-                    <article class="reveal"><p class="eyebrow">Зарплата</p><h3>Табель → відомість → виплата → звіт</h3><p>Утримання й ЄСВ рахуються у відомості. Після затвердження — виплати, а дані йдуть у податковий розрахунок.</p></article>
-                    <article class="reveal"><p class="eyebrow">Збори</p><h3>Питання → голоси → протокол</h3><p>Порядок денний, електронні й паперові відповіді, підсумки за звіреним списком співвласників і опублікований протокол.</p></article>
+                    <article class="reveal" data-anim="rise"><p class="eyebrow">Витрати</p><h3>Документ → затвердження → підпис → виписка</h3><p>Бухгалтер вносить акт чи рахунок, голова затверджує, платіж підписується КЕП, а виписка закриває документ і потрапляє у звіт будинку.</p></article>
+                    <article class="reveal" data-anim="rise"><p class="eyebrow">Зарплата</p><h3>Табель → відомість → виплата → звіт</h3><p>Утримання й ЄСВ рахуються у відомості. Після затвердження — виплати, а дані йдуть у податковий розрахунок.</p></article>
+                    <article class="reveal" data-anim="rise"><p class="eyebrow">Збори</p><h3>Питання → голоси → протокол</h3><p>Порядок денний, електронні й паперові відповіді, підсумки за звіреним списком співвласників і опублікований протокол.</p></article>
                 </div>
+                <dl class="numbers">
+                    <div class="reveal" data-anim="scale"><dt>Кабінети</dt><dd data-count="3">3</dd></div>
+                    <div class="reveal" data-anim="scale"><dt>Груп можливостей</dt><dd data-count="30">30</dd></div>
+                    <div class="reveal" data-anim="scale"><dt>Кроків закриття місяця</dt><dd data-count="6">6</dd></div>
+                    <div class="reveal" data-anim="scale"><dt>Дотик, щоб підтвердити список співвласників</dt><dd data-count="1">1</dd></div>
+                </dl>
             </div>
         </section>
 
         <!-- ============ ДОВІРА ============ -->
         <section class="section wrap trust" aria-labelledby="trust-title">
-            <div class="section-head reveal">
-                <p class="eyebrow">Безпечно за замовчуванням</p>
-                <h2 id="trust-title">Гроші й дані —<br><span class="muted">під контролем людей.</span></h2>
+            <div class="section-head">
+                <p class="eyebrow reveal" data-anim="blur">Безпечно за замовчуванням</p>
+                <h2 id="trust-title" class="split">Гроші й дані —<br><span class="muted">під контролем людей.</span></h2>
             </div>
             <div class="trust-grid">
-                <article class="reveal"><span class="trust-ico" aria-hidden="true">✍︎</span><h3>Гроші підписує голова</h3><p>Застосунок готує платіж, але не відправляє гроші сам: банк проводить його лише після підпису КЕП у Приват24.</p></article>
-                <article class="reveal"><span class="trust-ico" aria-hidden="true">◐</span><h3>Кожен бачить своє</h3><p>Мешканець — лише свою квартиру й опубліковані дані будинку. Права правління й бухгалтера розділені за ролями.</p></article>
-                <article class="reveal"><span class="trust-ico" aria-hidden="true">≡</span><h3>Журнал дій</h3><p>Хто, коли й що змінив — у журналі. Закритий місяць захищено від звичайного редагування.</p></article>
-                <article class="reveal"><span class="trust-ico" aria-hidden="true">⌘</span><h3>Без встановлення</h3><p>Працює в браузері на телефоні й компʼютері; на головний екран додається як застосунок — без магазину.</p></article>
+                <article class="reveal" data-anim="flip" data-tilt><span class="card-glare" aria-hidden="true"></span><span class="trust-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span><h3>Гроші підписує голова</h3><p>Застосунок готує платіж, але не відправляє гроші сам: банк проводить його лише після підпису КЕП у Приват24.</p></article>
+                <article class="reveal" data-anim="flip" data-tilt><span class="card-glare" aria-hidden="true"></span><span class="trust-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><h3>Кожен бачить своє</h3><p>Мешканець — лише свою квартиру й опубліковані дані будинку. Права правління й бухгалтера розділені за ролями.</p></article>
+                <article class="reveal" data-anim="flip" data-tilt><span class="card-glare" aria-hidden="true"></span><span class="trust-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></span><h3>Журнал дій</h3><p>Хто, коли й що змінив — у журналі. Закритий місяць захищено від звичайного редагування.</p></article>
+                <article class="reveal" data-anim="flip" data-tilt><span class="card-glare" aria-hidden="true"></span><span class="trust-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></span><h3>Без встановлення</h3><p>Працює в браузері на телефоні й компʼютері; на головний екран додається як застосунок — без магазину.</p></article>
             </div>
-            <dl class="numbers reveal">
-                <div><dt>Кабінети</dt><dd data-count="3">3</dd></div>
-                <div><dt>Груп можливостей</dt><dd data-count="30">30</dd></div>
-                <div><dt>Кроків закриття місяця</dt><dd data-count="6">6</dd></div>
-                <div><dt>Дотик, щоб підтвердити список співвласників</dt><dd data-count="1">1</dd></div>
-            </dl>
         </section>
 
         <!-- ============ ЗАПУСК ============ -->
         <section id="connect" class="section wrap connect" aria-labelledby="connect-title">
-            <div class="section-head reveal">
-                <p class="eyebrow">Запуск для вашого будинку</p>
-                <h2 id="connect-title">Починаємо з ваших даних<br><span class="muted">і ваших процесів.</span></h2>
-                <p class="lead">Застосунок показано на прикладі ОСББ «Успіх-25». Інший будинок потребує окремого налаштування бази, доступів, реквізитів і правил роботи.</p>
+            <div class="section-head">
+                <p class="eyebrow reveal" data-anim="blur">Запуск для вашого будинку</p>
+                <h2 id="connect-title" class="split">Починаємо з ваших даних<br><span class="muted">і ваших процесів.</span></h2>
+                <p class="lead reveal" data-anim="rise">Застосунок показано на прикладі ОСББ «Успіх-25». Інший будинок потребує окремого налаштування бази, доступів, реквізитів і правил роботи.</p>
             </div>
             <ol class="setup">
-                <li class="reveal"><span>1</span><h3>База будинку</h3><p>Квартири, приміщення, власники, площі, парадні та особові рахунки.</p></li>
-                <li class="reveal"><span>2</span><h3>Початок обліку</h3><p>Тарифи, складові внесків, залишки, кошторис і дата переходу на облік.</p></li>
-                <li class="reveal"><span>3</span><h3>Команда й банк</h3><p>Повноваження правління й бухгалтера, рахунки ПриватБанку, реквізити ОСББ.</p></li>
-                <li class="reveal"><span>4</span><h3>Перший місяць</h3><p>Тестові нарахування, виписка, рознесення й звірка — спершу в тестовій бухгалтерії.</p></li>
+                <li class="reveal" data-anim="mask"><span>1</span><h3>База будинку</h3><p>Квартири, приміщення, власники, площі, парадні та особові рахунки.</p></li>
+                <li class="reveal" data-anim="mask"><span>2</span><h3>Початок обліку</h3><p>Тарифи, складові внесків, залишки, кошторис і дата переходу на облік.</p></li>
+                <li class="reveal" data-anim="mask"><span>3</span><h3>Команда й банк</h3><p>Повноваження правління й бухгалтера, рахунки ПриватБанку, реквізити ОСББ.</p></li>
+                <li class="reveal" data-anim="mask"><span>4</span><h3>Перший місяць</h3><p>Тестові нарахування, виписка, рознесення й звірка — спершу в тестовій бухгалтерії.</p></li>
             </ol>
         </section>
 
         <!-- ============ ПИТАННЯ ============ -->
         <section id="faq" class="section wrap faq" aria-labelledby="faq-title">
-            <div class="section-head reveal"><p class="eyebrow">Перед запуском</p><h2 id="faq-title">Що варто знати.</h2></div>
+            <div class="section-head"><p class="eyebrow reveal" data-anim="blur">Перед запуском</p><h2 id="faq-title" class="split">Що варто знати.</h2></div>
             <div class="faq-list">
-                <details><summary>Це лише застосунок для «Успіх-25»?</summary><p>На екранах показана реалізація для цього ОСББ. Сторінка знайомить із можливостями для інших будинків. Запуск нового будинку — окреме впровадження з його базою, доступами та налаштуваннями.</p></details>
-                <details><summary>Чи обовʼязково встановлювати застосунок?</summary><p>Він працює у браузері. На iPhone можна додати його через «Поширити» → «На початковий екран», на Android — через меню браузера. Для сповіщень потрібні підтримка пристрою та дозвіл користувача.</p></details>
-                <details><summary>Чи бачить мешканець бухгалтерські й особисті дані інших квартир?</summary><p>Ні. Інтерфейси й доступ розділені за ролями. Мешканець працює зі своєю квартирою та опублікованою інформацією будинку. Службові операції доступні відповідним членам команди.</p></details>
-                <details><summary>Застосунок сам підписує й відправляє гроші?</summary><p>Ні. Бухгалтер створює платіж, який зʼявляється в Приват24. Підписує його голова КЕП. Фактична оплата підтверджується банківською випискою та повʼязується з документом.</p></details>
-                <details><summary>Звіти автоматично надсилаються до ДПС?</summary><p>Застосунок готує дані й XML-файли. Уповноважена особа завантажує, перевіряє, підписує та подає пакет в Електронному кабінеті ДПС. Версія пакета, статуси й квитанції зберігаються у розділі звітності.</p></details>
-                <details><summary>Можна поєднувати паперові й електронні голоси?</summary><p>Так. Є друк бланків, внесення паперових голосів кожного співвласника, електронні відповіді від квартири та формування підсумків. Електронний підпис співвласника ще не підключений; порядок юридичного оформлення голосів визначає ОСББ.</p></details>
-                <details><summary>Можна перенести вже наявний облік?</summary><p>Є інструменти імпорту бази й фінансових даних, введення залишків та звірки історії. Перед робочим запуском потрібна перевірка форматів, сум і звʼязків. Прямий імпорт файла банківської виписки поки не підключений.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Це лише застосунок для «Успіх-25»?</summary><p>На екранах показана реалізація для цього ОСББ. Сторінка знайомить із можливостями для інших будинків. Запуск нового будинку — окреме впровадження з його базою, доступами та налаштуваннями.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Чи обовʼязково встановлювати застосунок?</summary><p>Він працює у браузері. На iPhone можна додати його через «Поширити» → «На початковий екран», на Android — через меню браузера. Для сповіщень потрібні підтримка пристрою та дозвіл користувача.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Чи бачить мешканець бухгалтерські й особисті дані інших квартир?</summary><p>Ні. Інтерфейси й доступ розділені за ролями. Мешканець працює зі своєю квартирою та опублікованою інформацією будинку. Службові операції доступні відповідним членам команди.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Застосунок сам підписує й відправляє гроші?</summary><p>Ні. Бухгалтер створює платіж, який зʼявляється в Приват24. Підписує його голова КЕП. Фактична оплата підтверджується банківською випискою та повʼязується з документом.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Звіти автоматично надсилаються до ДПС?</summary><p>Застосунок готує дані й XML-файли. Уповноважена особа завантажує, перевіряє, підписує та подає пакет в Електронному кабінеті ДПС. Версія пакета, статуси й квитанції зберігаються у розділі звітності.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Можна поєднувати паперові й електронні голоси?</summary><p>Так. Є друк бланків, внесення паперових голосів кожного співвласника, електронні відповіді від квартири та формування підсумків. Електронний підпис співвласника ще не підключений; порядок юридичного оформлення голосів визначає ОСББ.</p></details>
+                <details class="reveal" data-anim="rise"><summary>Можна перенести вже наявний облік?</summary><p>Є інструменти імпорту бази й фінансових даних, введення залишків та звірки історії. Перед робочим запуском потрібна перевірка форматів, сум і звʼязків. Прямий імпорт файла банківської виписки поки не підключений.</p></details>
             </div>
         </section>
 
-        <section class="wrap closing reveal">
+        <section class="wrap closing reveal" data-anim="scale">
+            <span class="closing-ring" aria-hidden="true"></span>
             <h2>Менше розрізнених справ.<br><span class="grad">Більше порядку в будинку.</span></h2>
             <div class="hero-actions">
                 <a class="button" href="index.html">Відкрити застосунок</a>
@@ -396,7 +462,7 @@
     </main>
 
     <footer class="wrap site-footer">
-        <div><strong>Кабінет ОСББ</strong><span>Реалізовано на прикладі ОСББ «Успіх-25» · на знімках умовні дані</span></div>
+        <div><strong>Кабінет ОСББ</strong><span>Реалізовано на прикладі ОСББ «Успіх-25» · на знімках і в зразку квитанції умовні дані</span></div>
         <nav aria-label="Посилання у підвалі"><a href="#connect">Запуск в іншому будинку</a><a href="index.html">Застосунок «Успіх-25» →</a></nav>
     </footer>
 
