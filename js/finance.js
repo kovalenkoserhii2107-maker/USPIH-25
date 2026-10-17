@@ -69,7 +69,7 @@ export function renderBalance(balance, updatedAt) {
         <div class="balance-actions">
             <button type="button" class="btn-primary balance-pay" id="payBtn">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
-                ${debt ? 'Сплатити' : 'Реквізити'}
+                Сплатити
             </button>
             <button type="button" class="balance-receipts" id="openReceiptsBtn"
                     aria-label="Квитанції" title="Квитанції">
