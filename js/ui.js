@@ -325,6 +325,13 @@ const SCREENS = ['loginSection', 'passwordSection', 'dataSection',
 export function updateNavBadge() {
     const total = [...document.querySelectorAll('.menu-badge')]
         .reduce((s, el) => s + (parseInt(el.textContent, 10) || 0), 0);
+    // Значки на швидких діях головного екрана повторюють значки меню.
+    document.querySelectorAll('[data-badge-for]').forEach(el => {
+        const src = document.getElementById(el.dataset.badgeFor);
+        const n = parseInt(src?.textContent, 10) || 0;
+        el.textContent = n > 99 ? '99+' : n;
+        el.hidden = !n || src?.style.display === 'none';
+    });
     const nav = document.getElementById('pollsNavBadge');
     if (!nav) return;
     nav.textContent = total > 99 ? '99+' : total;

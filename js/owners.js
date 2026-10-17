@@ -16,7 +16,6 @@ const PRESETS = ['1/1', '1/2', '1/3', '1/4', '2/3', '1/5'];
 
 // Кожне кільце має власний <linearGradient>, тож id мусять бути унікальні
 // в межах сторінки — інакше всі картки візьмуть барву першої.
-let ringSeq = 0;
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
@@ -136,7 +135,40 @@ export async function loadOwners(apt) {
     renderOwnersStatus();
 }
 
+/**
+ * Частки всіх співвласників однією смугою: одразу видно, хто скільки
+ * має і чи складають частки цілу квартиру. Колір сегмента — колір
+ * аватара того самого співвласника.
+ */
+function renderShareSummary() {
+    const id = `${hostId}Summary`;
+    let el = document.getElementById(id);
+    const cards = [...container().querySelectorAll('.owner-card')]
+        .filter(c => !c.dataset.removed && c.dataset.new !== '1');
+    if (!cards.length) { el?.remove(); return; }
+    if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.className = 'owners-summary';
+        container().insertAdjacentElement('beforebegin', el);
+    }
+    const parts = cards.map(c => ({ perc: parseFloat(c.dataset.perc) || 0, color: c.dataset.color || 'var(--ink-3)',
+        name: c.querySelector('.owner-name')?.textContent || '' }));
+    const total = Math.round(parts.reduce((a, p) => a + p.perc, 0) * 100) / 100;
+    const whole = Math.abs(total - 100) < 0.1;
+    const word = n => n === 1 ? 'співвласник' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'співвласники' : 'співвласників';
+    el.innerHTML = `
+        <div class="owners-summary-bar" role="img" aria-label="${parts.map(p => `${escapeHtml(p.name)} — ${p.perc}%`).join('; ')}">
+            ${parts.filter(p => p.perc > 0).map(p => `<span style="flex:${p.perc} 0 0;background:${p.color}"></span>`).join('')}
+            ${total < 99.9 ? `<span class="owners-summary-gap" style="flex:${Math.max(0, 100 - total)} 0 0"></span>` : ''}
+        </div>
+        <p class="owners-summary-text${whole ? '' : ' is-warn'}">${cards.length} ${word(cards.length)} · ${whole
+            ? 'частки складають усю квартиру'
+            : `частки складають ${String(total).replace('.', ',')}% — разом має бути 100%`}</p>`;
+}
+
 export function updateOwnersCount() {
+    renderShareSummary();
     const el = document.getElementById('displayOwnersCount');
     if (!el) return;
     // Рахуємо тих, хто є власником ЗАРАЗ, а не тих, хто буде після
@@ -189,56 +221,29 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
 
     const percNum = parseFloat(sharePerc);
     const hasShare = sharePerc !== '' && !isNaN(percNum);
-    const pct = hasShare ? Math.min(Math.max(percNum, 0), 100) : 0;
-    // Усередині кільця місця мало, тому округлюємо: «33%», а не «33,33%».
-    // Точне значення й так видно з дробу поруч.
-    const percLabel = hasShare ? Math.round(percNum) : null;
-    const accent = avatarGradient(name);
-    const [ringFrom, ringTo] = avatarColors(name);
-    const ringId = `ownerRing${++ringSeq}`;
-    const CIRC = 2 * Math.PI * 44;          // r=44 у системі координат 0 0 100 100
-    const dashOffset = CIRC * (1 - pct / 100);
+    // Точний відсоток — до сотих, але без хвоста нулів: «50%», «33,33%».
+    const percLabel = hasShare ? `${String(Math.round(percNum * 100) / 100).replace('.', ',')}%` : '';
+    card.dataset.perc = hasShare ? String(percNum) : '';
+    card.dataset.color = avatarColors(name)[0];
     const isCustom = shareFrac && !PRESETS.includes(shareFrac);
 
+    // Рядок списку, як у «Контактах» iOS: аватар, ПІБ, частка. Видалення
+    // — у формі редагування, а не червоною кнопкою на головному екрані.
     card.innerHTML = `
         <div class="view-mode"${isEditMode ? ' hidden' : ''}>
             <div class="owner-head">
-                <div class="owner-avatar" style="background: ${accent};">${escapeHtml(getInitials(name))}</div>
+                <div class="owner-avatar" style="background: ${avatarGradient(name)};" aria-hidden="true">${escapeHtml(getInitials(name))}</div>
                 <div class="owner-head-text">
                     <span class="owner-index">Співвласник ${number}</span>
                     <h3 class="owner-name">${escapeHtml(name) || 'Без імені'}</h3>
+                    <span class="owner-share${shareFrac ? '' : ' owner-share-empty'}">${shareFrac
+                        ? `Частка <b>${escapeHtml(shareFrac)}</b>${percLabel && shareFrac !== '1/1' ? ` · ${percLabel}` : shareFrac === '1/1' ? ' · одноосібна' : ''}`
+                        : 'Частку не вказано'}</span>
                 </div>
-                <button type="button" class="icon-btn edit-btn" aria-label="Редагувати">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                <button type="button" class="icon-btn edit-btn" aria-label="Змінити дані: ${escapeHtml(name) || 'співвласник'}">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
                 </button>
             </div>
-
-            <div class="share-panel">
-                <div class="share-ring" role="img"
-                     aria-label="${hasShare ? percLabel + '% від квартири' : 'Частку не вказано'}">
-                    <svg viewBox="0 0 100 100" aria-hidden="true">
-                        <defs>
-                            <linearGradient id="${ringId}" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0" stop-color="${ringFrom}"></stop>
-                                <stop offset="1" stop-color="${ringTo}"></stop>
-                            </linearGradient>
-                        </defs>
-                        <circle class="share-ring-track" cx="50" cy="50" r="44"></circle>
-                        <circle class="share-ring-fill" cx="50" cy="50" r="44"
-                                stroke="url(#${ringId})"
-                                stroke-dasharray="${CIRC.toFixed(2)}"
-                                stroke-dashoffset="${dashOffset.toFixed(2)}"
-                                transform="rotate(-90 50 50)"></circle>
-                    </svg>
-                    <span class="share-ring-text">${hasShare ? percLabel + '<small>%</small>' : '—'}</span>
-                </div>
-                <div class="share-panel-text">
-                    <span class="share-caption">Частка власності</span>
-                    <span class="share-frac-top${shareFrac ? '' : ' share-frac-empty'}">${escapeHtml(shareFrac) || 'Не вказано'}</span>
-                </div>
-            </div>
-
-            <button type="button" class="delete-btn owner-delete">Видалити співвласника</button>
         </div>
 
         <div class="edit-mode"${isEditMode ? '' : ' hidden'}>
@@ -269,6 +274,7 @@ export function renderOwnerCard(ownerData, number, isEditMode, prepend = false) 
                 <button type="button" class="btn-soft cancel-btn">Скасувати</button>
                 <button type="button" class="btn-primary save-ok-btn">Зберегти</button>
             </div>
+            ${isNew ? '' : '<button type="button" class="delete-btn owner-delete">Видалити співвласника</button>'}
         </div>`;
 
     if (prepend) container().prepend(card); else container().appendChild(card);
@@ -347,16 +353,29 @@ export function markCard(card, kind) {
     }[kind];
     card.querySelector('.view-mode')?.appendChild(note);
 
-    // Прибраного можна повернути, поки заявку не надіслано
-    const del = card.querySelector('.delete-btn');
-    if (del && kind === 'remove') {
-        del.textContent = 'Повернути співвласника';
-        del.classList.add('owner-undo');
+    // Прибраного можна повернути просто з рядка — форма редагування
+    // для цього не потрібна.
+    if (kind === 'remove') {
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'owner-undo';
+        undo.textContent = 'Повернути';
+        undo.addEventListener('click', () => restoreOwner(card));
+        note.appendChild(undo);
     }
+}
+
+/** Скасувати власну пропозицію прибрати співвласника. */
+function restoreOwner(card) {
+    markCard(card, null);
+    renumberOwners();
+    updateOwnersCount();
+    markDirty();
 }
 
 /** Нумерація «Співвласник N» після перестановки чи видалення. */
 function renumberOwners() {
+    renderShareSummary();
     let i = 1;
     container().querySelectorAll('.owner-card').forEach(card => {
         const el = card.querySelector('.owner-index');
@@ -369,11 +388,31 @@ function wireOwnerCard(card, isNew) {
     const view = card.querySelector('.view-mode');
     const edit = card.querySelector('.edit-mode');
 
-    // Єдина кнопка редагування — олівець у шапці (дублювання прибрано)
-    card.querySelector('.edit-btn').addEventListener('click', () => {
+    // Редагування — олівцем або дотиком до рядка (ціль більша за 44 пт).
+    const openEdit = () => {
+        if (card.dataset.removed) return;
         view.hidden = true;
         edit.hidden = false;
-    });
+        edit.querySelector('.i-name')?.focus({ preventScroll: true });
+    };
+    card.querySelector('.edit-btn').addEventListener('click', e => { e.stopPropagation(); openEdit(); });
+    view.addEventListener('click', e => { if (!e.target.closest('button')) openEdit(); });
+
+    /** Закрити форму, повернувши поля до вихідних значень. */
+    const closeEdit = () => {
+        const o = card._original || {};
+        card.querySelector('.i-name').value = o.name || '';
+        const preset = card.querySelector('.i-share-preset');
+        const custom = card.querySelector('.i-share-custom');
+        const isCustom = o.shareFrac && !PRESETS.includes(o.shareFrac);
+        preset.value = isCustom ? 'custom' : (o.shareFrac ? `${o.shareFrac}|${o.sharePerc}` : '');
+        custom.hidden = !isCustom;
+        custom.value = isCustom ? o.shareFrac : '';
+        card.querySelectorAll('.field-error').forEach(e => e.remove());
+        card.querySelectorAll('.field-invalid').forEach(e => e.classList.remove('field-invalid'));
+        edit.hidden = true;
+        view.hidden = false;
+    };
 
     card.querySelector('.cancel-btn').addEventListener('click', async () => {
         if (isNew) {
@@ -385,39 +424,19 @@ function wireOwnerCard(card, isNew) {
             // Повертаємо вихідні значення, а не просто ховаємо форму:
             // інакше скасована правка лишалася б у полях і рахувалася
             // як зміна.
-            const o = card._original || {};
-            card.querySelector('.i-name').value = o.name || '';
-            const preset = card.querySelector('.i-share-preset');
-            const custom = card.querySelector('.i-share-custom');
-            const isCustom = o.shareFrac && !PRESETS.includes(o.shareFrac);
-            preset.value = isCustom ? 'custom' : (o.shareFrac ? `${o.shareFrac}|${o.sharePerc}` : '');
-            custom.hidden = !isCustom;
-            custom.value = isCustom ? o.shareFrac : '';
-
-            card.querySelectorAll('.field-error').forEach(e => e.remove());
-            card.querySelectorAll('.field-invalid').forEach(e => e.classList.remove('field-invalid'));
-            edit.hidden = true;
-            view.hidden = false;
+            closeEdit();
             recomputeDirty();
         }
     });
 
-    card.querySelector('.delete-btn').addEventListener('click', async () => {
-        if (card.dataset.removed) {                 // передумали — повертаємо
-            markCard(card, null);
-            card.querySelector('.delete-btn').textContent = 'Видалити співвласника';
-            card.querySelector('.delete-btn').classList.remove('owner-undo');
-            renumberOwners();
-            updateOwnersCount();
-            markDirty();
-            return;
-        }
+    card.querySelector('.delete-btn')?.addEventListener('click', async () => {
         const ok = await confirmDialog('Видалити співвласника?',
             'Співвласника буде прибрано зі списку. Спільні документи квартири лишаються.');
         if (!ok) return;
         // Картку не прибираємо, а позначаємо. Інакше після надсилання
         // мешканець не бачить, що саме він запропонував прибрати, —
         // а заявку ще можуть відхилити.
+        closeEdit();
         markCard(card, 'remove');
         renumberOwners();
         updateOwnersCount();
@@ -506,21 +525,20 @@ function renderDocs(mode, note = '') {
     if (mode === 'view') {
         host.innerHTML = `
             <div class="owner-head">
+                <div class="owners-docs-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg></div>
                 <div class="owner-head-text">
-                    <span class="owner-index">Спільні для всіх співвласників</span>
-                    <h3 class="owner-name">Правовстановлюючі документи</h3>
+                    <span class="owner-index">Спільний для всіх співвласників</span>
+                    <h3 class="owner-name">Правовстановлюючий документ</h3>
+                    <span class="owner-share${shared.docInfo ? '' : ' owner-share-empty'}">${escapeHtml(shared.docInfo) || 'Не вказано — додайте договір чи свідоцтво'}</span>
                 </div>
                 <button type="button" class="icon-btn edit-btn" data-docs="edit" aria-label="Змінити документи">${EDIT_ICON}</button>
-            </div>
-            <div class="owner-info">
-                <span class="owner-info-label">Документ</span>
-                <span class="owner-info-value">${escapeHtml(shared.docInfo) || '—'}</span>
             </div>
             <div class="owner-attachments attach-block"></div>
             ${shared.pending.length ? `<p class="owner-pending-files">${shared.pending.length} файл(ів) буде додано після надсилання</p>` : ''}
             ${note ? `<p class="owner-pending-note">${escapeHtml(note)}</p>` : ''}`;
         renderAttachments(host.querySelector('.owner-attachments'), shared.files);
         host.querySelector('[data-docs="edit"]').addEventListener('click', () => renderDocs('edit'));
+        host.querySelector('.owner-head').addEventListener('click', e => { if (!e.target.closest('button')) renderDocs('edit'); });
         return;
     }
     const before = { docInfo: shared.docInfo, files: [...shared.files], pending: [...shared.pending] };

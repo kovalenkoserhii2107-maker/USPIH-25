@@ -293,6 +293,11 @@ async function savePassword() {
 // ------------------------------------------------------------
 function initNavigation() {
     document.getElementById('menuBtn').addEventListener('click', () => toggleSheet('menuPopup'));
+    // Швидкі дії головного екрана — ті самі пункти меню.
+    document.querySelector('.qa-row')?.addEventListener('click', e => {
+        const tile = e.target.closest('[data-go]');
+        if (tile) document.getElementById(tile.dataset.go)?.click();
+    });
 
     const go = async (screen, loader) => {
         closeAllSheets();
