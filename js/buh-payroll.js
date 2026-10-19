@@ -42,6 +42,53 @@ const grn = k => `${fmtKop(k)} грн`;
 const TAX_NAMES = { pdfo: 'ПДФО', vz: 'Військовий збір', esv: 'ЄСВ' };
 const pct = v => `${String(v / 100).replace('.', ',')}%`;
 
+/** Бюджетні рахунки за замовчуванням (ГУК / ГУ ДПС в Одеській обл., м. Одеса, МФО 899998). */
+export const DEFAULT_TAXES = {
+    pdfo: { name: 'ГУК в Одеській обл. / м. Одеса', iban: 'UA538999980313010101000015744', code: '37607526' },
+    vz: { name: 'ГУК в Одеській обл. / м. Одеса', iban: 'UA808999980313090106000015744', code: '37607526' },
+    esv: { name: 'ГУ ДПС в Одеській області', iban: 'UA208999980000355609201001532', code: '44069166' }
+};
+
+export function withDefaultTaxes(taxes = {}) {
+    const merge = key => {
+        const def = DEFAULT_TAXES[key] || { name: '', iban: '', code: '' };
+        const cur = taxes?.[key] || {};
+        return {
+            name: String(cur.name || '').trim() || def.name,
+            iban: String(cur.iban || '').replace(/\s+/g, '').toUpperCase() || def.iban,
+            code: String(cur.code || '').replace(/\D/g, '').slice(0, 10) || def.code
+        };
+    };
+    return { pdfo: merge('pdfo'), vz: merge('vz'), esv: merge('esv') };
+}
+
+/** Переконується, що реквізити отримувачів податків (ПДФО, ВЗ, ЄСВ) збережені на сервері перед виплатою. */
+export async function ensurePayrollTaxes(targetPeriod = null, payrollCtx = null) {
+    const state = payrollCtx || (ctx && (!targetPeriod || ctx.period === targetPeriod) ? ctx : await loadPayroll(targetPeriod || period));
+    const rawTaxes = state?.settings?.taxes || {};
+    const merged = withDefaultTaxes(rawTaxes);
+    const needsSave = ['pdfo', 'vz', 'esv'].some(k =>
+        !String(rawTaxes[k]?.name || '').trim() ||
+        !String(rawTaxes[k]?.iban || '').trim() ||
+        !String(rawTaxes[k]?.code || '').trim()
+    );
+    if (needsSave) {
+        const advancePct = Number.isFinite(state?.settings?.advancePct) ? state.settings.advancePct : 50;
+        await payrollAct({ action: 'settings', advancePct, taxes: merged });
+        if (state?.settings) state.settings.taxes = merged;
+    }
+    return state;
+}
+
+/** Створює платежі авансу або зарплати з автоматичним заповненням бюджетних рахунків за замовчуванням. */
+export async function payPayrollStage(targetPeriod, stage, payrollCtx = null) {
+    const state = await ensurePayrollTaxes(targetPeriod, payrollCtx);
+    if (state?.stages?.[stage]?.complete === false && state?.stages?.[stage]?.plan) {
+        await payrollAct({ action: 'refreshRecipients', period: targetPeriod, stage }).catch(() => {});
+    }
+    return payrollAct({ action: 'pay', period: targetPeriod, stage });
+}
+
 /** Поля людини за місяць: табель чи акт, премія, перерахунок, відсутності. */
 function inputsHtml(r, locked) {
     const id = escapeHtml(r.personId);
@@ -194,7 +241,7 @@ function personFormHtml(p) {
 }
 
 function taxesHtml() {
-    const t = ctx.settings.taxes || {};
+    const t = withDefaultTaxes(ctx.settings.taxes);
     const row = (key, label) => `<div class="pr-tax" data-tax="${key}"><b>${label}</b>
         <input class="field-input" data-f="name" value="${escapeHtml(t[key]?.name || '')}" placeholder="Отримувач (казначейство)" aria-label="${label}: отримувач">
         <input class="field-input" data-f="iban" value="${escapeHtml(t[key]?.iban || '')}" placeholder="UA…" spellcheck="false" aria-label="${label}: IBAN">
@@ -400,6 +447,7 @@ async function onAction(btn) {
             const result=await payrollAct({action:'projectPrepare',period:ctx.period,stage,group:ctx.stages[stage].project.group,reference:ref});
             toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared?'Голова підписує у Приват24':'Продовжіть підготовку'}`, 'success');
         } else if (a === 'recipients-refresh') {
+            await ensurePayrollTaxes(ctx.period, ctx);
             const result = await payrollAct({ action: 'refreshRecipients', period: ctx.period, stage: btn.dataset.stage });
             toast(`Оновлено: ${result.changed}. Тепер продовжіть виплату`, 'success');
         } else if (a === 'repay') {
@@ -413,6 +461,7 @@ async function onAction(btn) {
             if ((project || payMethod==='project') && project?.status!=='prepared') {
                 if (!await confirmDialog('Підготувати зарплатний проект?', 'Відомість буде створена й перевірена у банку. Підписати її потрібно у Приват24. Податки готуються окремими платежами по IBAN.', 'Підготувати')) return;
                 setBusy(btn,true,'Готую відомість…');
+                await ensurePayrollTaxes(ctx.period, ctx);
                 const result=await payrollAct({action:'projectPrepare',period:ctx.period,stage,group:project?.group || projectGroup});
                 toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared?'Наступне натискання підготує податки; зарплатну відомість підпишіть у Приват24':'Натисніть повторно, щоб продовжити'}`, 'success');
                 return;
@@ -422,7 +471,7 @@ async function onAction(btn) {
             if (!await confirmDialog(stage === 'advance' ? 'Виплатити аванс?' : 'Виплатити зарплату?',
                 `На руки ${fmtKop(sum.netKop)} грн, ПДФО й ВЗ ${fmtKop(sum.pdfoKop + sum.vzKop)} грн, ЄСВ ${fmtKop(sum.esvKop || 0)} грн. Платежі підуть у Приват24 на підпис голови.`, 'Створити платежі')) return;
             setBusy(btn, true, 'Створюю платежі…');
-            const r = await payrollAct({ action: 'pay', period: ctx.period, stage });
+            const r = await payPayrollStage(ctx.period, stage, ctx);
             toast(r.errors?.length ? `Створено ${r.created}; не вдалося: ${r.errors.join('; ')}` : `Платежів у Приват24: ${r.created}. Голова підписує пачку`, r.errors?.length ? 'error' : 'success');
         }
     } catch (e) { toast(e.message, 'error'); }

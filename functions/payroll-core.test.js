@@ -100,3 +100,10 @@ test('дві трудові картки однієї фізособи не до
     const run=p.buildRun({people:[emp(),emp({id:'internal'})],period:'2026-10'});
     assert.match(run.error,/однієї фізособи в одну картку/);
 });
+
+test('withDefaultTaxes заповнює бюджетні рахунки ПДФО, ВЗ і ЄСВ за замовчуванням без помилок валідації', () => {
+    const run = p.buildRun({ people: [emp()], period: '2026-10' });
+    const taxes = p.withDefaultTaxes({});
+    const adv = p.stagePayments(run, 'advance', { code: '40562894', taxes });
+    assert.deepEqual(p.paymentProblems(adv), []);
+});

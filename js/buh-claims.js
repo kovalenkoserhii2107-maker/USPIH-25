@@ -48,12 +48,26 @@ const fmtAreaCsv = v => {
     return Number.isFinite(n) && n > 0 ? n.toFixed(2).replace('.', ',') : '';
 };
 
+const INITIAL_VISIBLE_COUNT = 10;
+
 let ctx = null;
 let activeFilter = 'all';
 let isMartialLaw = true;
 let selectedApt = null;
 let searchQuery = '';
+let showAllDebtors = false;
 const ledgerCache = new Map();
+
+function getModalHost() {
+    let host = document.getElementById('claimModalHost');
+    if (!host || host.parentElement !== document.body) {
+        if (host) host.remove();
+        host = document.createElement('div');
+        host.id = 'claimModalHost';
+        document.body.appendChild(host);
+    }
+    return host;
+}
 
 async function fetchAptLedger(apt) {
     if (ledgerCache.has(apt)) return ledgerCache.get(apt);
@@ -229,6 +243,7 @@ async function loadSynchronizedClaims() {
 export async function loadClaimsView() {
     const host = document.getElementById('viewClaims');
     if (!host) return;
+    showAllDebtors = false;
     host.innerHTML = '<p class="list-empty">Завантаження претензійно-позовної роботи…</p>';
     try {
         ctx = await loadSynchronizedClaims();
@@ -283,6 +298,7 @@ function render() {
     if (!host || !ctx) return;
 
     const debtors = filterDebtors(ctx.debtors);
+    const visibleDebtors = showAllDebtors ? debtors : debtors.slice(0, INITIAL_VISIBLE_COUNT);
     const s = ctx.stats || {};
 
     const martialLawNotice = isMartialLaw
@@ -353,7 +369,7 @@ function render() {
                         </tr>
                     </thead>
                     <tbody>
-                        ${debtors.length ? debtors.map(d => `
+                        ${visibleDebtors.length ? visibleDebtors.map(d => `
                             <tr>
                                 <td>
                                     <b>кв. ${escapeHtml(d.apt)}</b>
@@ -384,9 +400,14 @@ function render() {
                     </tbody>
                 </table>
             </div>
+            ${debtors.length > INITIAL_VISIBLE_COUNT ? `
+                <div class="claims-more-wrap" style="display:flex; justify-content:center; padding: 14px 0 4px;">
+                    <button type="button" class="${showAllDebtors ? 'btn-ghost-small' : 'sv-btn is-soft'}" id="toggleShowAllDebtors" style="width:auto; min-height:40px; padding:0 24px;">
+                        ${showAllDebtors ? `Згорнути до ${INITIAL_VISIBLE_COUNT}` : `Показати всі (${debtors.length})`}
+                    </button>
+                </div>
+            ` : ''}
         </div>
-
-        <div id="claimModalHost"></div>
     `;
 
     bindEvents(host);
@@ -396,6 +417,7 @@ function bindEvents(host) {
     host.querySelectorAll('[data-filter]').forEach(btn => {
         btn.onclick = () => {
             activeFilter = btn.dataset.filter;
+            showAllDebtors = false;
             render();
         };
     });
@@ -404,12 +426,21 @@ function bindEvents(host) {
     if (searchInput) {
         searchInput.oninput = () => {
             searchQuery = searchInput.value.trim();
+            showAllDebtors = false;
             render();
             const nextInput = host.querySelector('#claimsSearch');
             if (nextInput) {
                 nextInput.focus();
                 nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
             }
+        };
+    }
+
+    const showAllBtn = host.querySelector('#toggleShowAllDebtors');
+    if (showAllBtn) {
+        showAllBtn.onclick = () => {
+            showAllDebtors = !showAllDebtors;
+            render();
         };
     }
 
@@ -441,8 +472,7 @@ async function openCaseModal(apt) {
     if (!d) return;
     selectedApt = apt;
 
-    const modalHost = document.getElementById('claimModalHost');
-    if (!modalHost) return;
+    const modalHost = getModalHost();
 
     const entries = await fetchAptLedger(apt);
     const inferred = inferPeriodsFromLedger(entries);
@@ -465,8 +495,8 @@ async function openCaseModal(apt) {
         : `<div class="buh-note is-bad" style="margin-top:6px;">У довіднику квартир ще не вказано ПІБ власника для кв. ${escapeHtml(d.apt)}. Ви можете вписати ПІБ нижче для формування документів.</div>`;
 
     modalHost.innerHTML = `
-        <div class="modal-backdrop" id="caseModalBackdrop"></div>
-        <div class="modal-dialog buh-card" style="max-width:820px; max-height:92vh; overflow-y:auto; z-index:1000; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:96%; box-shadow:0 10px 30px rgba(0,0,0,0.22);">
+        <div class="claim-modal-overlay" id="caseModalBackdrop" style="position:fixed; inset:0; z-index:1000; background:rgba(15, 23, 42, 0.48); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; overflow-y:auto;">
+        <div class="modal-dialog buh-card claim-modal-dialog" role="dialog" aria-modal="true" style="position:relative; width:min(820px, 100%); max-height:calc(100dvh - 32px); overflow-y:auto; margin:auto; box-shadow:0 20px 50px rgba(15, 23, 42, 0.28);">
             <div class="buh-card-head">
                 <div>
                     <span class="buh-tag">Претензійна справа · кв. ${escapeHtml(d.apt)}${d.personalAccount ? ` · о/р ${escapeHtml(d.personalAccount)}` : ''}${d.area ? ` · ${fmtArea(d.area)} м²` : ''}</span>
@@ -568,13 +598,29 @@ async function openCaseModal(apt) {
                 <pre id="docPreviewContent" style="background:var(--sv-soft-2); border:1px solid var(--sv-line); border-radius:8px; padding:14px; font-size:13px; line-height:1.5; white-space:pre-wrap; max-height:360px; overflow-y:auto; font-family:monospace;"></pre>
             </div>
         </div>
+        </div>
     `;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
     const closeBtn = document.getElementById('closeCaseModal');
     const backdrop = document.getElementById('caseModalBackdrop');
-    const closeModal = () => { modalHost.innerHTML = ''; };
+    const onKeyDown = e => {
+        if (e.key === 'Escape') closeModal();
+    };
+    const closeModal = () => {
+        document.removeEventListener('keydown', onKeyDown);
+        document.body.style.overflow = prevOverflow;
+        modalHost.innerHTML = '';
+    };
+    document.addEventListener('keydown', onKeyDown);
     if (closeBtn) closeBtn.onclick = closeModal;
-    if (backdrop) backdrop.onclick = closeModal;
+    if (backdrop) {
+        backdrop.onclick = e => {
+            if (e.target === backdrop) closeModal();
+        };
+    }
 
     const saveBtn = document.getElementById('saveClaimStatusBtn');
     if (saveBtn) {

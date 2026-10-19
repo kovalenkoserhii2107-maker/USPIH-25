@@ -19,7 +19,7 @@ import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
 import { openAssets, runMonthlyDepreciation } from './buh-assets.js';
 import { openAdvance } from './buh-advance.js';
-import { openPayroll } from './buh-payroll.js';
+import { openPayroll, payPayrollStage } from './buh-payroll.js';
 import { openReports, reportTasks } from './buh-reports.js';
 import { receiptOverdue } from './reports-view-core.js';
 import { openTxSheet } from './buh-chain.js';
@@ -723,7 +723,7 @@ const confirmProposal = item => {
         const { payrollPeriod: period, payrollAction: what } = item.proposal;
         runTask(item, async () => {
             if (what === 'approve') { await payrollAct({ action: 'approve', period }); toast('Відомість затверджено', 'success'); return; }
-            const r = await payrollAct({ action: 'pay', period, stage: what });
+            const r = await payPayrollStage(period, what);
             toast(`Платежів у Приват24: ${r.created}. Голова підписує пачку`, 'success');
         });
         return;
