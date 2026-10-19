@@ -9,7 +9,7 @@ const live = p => ['paid', 'sent', 'sending', 'unknown'].includes(p.status) || p
 
 module.exports = function settlements({ db, FieldValue, lock }) {
     function planFor(stored, stage, settings, code) {
-        return stored.stages?.[stage]?.plan || core.stagePayments(core.paymentRun(stored), stage, { code, taxes: core.withDefaultTaxes(settings.taxes) });
+        return stored.stages?.[stage]?.plan || core.stagePayments(core.paymentRun(stored), stage, { code, taxes: settings.taxes });
     }
     function paidFor(payments, period, stage, row) {
         const who = identity.planRecipient(row);

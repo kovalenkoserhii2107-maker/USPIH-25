@@ -447,6 +447,7 @@ async function onAction(btn) {
             const result=await payrollAct({action:'projectPrepare',period:ctx.period,stage,group:ctx.stages[stage].project.group,reference:ref});
             toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared?'Голова підписує у Приват24':'Продовжіть підготовку'}`, 'success');
         } else if (a === 'recipients-refresh') {
+            await ensurePayrollTaxes(ctx.period, ctx);
             const result = await payrollAct({ action: 'refreshRecipients', period: ctx.period, stage: btn.dataset.stage });
             toast(`Оновлено: ${result.changed}. Тепер продовжіть виплату`, 'success');
         } else if (a === 'repay') {
@@ -460,6 +461,7 @@ async function onAction(btn) {
             if ((project || payMethod==='project') && project?.status!=='prepared') {
                 if (!await confirmDialog('Підготувати зарплатний проект?', 'Відомість буде створена й перевірена у банку. Підписати її потрібно у Приват24. Податки готуються окремими платежами по IBAN.', 'Підготувати')) return;
                 setBusy(btn,true,'Готую відомість…');
+                await ensurePayrollTaxes(ctx.period, ctx);
                 const result=await payrollAct({action:'projectPrepare',period:ctx.period,stage,group:project?.group || projectGroup});
                 toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared?'Наступне натискання підготує податки; зарплатну відомість підпишіть у Приват24':'Натисніть повторно, щоб продовжити'}`, 'success');
                 return;

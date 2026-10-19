@@ -553,7 +553,6 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         // 10. Зарплата за жовтень: двірник на мінімальній зарплаті й виконавець за ЦПД;
         // відомість затверджує голова. Платежів немає — банк на тестовому акаунті не підключено.
         if (payroll) {
-            await payroll.actions.saveSettings(...A, { advancePct: 50, taxes: {} });
             const emp = await payroll.actions.savePerson(...A, { name: 'Двірник Демо', kind: 'employee', position: 'двірник', salaryKop: 864700, fte: 1,
                 mainJob: true, rnokpp: rnokpp('312456781'), iban: iban('2600100000000081'), taxNotified: true, from: '2025-03-01' });
             const gph = await payroll.actions.savePerson(...A, { name: 'Виконавець Демо', kind: 'gph', position: 'прибирання прибудинкової території',

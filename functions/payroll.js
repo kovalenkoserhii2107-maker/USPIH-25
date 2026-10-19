@@ -43,7 +43,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
     }
     async function loadSettings() {
         const s = (await settingsRef.get()).data() || {};
-        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: core.withDefaultTaxes(s.taxes), rates:s.rates?.length?s.rates:core.DEFAULT_RATES };
+        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: s.taxes || {}, rates:s.rates?.length?s.rates:core.DEFAULT_RATES };
     }
 
     /** Розрахунок місяця з урахуванням уже виплаченого авансу (його суми не змінюються). */
@@ -151,7 +151,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const clean = t => ({ name: text(t?.name, 140), iban: String(t?.iban || '').replace(/\s+/g, '').toUpperCase(), code: String(t?.code || '').replace(/\D/g, '').slice(0, 10) });
         const percentage = Number(advancePct);
         if (!Number.isInteger(percentage) || percentage < 0 || percentage > 80) fail('invalid-argument', 'Відсоток авансу — ціле число від 0 до 80');
-        const out = { advancePct: percentage, taxes: core.withDefaultTaxes({ pdfo: clean(taxes?.pdfo), vz: clean(taxes?.vz), esv: clean(taxes?.esv) }) };
+        const out = { advancePct: percentage, taxes: { pdfo: clean(taxes?.pdfo), vz: clean(taxes?.vz), esv: clean(taxes?.esv) } };
         for (const [k, t] of Object.entries(out.taxes)) if (t.iban && !core.validIban(t.iban)) fail('invalid-argument', `${k.toUpperCase()}: IBAN має вигляд UA та 27 цифр`);
         await settingsRef.set({ ...out, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         await audit(actor, role, 'payroll.settings', 'payroll_settings/main', `Зарплата: аванс ${out.advancePct} %, рахунки податків`, out);
@@ -297,24 +297,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const account = (accounts.find(([, a]) => (a.purpose || 'current') === 'current' && payable(a)) || [])[0] || '';
         if (!account) fail('failed-precondition', 'Підключіть банк: немає поточного рахунку ОСББ, з якого платити');
         if (!payable(Object.fromEntries(accounts)[stored.stages?.[stage]?.account || account])) fail('failed-precondition', 'Рахунок цього етапу недоступний або має іншу валюту. Перевірте гривневий рахунок ОСББ');
-        const rawPlan = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
-        const list = rawPlan.map(row => {
-            if (row.kind === 'tax' && (!row.recipient?.name || !row.recipient?.iban || !row.recipient?.code)) {
-                const tKey = row.taxKey || String(row.key || '').split(':').at(-1);
-                const def = settings.taxes[tKey];
-                if (def) {
-                    return {
-                        ...row,
-                        recipient: {
-                            name: row.recipient?.name || def.name,
-                            iban: row.recipient?.iban || def.iban,
-                            code: row.recipient?.code || def.code
-                        }
-                    };
-                }
-            }
-            return row;
-        });
+        const list = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
         if (!list.length) fail('failed-precondition', 'Немає що виплачувати');
         const problems = core.paymentProblems(list, stored.stages?.[stage]?.account || account);
         if (problems.length) fail('failed-precondition', problems.join('; '));
@@ -426,22 +409,63 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         return { id: r.id };
     }
 
+    /**
+     * Для викликів із веб-застосунку (onCall): якщо реквізити податків (ПДФО, ВЗ, ЄСВ)
+     * ще не заповнені або були стерті демо-прогоном, автоматично підставляємо бюджетні
+     * рахунки за замовчуванням (ГУК / ГУ ДПС в Одеській обл., м. Одеса).
+     */
+    async function ensureDefaultTaxesForCall(actor, role, data) {
+        const s = (await settingsRef.get()).data() || {};
+        const raw = s.taxes || {};
+        const missing = ['pdfo', 'vz', 'esv'].some(k =>
+            !String(raw[k]?.name || '').trim() ||
+            !String(raw[k]?.iban || '').trim() ||
+            !String(raw[k]?.code || '').trim()
+        );
+        if (missing) {
+            const advancePct = Number.isFinite(s.advancePct) ? s.advancePct : 50;
+            await settingsRef.set({
+                advancePct,
+                taxes: core.withDefaultTaxes(raw),
+                updatedBy: actor,
+                updatedAt: FieldValue.serverTimestamp()
+            }, { merge: true });
+        }
+        const period = data?.period;
+        const stage = data?.stage;
+        if (validPeriod(period) && ['advance', 'final'].includes(stage)) {
+            const runSnap = await db.doc(`payroll_runs/${period}`).get();
+            const plan = runSnap.data()?.stages?.[stage]?.plan;
+            if (Array.isArray(plan) && plan.some(r => r.kind === 'tax' && (!r.recipient?.name || !r.recipient?.iban || !r.recipient?.code))) {
+                await refreshRecipients(actor, role, { period, stage }).catch(() => {});
+            }
+        }
+    }
+
     const payrollAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 540 }, callGuard('payrollAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
         switch (data.action) {
-            case 'context': return context(data);
+            case 'context':
+                await ensureDefaultTaxesForCall(actor, role, data);
+                return context(data);
             case 'person': return savePerson(actor, role, data);
-            case 'settings': return saveSettings(actor, role, data);
+            case 'settings': return saveSettings(actor, role, { ...data, taxes: core.withDefaultTaxes(data.taxes) });
             case 'save': return saveRun(actor, role, data);
             case 'approve': return approve(actor, role, data);
-            case 'pay': return pay(actor, role, data);
+            case 'pay':
+                await ensureDefaultTaxesForCall(actor, role, data);
+                return pay(actor, role, data);
             case 'repay': return repay(actor, role, data);
-            case 'refreshRecipients': return refreshRecipients(actor, role, data);
+            case 'refreshRecipients':
+                await ensureDefaultTaxesForCall(actor, role, data);
+                return refreshRecipients(actor, role, data);
             case 'projectContext': return project.context(data);
             case 'projectReceiver': return project.linkReceiver(actor, role, data);
-            case 'projectPrepare': return project.prepare(actor, role, data);
+            case 'projectPrepare':
+                await ensureDefaultTaxesForCall(actor, role, data);
+                return project.prepare(actor, role, data);
             case 'projectFind': return project.find(data);
             case 'projectStatus': return project.status(data);
             case 'rates': return saveRates(actor, role, data);
