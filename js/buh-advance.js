@@ -8,7 +8,7 @@
 // ============================================================
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
-import { loadAdvance, advanceAct, expAct, loadRequisites, loadPaymentContext, uploadExpenseFiles } from './buh-data.js';
+import { loadAdvance, advanceAct, expAct, loadRequisites, loadPaymentContext, loadPayments, uploadExpenseFiles } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { fmtKop, toKop, periodName } from './charges-core.js';
 import {
@@ -27,10 +27,27 @@ const TABS = {
 
 let period = null;
 let ctx = null;
+let allPayments = [];
 let segment = 'all';
 let selected = null;
 let query = '';
 let form = null;
+
+function reportPayment(r) {
+    if (!r) return null;
+    return allPayments.find(p =>
+        (r.paymentId && p.id === r.paymentId) ||
+        p.advanceReportId === r.id ||
+        (typeof p.proposalKey === "string" && p.proposalKey.startsWith(`adv-${r.id}-`))
+    ) || null;
+}
+
+function hasActivePayment(r) {
+    if (!r) return false;
+    const pay = reportPayment(r);
+    if (pay) return ["sending", "unknown", "sent"].includes(pay.status);
+    return Boolean(r.paymentId);
+}
 
 const isChair = () => session.role === 'chair';
 const human = d => (d ? String(d).split('-').reverse().join('.') : '—');
@@ -99,17 +116,20 @@ function bannersHtml() {
         </div>`);
     }
 
-    const toPay = (ctx.reports || []).filter(r => r.status === 'approved' && (r.totals.pendingReimburseKop || 0) > 0);
+    const toPay = (ctx.reports || []).filter(r => r.status === "approved" && (r.totals.pendingReimburseKop || 0) > 0);
     if (toPay.length > 0) {
         const sum = toPay.reduce((s, r) => s + r.totals.pendingReimburseKop, 0);
-        const firstUnpaid = toPay.find(r => !r.paymentId) || toPay[0];
-        const btnHtml = firstUnpaid.paymentId
+        const firstUnpaid = toPay.find(r => !hasActivePayment(r));
+        const allInBank = !firstUnpaid;
+        const btnHtml = allInBank
             ? `<button type="button" class="sv-btn is-soft" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-go="payments">Платіж у Приват24 ›</button>`
             : `<button type="button" class="sv-btn" style="width:auto;flex:0 0 auto;min-height:44px;padding:0 20px;font-size:14.5px;white-space:nowrap" data-act="pay-advance" data-id="${escapeHtml(firstUnpaid.id)}">Створити платіж (${fmtKop(firstUnpaid.totals.pendingReimburseKop)} грн)</button>`;
         out.push(`<div class="buh-card as-banner is-work" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
             <div class="as-banner-copy" style="flex:1 1 280px;min-width:220px">
-                <b>До відшкодування підзвітним особам: ${toPay.length} звітів на суму ${fmtKop(sum)} грн</b>
-                <p class="buh-note">Затверджені витрати власних коштів. Створіть платіж у Приват24 на особисту картку підзвітної особи (Дт 372 Кт 311) в один клік.</p>
+                <b>${allInBank ? `Очікує підпису в Приват24: ${toPay.length} звітів на суму ${fmtKop(sum)} грн` : `До відшкодування підзвітним особам: ${toPay.length} звітів на суму ${fmtKop(sum)} грн`}</b>
+                <p class="buh-note">${allInBank
+                    ? "Платіж на особисту картку підзвітної особи вже створено в Приват24 і передано на підпис голові. Після списання за випискою (Дт 372 Кт 311) заборгованість закриється автоматично."
+                    : "Затверджені витрати власних коштів. Створіть платіж у Приват24 на особисту картку підзвітної особи (Дт 372 Кт 311) в один клік."}</p>
             </div>
             ${btnHtml}
         </div>`);
@@ -251,7 +271,7 @@ function detailCardHtml(r, empty) {
         ['Витрачено за чеками', `${fmtKop(t.spentKop)} грн`],
         ...(t.reimburseKop > 0 ? [
             ['Перевитрата (до відшкодування)', `${fmtKop(t.reimburseKop)} грн`],
-            ['Фактично відшкодовано', t.reimbursedKop > 0 ? `${fmtKop(t.reimbursedKop)} грн` : r.paymentId ? 'платіж створено в Приват24 (очікує проведення)' : 'ще не виплачено'],
+            ['Фактично відшкодовано', t.reimbursedKop > 0 ? `${fmtKop(t.reimbursedKop)} грн` : hasActivePayment(r) ? 'платіж створено в Приват24 (очікує підпису голови)' : reportPayment(r)?.status === 'failed' ? 'банк відхилив платіж — виправте або створіть повторно' : 'ще не виплачено'],
             ['Залишок до виплати', t.pendingReimburseKop > 0 ? `${fmtKop(t.pendingReimburseKop)} грн` : 'повністю виплачено']
         ] : []),
         ...(t.returnKop > 0 ? [
@@ -271,11 +291,11 @@ function detailCardHtml(r, empty) {
         actions.push(btn('approve-report', 'Затвердити звіт'));
         actions.push(btn('reject-report', 'Відхилити', true));
     }
-    if (r.status === 'approved' && t.pendingReimburseKop > 0) {
-        if (r.paymentId) {
+    if (r.status === "approved" && t.pendingReimburseKop > 0) {
+        if (hasActivePayment(r)) {
             actions.push(`<button type="button" class="sv-btn is-soft" data-go="payments">Перейти в «Платежі» (очікує підпису) ›</button>`);
         } else {
-            actions.push(btn('pay-advance', `Створити платіж у Приват24 (${fmtKop(t.pendingReimburseKop)} грн)`));
+            actions.push(btn("pay-advance", `Створити платіж у Приват24 (${fmtKop(t.pendingReimburseKop)} грн)`));
         }
     }
     actions.push(btn('print-advance', 'Друк авансового звіту (№ 841)', true));
@@ -449,7 +469,12 @@ function renderAdvanceView() {
             <div class="kpi">
                 <span>Звітів на розгляді</span>
                 <b>${s.pendingCount}</b>
-                <small>${s.toReimburseCount > 0 ? `${s.toReimburseCount} чекають виплати в банк` : 'усі витрати погоджено'}</small>
+                <small>${(() => {
+                    const owing = (ctx.reports || []).filter(r => r.status === "approved" && (r.totals.pendingReimburseKop || 0) > 0);
+                    const unpaidCnt = owing.filter(r => !hasActivePayment(r)).length;
+                    const inBankCnt = owing.filter(r => hasActivePayment(r)).length;
+                    return unpaidCnt > 0 ? `${unpaidCnt} чекають виплати в банк` : inBankCnt > 0 ? `${inBankCnt} на підписі в Приват24` : "усі витрати погоджено";
+                })()}</small>
             </div>
         </div>
         ${bannersHtml()}
@@ -474,11 +499,14 @@ function renderAdvanceView() {
         </div>
         <p class="buh-note as-footer-note">Рахунок 372 «Розрахунки з підзвітними особами». Наказ Мінфіну № 841 (у редакції № 289), пп. 170.9 ПКУ.</p>`;
 
-    return (s.pendingCount || 0) + (s.toReimburseCount || 0);
+    const unpaidCount = (ctx.reports || []).filter(r => r.status === "approved" && (r.totals.pendingReimburseKop || 0) > 0 && !hasActivePayment(r)).length;
+    return (s.pendingCount || 0) + unpaidCount;
 }
 
 export async function loadAdvanceView() {
-    ctx = await loadAdvance(period);
+    const [advData, outgoing] = await Promise.all([loadAdvance(period), loadPayments().catch(() => [])]);
+    ctx = advData;
+    allPayments = outgoing;
     period = ctx.period;
     return renderAdvanceView();
 }

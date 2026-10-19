@@ -28,14 +28,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=192">
-    <link rel="stylesheet" href="style-chat.css?v=192">
-    <link rel="stylesheet" href="style-sv.css?v=192">
-    <link rel="stylesheet" href="style-admin.css?v=192">
+    <link rel="stylesheet" href="style.css?v=193">
+    <link rel="stylesheet" href="style-chat.css?v=193">
+    <link rel="stylesheet" href="style-sv.css?v=193">
+    <link rel="stylesheet" href="style-admin.css?v=193">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самої панелі: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/admin-main.js?v=192">
+    <link rel="modulepreload" href="js/admin-main.js?v=193">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -1405,7 +1405,7 @@
 </script>
 <script type="module">
     const preview = new URLSearchParams(location.search).get('preview');
-    import(preview === 'admin' ? './js/admin-preview.js?v=192' : './js/admin-main.js?v=192').catch(error => {
+    import(preview === 'admin' ? './js/admin-preview.js?v=193' : './js/admin-main.js?v=193').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження панелі:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

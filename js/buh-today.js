@@ -14,14 +14,27 @@ import { reportTasks, nextDeadline } from './reports-view-core.js';
 
 const BANK_TYPES = new Set(['link', 'assign', 'split', 'choose', 'income', 'expense', 'bank-conflict', 'payment-link']);
 const DOC_TYPES = new Set(['approve-con', 'approve-exp', 'pay-exp', 'missing-doc']);
-const META_GROUP = { 'зарплата': 'payroll', 'звітність': 'reports', 'проводки': 'journal', 'кошторис': 'budget' };
+const META_GROUP = {
+    'помилки платежів': 'failed_pay',
+    'зарплата': 'payroll',
+    'звітність': 'reports',
+    'проводки': 'journal',
+    'кошторис': 'budget',
+    'авансові звіти': 'advance',
+    'компенсація підзвіт': 'advance',
+    'майно та тмц': 'assets',
+    'амортизація оз/мнма': 'assets'
+};
 
 /** Групи справ: що робити, скільки й короткий приклад. */
 const GROUPS = {
+    failed_pay: { title: 'Виправити відхилені платежі', icon: '!', go: 'payments' },
     bank: { title: 'Розподілити операції банку', icon: '₴' },
     charges: { title: 'Нарахування внесків', icon: '%' },
     docs: { title: 'Документи й договори', icon: '§' },
     pay: { title: 'Створити платежі', icon: '↗' },
+    advance: { title: 'Авансові звіти', icon: '₴' },
+    assets: { title: 'Майно та ТМЦ', icon: '□' },
     payroll: { title: 'Зарплата', icon: '₴' },
     reports: { title: 'Звіти до податкової', icon: '✓' },
     journal: { title: 'Проводки й закриття', icon: '=' },
@@ -34,11 +47,16 @@ export function groupOf(item) {
     if (DOC_TYPES.has(p.type)) return 'docs';
     if (p.type === 'pay') return 'pay';
     if (p.type === 'charge') return 'charges';
+    if (p.paymentsAction === 'open-failed') return 'failed_pay';
     return META_GROUP[p.meta] || 'charges';
 }
 
 function noteOf(item) {
     const p = item.proposal;
+    if (p.paymentsAction === 'open-failed') {
+        const firstSentence = String(p.text || '').split('. ')[0];
+        return firstSentence ? `Банк не прийняв: ${firstSentence}` : (p.title || 'Банк не прийняв платіж');
+    }
     if (BANK_TYPES.has(p.type)) return [item.tx.counterparty?.name, item.tx.purpose].filter(Boolean).join(' · ') || 'Операція з виписки';
     if (p.type === 'pay') return `${p.payment.recipient?.name || 'Платіж'} · ${fmtKop(p.payment.amountKop)} грн`;
     if (p.expense) return `${p.expense.supplierName || 'Документ'} · ${fmtKop(p.expense.amountKop)} грн`;
@@ -47,13 +65,18 @@ function noteOf(item) {
     return p.title || '';
 }
 
-function tasks(items) {
+export function tasks(items) {
     const out = new Map();
     for (const item of items) {
         const g = groupOf(item);
         const t = out.get(g) || { key: g, ...GROUPS[g], count: 0, sumKop: 0, note: noteOf(item) };
-        t.count += 1;
-        if (BANK_TYPES.has(item.proposal.type)) t.sumKop += item.tx.amountKop || 0;
+        if (g === 'failed_pay') {
+            t.count += item.proposal.failedPaymentsCount || 1;
+            t.sumKop += item.proposal.failedPaymentsSumKop || 0;
+        } else {
+            t.count += 1;
+            if (BANK_TYPES.has(item.proposal.type)) t.sumKop += item.tx.amountKop || 0;
+        }
         out.set(g, t);
     }
     return [...out.values()];
@@ -66,6 +89,13 @@ export function todayTitle() {
     return { title: greeting(now), sub: now.toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' }) };
 }
 
+const ACCOUNT_PURPOSE_LABELS = {
+    current: 'Поточний рахунок',
+    reserve: 'Резервний фонд',
+    repair: 'Ремонтний фонд',
+    special: 'Спецрахунок'
+};
+
 export async function loadToday() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -74,8 +104,10 @@ export async function loadToday() {
     const { items, charges } = inbox;
     const list = tasks(items);
     const signing = outgoing.filter(p => p.status === 'sent');
-    const accounts = Object.values(settings.accounts || {});
-    const total = accounts.reduce((s, a) => s + (a.currency === 'UAH' || !a.currency ? (a.balanceKop || 0) : 0), 0);
+    const failedCount = outgoing.filter(p => p.status === 'failed').length;
+    const accounts = Object.entries(settings.accounts || {}).map(([iban, a]) => ({ iban, ...a }));
+    const uahAccounts = accounts.filter(a => a.currency === 'UAH' || !a.currency);
+    const total = uahAccounts.reduce((s, a) => s + (a.balanceKop || 0), 0);
     const debtors = (charges?.apartments || []).filter(a => Number(a.balance) < 0);
     const debt = debtors.reduce((s, a) => s + Math.round(Number(a.balance) * 100), 0);
     const run = charges?.runs?.find(r => r.period === charges.current);
@@ -86,50 +118,81 @@ export async function loadToday() {
     const progress = monthData ? monthProgress(monthData.steps) : null;
     const last = settings.lastSync;
 
+    const totalTaskCount = list.reduce((s, t) => s + t.count, 0);
+    const tasksCountLabel = totalTaskCount
+        ? `${totalTaskCount} ${totalTaskCount === 1 ? 'рішення' : 'рішень'}`
+        : '';
+
+    const primaryGo = list.length === 1 && list[0].go ? list[0].go : 'inbox';
+    const primaryGroupAttr = primaryGo === 'inbox' ? ' data-inbox-group="all"' : '';
+
     document.getElementById('viewToday').innerHTML = `
         <div class="td-grid">
-            <section class="sv-card td-tasks" aria-label="Що зробити">
-                <div class="sv-card-head"><h2>Що зробити</h2><span>${items.length ? `${items.length} ${items.length === 1 ? 'рішення' : 'рішень'}` : ''}</span></div>
-                ${list.length ? `<ul class="td-list">${list.map(t => `<li>
-                    <button type="button" class="td-task" data-go="inbox" data-inbox-group="${escapeHtml(t.key)}">
-                        <span class="td-count${t.key === 'bank' || t.key === 'docs' ? ' is-hot' : ''}">${t.count}</span>
-                        <span class="td-copy"><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.note)}</small></span>
-                        <span class="td-sum">${t.sumKop ? escapeHtml(money(t.sumKop)) : ''}</span>
-                        <span class="td-chev" aria-hidden="true">›</span>
-                    </button></li>`).join('')}</ul>
-                <button type="button" class="sv-btn is-wide" data-go="inbox" data-inbox-group="all">Почати з першого</button>`
-                : '<div class="td-clear"><b>Усе вирішено</b><span>Нових рішень немає. Система підготує наступні, щойно прийде виписка чи документ.</span></div>'}
-            </section>
+            <div class="td-main">
+                <section class="sv-card td-tasks" aria-label="Що зробити">
+                    <div class="sv-card-head"><h2>Що зробити</h2><span>${tasksCountLabel}</span></div>
+                    ${list.length ? `<ul class="td-list">${list.map(t => {
+                        const goTarget = t.go || 'inbox';
+                        const groupAttr = t.go ? '' : ` data-inbox-group="${escapeHtml(t.key)}"`;
+                        const badgeCls = t.key === 'failed_pay' ? ' is-bad' : (t.key === 'bank' || t.key === 'docs' ? ' is-hot' : '');
+                        return `<li>
+                        <button type="button" class="td-task" data-go="${escapeHtml(goTarget)}"${groupAttr}>
+                            <span class="td-count${badgeCls}">${t.count}</span>
+                            <span class="td-copy"><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.note)}</small></span>
+                            <span class="td-sum">${t.sumKop ? escapeHtml(money(t.sumKop)) : ''}</span>
+                            <span class="td-chev" aria-hidden="true">›</span>
+                        </button></li>`;
+                    }).join('')}</ul>
+                    <button type="button" class="sv-btn is-wide" data-go="${escapeHtml(primaryGo)}"${primaryGroupAttr}>Почати з першого</button>`
+                    : `<div class="td-clear">
+                        <b>Усе вирішено</b>
+                        <span>Нових рішень немає. Система підготує наступні, щойно прийде виписка чи документ.</span>
+                        <div class="td-quick">
+                            <button type="button" class="td-quick-btn" data-go="expenses">+ Документ</button>
+                            <button type="button" class="td-quick-btn" data-go="payments">Платежі</button>
+                            <button type="button" class="td-quick-btn" data-go="advance">Авансові звіти</button>
+                            <button type="button" class="td-quick-btn" data-go="flats">Квартири</button>
+                        </div>
+                    </div>`}
+                </section>
+                ${progress ? `<button type="button" class="sv-card td-month" data-go="month">
+                    <div class="td-month-head">
+                        <span class="td-label">Закриття: ${escapeHtml(periodName(monthData.journal.period))} · <b>${progress.done} з ${progress.total}</b></span>
+                        <span class="td-month-chip ${progress.done === progress.total ? 'is-done' : 'is-work'}">${progress.done === progress.total ? 'Закрито' : 'У роботі'}</span>
+                    </div>
+                    <span class="td-bars" aria-hidden="true">${monthData.steps.map(s => `<i class="is-${s.state}"></i>`).join('')}</span>
+                    <div class="td-steps-pills" aria-hidden="true">
+                        ${monthData.steps.map(s => `<span class="td-step-pill is-${s.state}"><i>${s.state === 'done' ? '✓' : s.state === 'work' ? '•' : '○'}</i>${escapeHtml(s.title)}</span>`).join('')}
+                    </div>
+                    <span class="td-small">${progress.done === progress.total ? 'Місяць закрито ›' : `Далі: ${escapeHtml(progress.next.title.toLowerCase())} — ${escapeHtml(progress.next.short)} ›`}</span>
+                </button>` : ''}
+                <div class="td-row">
+                    <button type="button" class="sv-card" data-go="charges"><span class="td-label">Нараховано за місяць</span><b class="td-mid">${run ? escapeHtml(money(run.totalKop)) : '—'}</b>
+                        <span class="td-small">${run ? `${run.count} квартир` : 'ще не нараховано'}</span></button>
+                    <button type="button" class="sv-card" data-go="flats"><span class="td-label">Мешканці сплатили</span><b class="td-mid">${share === null ? escapeHtml(money(paid)) : `${share}%`}</b>
+                        ${share === null ? '<span class="td-small">цього місяця</span>' : `<span class="sv-meter" aria-hidden="true"><i style="width:${share}%"></i></span><span class="td-small">${escapeHtml(money(paid))}</span>`}</button>
+                    <button type="button" class="sv-card" data-go="flats"><span class="td-label">Борг мешканців</span><b class="td-mid">${charges ? escapeHtml(money(Math.abs(debt))) : '—'}</b>
+                        <span class="td-small${debtors.length ? ' is-bad' : ''}">${charges ? `${debtors.length} квартир ›` : ''}</span></button>
+                </div>
+            </div>
             <div class="td-side">
                 ${signing.length ? `<button type="button" class="sv-card td-signing" data-go="payments">
                     <span class="td-label">На підписі голови · КЕП у Приват24</span>
                     <b class="td-big">${escapeHtml(money(signing.reduce((s, p) => s + p.amountKop, 0)))}</b>
-                    <span class="td-small">${signing.length} ${signing.length === 1 ? 'платіж чекає' : signing.length < 5 ? 'платежі чекають' : 'платежів чекають'} ›</span>
+                    <span class="td-small">${signing.length} ${signing.length === 1 ? 'платіж чекає' : signing.length < 5 ? 'платежі чекають' : 'платежів чекають'}${failedCount ? ` · ${failedCount} відхилено банком` : ''} ›</span>
                 </button>` : ''}
-                ${progress ? `<button type="button" class="sv-card td-month" data-go="month">
-                    <span class="td-label">Закриття: ${escapeHtml(periodName(monthData.journal.period))} · <b>${progress.done} з ${progress.total}</b></span>
-                    <span class="td-bars" aria-hidden="true">${monthData.steps.map(s => `<i class="is-${s.state}"></i>`).join('')}</span>
-                    <span class="td-small">${progress.done === progress.total ? 'Місяць закрито ›' : `Далі: ${escapeHtml(progress.next.title.toLowerCase())} — ${escapeHtml(progress.next.short)} ›`}</span>
-                </button>` : ''}
+                <button type="button" class="sv-card td-balance" data-go="bank">
+                    <span class="td-label">На рахунку</span>
+                    <b class="td-big">${accounts.length ? escapeHtml(money(total)) : '—'}</b>
+                    ${uahAccounts.length > 1 ? `<div class="td-acc-list">${uahAccounts.slice(0, 3).map(a => `<span class="td-acc-row"><span>${escapeHtml(ACCOUNT_PURPOSE_LABELS[a.purpose] || a.name || `…${String(a.iban || '').slice(-4)}`)}</span><b>${escapeHtml(money(a.balanceKop || 0))}</b></span>`).join('')}</div>` : ''}
+                    <span class="td-small${last?.ok === false ? ' is-bad' : last ? ' is-good' : ' is-muted'}">${!accounts.length ? 'Банк не підключено' : last?.ok === false ? 'Помилка оновлення виписки' : last ? `Виписка о ${escapeHtml(when(last.at))}` : 'Виписку ще не отримано'}</span>
+                </button>
                 ${soon ? `<button type="button" class="sv-card td-deadline" data-go="reports">
                     <span class="td-label">${soon.left < 0 ? 'Прострочено' : 'Наступний строк'}</span>
                     <b class="td-big">${escapeHtml(humanDate(soon.date))}</b>
                     <span class="td-small">${escapeHtml(soon.title)} · ${(d => (d < 0 ? `${-d} дн. тому` : d === 0 ? 'сьогодні' : d === 1 ? 'завтра' : `через ${d} дн.`))(daysLeft(soon.date, now))} ›</span>
                 </button>` : ''}
-                <button type="button" class="sv-card td-balance" data-go="bank">
-                    <span class="td-label">На рахунку</span>
-                    <b class="td-big">${accounts.length ? escapeHtml(money(total)) : '—'}</b>
-                    <span class="td-small${last?.ok === false ? ' is-bad' : last ? ' is-good' : ' is-muted'}">${!accounts.length ? 'Банк не підключено' : last?.ok === false ? 'Помилка оновлення виписки' : last ? `Виписка о ${escapeHtml(when(last.at))}` : 'Виписку ще не отримано'}</span>
-                </button>
             </div>
-        </div>
-        <div class="td-row">
-            <button type="button" class="sv-card" data-go="charges"><span class="td-label">Нараховано за місяць</span><b class="td-mid">${run ? escapeHtml(money(run.totalKop)) : '—'}</b>
-                <span class="td-small">${run ? `${run.count} квартир` : 'ще не нараховано'}</span></button>
-            <button type="button" class="sv-card" data-go="flats"><span class="td-label">Мешканці сплатили</span><b class="td-mid">${share === null ? escapeHtml(money(paid)) : `${share}%`}</b>
-                ${share === null ? '<span class="td-small">цього місяця</span>' : `<span class="sv-meter" aria-hidden="true"><i style="width:${share}%"></i></span><span class="td-small">${escapeHtml(money(paid))}</span>`}</button>
-            <button type="button" class="sv-card" data-go="flats"><span class="td-label">Борг мешканців</span><b class="td-mid">${charges ? escapeHtml(money(Math.abs(debt))) : '—'}</b>
-                <span class="td-small${debtors.length ? ' is-bad' : ''}">${charges ? `${debtors.length} квартир ›` : ''}</span></button>
         </div>
         <p class="buh-note">Система пропонує — рішення за вами. Платежі підписує голова КЕП у Приват24.</p>`;
     return items.length;

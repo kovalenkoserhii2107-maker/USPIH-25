@@ -302,11 +302,23 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             canReopen: isClosed && lastClosed === p,
             accounts: core.ACCOUNTS,
             assetsSummary: assetsState.summary,
-            advanceSummary: {
-                pendingCount: data.advanceReports.filter(a => a.status === 'pending').length,
-                toReimburseCount: data.advanceReports.filter(a => a.status === 'approved' && (a.reimburseKop || 0) > (a.reimbursedKop || 0)).length,
-                toReimburseKop: data.advanceReports.filter(a => a.status === 'approved' && (a.reimburseKop || 0) > (a.reimbursedKop || 0)).reduce((s, a) => s + Math.max(0, (a.reimburseKop || 0) - (a.reimbursedKop || 0)), 0)
-            },
+            advanceSummary: (() => {
+                const paymentsList = data.payments || [];
+                const activePayIds = new Set(paymentsList.filter(p => ["sending", "unknown", "sent"].includes(p.status)).map(p => p.id));
+                const closedPayIds = new Set(paymentsList.filter(p => ["failed", "canceled"].includes(p.status)).map(p => p.id));
+                const activeAdvIds = new Set(paymentsList.filter(p => ["sending", "unknown", "sent"].includes(p.status) && p.advanceReportId).map(p => p.advanceReportId));
+                const isPaying = a => activeAdvIds.has(a.id) || Boolean(a.paymentId && (activePayIds.has(a.paymentId) || !closedPayIds.has(a.paymentId)));
+                const owing = data.advanceReports.filter(a => a.status === "approved" && (a.reimburseKop || 0) > (a.reimbursedKop || 0));
+                const unpaid = owing.filter(a => !isPaying(a));
+                const inBank = owing.filter(a => isPaying(a));
+                return {
+                    pendingCount: data.advanceReports.filter(a => a.status === "pending").length,
+                    toReimburseCount: unpaid.length,
+                    toReimburseKop: unpaid.reduce((s, a) => s + Math.max(0, (a.reimburseKop || 0) - (a.reimbursedKop || 0)), 0),
+                    inBankCount: inBank.length,
+                    inBankKop: inBank.reduce((s, a) => s + Math.max(0, (a.reimburseKop || 0) - (a.reimbursedKop || 0)), 0)
+                };
+            })(),
             // Назви для аналітики: статті витрат (92), складові внеску (48), джерела доходу, об'єкти ОЗ/МНМА/ТМЦ.
             labels: {
                 10: assetLabels, 11: assetLabels, 131: assetLabels, 132: assetLabels, 20: assetLabels, 22: assetLabels,
@@ -936,7 +948,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 totalPendingReimburseKop,
                 totalPendingReturnKop,
                 pendingCount,
-                toReimburseCount: reportsWithTotals.filter(r => r.status === 'approved' && r.totals.pendingReimburseKop > 0).length
+                toReimburseCount: reportsWithTotals.filter(r => r.status === "approved" && r.totals.pendingReimburseKop > 0 && !r.paymentId).length,
+                inBankCount: reportsWithTotals.filter(r => r.status === "approved" && r.totals.pendingReimburseKop > 0 && Boolean(r.paymentId)).length
             },
             docTypes: advanceCore.ADVANCE_DOC_TYPES,
             statusLabels: advanceCore.ADVANCE_STATUS_LABELS,
