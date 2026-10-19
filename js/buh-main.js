@@ -224,7 +224,8 @@ document.addEventListener('click', e => {
     }
     const go = e.target.closest('[data-go]');
     if (go) {
-        if (go.dataset.inboxFilter) setInboxFilter(go.dataset.inboxFilter);
+        const filter = go.dataset.inboxFilter || go.dataset.inboxGroup;
+        if (filter) setInboxFilter(filter);
         show(go.dataset.go);
         return;
     }

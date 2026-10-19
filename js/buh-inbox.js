@@ -49,15 +49,17 @@ const INBOX_FILTERS = {
 
 function itemFilterGroup(item) {
     const p = item.proposal;
-    if (['link', 'assign', 'split', 'choose', 'income', 'expense', 'bank-conflict', 'payment-link'].includes(p.type)) return 'bank';
-    if (['approve-con', 'approve-exp', 'pay-exp', 'missing-doc'].includes(p.type)) return 'docs';
-    if (p.type === 'pay') return 'pay';
-    return 'accounting';
+    if (["link", "assign", "split", "choose", "income", "expense", "bank-conflict", "payment-link"].includes(p.type)) return "bank";
+    if (["approve-con", "approve-exp", "pay-exp", "missing-doc"].includes(p.type)) return "docs";
+    if (p.type === "pay" || p.paymentsAction === "open-failed") return "pay";
+    return "accounting";
 }
 
 export function setInboxFilter(group) {
-    const mapped = ['charges', 'payroll', 'reports', 'journal', 'budget'].includes(group) ? 'accounting' : group;
-    activeFilter = INBOX_FILTERS[mapped] ? mapped : 'all';
+    const mapped = ["charges", "payroll", "reports", "journal", "budget", "advance", "assets"].includes(group)
+        ? "accounting"
+        : group === "failed_pay" ? "pay" : group;
+    activeFilter = INBOX_FILTERS[mapped] ? mapped : "all";
     focus = 0;
 }
 
@@ -463,7 +465,7 @@ export function openingItems(j, chair) {
     return [];
 }
 
-export function advanceItems(j, chair) {
+export function advanceItems(j, chair, payments = []) {
     if (!j || !j.advanceSummary) return [];
     const out = [];
     const s = j.advanceSummary;
@@ -471,29 +473,72 @@ export function advanceItems(j, chair) {
         out.push({
             tx: { id: `advance:pending:${j.period}` },
             proposal: {
-                type: 'setup',
-                meta: 'авансові звіти',
-                advanceAction: 'open',
-                yes: 'Відкрити звіти',
+                type: "setup",
+                meta: "авансові звіти",
+                advanceAction: "open",
+                yes: "Відкрити звіти",
                 title: `Затвердіть авансові звіти (${s.pendingCount} чекають рішення)`,
-                text: 'Працівники або члени правління внесли авансові звіти з чеками за придбані товари/послуги. Перевірте підтвердні документи та затвердьте їх для компенсації.'
+                text: "Працівники або члени правління внесли авансові звіти з чеками за придбані товари/послуги. Перевірте підтвердні документи та затвердьте їх для компенсації."
             }
         });
     }
-    if (s.toReimburseCount > 0 && s.toReimburseKop > 0) {
+    // Якщо сервер ще не оновився й не відфільтрував звіти з активним платежем (inBankCount === undefined),
+    // віднімаємо платежі підзвітним особам, які вже перебувають у Приват24 на підписі голови.
+    let toPayCount = s.toReimburseCount || 0;
+    let toPayKop = s.toReimburseKop || 0;
+    if (s.inBankCount === undefined && Array.isArray(payments) && payments.length > 0) {
+        const activeAdvPays = payments.filter(p =>
+            ["sending", "unknown", "sent"].includes(p.status) &&
+            (p.advanceReportId || p.kind === "advance" || (typeof p.proposalKey === "string" && p.proposalKey.startsWith("adv-")))
+        );
+        if (activeAdvPays.length > 0) {
+            toPayCount = Math.max(0, toPayCount - activeAdvPays.length);
+            toPayKop = Math.max(0, toPayKop - activeAdvPays.reduce((sum, p) => sum + (p.amountKop || 0), 0));
+        }
+    }
+    if (toPayCount > 0 && toPayKop > 0) {
         out.push({
             tx: { id: `advance:pay:${j.period}` },
             proposal: {
-                type: 'setup',
-                meta: 'компенсація підзвіт',
-                advanceAction: 'open',
-                yes: 'Відкрити виплату',
-                title: `Відшкодуйте перевитрату за авансовими звітами (${fmtKop(s.toReimburseKop)} грн)`,
-                text: `Затверджено ${s.toReimburseCount} звітів з перевитратою підзвітних осіб. Створіть виплату на їхні картки через Приват24 (Дт 372 Кт 311).`
+                type: "setup",
+                meta: "компенсація підзвіт",
+                advanceAction: "open",
+                yes: "Відкрити виплату",
+                title: `Відшкодуйте перевитрату за авансовими звітами (${fmtKop(toPayKop)} грн)`,
+                text: `Затверджено ${toPayCount} звітів з перевитратою підзвітних осіб. Створіть виплату на їхні картки через Приват24 (Дт 372 Кт 311).`
             }
         });
     }
     return out;
+}
+
+/** Згруповане нагадування про платежі, які банк не прийняв (status === "failed"). */
+export function failedPaymentItems(payments) {
+    const failed = (Array.isArray(payments) ? payments : []).filter(p => p.status === "failed");
+    if (!failed.length) return [];
+    const sumKop = failed.reduce((s, p) => s + (p.amountKop || 0), 0);
+    const details = failed.slice(0, 3).map(p => {
+        const who = p.recipient?.name || "Отримувач";
+        const err = p.error ? ` (${p.error})` : "";
+        return `${who} — ${fmtKop(p.amountKop || 0)} грн${err}`;
+    }).join("; ");
+    const more = failed.length > 3 ? ` та ще ${failed.length - 3}` : "";
+    const word = failed.length === 1 ? "платіж" : failed.length < 5 ? "платежі" : "платежів";
+    return [{
+        tx: { id: "payments:failed" },
+        proposal: {
+            type: "setup",
+            meta: "помилки платежів",
+            paymentsAction: "open-failed",
+            failedPaymentsCount: failed.length,
+            failedPaymentsSumKop: sumKop,
+            yes: "Виправити платежі",
+            title: failed.length === 1
+                ? `Банк не прийняв платіж (${fmtKop(sumKop)} грн)`
+                : `Банк не прийняв ${failed.length} ${word} (${fmtKop(sumKop)} грн)`,
+            text: `${details}${more}. Перевірте рахунок отримувача або причину відмови в розділі «Платежі» та повторіть відправку чи приберіть платіж.`
+        }
+    }];
 }
 
 export function assetItems(j) {
@@ -628,11 +673,12 @@ export async function collectInbox() {
     dirCache = dir;
     exCache = ex || exCache;
     payAccount = defaultAccount(pays.context.accounts || []);
-    items = chargeItems(charges)
+    items = failedPaymentItems(payments)
+        .concat(chargeItems(charges))
         .concat(budgetItems(budget))
-        .concat(openingItems(journal, session.role === 'chair'))
+        .concat(openingItems(journal, session.role === "chair"))
         .concat(assetItems(journal))
-        .concat(advanceItems(journal, session.role === 'chair'))
+        .concat(advanceItems(journal, session.role === "chair", payments))
         .concat(journalItems(journal))
         .concat(payrollItems(payroll, session.role === 'chair'))
         .concat(reportItems(reports))
@@ -740,7 +786,8 @@ const confirmProposal = item => {
         return;
     }
     if (item.proposal.type === 'setup' && item.proposal.assetAction === 'open') { openAssets('all'); return; }
-    if (item.proposal.type === 'setup' && item.proposal.advanceAction) { openAdvance('to_pay'); return; }
+    if (item.proposal.type === "setup" && item.proposal.paymentsAction === "open-failed") { location.hash = "payments"; return; }
+    if (item.proposal.type === "setup" && item.proposal.advanceAction) { openAdvance("to_pay"); return; }
     if (item.proposal.type === 'setup' && item.proposal.journalPeriod) { openJournal(item.proposal.journalPeriod); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
@@ -752,7 +799,8 @@ function openForm(item) {
     if (item.proposal.type === 'bank-conflict') { openJournal(item.tx.period); return; }
     if (item.proposal.type === 'payment-link') { openTxSheet(item.tx.id); return; }
     if (item.proposal.type === 'setup' && item.proposal.assetAction) { openAssets('all'); return; }
-    if (item.proposal.type === 'setup' && item.proposal.advanceAction) { openAdvance('all'); return; }
+    if (item.proposal.type === "setup" && item.proposal.paymentsAction === "open-failed") { location.hash = "payments"; return; }
+    if (item.proposal.type === "setup" && item.proposal.advanceAction) { openAdvance("all"); return; }
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
     if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }

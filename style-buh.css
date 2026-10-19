@@ -1244,7 +1244,7 @@ select.field-input.ch-period {
     }
     .as-period-row {
         position: absolute;
-        top: 12px;
+        top: 16px;
         right: clamp(16px, 3vw, 40px);
         width: auto;
         z-index: 10;
@@ -1425,11 +1425,14 @@ body.buh-mode details.buh-card > summary { font-size: 18px; letter-spacing: -.01
 body.buh-mode .as-banner { border-left: 0; }
 body.buh-mode .as-banner.is-ask { background: var(--sv-yellow-soft); }
 
-/* Поява розділу — легко, без «стрибка». */
+/* Поява розділу — легко, без «стрибка».
+   ВАЖЛИВО: без transform у @keyframes sv-in, щоб .buh-view не ставав
+   containing block для position: absolute (.as-period-row біля заголовка h1). */
+body.buh-mode .buh-view { position: static; transform: none; }
 @media (prefers-reduced-motion: no-preference) {
-    body.buh-mode .buh-view:not([hidden]) { animation: sv-in .32s var(--sv-ease) both; }
+    body.buh-mode .buh-view:not([hidden]) { animation: sv-in .28s var(--sv-ease) both; }
 }
-@keyframes sv-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes sv-in { from { opacity: 0; } to { opacity: 1; } }
 #viewJournal .buh-toolbar { justify-content: flex-start; }
 #viewJournal .buh-toolbar .ch-tools { margin-left: auto; }
 
