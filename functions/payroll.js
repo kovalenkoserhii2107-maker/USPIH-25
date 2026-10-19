@@ -43,7 +43,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
     }
     async function loadSettings() {
         const s = (await settingsRef.get()).data() || {};
-        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: s.taxes || {}, rates:s.rates?.length?s.rates:core.DEFAULT_RATES };
+        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: core.withDefaultTaxes(s.taxes), rates:s.rates?.length?s.rates:core.DEFAULT_RATES };
     }
 
     /** Розрахунок місяця з урахуванням уже виплаченого авансу (його суми не змінюються). */
@@ -151,7 +151,7 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const clean = t => ({ name: text(t?.name, 140), iban: String(t?.iban || '').replace(/\s+/g, '').toUpperCase(), code: String(t?.code || '').replace(/\D/g, '').slice(0, 10) });
         const percentage = Number(advancePct);
         if (!Number.isInteger(percentage) || percentage < 0 || percentage > 80) fail('invalid-argument', 'Відсоток авансу — ціле число від 0 до 80');
-        const out = { advancePct: percentage, taxes: { pdfo: clean(taxes?.pdfo), vz: clean(taxes?.vz), esv: clean(taxes?.esv) } };
+        const out = { advancePct: percentage, taxes: core.withDefaultTaxes({ pdfo: clean(taxes?.pdfo), vz: clean(taxes?.vz), esv: clean(taxes?.esv) }) };
         for (const [k, t] of Object.entries(out.taxes)) if (t.iban && !core.validIban(t.iban)) fail('invalid-argument', `${k.toUpperCase()}: IBAN має вигляд UA та 27 цифр`);
         await settingsRef.set({ ...out, updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         await audit(actor, role, 'payroll.settings', 'payroll_settings/main', `Зарплата: аванс ${out.advancePct} %, рахунки податків`, out);
@@ -297,7 +297,24 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const account = (accounts.find(([, a]) => (a.purpose || 'current') === 'current' && payable(a)) || [])[0] || '';
         if (!account) fail('failed-precondition', 'Підключіть банк: немає поточного рахунку ОСББ, з якого платити');
         if (!payable(Object.fromEntries(accounts)[stored.stages?.[stage]?.account || account])) fail('failed-precondition', 'Рахунок цього етапу недоступний або має іншу валюту. Перевірте гривневий рахунок ОСББ');
-        const list = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
+        const rawPlan = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
+        const list = rawPlan.map(row => {
+            if (row.kind === 'tax' && (!row.recipient?.name || !row.recipient?.iban || !row.recipient?.code)) {
+                const tKey = row.taxKey || String(row.key || '').split(':').at(-1);
+                const def = settings.taxes[tKey];
+                if (def) {
+                    return {
+                        ...row,
+                        recipient: {
+                            name: row.recipient?.name || def.name,
+                            iban: row.recipient?.iban || def.iban,
+                            code: row.recipient?.code || def.code
+                        }
+                    };
+                }
+            }
+            return row;
+        });
         if (!list.length) fail('failed-precondition', 'Немає що виплачувати');
         const problems = core.paymentProblems(list, stored.stages?.[stage]?.account || account);
         if (problems.length) fail('failed-precondition', problems.join('; '));

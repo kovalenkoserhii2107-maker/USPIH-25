@@ -23,6 +23,26 @@ const DEFAULT_RATES = [
     { from: '2026-01', to: '2026-12', pdfo: 1800, vz: 500, esv: 2200, minWageKop: 864700, maxBaseMult: 20, subsistenceKop: 332800 }
 ];
 
+/** Бюджетні рахунки за замовчуванням (ГУК / ГУ ДПС в Одеській обл., м. Одеса, МФО 899998). */
+const DEFAULT_TAXES = {
+    pdfo: { name: 'ГУК в Одеській обл. / м. Одеса', iban: 'UA538999980313010101000015744', code: '37607526' },
+    vz: { name: 'ГУК в Одеській обл. / м. Одеса', iban: 'UA808999980313090106000015744', code: '37607526' },
+    esv: { name: 'ГУ ДПС в Одеській області', iban: 'UA208999980000355609201001532', code: '44069166' }
+};
+
+function withDefaultTaxes(taxes = {}) {
+    const merge = key => {
+        const def = DEFAULT_TAXES[key] || { name: '', iban: '', code: '' };
+        const cur = taxes?.[key] || {};
+        return {
+            name: String(cur.name || '').trim() || def.name,
+            iban: String(cur.iban || '').replace(/\s+/g, '').toUpperCase() || def.iban,
+            code: String(cur.code || '').replace(/\D/g, '').slice(0, 10) || def.code
+        };
+    };
+    return { pdfo: merge('pdfo'), vz: merge('vz'), esv: merge('esv') };
+}
+
 const KINDS = { employee: 'Трудовий договір', gph: 'Договір ЦПД' };
 const { validIban, checkPayment } = require('./payments-core');
 const { validDate } = require('./expenses-core');
@@ -338,6 +358,6 @@ function paymentProblems(payments, account) {
 }
 
 module.exports = {
-    DEFAULT_RATES, KINDS, rateFor, workingDays, validRnokpp, validIban, checkPerson, calcRow, activeIn, buildRun,
+    DEFAULT_RATES, DEFAULT_TAXES, withDefaultTaxes, KINDS, rateFor, workingDays, validRnokpp, validIban, checkPerson, calcRow, activeIn, buildRun,
     stagePayments, paymentProblems, paymentRun, consolidateEsv, monthName, employmentDays, calendarDays
 };

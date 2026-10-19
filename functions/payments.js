@@ -40,7 +40,7 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
     async function context() {
         const [settings, secret] = await Promise.all([db.doc('bank/settings').get(), db.doc('bank_secrets/privat').get()]);
         const accounts = settings.exists ? settings.data().accounts || {} : {};
-        return { accounts, connectionId: settings.data()?.connectionId || null,
+        return { accounts, isDemo: settings.data()?.demo === true, connectionId: settings.data()?.connectionId || null,
             ownAccounts: new Set(Object.keys(accounts).map(normIban)), token: secret.exists ? secret.data().token : null };
     }
 
@@ -71,10 +71,10 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             purpose: String(data.purpose || '').replace(/\s+/g, ' ').trim(),
             account: normIban(data.account)
         };
-        const { ownAccounts, token, accounts, connectionId } = await context();
+        const { ownAccounts, token, isDemo, accounts, connectionId } = await context();
         const error = core.checkPayment(payment, ownAccounts);
         if (error) fail('invalid-argument', error);
-        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
+        if (!token && !isDemo) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
         if (!payable(accounts[payment.account])) fail('failed-precondition', 'Для платежу потрібен доступний гривневий рахунок ОСББ');
 
         // Повторне «Так» на ту саму пропозицію не створює другий платіж.
@@ -157,9 +157,11 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         });
         if (!reserved) return { id: ref.id };
         try {
-            const result = await bankApi.createPayment(token, { ...payment, docNumber });
+            const result = (!token && isDemo)
+                ? { bankRef: `DEMO-PAY-${docNumber}`, paymentRef: docNumber, status: 'sent' }
+                : await bankApi.createPayment(token, { ...payment, docNumber });
             await ref.update({ status: 'sent', bankRef: result.bankRef || null, paymentRef: result.paymentRef || null,
-                bankStatus: result.status || null, sentAt: FieldValue.serverTimestamp() });
+                bankStatus: result.status || null, ...(!token && isDemo ? { source: 'demo' } : {}), sentAt: FieldValue.serverTimestamp() });
         } catch (e) {
             logger.error('Створення платежу в ПриватБанку', e);
             const status = e.bankRejected === true ? 'failed' : 'unknown';

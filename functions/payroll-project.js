@@ -75,7 +75,7 @@ module.exports = function projectFunctions({ db, FieldValue, lock }) {
             if (old?.project?.group && old.project.group!==group) fail('failed-precondition','Не можна змінити проект підготовленого етапу');
             const account=old?.account || Object.entries(bank.data()?.accounts || {}).find(([,a])=>payable(a)&&(a.purpose||'current')==='current')?.[0];
             if (!account || !payable(bank.data()?.accounts?.[account])) fail('failed-precondition','Потрібен доступний гривневий поточний рахунок');
-            const plan=old?.plan || core.stagePayments(core.paymentRun(stored),stage,{code:finance.data()?.edrpou,taxes:settings.data()?.taxes});
+            const plan=old?.plan || core.stagePayments(core.paymentRun(stored),stage,{code:finance.data()?.edrpou,taxes:core.withDefaultTaxes(settings.data()?.taxes)});
             const errors=core.paymentProblems(plan,account);
             if(errors.length) fail('failed-precondition',errors.join('; '));
             const map=new Map(people.docs.map(d=>[d.id,d.data()]));
