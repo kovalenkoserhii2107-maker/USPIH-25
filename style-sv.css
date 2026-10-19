@@ -215,8 +215,15 @@ button.sv-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -18p
 .td-small { font-size: 14.5px; font-weight: 700; }
 .td-small.is-good { color: var(--sv-green); }
 .td-small.is-bad { color: var(--sv-red); }
-.td-deadline { background: var(--sv-yellow); }
+.td-deadline { background: var(--sv-yellow); gap: 8px; }
 .td-deadline .td-label { color: var(--sv-yellow-ink); }
+.td-deadline-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+.td-deadline-badge {
+    display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px;
+    background: rgba(77, 64, 0, .11); color: var(--sv-yellow-ink); font-size: 12px; font-weight: 800; white-space: nowrap;
+}
+.td-deadline-badge.is-bad { background: var(--sv-red-bg); color: var(--sv-red); }
+.td-upcoming { gap: 8px; }
 .td-month { gap: 10px; }
 .td-month-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
 .td-month-chip { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px; font-size: 12px; font-weight: 800; }
