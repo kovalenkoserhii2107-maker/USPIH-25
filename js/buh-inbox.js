@@ -788,6 +788,7 @@ const confirmProposal = item => {
     if (item.proposal.type === 'setup' && item.proposal.assetAction === 'open') { openAssets('all'); return; }
     if (item.proposal.type === "setup" && item.proposal.paymentsAction === "open-failed") { location.hash = "payments"; return; }
     if (item.proposal.type === "setup" && item.proposal.advanceAction) { openAdvance("to_pay"); return; }
+    if (item.proposal.type === 'setup' && item.proposal.openingTask) { try { sessionStorage.setItem('buh_settings_tab', 'startup'); } catch {} location.hash = 'settings'; return; }
     if (item.proposal.type === 'setup' && item.proposal.journalPeriod) { openJournal(item.proposal.journalPeriod); return; }
     if (item.proposal.type === 'setup') { openCharges(item.proposal.seg); return; }
     const p = item.proposal;
@@ -801,6 +802,7 @@ function openForm(item) {
     if (item.proposal.type === 'setup' && item.proposal.assetAction) { openAssets('all'); return; }
     if (item.proposal.type === "setup" && item.proposal.paymentsAction === "open-failed") { location.hash = "payments"; return; }
     if (item.proposal.type === "setup" && item.proposal.advanceAction) { openAdvance("all"); return; }
+    if (item.proposal.type === 'setup' && item.proposal.openingTask) { try { sessionStorage.setItem('buh_settings_tab', 'startup'); } catch {} location.hash = 'settings'; return; }
     if (item.proposal.type === 'charge' || item.proposal.type === 'setup') { openCharges(item.proposal.seg || 'month'); return; }
     if (item.proposal.type === 'missing-doc') { confirmTask(item); return; }
     if (item.proposal.type === 'approve-con') { openExpenses('contracts'); return; }

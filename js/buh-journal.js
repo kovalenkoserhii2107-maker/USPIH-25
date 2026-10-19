@@ -5,12 +5,12 @@
 // Проводки будує сервер з операцій (journalAction, journal-core.js):
 // руками їх не вводять. Закритий місяць не змінюється — відкрити знову
 // може лише голова, з причиною в журналі дій.
+// Вхідна ОСВ на початок обліку винесена в «Налаштування → Стартові дані та база».
 // ============================================================
 import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { loadJournal, journalAct, maskIban } from './buh-data.js';
 import { fmtKop, toKop } from './charges-core.js';
-import { loadOpening, openingAction, openingInput } from './buh-opening.js';
 import { loadNotes } from './buh-accounting-notes.js';
 import { openFlat } from './buh-flats.js';
 import { openExpenses } from './buh-expenses.js';
@@ -28,7 +28,6 @@ let period = null;          // null — місяць, який пропонує 
 let ctx = null;
 const open = new Set();     // розгорнуті рахунки
 const allEntries = new Set();
-let showOpening = null;     // null — показати, доки вхідну ОСВ не затверджено
 
 /** Відкрити розділ на місяці (із «Вхідних»). */
 export function openJournal(p) {
@@ -36,8 +35,6 @@ export function openJournal(p) {
     if (location.hash !== '#journal') location.hash = 'journal';
     else loadJournalView();
 }
-
-const openingShown = () => showOpening ?? (ctx?.opening?.status !== 'approved');
 
 /** Назва аналітики: квартира, рахунок банку, стаття, складова. */
 function label(acc, a) {
@@ -151,7 +148,7 @@ export async function loadJournalView() {
                 ${ctx.canReopen && chair ? '<button type="button" class="btn-ghost-small" data-act="reopen">Відкрити знову</button>' : ''}
                 <button type="button" class="btn-ghost-small" data-go="assets">Майно та ТМЦ</button>
                 <button type="button" class="btn-ghost-small" data-go="advance">Авансові звіти (372)</button>
-                <button type="button" class="btn-ghost-small" data-act="opening" aria-expanded="${openingShown()}">Вхідна ОСВ${ctx.opening?.status === 'approved' ? '' : ' !'}</button>
+                <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="startup">Вхідна ОСВ${ctx.opening?.status === 'approved' ? '' : ' !'} ›</button>
                 <button type="button" class="btn-ghost-small" data-act="csv-tb">ОСВ у CSV</button>
                 <button type="button" class="btn-ghost-small" data-act="csv-journal">Журнал у CSV</button>
             </span>
@@ -162,7 +159,13 @@ export async function loadJournalView() {
             <div class="kpi"><span>Поточні та депозитні рахунки</span><b>${fmtKop(ctx.tb.rows.filter(r=>['311','313','351','143'].includes(r.acc)).reduce((s,r)=>s+r.closeDr-r.closeCr,0))}</b><small>${ctx.opening?.status === 'approved' ? 'з погодженими вхідними залишками' : `рух з ${escapeHtml(ctx.startDate || ctx.start)}, без вхідних залишків`}</small></div>
             <div class="kpi"><span>Борг співвласників (377)</span><b class="is-out">${fmtKop(ctx.tb.rows.find(r => r.acc === '377')?.byA.reduce((s, x) => s + x.closeDr, 0) || 0)}</b><small>переплати — ${fmtKop(ctx.tb.rows.find(r => r.acc === '377')?.byA.reduce((s, x) => s + x.closeCr, 0) || 0)}</small></div>
         </div>
-        ${openingShown() ? '<div id="jrOpening"><section class="buh-card"><p class="list-empty">Завантаження вхідної ОСВ…</p></section></div>' : ''}
+        ${ctx.opening?.status !== 'approved' ? `<div class="buh-card as-banner is-ask" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px">
+            <div style="flex:1 1 260px">
+                <b>Вхідна оборотно-сальдова відомість на початок обліку ще не затверджена</b>
+                <p class="buh-note">Внесення та затвердження вхідних залишків рахунків (банк, каса, фонди 48, ОЗ, розрахунки) винесено в «Налаштування → Стартові дані та база».</p>
+            </div>
+            <button type="button" class="sv-btn" style="width:auto;flex:0 0 auto;min-height:40px;padding:0 18px;font-size:14px" data-go="settings" data-settings-tab="startup">Відкрити Вхідну ОСВ ›</button>
+        </div>` : ''}
         ${!closed && ctx.bankRows?.length ? `<details class="buh-card jr-cut"${ctx.bankCut?.key===ctx.key || ctx.opening?.status !== 'approved' ? '' : ' open'}><summary>Звірка з банком на кінець місяця</summary><p class="buh-note">Внесіть залишки з виписки на останній день цього місяця. Поточний залишок банку може належати іншій даті.</p>
             ${ctx.bankRows.map((r,i)=>`<label class="py-field"><span>…${escapeHtml(r.iban.slice(-4))} · ${r.acc} · в обліку ${fmtKop(r.balanceKop)} грн</span><input class="field-input" inputmode="decimal" data-jr-cut="${i}" placeholder="Залишок у виписці, грн" value="${ctx.bankCut?.key===ctx.key?(r.balanceKop/100).toFixed(2):''}"></label>`).join('')}
             <label class="py-field"><span>Реквізити виписки / підтвердження</span><input id="jrCutNote" class="field-input" maxlength="300" value="${escapeHtml(ctx.bankCut?.note || '')}"></label><button type="button" class="sv-btn is-soft" data-act="bank-cut">Звірити залишки</button></details>`:''}
@@ -170,7 +173,6 @@ export async function loadJournalView() {
         ${tbHtml()}<div id="jrNotes"></div>`;
     const notesHost=document.getElementById('jrNotes');
     loadNotes(notesHost,ctx.period,ctx.policy?.funds || [{id:'main',name:'Основний фонд'}]).catch(err=>{if(notesHost.isConnected)notesHost.textContent=err.message;});
-    if (openingShown()) loadOpening(document.getElementById('jrOpening')).catch(e => toast(e.message, 'error'));
     return 0;
 }
 
@@ -193,7 +195,6 @@ async function onAction(btn) {
             else if (src === 'advance') openAdvance('all', ref);
             else if (src === 'payroll') openPayroll(ref);
         }
-        else if (a === 'opening') { showOpening = !openingShown(); await loadJournalView(); }
         else if (a === 'csv-tb') csvTb();
         else if (a === 'csv-journal') csvJournal();
         else if (a === 'bank-cut') {
@@ -220,18 +221,9 @@ async function onAction(btn) {
 
 export function initJournalView() {
     const host = document.getElementById('viewJournal');
-    host.addEventListener('click', async e => {
-        const ob = e.target.closest('[data-ob]');
-        if (ob && !ob.disabled) {
-            // Після збереження розділ перемалюється сам (onChange) — лишаємо ОСВ відкритою.
-            if (await openingAction(ob, document.getElementById('jrOpening'))) showOpening = true;
-            return;
-        }
+    host.addEventListener('click', e => {
         const btn = e.target.closest('[data-act]');
         if (btn && !btn.disabled) onAction(btn);
-    });
-    host.addEventListener('input', e => {
-        if (e.target.closest('#jrOpening') && e.target.classList.contains('ob-sum')) openingInput(document.getElementById('jrOpening'));
     });
     host.addEventListener('change', e => {
         if (e.target.id === 'jrPeriod') { period = e.target.value; open.clear(); allEntries.clear(); loadJournalView(); }
