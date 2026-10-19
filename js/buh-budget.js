@@ -5,6 +5,7 @@
 // Факт рахує сервер (budgetAction): документи витрат за місяцем
 // послуги й списання без документа. Кошторис затверджують збори — у
 // системі це запис протоколу; зміни до затвердженого — лише з новим.
+// Налаштування публічності номерів квартир винесено в «Налаштування → Облік, податки та правила».
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { loadBudget, budgetAct, loadStaffNames, authorLabel } from './buh-data.js';
@@ -194,8 +195,10 @@ export async function loadBudgetView() {
         </div>
         ${executionHtml()}
         <section class="buh-card bd-public">
-            <label class="bd-switch"><input type="checkbox" data-act="visibility"${ctx.showApartments ? ' checked' : ''}>
-                <span><b>Показувати мешканцям номери квартир</b><small>У надходженнях («Під'їзд 2, Квартира 177 — 28,30 грн») і в списку боржників, як у сервісі. Прізвищ — ніколи. Номер квартири теж персональні дані: вмикайте за рішенням правління чи зборів. Змінює голова.</small></span></label>
+            <div class="buh-toolbar" style="justify-content:space-between">
+                <span class="buh-note"><b>Публічність звіту для мешканців:</b> ${ctx.showApartments ? 'номери квартир показуються у надходженнях та списку боржників (без прізвищ)' : 'номери квартир приховані (показується «Співвласник»)'}.</span>
+                <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="policy">Налаштування публічності ›</button>
+            </div>
         </section>
         ${b?.revisions?.length ? `<section class="buh-card"><div class="buh-card-head"><h2>Редакції</h2></div>
             <table class="buh-table is-compact"><tbody>${b.revisions.map(r => `<tr><td class="t-date">${escapeHtml(human(r.at))}</td><td>${escapeHtml(r.decision)}</td><td class="t-sum">${fmtKop(r.planKop)}</td><td class="t-muted">${escapeHtml(authorLabel(names, r.by))}</td></tr>`).join('')}</tbody></table></section>` : ''}`;
@@ -241,12 +244,6 @@ async function onAction(btn) {
         } else if (a === 'publish') {
             if (!await confirmDialog('Оновити «Фінанси будинку»?', 'Мешканці побачать виконання кошторису, витрати з документами й загальний борг будинку — без прізвищ і номерів квартир.', 'Оновити')) return;
             await publishFinance();
-        } else if (a === 'visibility') {
-            const show = btn.checked;
-            if (!await confirmDialog(show ? 'Показувати номери квартир?' : 'Приховати номери квартир?',
-                show ? 'Мешканці побачать номери квартир у надходженнях і список боржників із сумами (без прізвищ). Звіт оновиться одразу.' : 'У звіті замість квартир буде «Співвласник», список боржників зникне.', show ? 'Показувати' : 'Приховати')) { btn.checked = !show; return; }
-            try { await budgetAct({ action: 'visibility', showApartments: show }); } catch (e) { btn.checked = !show; throw e; }
-            toast(show ? 'Номери квартир мешканцям показано' : 'Номери квартир приховано', 'success');
         } else if (a === 'report') printReport();
     } catch (e) { toast(e.message, 'error'); }
     finally { if (btn.isConnected) setBusy(btn, false); }
@@ -279,12 +276,10 @@ export function initBudgetView() {
         if (chip) { const row = chip.closest('.bd-ops-row'); row.outerHTML = opsRowHtml(row.dataset.opsFor, chip.dataset.foMonth); return; }
         const btn = e.target.closest('[data-act]');
         if (btn?.dataset.act === 'ops') { toggleOps(btn); return; }
-        if (btn?.dataset.act === 'visibility') return;          // перемикач — через change
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('change', e => {
         if (e.target.id === 'bdYear') { year = e.target.value; edit = null; loadBudgetView(); }
-        if (e.target.dataset?.act === 'visibility') onAction(e.target);
     });
     host.addEventListener('input', e => {
         if (!e.target.closest('.bd-edit')) return;
@@ -297,4 +292,3 @@ export function initBudgetView() {
         } catch { /* незакінчене число */ }
     });
 }
-

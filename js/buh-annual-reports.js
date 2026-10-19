@@ -1,7 +1,6 @@
-import { session } from './firebase.js';
 import { escapeHtml, toast, setBusy } from './ui.js';
 import { reportsQuery, reportsAct, reportFileUrl } from './buh-data.js';
-import { fmtKop, toKop } from './charges-core.js';
+import { fmtKop } from './charges-core.js';
 import { buildXlsx, zip, saveBlob } from './xlsx-write.js';
 let report=null, selectedYear=null;
 const grn=kop=>`${fmtKop(kop)} грн`;
@@ -47,6 +46,9 @@ export async function loadAnnualReports(host,start,year) {
     report=loaded;
     const years=Array.from({length:Math.max(1,new Date().getFullYear()-Number(start.slice(0,4))+2)},(_,i)=>Number(start.slice(0,4))+i).reverse();
     if(!years.includes(Number(selectedYear)))years.push(Number(selectedYear));
+    const priorInfo = report.previousIncome?.incomeKop !== undefined
+        ? `Порівняльні дані ${Number(selectedYear)-1} р.: доходи ${grn(report.previousIncome.incomeKop)}, витрати ${grn(report.previousIncome.costKop)}`
+        : `Порівняльні дані ${Number(selectedYear)-1} р. ще не внесено`;
     host.innerHTML=`<details class="buh-card" open><summary><b>Річний облік і дані для звітності</b></summary>
         <div class="buh-toolbar"><label class="py-field"><span>Рік</span><select class="field-input field-select" id="annualYear">${years.map(y=>`<option value="${y}"${String(y)===selectedYear?' selected':''}>${y}</option>`).join('')}</select></label><span class="buh-tag ${report.complete?'is-payment':'is-review'}">${report.complete?'річні дані погоджені':'попередні / неповні дані'}</span></div>
         <div class="kpi-grid"><div class="kpi"><span>Визнані доходи</span><b>${grn(report.summary.incomeKop)}</b></div><div class="kpi"><span>Витрати</span><b>${grn(report.summary.costKop)}</b></div><div class="kpi"><span>Фінансовий результат</span><b>${grn(report.summary.resultKop)}</b></div></div>
@@ -55,9 +57,10 @@ export async function loadAnnualReports(host,start,year) {
         <details><summary>Гроші, борги та фонди</summary><h3 class="rp-h">Банк і депозит</h3>${table(report.cashAccounts)}<h3 class="rp-h">Дебіторська заборгованість</h3>${table(report.receivables)}<h3 class="rp-h">Зобовʼязання й фінансування</h3>${table(report.liabilities)}<table class="buh-table is-compact"><tbody>${report.funds.map(f=>`<tr><td>${escapeHtml(f.name)}<small>використано ${grn(f.usedKop)}</small></td><td class="t-sum">${grn(f.closeKop)}</td></tr>`).join('')}</tbody></table></details>
         <div class="buh-inline-form"><button type="button" class="sv-btn" data-annual-act="download">Завантажити річний комплект</button><button type="button" class="sv-btn is-soft" data-annual-act="snapshot">Зберегти версію в архіві</button></div>
         <p class="buh-note">Excel і вихідні дані призначені для заповнення офіційних форм. Подання та квитанції зберігайте у відповідному строку звіту.</p><div id="annualFormsHost"></div>
-        ${session.role==='chair'?`<details><summary>Порівняльні дані попереднього року</summary><p class="buh-note">Для фінзвітності потрібна колонка ${Number(selectedYear)-1} року. Внесіть дані прийнятого звіту, якщо їх немає у перенесенні.</p><div class="py-pair"><label class="py-field"><span>Доходи, грн</span><input id="annualPriorIncome" class="field-input" inputmode="decimal" value="${report.previousIncome?(report.previousIncome.incomeKop/100).toFixed(2):''}"></label><label class="py-field"><span>Витрати, грн</span><input id="annualPriorCost" class="field-input" inputmode="decimal" value="${report.previousIncome?(report.previousIncome.costKop/100).toFixed(2):''}"></label></div><label class="py-field"><span>Прийнятий звіт / підстава</span><input id="annualPriorBasis" class="field-input" maxlength="500"></label><button type="button" class="sv-btn is-soft" data-annual-act="comparative">Погодити порівняльні дані</button></details>`:''}
-        ${report.coverage.needsHistory?`<details><summary>Перенести облік до дати переходу</summary><p class="buh-note">Залишки на 1 січня й повний журнал до дати переходу. Суми — у копійках. Перенос має точно збігтись з вхідною ОСВ.</p><a href="docs/accounting/MIGRATION.md" download>Перелік і формат даних</a>
-            <label class="py-field"><span>Файл переносу JSON</span><input class="field-input" id="annualImportFile" type="file" accept=".json,application/json"></label><label class="py-field"><span>Джерело / підстава</span><input id="annualImportBasis" class="field-input" maxlength="500" placeholder="Назва попередньої системи, дата звірки"></label><div class="buh-inline-form"><button type="button" class="sv-btn is-soft" data-annual-act="import">Перевірити й завантажити</button>${session.role==='chair'?'<button type="button" class="sv-btn is-soft" data-annual-act="approve-history">Погодити перенос</button>':''}</div></details>`:''}</details>`;
+        <div class="buh-toolbar" style="margin-top:12px">
+            <span class="buh-note">${escapeHtml(priorInfo)}${report.coverage?.needsHistory ? ' · Потрібен перенос обліку до дати переходу' : ''}</span>
+            <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="startup">Порівняльні дані та перенос історії у «Налаштуваннях» ›</button>
+        </div></details>`;
     const formsHost=host.querySelector('#annualFormsHost');import('./buh-annual-forms.js').then(({mountAnnualForms})=>mountAnnualForms(formsHost,requestedYear,downloadAnnualPackage)).catch(err=>{if(formsHost.isConnected)formsHost.textContent=err.message;});
     host.querySelector('#annualYear').onchange=async e=>{selectedYear=e.target.value;try{await loadAnnualReports(host,start);}catch(err){toast(err.message,'error');}};
     host.onclick=async e=>{
@@ -65,16 +68,7 @@ export async function loadAnnualReports(host,start,year) {
         try {
             setBusy(btn,true,'Готую…');
             if(btn.dataset.annualAct==='download')await save(report);
-            if(btn.dataset.annualAct==='comparative'){await reportsAct({action:'annualComparative',year:selectedYear,incomeKop:toKop(host.querySelector('#annualPriorIncome').value),costKop:toKop(host.querySelector('#annualPriorCost').value),basis:host.querySelector('#annualPriorBasis').value});toast('Порівняльні дані погоджено','success');await loadAnnualReports(host,start);}
             if(btn.dataset.annualAct==='snapshot'){const r=await reportsAct({action:'annualSnapshot',year:selectedYear});toast(`Збережено версію ${r.version}${r.complete?'':' (попередні дані)'}`,'success');}
-            if(btn.dataset.annualAct==='import'){
-                const file=host.querySelector('#annualImportFile').files[0];if(!file)throw new Error('Оберіть файл переносу');
-                if(file.size>6*1024*1024)throw new Error('Файл завеликий: до 6 МБ');
-                const imported=JSON.parse(await file.text());
-                await reportsAct({...imported,action:'importAnnualHistory',year:selectedYear,basis:host.querySelector('#annualImportBasis').value});
-                toast('Історію перевірено й збережено для погодження','success');await loadAnnualReports(host,start);
-            }
-            if(btn.dataset.annualAct==='approve-history'){await reportsAct({action:'approveAnnualHistory',year:selectedYear});toast('Перенос погоджено','success');await loadAnnualReports(host,start);}
         }catch(err){toast(err.message,'error');}finally{if(btn.isConnected)setBusy(btn,false);}
     };
 }

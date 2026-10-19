@@ -16,7 +16,7 @@ import { initInbox, loadInbox, setInboxFilter, restoreCachedBadges } from './buh
 import { loadToday, todayTitle } from './buh-today.js';
 import { initMonthView, loadMonthView } from './buh-month.js';
 import { initFlatsView, loadFlatsView } from './buh-flats.js';
-import { initBankView, loadBankView, initSettingsView, loadSettingsView } from './buh-bank.js';
+import { initBankView, loadBankView, initSettingsView, loadSettingsView, setSettingsTab } from './buh-bank.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 import { initChargesView, loadChargesView } from './buh-charges.js';
 import { initExpensesView, loadExpensesView } from './buh-expenses.js';
@@ -35,7 +35,7 @@ const VIEWS = {
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
     flats: { title: 'Квартири', sub: 'Борги й переплати, історія квартири, довідка й акт звірки', load: loadFlatsView },
-    charges: { title: 'Нарахування', sub: 'Внески співвласників: тарифи, відомість за місяць, вхідні залишки', load: loadChargesView },
+    charges: { title: 'Нарахування', sub: 'Внески співвласників: відомість за місяць, тарифи та приміщення', load: loadChargesView },
     expenses: { title: 'Документи', sub: 'Рахунки й акти, договори, постачальники', load: loadExpensesView },
     payroll: { title: 'Зарплата', sub: 'Табель, утримання, ЄСВ і виплати — голова затверджує й підписує', load: loadPayrollView },
     reports: { title: 'Звіти', sub: 'Строки ДПС, файли для Електронного кабінету, квитанції', load: loadReportsView },
@@ -44,7 +44,7 @@ const VIEWS = {
     advance: { title: 'Авансові звіти', sub: 'Розрахунки з підзвітними особами (рах. 372): чеки, компенсація в Приват24', load: loadAdvanceView },
     claims: { title: 'Претензійна робота', sub: 'Боржники, досудові вимоги, судові накази (ст. 161 ЦПК), позови та реструктуризація', load: loadClaimsView },
     journal: { title: 'Проводки', sub: 'Оборотно-сальдова відомість і закриття місяця', load: loadJournalView },
-    settings: { title: 'Налаштування', sub: 'Підключення банку й правила погодження', load: loadSettingsView }
+    settings: { title: 'Налаштування', sub: 'Організація й реквізити, банк та інтеграції, облік і податки, тарифи й довідники, стартові дані', load: loadSettingsView }
 };
 // Старі посилання (#overview) ведуть на «Сьогодні».
 const ALIASES = { overview: 'today' };
@@ -155,7 +155,7 @@ function renderAccount(apartment) {
         <h5 class="mn-h">Річне планування та облік</h5>
         <nav class="mn-group" aria-label="Облік">
             ${row('data-view="inbox"', 'inbox', 'Рішення', 'усе, що чекає вас, — по черзі', '<span class="mn-badge" id="buhInboxBadgeMenu" hidden></span>', true)}
-            ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, вхідні залишки', '', true)}
+            ${row('data-view="charges"', 'charges', 'Нарахування й тарифи', 'внески за місяць, відомість, тарифи', '', true)}
             ${row('data-view="assets"', 'assets', 'Майно та ТМЦ', 'основні засоби (10), МНМА (11), запаси (20), МШП (22), амортизація')}
             ${row('data-view="advance"', 'advance', 'Авансові звіти (372)', 'підзвітні особи, витрати за чеками, виплата на картку')}
             ${row('data-view="claims"', 'claims', 'Претензійно-позовна робота', 'боржники, претензії, судові накази, позови, договори')}
@@ -164,7 +164,7 @@ function renderAccount(apartment) {
         </nav>
         <h5 class="mn-h">Налаштування й переходи</h5>
         <nav class="mn-group" aria-label="Налаштування й переходи">
-            ${row('data-view="settings"', 'settings', 'Налаштування', 'банк, реквізити, правила, демо')}
+            ${row('data-view="settings"', 'settings', 'Налаштування', 'реквізити, банк, облік, довідники, стартові дані')}
             ${row('href="accounting-test.html"', 'check', 'Тестова бухгалтерія', 'окремий будинок, імітований банк, звірки')}
             ${links.join('')}
         </nav>`;
@@ -226,6 +226,8 @@ document.addEventListener('click', e => {
     if (go) {
         const filter = go.dataset.inboxFilter || go.dataset.inboxGroup;
         if (filter) setInboxFilter(filter);
+        if (go.dataset.settingsTab) setSettingsTab(go.dataset.settingsTab);
+        closeAllSheets();
         show(go.dataset.go);
         return;
     }

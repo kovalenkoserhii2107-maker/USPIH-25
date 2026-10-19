@@ -209,7 +209,7 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
             restructuredCount: debtors.filter(d => d.claim.status === 'restructured').length
         };
 
-        return { debtors, stats, org, martialLaw: true };
+        return { debtors, stats, org, martialLaw: fin.martialLaw !== false };
     }
 
     async function saveClaim(actor, role, data) {

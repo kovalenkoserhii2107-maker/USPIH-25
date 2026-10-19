@@ -115,6 +115,14 @@ async function loadSynchronizedClaims() {
         loadRequisites().catch(() => ({}))
     ]);
 
+    if (req && typeof req.martialLaw === 'boolean') {
+        isMartialLaw = req.martialLaw;
+    } else if (rawClaims && typeof rawClaims.martialLaw === 'boolean') {
+        isMartialLaw = rawClaims.martialLaw;
+    } else {
+        isMartialLaw = true;
+    }
+
     const dirByApt = new Map((dir || []).map(a => [String(a.apt), a]));
     const chgAptByApt = new Map((charges?.apartments || []).map(a => [String(a.apt), a]));
     const monthlyByApt = new Map((charges?.preview?.rows || []).map(r => [String(r.apt), r.amountKop || 0]));
@@ -305,10 +313,7 @@ function render() {
         ? `<div class="buh-card is-note" style="margin-bottom: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                 <b>Режим воєнного стану (Постанова КМУ № 206 / № 1405 від 29.12.2023)</b>
-                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="checkbox" id="toggleMartialLaw" ${isMartialLaw ? 'checked' : ''}>
-                    <span>Діє воєнний стан</span>
-                </label>
+                <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="policy">Налаштування правового режиму ›</button>
             </div>
             <p class="buh-note" style="margin-top:6px;">
                 Мораторій на судове стягнення боргів за ЖКП та внески ОСББ у м. Одеса скасовано з 29.12.2023 — ОСББ має повне право звертатися до суду за судовими наказами (ст. 161 ЦПК) та позовами (ст. 274 ЦПК).
@@ -318,10 +323,7 @@ function render() {
         : `<div class="buh-card is-note" style="border-left: 4px solid #2B8F5C; margin-bottom: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                 <b>Мирний час (загальний порядок законодавства України)</b>
-                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="checkbox" id="toggleMartialLaw" ${isMartialLaw ? 'checked' : ''}>
-                    <span>Діє воєнний стан</span>
-                </label>
+                <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="policy">Налаштування правового режиму ›</button>
             </div>
             <p class="buh-note" style="margin-top:6px;">
                 Воєнний стан не застосовується: дозволено повне нарахування пені за статутом (до 100% боргу), а також 3% річних та інфляційних втрат за ст. 625 ЦК України.

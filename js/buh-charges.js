@@ -1,26 +1,26 @@
 // ============================================================
 // «Нарахування»: внески співвласників за місяць, розрахунки з
-// мешканцями, тарифи, приміщення й вхідні залишки.
+// мешканцями, тарифи та приміщення.
+// Вхідні залишки на початок обліку винесено в «Налаштування → Стартові дані та база».
+// Тарифи й приміщення доступні як тут, так і в «Налаштування → Тарифи та довідники».
 //
 // Система готує нарахування (площа × тариф) — бухгалтер підтверджує
 // одним Enter. Усі записи робить сервер (chargesAction): він же
 // перераховує баланси квартир і пише журнал дій.
 // ============================================================
-import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
-import { session } from './firebase.js';
+import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { loadCharges, loadStatement, loadRequisites, chargeAct, dateOnly, loadStaffNames, authorLabel } from './buh-data.js';
 import {
-    periodName, periodStart, periodsBetween, fmtKop, parseOpeningLines, openingSummary, statementCsv, receiptPurpose
+    periodName, periodStart, periodsBetween, fmtKop, statementCsv, receiptPurpose
 } from './charges-core.js';
 import { paymentLinks } from './nbu-qr.js';
 
-const SEGMENTS = { month: 'Місяць', statement: 'Відомість', tariffs: 'Тарифи', premises: 'Приміщення', opening: 'Вхідні залишки' };
+const SEGMENTS = { month: 'Місяць', statement: 'Відомість', tariffs: 'Тарифи', premises: 'Приміщення' };
 let segment = 'month';
 let ctx = null;
 let names = {};
 let stPeriod = null;
 let stFilter = 'all';
-let openingSign = 'overpaid';
 
 const groupName = id => ctx.groups.find(g => g.id === id)?.name || 'Квартири';
 const rate = r4 => (r4 / 10000).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -30,6 +30,11 @@ const kopCell = (kop, cls = '') => `<td class="t-sum${kop < 0 ? ' is-out' : ''}$
 
 /** Відкрити розділ одразу на потрібній вкладці (із «Вхідних» чи «Огляду»). */
 export function openCharges(seg = 'month') {
+    if (seg === 'opening') {
+        try { sessionStorage.setItem('buh_settings_tab', 'startup'); } catch { /* ignore */ }
+        location.hash = 'settings';
+        return;
+    }
     segment = SEGMENTS[seg] ? seg : 'month';
     if (location.hash !== '#charges') location.hash = 'charges';
     else loadChargesView();
@@ -61,7 +66,7 @@ function monthHtml() {
     const others = ctx.due.filter(x => x !== p.period);
     const setup = [];
     if (!ctx.tariffs.length) setup.push('<button type="button" class="btn-ghost-small" data-seg="tariffs">Внести тарифи →</button>');
-    if (!ctx.opening?.set) setup.push('<button type="button" class="btn-ghost-small" data-seg="opening">Внести вхідні залишки →</button>');
+    if (!ctx.opening?.set) setup.push('<button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="startup">Внести вхідні залишки у «Налаштуваннях» →</button>');
 
     const head = run
         ? `<div class="buh-card-head"><h2>${escapeHtml(cap(periodName(p.period)))}</h2><span class="buh-tag ${run.complete === false ? 'is-review' : 'is-payment'}">${run.complete === false ? 'нараховано частково' : 'нараховано'}</span></div>
@@ -86,7 +91,7 @@ function monthHtml() {
             ${head}
             ${p.problems.length ? `<details class="ch-problems"${run ? '' : ' open'}><summary>Потребують виправлення: ${p.problems.length} прим.</summary>
                 <p>${p.problems.slice(0, 60).map(x => `<span class="buh-tag is-review">${escapeHtml(x.apt)}: ${escapeHtml(x.reason)}</span>`).join(' ')}</p>
-                <p class="buh-note">Площу вносить правління в довіднику квартир; тарифи й групи — на вкладках поруч.</p></details>` : ''}
+                <p class="buh-note">Площу вносить правління в довіднику квартир; тарифи й групи — на вкладках поруч або в «Налаштуваннях».</p></details>` : ''}
             ${!ctx.opening?.set ? '<p class="buh-note ch-warn">Поки немає вхідних залишків, баланс у кабінеті мешканця не змінюється: нарахування лише записуються в історію.</p>' : ''}
             ${setup.length ? `<div class="inbox-actions">${setup.join('')}</div>` : ''}
         </section>
@@ -148,7 +153,7 @@ async function statementHtml() {
                     <a class="btn-ghost-small" href="#claims">Претензії та суди →</a>
                 </span>
             </div>
-            ${!st.opening ? '<p class="buh-note ch-warn">Вхідні залишки ще не внесено — колонка «на початок» неповна.</p>' : ''}
+            ${!st.opening ? '<p class="buh-note ch-warn">Вхідні залишки ще не внесено — колонка «на початок» неповна. <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="startup">Внести вхідні залишки у «Налаштуваннях» ›</button></p>' : ''}
             ${componentsTable(st)}
             <div id="stTable">${statementTable(st)}</div>
             <p class="buh-note">Мінус — борг, плюс — переплата. Оплати з виписки банку потрапляють сюди одразу після рознесення.</p>
@@ -171,7 +176,7 @@ function tariffsHtml() {
     return `<section class="buh-card">
             <div class="buh-card-head"><h2>Чинні тарифи</h2><span>на ${escapeHtml(periodName(ctx.current))}, на місяць</span></div>
             ${matrix}
-            <p class="buh-note">«—» — складова цій групі не нараховується (напр. ліфти нежитловим приміщенням). «Утримання будинку» — обовʼязкова.</p>
+            <p class="buh-note">«—» — складова цій групі не нараховується (напр. ліфти нежитловим приміщенням). «Утримання будинку» — обовʼязкова. Тарифи також продубльовано в <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="directories">Налаштування → Тарифи та довідники ›</button>.</p>
         </section>
         <section class="buh-card">
             <div class="buh-card-head"><h2>Усі тарифи</h2></div>
@@ -216,7 +221,7 @@ function premisesRows() {
         .sort((a, b) => a.apt.localeCompare(b.apt, 'uk', { numeric: true }));
     if (!list.length) return '<p class="list-empty">Нічого не знайдено</p>';
     return `<table class="buh-table"><thead><tr><th>Прим.</th><th>Площа, м²</th><th>Проживає</th><th>Група</th><th class="t-sum">Внесок за ${escapeHtml(periodName(ctx.preview.period))}</th></tr></thead>
-        <tbody>${list.map(a => `<tr data-apt="${escapeHtml(a.apt)}"><td><b>${escapeHtml(a.apt)}</b></td><td>${a.area ? escapeHtml(area(a.area)) : '<span class="buh-tag is-review">немає</span>'}</td>
+        <tbody>${list.map(a => `<tr data-apt="${escapeHtml(a.apt)}"><td><b>${escapeHtml(a.apt)}</b>${a.personalAccount ? ` <small class="t-muted">о/р ${escapeHtml(a.personalAccount)}</small>` : ''}</td><td>${a.area ? escapeHtml(area(a.area)) : '<span class="buh-tag is-review">немає</span>'}</td>
             <td><input class="field-input pr-res" inputmode="numeric" maxlength="2" value="${a.residents ?? ''}" placeholder="—" aria-label="Проживає"></td>
             <td><select class="field-input field-select pr-group" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}"${(ctx.premises[a.apt] || 'res') === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></td>
             ${charge.has(a.apt) ? kopCell(charge.get(a.apt)) : `<td class="t-sum t-muted">${escapeHtml(problem.get(a.apt) || '—')}</td>`}</tr>`).join('')}</tbody></table>`;
@@ -235,66 +240,16 @@ function premisesHtml() {
                 <input id="resBulk" class="field-input" placeholder="Проживаючі списком: «298;2» або «298 2», кожна квартира з нового рядка чи через кому" aria-label="Проживаючі">
                 <button type="button" class="btn-soft btn-compact" data-act="residents-bulk">Внести проживаючих</button>
             </div>
-            <div class="buh-toolbar"><input type="search" id="prQuery" class="field-input buh-search" placeholder="Номер приміщення"></div>
+            <div class="buh-toolbar"><input type="search" id="prQuery" class="field-input buh-search" placeholder="Номер приміщення">
+                <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="directories">Масове внесення особових рахунків у «Налаштуваннях» ›</button></div>
             <div id="prTable">${premisesRows()}</div>
             <p class="buh-note">Площу веде правління в довіднику квартир (панель правління → «Квартири»). Без площі приміщенню не нараховується.</p>
         </section>`;
 }
 
 // ------------------------------------------------------------
-// ВХІДНІ ЗАЛИШКИ
-// ------------------------------------------------------------
-function openingPreview() {
-    const host = document.getElementById('opPreview');
-    if (!host) return;
-    const { rows, errors } = parseOpeningLines(document.getElementById('opText')?.value, openingSign);
-    if (!rows.length && !errors.length) { host.innerHTML = ''; return; }
-    const known = new Set(ctx.apartments.map(a => a.apt));
-    const unknown = rows.filter(r => !known.has(r.apt)).map(r => r.apt);
-    const s = openingSummary(rows);
-    const missing = ctx.apartments.length - rows.filter(r => known.has(r.apt)).length;
-    host.innerHTML = `<div class="kpi-grid ch-kpi">
-            <div class="kpi"><span>Рядків</span><b>${s.count}</b><small>${missing > 0 ? `${missing} прим. без рядка — буде 0` : 'усі приміщення'}</small></div>
-            <div class="kpi"><span>Борг</span><b class="is-out">${fmtKop(s.debtKop)}</b><small>${s.debtors} кв.</small></div>
-            <div class="kpi"><span>Переплата</span><b class="is-in">${fmtKop(s.overpaidKop)}</b><small>${rows.filter(r => r.amountKop > 0).length} кв.</small></div>
-        </div>
-        ${unknown.length ? `<p class="buh-note ch-warn">Немає в довіднику: ${unknown.slice(0, 10).map(escapeHtml).join(', ')} — виправте перед збереженням</p>` : ''}
-        ${errors.length ? `<p class="buh-note ch-warn">Незрозумілі рядки: ${errors.slice(0, 6).map(e => `№${e.line} «${escapeHtml(e.raw.slice(0, 30))}»`).join(', ')}</p>` : ''}
-        <p class="buh-note">Перевірте знак: ${rows.slice(0, 3).map(r => `кв. ${escapeHtml(r.apt)} — ${r.amountKop < 0 ? 'борг' : r.amountKop > 0 ? 'переплата' : 'розраховано'} ${fmtKop(Math.abs(r.amountKop))}`).join('; ')}</p>`;
-}
-
-function openingHtml() {
-    const o = ctx.opening;
-    const date=new Date(Date.parse(`${ctx.startDate || `${ctx.startPeriod}-01`}T12:00:00Z`)-86400000).toISOString().slice(0,10).split('-').reverse().join('.');
-    return `${ctx.startDate && !ctx.startDate.endsWith('-01') && session.role==='chair'?`<section class="buh-card"><h3>Місяць переходу вже нараховано раніше?</h3><p class="buh-note">Завантажте його історію по всіх приміщеннях і підтвердьте перенос. Нові дублікати нарахувань не створюються.</p><button type="button" class="sv-btn is-soft" data-act="imported-month">Підтвердити перенесене нарахування</button></section>`:''}<section class="buh-card">
-            <div class="buh-card-head"><h2>Вхідні залишки на ${date}</h2>${o?.set ? `<span class="buh-tag is-payment">внесено</span>` : '<span class="buh-tag is-review">не внесено</span>'}</div>
-            ${o?.set ? `<p class="buh-note">${o.count} кв. · борг ${fmtKop(o.debtKop)} · переплата ${fmtKop(o.overpaidKop)} грн · ${escapeHtml(authorLabel(names, o.by))}${o.at ? `, ${escapeHtml(dateOnly(o.at))}` : ''}.
-                Баланс у кабінетах мешканців рахує система: залишок + оплати − нарахування.</p>
-                <div class="inbox-actions"><button type="button" class="btn-ghost-small" data-act="recompute">Перерахувати баланси з історії</button></div>`
-            : `<p class="buh-note">Борги й переплати кожної квартири на кінець ${date} — з попереднього обліку. З ними система почне рахувати баланс мешканців сама.</p>`}
-            <h3 class="ch-sub">${o?.set ? 'Виправити залишки' : 'Внести залишки'}</h3>
-            <p class="buh-note">Рядок — «квартира;сума» (можна вставити два стовпці з Excel). Приміщення без рядка отримає 0. Повторне збереження замінює весь список.</p>
-            <div class="buh-seg ch-sign">
-                <button type="button" class="buh-seg-item${openingSign === 'overpaid' ? ' active' : ''}" data-sign="overpaid">Мінус — борг (як у застосунку)</button>
-                <button type="button" class="buh-seg-item${openingSign === 'debt' ? ' active' : ''}" data-sign="debt">Плюс — борг (сальдо)</button>
-            </div>
-            <textarea id="opText" class="field-input ch-textarea" rows="8" spellcheck="false" placeholder="45;-1250,40&#10;46;210,00&#10;н1;0"></textarea>
-            <div id="opPreview"></div>
-            <div class="inbox-actions">
-                <button type="button" class="btn-primary btn-compact" data-act="opening-save">Зберегти залишки</button>
-                <button type="button" class="btn-ghost-small" data-act="opening-fill">Заповнити з поточних балансів</button>
-            </div>
-        </section>`;
-}
-
-// ------------------------------------------------------------
 // КВИТАНЦІЇ
 // ------------------------------------------------------------
-/**
- * Розрахунок за статтями — як у квитанції сервісу бухгалтера: баланс до
- * нарахування (плюс — борг, мінус — переплата), нараховано, сплачено за
- * період, до сплати за кожною статтею.
- */
 function receiptPartsHtml(r, comps, charge) {
     const p = r.parts;
     if (!p) return '';
@@ -387,10 +342,12 @@ function downloadCsv(st) {
 export async function loadChargesView() {
     [ctx, names] = await Promise.all([loadCharges(), loadStaffNames()]);
     const host = document.getElementById('viewCharges');
+    if (!SEGMENTS[segment]) segment = 'month';
     const body = segment === 'month' ? monthHtml() : segment === 'statement' ? await statementHtml()
-        : segment === 'tariffs' ? tariffsHtml() : segment === 'premises' ? premisesHtml() : openingHtml();
+        : segment === 'tariffs' ? tariffsHtml() : premisesHtml();
     host.innerHTML = `<div class="buh-seg ch-segs" role="tablist">${Object.entries(SEGMENTS).map(([k, v]) =>
-            `<button type="button" class="buh-seg-item${k === segment ? ' active' : ''}" data-seg="${k}">${v}</button>`).join('')}</div>
+            `<button type="button" class="buh-seg-item${k === segment ? ' active' : ''}" data-seg="${k}">${v}</button>`).join('')}
+            <button type="button" class="buh-seg-item" data-go="settings" data-settings-tab="startup" title="Вхідні залишки квартир та вхідна ОСВ">Вхідні залишки (у Налаштуваннях) ›</button></div>
         ${unfinishedHtml()}${body}`;
     return ctx.due.length + (ctx.unfinished?.length || 0);
 }
@@ -429,9 +386,6 @@ async function onAction(btn) {
         if (a === 'resume') {
             setBusy(btn, true, 'Дописую…');
             await resumeCharges();
-        } else if(a==='imported-month') {
-            const note=await promptDialog('Підтвердити вже нарахований місяць?', 'Потрібна повна історія по всіх приміщеннях. Суми вже включені у вхідні залишки; повторного нарахування не буде.',{confirmLabel:'Підтвердити',placeholder:'Попередня система та підстава звірки'});
-            if(!note)return;await chargeAct({action:'confirmImportedStartMonth',note});toast('Повний перенос місяця підтверджено','success');
         } else if (a === 'run') {
             setBusy(btn, true, 'Нараховую…');
             await runCharges(period, ctx.preview.period === period ? ctx.preview.totalKop : undefined);
@@ -475,27 +429,6 @@ async function onAction(btn) {
             setBusy(btn, true);
             await chargeAct({ action: 'setPremises', apts, group: val('prBulkGroup') });
             toast(`Збережено: ${apts.length} прим.`, 'success');
-        } else if (a === 'opening-fill') {
-            const lines = ctx.apartments.filter(x => x.balance !== null && x.balance !== '' && x.balance !== undefined)
-                .map(x => `${x.apt};${String(Number(x.balance).toFixed(2)).replace('.', ',')}`);
-            openingSign = 'overpaid';
-            document.querySelectorAll('[data-sign]').forEach(b => b.classList.toggle('active', b.dataset.sign === 'overpaid'));
-            document.getElementById('opText').value = lines.join('\n');
-            openingPreview();
-            toast(lines.length ? `Взято балансів: ${lines.length}. Звірте з сервісом бухгалтера.` : 'У картках квартир балансів немає', lines.length ? 'success' : 'error');
-        } else if (a === 'opening-save') {
-            const { rows, errors } = parseOpeningLines(val('opText'), openingSign);
-            if (!rows.length) { toast('Немає жодного рядка', 'error'); return; }
-            if (errors.length) { toast(`Спершу виправте рядок №${errors[0].line}`, 'error'); return; }
-            const s = openingSummary(rows);
-            if (!await confirmDialog('Зберегти вхідні залишки?', `${s.count} кв.: борг ${fmtKop(s.debtKop)} грн, переплата ${fmtKop(s.overpaidKop)} грн. Після цього баланс мешканців рахує система, ручне редагування балансу вимкнеться.`, 'Зберегти')) return;
-            setBusy(btn, true, 'Зберігаю…');
-            const r = await chargeAct({ action: 'setOpening', rows });
-            toast(`Залишки внесено. Оновлено балансів: ${r.balances}`, 'success');
-        } else if (a === 'recompute') {
-            setBusy(btn, true, 'Рахую…');
-            const r = await chargeAct({ action: 'recompute' });
-            toast(r.updated ? `Оновлено балансів: ${r.updated}` : 'Баланси вже збігаються з історією', 'success');
         } else if (a === 'csv') {
             downloadCsv(await loadStatement(stPeriod));
         } else if (a === 'receipts') {
@@ -520,18 +453,10 @@ export function initChargesView(isActive) {
             loadStatement(stPeriod).then(st => { document.getElementById('stTable').innerHTML = statementTable(st); });
             return;
         }
-        const sign = e.target.closest('[data-sign]');
-        if (sign) {
-            openingSign = sign.dataset.sign;
-            host.querySelectorAll('[data-sign]').forEach(b => b.classList.toggle('active', b === sign));
-            openingPreview();
-            return;
-        }
         const btn = e.target.closest('[data-act]');
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('input', e => {
-        if (e.target.id === 'opText') openingPreview();
         if (e.target.id === 'prQuery') document.getElementById('prTable').innerHTML = premisesRows();
         if (e.target.id === 'stQuery') loadStatement(stPeriod).then(st => { document.getElementById('stTable').innerHTML = statementTable(st); });
     });

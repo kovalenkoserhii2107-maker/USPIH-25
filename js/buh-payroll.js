@@ -21,18 +21,33 @@ const monthTitle = p => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
 const shift = (p, n) => { const d = new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)) - 1 + n, 1)); return d.toISOString().slice(0, 7); };
 const money2 = k => (k ? (k / 100).toFixed(2).replace('.', ',') : '');
 
+const PAY_METHOD_KEY = 'uspih25_payroll_pay_method';
+export function getPayMethod() {
+    try { return localStorage.getItem(PAY_METHOD_KEY) === 'project' ? 'project' : 'iban'; } catch { return 'iban'; }
+}
+export function setPayMethod(val) {
+    const clean = val === 'project' ? 'project' : 'iban';
+    try { localStorage.setItem(PAY_METHOD_KEY, clean); } catch { /* ignore */ }
+    return clean;
+}
+
 let period = null;
 let ctx = null;
 let editing = null;          // картка людини у формі: null — закрито, {} — нова
 let selected = null;         // людина в правій картці
-let payMethod = 'iban';
-let projectContext = { groups: [], receivers: [] };
-let projectGroup = 'SALARY';
-const projectStatuses={};
+let pendingPersonEdit = null;
+const projectStatuses = {};
 
 /** Відкрити розділ на місяці (із «Вхідних»). */
 export function openPayroll(p) {
     if (p) period = p;
+    if (location.hash !== '#payroll') location.hash = 'payroll';
+    else loadPayrollView();
+}
+
+/** Відкрити розділ одразу на формі додавання або редагування працівника / підрядника ЦПД (із «Налаштувань»). */
+export function openPayrollPerson(personId = 'new') {
+    pendingPersonEdit = personId || 'new';
     if (location.hash !== '#payroll') location.hash = 'payroll';
     else loadPayrollView();
 }
@@ -240,49 +255,33 @@ function personFormHtml(p) {
     </div>`;
 }
 
-function taxesHtml() {
-    const t = withDefaultTaxes(ctx.settings.taxes);
-    const row = (key, label) => `<div class="pr-tax" data-tax="${key}"><b>${label}</b>
-        <input class="field-input" data-f="name" value="${escapeHtml(t[key]?.name || '')}" placeholder="Отримувач (казначейство)" aria-label="${label}: отримувач">
-        <input class="field-input" data-f="iban" value="${escapeHtml(t[key]?.iban || '')}" placeholder="UA…" spellcheck="false" aria-label="${label}: IBAN">
-        <input class="field-input" data-f="code" value="${escapeHtml(t[key]?.code || '')}" placeholder="Код ЄДРПОУ" inputmode="numeric" aria-label="${label}: код"></div>`;
-    const filled = ['pdfo', 'vz', 'esv'].every(k => t[k]?.iban);
-    return `<details class="py-card pr-settings"${filled ? '' : ' open'}>
-        <summary><span class="pr-settings-title">Податки й аванс</span><span class="py-muted">${filled ? `рахунки податків заповнено · аванс ${ctx.settings.advancePct}%` : 'заповніть рахунки податків'}</span></summary>
-        <p class="py-note">Рахунки для сплати — з Електронного кабінету ДПС («Бюджетні рахунки» для вашої громади). ПДФО й військовий збір — у день кожної виплати, ЄСВ — до 20 числа наступного місяця.</p>
-        ${row('pdfo', 'ПДФО')}${row('vz', 'Військовий збір')}${row('esv', 'ЄСВ')}
-        <div class="pr-advance"><span>Аванс</span><input id="prAdvance" class="field-input ch-narrow" inputmode="numeric" value="${ctx.settings.advancePct}" aria-label="Аванс, %"><span>% нарахування</span>
-            <button type="button" class="sv-btn is-soft" data-act="taxes-save">Зберегти</button></div>
-    </details>`;
-}
-
-function projectHtml() {
-    return `<details class="py-card pr-settings"${projectContext.receivers.length || Object.values(ctx.stages).some(s=>s.project)?' open':''}><summary><span class="pr-settings-title">Зарплатний проект ПриватБанку</span><span class="py-muted">додатковий спосіб виплати працівникам</span></summary>
-        <p class="py-note">Підготовка й перевірка відомості — тут, підпис — у Приват24. ЦПД та перекази в будь-який банк залишаються доступні по IBAN. Комісію враховуємо за випискою.</p>
-        <div class="py-pair"><label class="py-field"><span>Проект</span><select id="prProjectGroup" class="field-input field-select">${(projectContext.groups.length ? projectContext.groups : [{type:'SALARY',name:'Зарплатний проект'}]).map(g=>`<option value="${escapeHtml(g.type)}"${g.type===projectGroup?' selected':''}>${escapeHtml(g.name || g.type)}</option>`).join('')}</select></label>
-            <button type="button" class="sv-btn is-soft" data-act="project-load">Оновити отримувачів з банку</button></div>
-        ${ctx.people.filter(p=>p.kind==='employee').map(p=>`<div class="py-pair"><label class="py-field"><span>${escapeHtml(p.name)}</span><select class="field-input field-select" data-project-person="${escapeHtml(p.id)}"><option value="">Оберіть отримувача за РНОКПП</option>
-            ${projectContext.receivers.filter(r=>r.inn===p.rnokpp).map(r=>`<option value="${escapeHtml(r.id)}"${p.salaryProject?.receiverId===r.id?' selected':''}>${escapeHtml(r.fio)} · № ${escapeHtml(r.tabn)} · ${escapeHtml(r.pan)}</option>`).join('')}</select></label>
-            <button type="button" class="sv-btn is-soft" data-act="project-link" data-id="${escapeHtml(p.id)}">Звʼязати</button></div>`).join('')}
-        <p class="py-note">Якщо отримувача немає, додайте його у Приват24 та оновіть список.</p>
-        ${Object.entries(ctx.stages).filter(([,s])=>s.project).map(([stage,s])=>`<p class="py-note">${stage==='advance'?'Аванс':'Розрахунок'} · ${escapeHtml(s.project.reference || 'референс ще не підтверджено')} · підготовлено ${Object.keys(s.project.added || {}).length} виплат · ${escapeHtml(s.project.status)}</p>
-            ${s.project.reference?`<button type="button" class="sv-btn is-soft" data-act="project-status" data-stage="${stage}">Перевірити стан у банку</button>`:''}
-            ${projectStatuses[`${ctx.period}:${stage}`]?`<p class="py-note">Банк: ${escapeHtml(projectStatuses[`${ctx.period}:${stage}`].status)}${projectStatuses[`${ctx.period}:${stage}`].substatus?` / ${escapeHtml(projectStatuses[`${ctx.period}:${stage}`].substatus)}`:''} · ${escapeHtml(projectStatuses[`${ctx.period}:${stage}`].error || '')}. Факт оплати у бухгалтерії підтверджується випискою.</p>`:''}
-            ${s.project.status==='unknown' && session.role==='chair' ? `<label class="py-field"><span>Референс після звірки у Приват24</span><input class="field-input" data-project-ref="${stage}" maxlength="120"></label><button type="button" class="sv-btn is-soft" data-act="project-recover" data-stage="${stage}">Звірити та продовжити</button>` : ''}`).join('')}
-        </details>`;
-}
-
-function ratesHtml() {
-    const rows=ctx.settings.rates || [ctx.run.rate];
-    const fields=[['from','З місяця','month'],['to','До місяця','month'],['pdfo','ПДФО, %'],['vz','Військовий збір, %'],['esv','ЄСВ, %'],['minWageKop','Мінімальна зарплата, грн'],['maxBaseMult','Максимальна база ЄСВ, × МЗП'],['subsistenceKop','Прожитковий мінімум, грн']];
-    const form=row=>`<div class="pr-rate-row">${fields.map(([key,label,type])=>`<label class="py-field"><span>${label}</span><input class="field-input" data-rate-key="${key}"${type?` type="${type}"`:' inputmode="decimal"'} value="${escapeHtml(['from','to','maxBaseMult'].includes(key)?row[key] || '':(row[key]/100).toFixed(2))}"${session.role==='chair'?'':' disabled'}></label>`).join('')}</div>`;
-    return `<details class="py-card pr-settings"${ctx.run.rateError?' open':''}><summary><span class="pr-settings-title">Ставки та межі з датами дії</span><span class="py-muted">перевіряються для кожного нового року</span></summary><p class="py-note">Затверджені відомості зберігають власні параметри. Майбутній рік без датованих ставок не розраховується. Відсотки й суми звірте з чинними нормами.</p><div id="prRateRows">${rows.map(form).join('')}</div>
-        ${session.role==='chair'?`<button type="button" class="sv-btn is-soft" data-act="rate-add">Додати період дії</button><label class="py-field"><span>Підстава перевірки</span><input id="prRatesBasis" class="field-input" maxlength="300" placeholder="Нормативний документ і дата перевірки"></label><button type="button" class="sv-btn is-soft" data-act="rates-save">Зберегти перевірені параметри</button>`:''}</details>`;
+function activeProjectStagesHtml() {
+    const projectEntries = Object.entries(ctx.stages || {}).filter(([, s]) => s.project);
+    if (!projectEntries.length) return '';
+    return `<section class="py-card">
+        <div class="py-card-head"><h2>Відомості зарплатного проекту ПриватБанку</h2></div>
+        ${projectEntries.map(([stage, s]) => `<div style="margin-top:8px">
+            <p class="py-note">${stage === 'advance' ? 'Аванс' : 'Розрахунок'} · ${escapeHtml(s.project.reference || 'референс ще не підтверджено')} · підготовлено ${Object.keys(s.project.added || {}).length} виплат · ${escapeHtml(s.project.status)}</p>
+            ${s.project.reference ? `<button type="button" class="sv-btn is-soft" data-act="project-status" data-stage="${stage}">Перевірити стан у банку</button>` : ''}
+            ${projectStatuses[`${ctx.period}:${stage}`] ? `<p class="py-note">Банк: ${escapeHtml(projectStatuses[`${ctx.period}:${stage}`].status)}${projectStatuses[`${ctx.period}:${stage}`].substatus ? ` / ${escapeHtml(projectStatuses[`${ctx.period}:${stage}`].substatus)}` : ''} · ${escapeHtml(projectStatuses[`${ctx.period}:${stage}`].error || '')}. Факт оплати у бухгалтерії підтверджується випискою.</p>` : ''}
+            ${s.project.status === 'unknown' && session.role === 'chair' ? `<label class="py-field"><span>Референс після звірки у Приват24</span><input class="field-input" data-project-ref="${stage}" maxlength="120"></label><button type="button" class="sv-btn is-soft" data-act="project-recover" data-stage="${stage}">Звірити та продовжити</button>` : ''}
+        </div>`).join('')}
+    </section>`;
 }
 
 export async function loadPayrollView() {
     ctx = await loadPayroll(period);
     period = ctx.period;
+    if (pendingPersonEdit) {
+        if (pendingPersonEdit === 'new') {
+            editing = { kind: 'employee' };
+        } else {
+            const found = ctx.people.find(p => p.id === pendingPersonEdit);
+            if (found) { selected = found.id; editing = found; }
+        }
+        pendingPersonEdit = null;
+    }
+    const payMethod = getPayMethod();
     const chair = session.role === 'chair';
     const [label, cls] = ctx.closed ? ['Місяць закрито', 'is-locked'] : STATUS[ctx.status] || STATUS.none;
     const months = [...new Set([shift(ctx.today.slice(0, 7), 1), ctx.today.slice(0, 7), shift(ctx.today.slice(0, 7), -1), ...ctx.runs.map(r => r.period), ctx.period])].sort().reverse();
@@ -296,6 +295,9 @@ export async function loadPayrollView() {
     if (!ids.includes(selected)) selected = window.matchMedia('(max-width: 900px)').matches ? null : ids[0] || null;
     const idle = !selected && !editing && (ctx.run.rows.length || ctx.people.length);
     const people = [sum.employees ? `${sum.employees} ${sum.employees === 1 ? 'працівник' : 'працівники'}` : '', sum.contractors ? `${sum.contractors} ${sum.contractors === 1 ? 'договір' : 'договори'} ЦПД` : ''].filter(Boolean).join(' · ');
+    const taxAccounts = withDefaultTaxes(ctx.settings.taxes);
+    const taxesReady = ['pdfo', 'vz', 'esv'].every(k => taxAccounts[k]?.iban);
+
     document.getElementById('viewPayroll').innerHTML = `
         <div class="pr-head">
             <div class="pr-head-left">
@@ -320,13 +322,23 @@ export async function loadPayrollView() {
             ${peopleHtml()}
             <section class="fl-card pr-card${idle ? ' is-idle' : ''}" id="prCard" aria-live="polite">${idle ? '<div class="fl-empty"><b>Оберіть людину</b><span>Розрахунок, табель чи акт місяця — тут.</span></div>' : ''}${cardHtml(locked)}</section>
         </div>
-        <p class="py-note pr-rules"${ctx.run.rateError?' hidden':''}>ПДФО ${pct(ctx.run.rate.pdfo)}, військовий збір ${pct(ctx.run.rate.vz)}, ЄСВ ${pct(ctx.run.rate.esv)} · мінімальна зарплата ${grn(ctx.run.rate.minWageKop)}. Податки сплачуються з кожною виплатою; з остаточним розрахунком — решта й доплата ЄСВ до мінімальної бази. Свята під час воєнного стану — робочі дні.${ctx.stages.advance ? ' Аванс уже підготовлено — його суми не змінюються.' : ''}</p>
         ${paymentsHtml()}
         ${Object.entries(ctx.stages).filter(([, s]) => s.complete === false).map(([stage, s]) => `<section class="py-card"><p class="py-note">${s.external ? 'Етап оплачують у банку вручну. Привʼяжіть решту списань до відомості у «Рішеннях».' : 'Частину платежів ще не підготовлено. Після виправлення картки людини або рахунків податків оновіть реквізити невідправлених платежів.'}</p>
             ${s.external ? '<button type="button" class="sv-btn is-soft" data-go="inbox">До рознесення виписки</button>' : `<button type="button" class="sv-btn is-soft" data-act="recipients-refresh" data-stage="${stage}">Оновити невідправлені реквізити</button>`}</section>`).join('')}
-        ${ctx.status === 'approved' && !ctx.closed ? `<section class="py-card"><label class="py-field"><span>Спосіб підготовки зарплатних виплат</span><select id="prPayMethod" class="field-input field-select"><option value="iban"${payMethod==='iban'?' selected':''}>По IBAN — у будь-який банк</option><option value="project"${payMethod==='project'?' selected':''}>Зарплатний проект ПриватБанку</option></select></label><p class="py-note">Ручні оплати у банку привʼязуються до відомості з розділу «Рішення».</p></section>` : ''}
-        ${ctx.run.rateError?`<section class="py-card"><p class="py-note is-bad">${escapeHtml(ctx.run.rateError)}</p></section>`:''}
-        ${taxesHtml()}${ratesHtml()}${projectHtml()}`;
+        ${activeProjectStagesHtml()}
+        ${ctx.run.rateError ? `<section class="py-card"><p class="py-note is-bad">${escapeHtml(ctx.run.rateError)}</p><button type="button" class="sv-btn is-soft" data-go="settings" data-settings-tab="policy">Перевірити ставки в «Налаштуваннях» ›</button></section>` : ''}
+        <section class="py-card pr-settings-bar">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                    <b style="font-size:14px">Параметри розрахунку та виплати зарплати</b>
+                    <p class="py-note" style="margin:2px 0 0">ПДФО ${pct(ctx.run.rate.pdfo)}, ВЗ ${pct(ctx.run.rate.vz)}, ЄСВ ${pct(ctx.run.rate.esv)} · МЗП ${grn(ctx.run.rate.minWageKop)} · Аванс ${ctx.settings.advancePct}% · ${taxesReady ? 'бюджетні рахунки заповнено' : 'заповніть рахунки податків'} · Виплата: ${payMethod === 'project' ? 'Зарплатний проект ПриватБанку' : 'По IBAN'}</p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="policy">Податки, аванс і ставки ›</button>
+                    <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="bank">Зарплатний проект ›</button>
+                </div>
+            </div>
+        </section>`;
     return ctx.status === 'draft' && chair ? 1 : 0;
 }
 
@@ -405,13 +417,6 @@ async function onAction(btn) {
             await payrollAct({ action: 'person', ...readPerson() });
             editing = null;
             toast('Збережено. Відомість місяця перерахується, коли ви її збережете', 'success');
-        } else if (a === 'taxes-save') {
-            const taxes = {};
-            document.querySelectorAll('#viewPayroll [data-tax]').forEach(tr => {
-                taxes[tr.dataset.tax] = Object.fromEntries([...tr.querySelectorAll('[data-f]')].map(i => [i.dataset.f, i.value.trim()]));
-            });
-            await payrollAct({ action: 'settings', advancePct: Number(document.getElementById('prAdvance').value) || 0, taxes });
-            toast('Збережено', 'success');
         } else if (a === 'save') {
             setBusy(btn, true, 'Рахую…');
             await payrollAct({ action: 'save', period: ctx.period, inputs: readInputs() });
@@ -421,31 +426,19 @@ async function onAction(btn) {
                 `Нараховано ${fmtKop(ctx.run.totals.grossKop)} грн, на руки ${fmtKop(ctx.run.totals.netKop)} грн, ЄСВ ${fmtKop(ctx.run.totals.esvKop)} грн. Після цього бухгалтер створить платежі, а ви підпишете їх у Приват24.`, 'Затвердити')) return;
             await payrollAct({ action: 'approve', period: ctx.period });
             toast('Відомість затверджено', 'success');
-        } else if (a === 'rate-add') {
-            const previous=document.querySelector('#prRateRows .pr-rate-row:last-child');
-            const row=previous.cloneNode(true);
-            row.querySelectorAll('[data-rate-key="from"],[data-rate-key="to"]').forEach(i=>{i.value='';});
-            document.getElementById('prRateRows').append(row);row.querySelector('input').focus();return;
-        } else if (a === 'rates-save') {
-            const rates=[...document.querySelectorAll('.pr-rate-row')].map(row=>Object.fromEntries([...row.querySelectorAll('[data-rate-key]')].map(i=>[i.dataset.rateKey,['from','to'].includes(i.dataset.rateKey)?i.value:i.dataset.rateKey==='maxBaseMult'?Number(i.value):toKop(i.value)])));
-            await payrollAct({action:'rates',rates,basis:document.getElementById('prRatesBasis').value});toast('Параметри збережено','success');
-        } else if (a === 'project-load') {
-            projectGroup = document.getElementById('prProjectGroup').value;
-            projectContext = await payrollAct({ action:'projectContext', group:projectGroup });
-            toast(`Отримувачів: ${projectContext.receivers.length}`, 'success');
-        } else if (a === 'project-link') {
-            const select = [...document.querySelectorAll('[data-project-person]')].find(e=>e.dataset.projectPerson===btn.dataset.id);
-            await payrollAct({ action:'projectReceiver', personId:btn.dataset.id, receiverId:select.value, group:projectGroup });
-            toast('Працівника звʼязано з проектом', 'success');
-        } else if(a==='project-status') {
-            projectStatuses[`${ctx.period}:${btn.dataset.stage}`]=await payrollAct({action:'projectStatus',period:ctx.period,stage:btn.dataset.stage});
+        } else if (a === 'project-status') {
+            projectStatuses[`${ctx.period}:${btn.dataset.stage}`] = await payrollAct({ action: 'projectStatus', period: ctx.period, stage: btn.dataset.stage });
             await loadPayrollView();
         } else if (a === 'project-recover') {
-            const stage=btn.dataset.stage;
-            let ref=[...document.querySelectorAll('[data-project-ref]')].find(e=>e.dataset.projectRef===stage)?.value.trim() || ctx.stages[stage].project.reference;
-            if(!ref){const found=await payrollAct({action:'projectFind',period:ctx.period,stage});if(found.length!==1)throw new Error('Не знайдено єдиної відомості. Звірте референс у Приват24; нова чернетка не створюється автоматично');ref=found[0].reference;}
-            const result=await payrollAct({action:'projectPrepare',period:ctx.period,stage,group:ctx.stages[stage].project.group,reference:ref});
-            toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared?'Голова підписує у Приват24':'Продовжіть підготовку'}`, 'success');
+            const stage = btn.dataset.stage;
+            let ref = [...document.querySelectorAll('[data-project-ref]')].find(e => e.dataset.projectRef === stage)?.value.trim() || ctx.stages[stage].project.reference;
+            if (!ref) {
+                const found = await payrollAct({ action: 'projectFind', period: ctx.period, stage });
+                if (found.length !== 1) throw new Error('Не знайдено єдиної відомості. Звірте референс у Приват24; нова чернетка не створюється автоматично');
+                ref = found[0].reference;
+            }
+            const result = await payrollAct({ action: 'projectPrepare', period: ctx.period, stage, group: ctx.stages[stage].project.group, reference: ref });
+            toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared ? 'Голова підписує у Приват24' : 'Продовжіть підготовку'}`, 'success');
         } else if (a === 'recipients-refresh') {
             await ensurePayrollTaxes(ctx.period, ctx);
             const result = await payrollAct({ action: 'refreshRecipients', period: ctx.period, stage: btn.dataset.stage });
@@ -458,12 +451,13 @@ async function onAction(btn) {
         } else if (a === 'pay-advance' || a === 'pay-final') {
             const stage = a === 'pay-advance' ? 'advance' : 'final';
             const project = ctx.stages[stage]?.project;
-            if ((project || payMethod==='project') && project?.status!=='prepared') {
+            const payMethod = getPayMethod();
+            if ((project || payMethod === 'project') && project?.status !== 'prepared') {
                 if (!await confirmDialog('Підготувати зарплатний проект?', 'Відомість буде створена й перевірена у банку. Підписати її потрібно у Приват24. Податки готуються окремими платежами по IBAN.', 'Підготувати')) return;
-                setBusy(btn,true,'Готую відомість…');
+                setBusy(btn, true, 'Готую відомість…');
                 await ensurePayrollTaxes(ctx.period, ctx);
-                const result=await payrollAct({action:'projectPrepare',period:ctx.period,stage,group:project?.group || projectGroup});
-                toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared?'Наступне натискання підготує податки; зарплатну відомість підпишіть у Приват24':'Натисніть повторно, щоб продовжити'}`, 'success');
+                const result = await payrollAct({ action: 'projectPrepare', period: ctx.period, stage, group: project?.group || 'SALARY' });
+                toast(`Підготовлено ${result.added} з ${result.total}. ${result.prepared ? 'Наступне натискання підготує податки; зарплатну відомість підпишіть у Приват24' : 'Натисніть повторно, щоб продовжити'}`, 'success');
                 return;
             }
             // Без авансу остаточний розрахунок платить усе нараховане.
@@ -488,8 +482,6 @@ export function initPayrollView() {
         if (btn && !btn.disabled) onAction(btn);
     });
     host.addEventListener('change', e => {
-        if (e.target.id === 'prPayMethod') payMethod=e.target.value;
-        if (e.target.id === 'prProjectGroup') projectGroup=e.target.value;
         if (e.target.id === 'prPeriod') { period = e.target.value; editing = null; loadPayrollView(); }
         if (e.target.id === 'pfKind' && editing) { editing = { ...readPerson(), kind: e.target.value }; loadPayrollView(); }
     });
