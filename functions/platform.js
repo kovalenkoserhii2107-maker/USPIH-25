@@ -6,21 +6,30 @@
 //   1. Мульти-ОСББ реєстр (Multi-Tenant Control Plane): управління всіма
 //      підключеними ОСББ, їхніми реквізитами, статусами, квотами та
 //      режимами ізоляції БД (namespace_prefix / named_database / dedicated_project).
-//   2. Статистика користувачів та активності: зведення за ролями,
+//   2. Повністю зовнішній симулятор Приват24 Бізнес API «Автоклієнт» v3.0.0:
+//      - працює як незалежний зовнішній сервер банку у колекціях _privat24_sandbox*;
+//      - не модифікує напряму бухгалтерські колекції (bank_tx, payments, expenses, apartments);
+//      - бухгалтерія взаємодіє з ним виключно через штатний клієнт privat.js за тестовим
+//        ключем SANDBOX_TOKEN ('PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3') та стандартний bank.sync();
+//      - якщо в «Налаштуваннях» бухгалтерії замінити тестовий ключ на реальний токен ПриватБанку,
+//        уся система без жодних змін у коді переключається на https://acp.privatbank.ua.
+//   3. Статистика користувачів та активності: зведення за ролями,
 //      квартирами, входами та потоком дій у журналі аудиту (audit_log).
-//   3. Інспектор колекцій БД та контрольовані ручні коригування
+//   4. Інспектор колекцій БД та контрольовані ручні коригування
 //      (Break-Glass Manual Patch): перегляд документів будь-якої колекції,
 //      попередній перегляд diff (dryRun), збереження з обовʼязковою підставою
 //      в audit_log та автоматичним перерахунком балансу квартири.
-//   4. Діагностика цілісності обліку та податкових звітів (Invariants):
+//   5. Діагностика цілісності обліку та податкових звітів (Invariants):
 //      перевірка тотожності балансів квартир та історії ledger, звірка
 //      банківських транзакцій, платежів та закритих періодів ОСВ.
 // ============================================================
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { createHash } = require('crypto');
 const callGuard = require('./call-guard');
 const core = require('./platform-core');
 const scopedDatabase = require('./accounting-test-db');
-const { cleanApt, fromKop } = require('./bank-core');
+const privat = require('./privat');
+const { cleanApt, fromKop, normIban, safeId } = require('./bank-core');
 
 const REGION = 'europe-central2';
 
@@ -36,7 +45,8 @@ function serializeValue(val) {
     return val;
 }
 
-module.exports = function platformFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges }) {
+module.exports = function platformFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, payments, expenses }) {
+    privat.setSandboxDb(db);
     const fail = (code, message) => { throw new HttpsError(code, message); };
 
     function resolveTenantDb(tenantId) {
@@ -49,6 +59,38 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const slug = core.normalizeTenantSlug(clean);
         if (!slug) fail('invalid-argument', 'Некоректний ідентифікатор ОСББ');
         return scopedDatabase(db, `tenant_${slug}`);
+    }
+
+    /**
+     * Повертає сервіси { bankSvc, chargesSvc, expensesSvc, paymentsSvc } для обраного контуру БД.
+     * Для основного ОСББ «Успіх-25» використовує основні інстанси, для ізольованих
+     * тенантів створює привʼязані до targetDb сервіси.
+     */
+    function resolveServices(targetDb, actor) {
+        if (targetDb === db && bank && charges) {
+            return { bankSvc: bank, chargesSvc: charges, expensesSvc: expenses, paymentsSvc: payments };
+        }
+        const localReqAdmin = async () => actor || 'admin';
+        const localRole = async () => 'chair';
+        const localLock = require('./period-lock')(targetDb);
+        const chargesSvc = require('./charges')({
+            db: targetDb, FieldValue, Timestamp, requireAdmin: localReqAdmin, staffRole: localRole, lock: localLock
+        });
+        const paymentsSvc = require('./payments')({
+            db: targetDb, FieldValue, requireAdmin: localReqAdmin, staffRole: localRole, notify: async () => {}, lock: localLock
+        });
+        const budgetSvc = require('./budget')({
+            db: targetDb, FieldValue, requireAdmin: localReqAdmin, staffRole: localRole
+        });
+        const expensesSvc = require('./expenses')({
+            db: targetDb, FieldValue, requireAdmin: localReqAdmin, staffRole: localRole, notify: async () => {},
+            payments: paymentsSvc, budget: budgetSvc, lock: localLock
+        });
+        const bankSvc = require('./bank')({
+            db: targetDb, FieldValue, Timestamp, requireAdmin: localReqAdmin, staffRole: localRole,
+            balances: chargesSvc, expenses: expensesSvc, lock: localLock
+        });
+        return { bankSvc, chargesSvc, expensesSvc, paymentsSvc };
     }
 
     async function writeAudit(targetDb, actor, role, action, target, summary, details = {}) {
@@ -78,7 +120,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
 
         const fin = finSnap.exists ? finSnap.data() : {};
         const reg = fin.registry || {};
-        const bank = bankSnap.exists ? bankSnap.data() : {};
+        const bankCfg = bankSnap.exists ? bankSnap.data() : {};
         const chargesCfg = chargesSnap.exists ? chargesSnap.data() : {};
         const realApts = (aptsSnap.docs || []).filter(d => d.data().isAdmin !== true);
         let totalDebtKop = 0;
@@ -96,11 +138,11 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
             edrpou: fin.edrpou || reg.code || '40562894',
             city: 'м. Одеса',
             address: fin.houseAddress || reg.legalAddress || 'вул. Інглезі, 3/3, м. Одеса',
-            iban: fin.iban || Object.values(bank.accounts || {})[0]?.iban || '',
+            iban: fin.iban || Object.values(bankCfg.accounts || {})[0]?.iban || '',
             apartmentsCount: realApts.length,
             debtKop: totalDebtKop,
             overpaidKop: totalOverpaidKop,
-            bankConnected: Boolean(bank.tokenSet || Object.keys(bank.accounts || {}).length),
+            bankConnected: Boolean(bankCfg.tokenSet || Object.keys(bankCfg.accounts || {}).length),
             openingSet: Boolean(chargesCfg.opening?.set),
             isolationMode: 'root_default',
             status: 'active',
@@ -163,9 +205,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const staff = (staffSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
         const auditLogs = (auditSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
         const bankTx = (bankTxSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
-        const payments = (paymentsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
+        const paymentsList = (paymentsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
         const closedPeriods = (periodsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
-        const expenses = (expensesSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
+        const expensesList = (expensesSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
         const claims = (claimsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
 
         const userStats = core.summarizeUserActivity({
@@ -178,7 +220,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const diagnostics = core.evaluateAccountingInvariants({
             apartments,
             bankTx,
-            payments,
+            payments: paymentsList,
             closedPeriods
         });
 
@@ -191,8 +233,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
                 staff: staff.length,
                 bankTx: bankTx.length,
                 bankReview: bankTx.filter(t => t.status === 'review').length,
-                payments: payments.length,
-                expenses: expenses.length,
+                payments: paymentsList.length,
+                paymentsPending: paymentsList.filter(p => ['sent', 'sending', 'unknown'].includes(p.status)).length,
+                expenses: expensesList.length,
                 claims: claims.length,
                 closedPeriods: closedPeriods.filter(p => p.status === 'closed').length
             },
@@ -202,6 +245,852 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         };
     }
 
+    // ============================================================
+    // МОДУЛЬ ЗОВНІШНЬОГО СИМУЛЯТОРА БАНКУ ПРИВАТ24 (SANDBOX SERVER)
+    // ============================================================
+
+    /**
+     * Оновлює баланс рахунку на боці ЗОВНІШНЬОГО тестового сервера Приват24 (_privat24_sandbox/state).
+     * Бухгалтерська колекція bank/settings при цьому НЕ змінюється напряму — вона оновиться
+     * лише під час виклику штатного bank.sync() -> privat.fetchBalances(token)!
+     */
+    async function adjustSandboxServerBalance(targetDb, accountIban, deltaKop, direction = 'in') {
+        const cleanIban = normIban(accountIban);
+        if (!cleanIban) return;
+        await privat.ensureSandboxState(targetDb);
+        const stateRef = targetDb.doc('_privat24_sandbox/state');
+        await targetDb.runTransaction(async t => {
+            const snap = await t.get(stateRef);
+            const cur = snap.exists ? snap.data() : { phase: 'WRK', work_balance: 'N', accounts: {} };
+            const accounts = { ...(cur.accounts || {}) };
+            const prev = accounts[cleanIban] || {
+                iban: cleanIban,
+                purpose: 'current',
+                currency: 'UAH',
+                name: 'Поточний рахунок ОСББ (311 · ПриватБанк)',
+                balanceInKop: core.DEFAULT_SIM_ACCOUNTS[0].defaultBalanceKop,
+                balanceKop: core.DEFAULT_SIM_ACCOUNTS[0].defaultBalanceKop,
+                turnoverDebtKop: 0,
+                turnoverCredKop: 0,
+                active: true
+            };
+            const absKop = Math.abs(Number(deltaKop || 0));
+            accounts[cleanIban] = {
+                ...prev,
+                balanceKop: Number(prev.balanceKop || 0) + Number(deltaKop || 0),
+                turnoverCredKop: Number(prev.turnoverCredKop || 0) + (direction === 'in' ? absKop : 0),
+                turnoverDebtKop: Number(prev.turnoverDebtKop || 0) + (direction === 'out' ? absKop : 0),
+                updatedAt: new Date().toISOString()
+            };
+            t.set(stateRef, {
+                accounts,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+        });
+    }
+
+    async function bankSimulatorContext(actor, role, data) {
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const targetDb = resolveTenantDb(tenantId);
+        const testToken = privat.tokenForTenant(tenantId);
+
+        const [
+            { state: sandboxState },
+            secretSnap,
+            bankSettingsSnap,
+            finSnap,
+            sandboxPaySnap,
+            sandboxTxSnap,
+            sandboxRepSnap,
+            sandboxEdrSnap,
+            paymentsSnap,
+            txSnap,
+            aptsSnap,
+            ownersSnap,
+            expensesSnap,
+            advSnap,
+            suppliersSnap
+        ] = await Promise.all([
+            privat.ensureSandboxState(targetDb),
+            targetDb.doc('bank_secrets/privat').get().catch(() => ({ exists: false })),
+            targetDb.doc('bank/settings').get().catch(() => ({ exists: false })),
+            targetDb.doc('osbb_settings/finance').get().catch(() => ({ exists: false })),
+            targetDb.collection('_privat24_sandbox_payments').limit(200).get().catch(() => ({ docs: [] })),
+            targetDb.collection('_privat24_sandbox_tx').limit(200).get().catch(() => ({ docs: [] })),
+            targetDb.collection('_privat24_sandbox_reports').limit(50).get().catch(() => ({ docs: [] })),
+            targetDb.collection('_privat24_sandbox_edr').limit(50).get().catch(() => ({ docs: [] })),
+            targetDb.collection('payments').limit(200).get().catch(() => ({ docs: [] })),
+            targetDb.collection('bank_tx').limit(150).get().catch(() => ({ docs: [] })),
+            targetDb.collection('apartments').get().catch(() => ({ docs: [] })),
+            targetDb.collectionGroup('owners').get().catch(() => ({ docs: [] })),
+            targetDb.collection('expenses').limit(150).get().catch(() => ({ docs: [] })),
+            targetDb.collection('advance_reports').limit(80).get().catch(() => ({ docs: [] })),
+            targetDb.collection('suppliers').limit(150).get().catch(() => ({ docs: [] }))
+        ]);
+
+        const savedToken = secretSnap.exists ? String(secretSnap.data()?.token || '').trim() : '';
+        const tokenMode = !savedToken
+            ? 'none'
+            : privat.isSandboxToken(savedToken)
+                ? 'sandbox'
+                : 'production';
+
+        const fin = finSnap.exists ? finSnap.data() : {};
+        const reg = fin.registry || {};
+        const org = {
+            name: fin.payeeName || reg.legalName || 'ОСББ «Успіх-25»',
+            edrpou: fin.edrpou || reg.code || '40562894',
+            address: fin.houseAddress || reg.legalAddress || 'вул. Інглезі, 3/3, м. Одеса',
+            iban: fin.iban || ''
+        };
+
+        const bankSettings = bankSettingsSnap.exists ? serializeValue(bankSettingsSnap.data()) : {};
+        const osbbAccounts = bankSettings.accounts || {};
+
+        // Рахунки на зовнішньому сервері Приват24 (_privat24_sandbox/state)
+        const sandboxAccounts = Object.values(sandboxState.accounts || {}).map(acc => {
+            const iban = normIban(acc.iban);
+            const syncedAcc = osbbAccounts[iban];
+            return {
+                iban,
+                purpose: syncedAcc?.purpose || acc.purpose || 'current',
+                name: acc.name || syncedAcc?.name || 'Поточний рахунок ОСББ (311 · ПриватБанк)',
+                currency: acc.currency || 'UAH',
+                balanceKop: Number(acc.balanceKop || 0),
+                osbbSyncedBalanceKop: syncedAcc?.balanceKop !== undefined ? Number(syncedAcc.balanceKop) : null,
+                active: acc.active !== false,
+                syncedTo: syncedAcc?.syncedTo || bankSettings.syncedTo || null
+            };
+        });
+
+        // Власники за квартирами (для зручної підстановки в генератор платежів)
+        const ownersByApt = new Map();
+        for (const d of ownersSnap.docs || []) {
+            const aptId = cleanApt(d.ref?.parent?.parent?.id || '');
+            if (!aptId) continue;
+            const o = d.data() || {};
+            const name = String(o.name || '').trim();
+            if (!name) continue;
+            const docInfo = String(o.docInfo || '');
+            const rnokpp = String(o.rnokpp || o.tin || (docInfo.match(/\b(\d{10})\b/) || [])[1] || '').trim();
+            if (!ownersByApt.has(aptId)) ownersByApt.set(aptId, []);
+            ownersByApt.get(aptId).push({ name, rnokpp });
+        }
+
+        const apartments = (aptsSnap.docs || [])
+            .filter(d => d.data().isAdmin !== true)
+            .map(d => {
+                const a = d.data();
+                const apt = cleanApt(d.id) || d.id;
+                const owners = ownersByApt.get(apt) || [];
+                return {
+                    apt,
+                    id: d.id,
+                    personalAccount: String(a.personalAccount || '').trim(),
+                    area: Number(a.area || 0),
+                    balance: Number(a.balance || 0),
+                    balanceKop: Math.round(Number(a.balance || 0) * 100),
+                    ownerName: owners[0]?.name || '',
+                    ownerCode: owners[0]?.rnokpp || ''
+                };
+            })
+            .sort((a, b) => Number(a.apt) - Number(b.apt) || String(a.apt).localeCompare(String(b.apt), 'uk', { numeric: true }));
+
+        const expensesById = new Map((expensesSnap.docs || []).map(d => [d.id, { id: d.id, ...serializeValue(d.data()) }]));
+        const advById = new Map((advSnap.docs || []).map(d => [d.id, { id: d.id, ...serializeValue(d.data()) }]));
+        const suppliers = (suppliersSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
+        const osbbPayments = (paymentsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
+
+        // Індексуємо платежі, які надійшли на сервер Приват24 (_privat24_sandbox_payments)
+        const sandboxPayByRef = new Map();
+        for (const d of sandboxPaySnap.docs || []) {
+            const sp = { id: d.id, ...serializeValue(d.data()) };
+            sandboxPayByRef.set(sp.paymentRef || sp.id, sp);
+            if (sp.bankRef) sandboxPayByRef.set(sp.bankRef, sp);
+        }
+
+        // Якщо в БД ОСББ є платежі зі статусом 'sent' (створені раніше), яких ще немає в _privat24_sandbox_payments,
+        // реєструємо їх у черзі сервера Приват24, щоб голова міг підписати їх КЕП.
+        for (const p of osbbPayments) {
+            if (['sent', 'sending', 'unknown'].includes(p.status)) {
+                const docNum = String(p.docNumber || createHash('sha256').update(p.id).digest('hex').slice(0, 10)).toUpperCase();
+                const payRef = p.paymentRef || `P24DOC-${docNum}`;
+                const bRef = p.bankRef || `P24PACK-${docNum}`;
+                if (!sandboxPayByRef.has(payRef) && !sandboxPayByRef.has(bRef)) {
+                    const bodyPayload = privat.paymentBody({
+                        ...p,
+                        docNumber: docNum,
+                        account: p.account || sandboxAccounts[0]?.iban || core.DEFAULT_SIM_ACCOUNTS[0].iban
+                    });
+                    const sp = {
+                        id: payRef,
+                        paymentRef: payRef,
+                        bankRef: bRef,
+                        docNumber: docNum,
+                        osbbPaymentId: p.id,
+                        endpoint: 'POST https://acp.privatbank.ua/api/proxy/payment/create',
+                        status: 'wait_sign',
+                        payment_status: 'new',
+                        body: bodyPayload,
+                        account: normIban(p.account || sandboxAccounts[0]?.iban || core.DEFAULT_SIM_ACCOUNTS[0].iban),
+                        recipient: p.recipient || {},
+                        amountKop: Number(p.amountKop || 0),
+                        currency: 'UAH',
+                        purpose: String(p.purpose || ''),
+                        signers: [],
+                        createdAt: p.createdAt || new Date().toISOString()
+                    };
+                    await targetDb.doc(`_privat24_sandbox_payments/${payRef}`).set(sp, { merge: true });
+                    sandboxPayByRef.set(payRef, sp);
+                }
+            }
+        }
+
+        // Обʼєднуємо дані черги Приват24 з інформацією про документи ОСББ для зручного відображення
+        const allPayments = osbbPayments
+            .map(p => {
+                const sp = (p.paymentRef && sandboxPayByRef.get(p.paymentRef)) || (p.bankRef && sandboxPayByRef.get(p.bankRef)) || null;
+                const linkedExp = p.expenseId ? expensesById.get(p.expenseId) : null;
+                const linkedAdv = p.advanceReportId ? advById.get(p.advanceReportId) : null;
+                p.linkedInfo = linkedExp
+                    ? `Документ № ${linkedExp.number || '—'} (${linkedExp.supplierName || ''})`
+                    : linkedAdv
+                        ? `Авансовий звіт № ${linkedAdv.number || linkedAdv.id} (${linkedAdv.personName || ''})`
+                        : p.payroll
+                            ? `Зарплатна відомість за ${p.payroll.period} (${p.payroll.stage === 'advance' ? 'аванс' : 'основна виплата'})`
+                            : 'Прямий платіж';
+                p.sandboxStatus = sp?.payment_status || (p.status === 'paid' ? 'signed' : 'new');
+                p.sandboxTxRef = sp?.txRef || null;
+                p.privatApi = core.buildPrivatPaymentApiLifecycle(p, {
+                    myName: org.name,
+                    myEdrpou: org.edrpou
+                });
+                return p;
+            })
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+        const pendingPayments = allPayments.filter(p => ['sent', 'sending', 'unknown'].includes(p.status));
+        const historyPayments = allPayments.filter(p => !['sent', 'sending', 'unknown'].includes(p.status)).slice(0, 50);
+
+        // Сирі транзакції на боці сервера Приват24 (_privat24_sandbox_tx)
+        const osbbTxById = new Map((txSnap.docs || []).map(d => [d.id, { id: d.id, ...serializeValue(d.data()) }]));
+        const sandboxRawTx = (sandboxTxSnap.docs || [])
+            .map(d => {
+                const raw = serializeValue(d.data());
+                const norm = privat.normalizeTransaction(raw);
+                const osbbTxId = norm ? safeId(`${norm.account}_${norm.bankId}`) : null;
+                const syncedTx = osbbTxId ? osbbTxById.get(osbbTxId) : null;
+                return {
+                    id: d.id,
+                    raw,
+                    osbbTxId,
+                    syncedInOsbb: Boolean(syncedTx),
+                    osbbStatus: syncedTx?.status || null,
+                    osbbKind: syncedTx?.kind || null,
+                    osbbAllocations: syncedTx?.allocations || []
+                };
+            })
+            .sort((a, b) => String(b.raw.createdAtIso || b.raw.DATE_TIME_DAT_OD_TIM_P || '').localeCompare(String(a.raw.createdAtIso || a.raw.DATE_TIME_DAT_OD_TIM_P || '')));
+
+        const recentTx = (txSnap.docs || [])
+            .map(d => ({ id: d.id, ...serializeValue(d.data()) }))
+            .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+            .slice(0, 80);
+
+        const uploadedReports = (sandboxRepSnap.docs || [])
+            .map(d => ({ id: d.id, ...serializeValue(d.data()) }))
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+        const edrChecks = (sandboxEdrSnap.docs || [])
+            .map(d => ({ id: d.id, ...serializeValue(d.data()) }))
+            .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+
+        return {
+            ok: true,
+            tenantId,
+            today,
+            org,
+            testToken,
+            tokenMode, // 'sandbox' | 'production' | 'none'
+            sandboxServer: {
+                phase: sandboxState.phase || 'WRK',
+                workBalance: sandboxState.work_balance || 'N',
+                rawTxCount: sandboxRawTx.length,
+                unsyncedTxCount: sandboxRawTx.filter(x => !x.syncedInOsbb && x.raw.PR_PR === 'r').length,
+                uploadedReports,
+                edrChecks
+            },
+            bankSettings: {
+                connected: Boolean(bankSettings.tokenSet && savedToken),
+                simulator: tokenMode === 'sandbox',
+                tokenMode,
+                tokenSet: Boolean(bankSettings.tokenSet),
+                tokenHint: bankSettings.tokenHint || (savedToken ? savedToken.slice(-4) : ''),
+                startDate: bankSettings.startDate || '2026-10-01',
+                syncedTo: bankSettings.syncedTo || null,
+                lastSync: bankSettings.lastSync || null
+            },
+            accounts: sandboxAccounts,
+            defaultSimAccounts: core.DEFAULT_SIM_ACCOUNTS,
+            pendingPayments,
+            historyPayments,
+            sandboxRawTx: sandboxRawTx.slice(0, 80),
+            recentTx,
+            apartments,
+            suppliers,
+            openExpenses: [...expensesById.values()].filter(e => e.status === 'approved'),
+            templates: core.BANK_SIM_TEMPLATES
+        };
+    }
+
+    /**
+     * Налаштування тестового середовища Приват24 (_privat24_sandbox/state) та, за потреби,
+     * підключення тестового ключа (SANDBOX_TOKEN) через штатну функцію бухгалтерії bank.actions.saveToken!
+     */
+    async function bankSetupSimulator(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Налаштування банківського контуру доступне лише супер-адміну (голові)');
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+        const testToken = privat.tokenForTenant(tenantId);
+
+        const { ref: stateRef, state: curState } = await privat.ensureSandboxState(targetDb);
+        const existingAccounts = curState.accounts || {};
+
+        const currentIban = normIban(data.currentIban || Object.values(existingAccounts).find(a => a.purpose === 'current')?.iban || core.DEFAULT_SIM_ACCOUNTS[0].iban);
+        const reserveIban = normIban(data.reserveIban || Object.values(existingAccounts).find(a => a.purpose === 'reserve')?.iban || core.DEFAULT_SIM_ACCOUNTS[1].iban);
+
+        if (!/^UA\d{27}$/.test(currentIban)) fail('invalid-argument', 'IBAN поточного рахунку має починатися з UA та містити 29 символів');
+        if (reserveIban && !/^UA\d{27}$/.test(reserveIban)) fail('invalid-argument', 'IBAN резервного рахунку має починатися з UA та містити 29 символів');
+
+        const currentBalanceKop = data.currentBalanceKop !== undefined
+            ? Math.round(Number(data.currentBalanceKop))
+            : (existingAccounts[currentIban]?.balanceKop ?? core.DEFAULT_SIM_ACCOUNTS[0].defaultBalanceKop);
+        const reserveBalanceKop = data.reserveBalanceKop !== undefined
+            ? Math.round(Number(data.reserveBalanceKop))
+            : (existingAccounts[reserveIban]?.balanceKop ?? core.DEFAULT_SIM_ACCOUNTS[1].defaultBalanceKop);
+
+        const nextAccounts = { ...existingAccounts };
+        nextAccounts[currentIban] = {
+            ...(existingAccounts[currentIban] || {}),
+            iban: currentIban,
+            purpose: 'current',
+            currency: 'UAH',
+            name: String(data.currentName || existingAccounts[currentIban]?.name || core.DEFAULT_SIM_ACCOUNTS[0].name),
+            balanceInKop: currentBalanceKop,
+            balanceKop: currentBalanceKop,
+            active: true,
+            updatedAt: new Date().toISOString()
+        };
+
+        if (reserveIban && reserveIban !== currentIban) {
+            nextAccounts[reserveIban] = {
+                ...(existingAccounts[reserveIban] || {}),
+                iban: reserveIban,
+                purpose: 'reserve',
+                currency: 'UAH',
+                name: String(data.reserveName || existingAccounts[reserveIban]?.name || core.DEFAULT_SIM_ACCOUNTS[1].name),
+                balanceInKop: reserveBalanceKop,
+                balanceKop: reserveBalanceKop,
+                active: true,
+                updatedAt: new Date().toISOString()
+            };
+        }
+
+        const phase = data.phase === 'NGT' ? 'NGT' : 'WRK';
+        const workBalance = data.workBalance === 'Y' ? 'Y' : 'N';
+
+        await stateRef.set({
+            phase,
+            work_balance: workBalance,
+            accounts: nextAccounts,
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        // Якщо запрошено підключення тестового ключа — викликаємо ШТАТНИЙ bankSvc.actions.saveToken
+        // рівно так само, якби бухгалтер вставив ключ у полі «Токен Автоклієнта» в «Налаштуваннях»!
+        let syncResult = null;
+        if (data.connectTestToken !== false && bankSvc?.actions?.saveToken) {
+            await bankSvc.actions.saveToken(actor, role, { token: testToken });
+            if (reserveIban && reserveIban !== currentIban && bankSvc?.actions?.setAccount) {
+                await bankSvc.actions.setAccount(actor, role, { iban: reserveIban, purpose: 'reserve' }).catch(() => {});
+            }
+            if (data.autoSync !== false && typeof bankSvc.sync === 'function') {
+                syncResult = await bankSvc.sync(`simulator:connect:${actor}`).catch(() => null);
+            }
+        }
+
+        // Якщо основний IBAN у фінансових реквізитах ще не заданий — підставляємо його
+        const finRef = targetDb.doc('osbb_settings/finance');
+        const finSnap = await finRef.get();
+        if (!finSnap.exists || !finSnap.data()?.iban) {
+            await finRef.set({ iban: currentIban, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+
+        await writeAudit(targetDb, actor, role, 'platform.bank.setup', '_privat24_sandbox/state',
+            `Налаштовано тестове середовище Приват24 (ключ ${testToken.slice(0, 18)}…${testToken.slice(-4)}): ${currentIban} (${fromKop(currentBalanceKop)} грн)`,
+            { tenantId, testToken, currentIban, currentBalanceKop, reserveIban, reserveBalanceKop, phase });
+
+        return { ok: true, testToken, currentIban, reserveIban, currentBalanceKop, reserveBalanceKop, syncResult };
+    }
+
+    async function bankDisableSimulator(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Керувати підключенням банку може лише супер-адмін (голова)');
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+
+        if (bankSvc?.actions?.removeToken) {
+            await bankSvc.actions.removeToken(actor, role);
+        } else {
+            await targetDb.doc('bank_secrets/privat').delete().catch(() => {});
+            await targetDb.doc('bank/settings').set({ tokenSet: false, tokenHint: FieldValue.delete() }, { merge: true });
+        }
+
+        await writeAudit(targetDb, actor, role, 'platform.bank.disableSimulator', 'bank/settings',
+            'Тестовий ключ Приват24 відключено у Налаштуваннях бухгалтерії', { tenantId });
+
+        return { ok: true };
+    }
+
+    /**
+     * Ручний запуск штатної синхронізації виписки ОСББ (bank.sync) —
+     * рівно те саме, що натискання кнопки «Виписка» у кабінеті бухгалтера (buh.html).
+     */
+    async function bankTriggerSync(actor, role, data) {
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+        if (typeof bankSvc?.sync !== 'function') {
+            fail('failed-precondition', 'Сервіс синхронізації банку недоступний');
+        }
+        const res = await bankSvc.sync(`manual:${actor}`);
+        return { ok: true, syncResult: res };
+    }
+
+    /**
+     * Підписання вихідного платежу КЕП голови на боці ЗОВНІШНЬОГО сервера Приват24:
+     *   1. Оновлює статус платіжної інструкції в _privat24_sandbox_payments на 'signed' (додає КЕП).
+     *   2. Додає проведену дебетову транзакцію (TRANTYPE: 'D', FL_REAL: 'r', PR_PR: 'r', DLR: bankRef)
+     *      у таблицю виписки банку _privat24_sandbox_tx.
+     *   3. Зменшує залишок на рахунку в _privat24_sandbox/state.
+     *   4. НЕ торкається напряму payments/{id}, expenses/{id} або bank_tx/{id}!
+     *      Якщо увімкнено autoSync (за замовчуванням true), викликає штатний bankSvc.sync(),
+     *      який сам забирає виписку через privat.fetchTransactions(token) і закриває платіж та рахунок!
+     */
+    async function signSinglePaymentOnBankServer(targetDb, paymentDoc, options) {
+        const docNumber = String(paymentDoc.docNumber || createHash('sha256').update(paymentDoc.id).digest('hex').slice(0, 10)).toUpperCase();
+        const bankRef = String(paymentDoc.bankRef || `P24PACK-${docNumber}`);
+        const paymentRef = String(paymentDoc.paymentRef || `P24DOC-${docNumber}`);
+        const nowIso = new Date().toISOString();
+        const signerName = String(options.signerName || 'Голова правління ОСББ (КЕП Приват24)');
+        const txRef = `P24OUT${docNumber}${Date.now().toString(36).slice(-3).toUpperCase()}`;
+
+        const rawOut = core.buildPrivatRawTransaction({
+            account: paymentDoc.account || core.DEFAULT_SIM_ACCOUNTS[0].iban,
+            direction: 'out',
+            trantype: 'D',
+            amountKop: paymentDoc.amountKop,
+            counterpartyName: paymentDoc.recipient?.name || 'Отримувач',
+            counterpartyCode: paymentDoc.recipient?.code || '00000000',
+            counterpartyIban: paymentDoc.recipient?.iban || '',
+            purpose: paymentDoc.purpose || '',
+            date: options.date,
+            time: options.time,
+            ref: txRef,
+            refn: '1',
+            dlr: bankRef,
+            docNumber,
+            myName: options.myName,
+            myEdrpou: options.myEdrpou
+        });
+
+        // 1. Записуємо проведену дебетову транзакцію на сервері Приват24 (_privat24_sandbox_tx)
+        await targetDb.doc(`_privat24_sandbox_tx/${rawOut.REF}_${rawOut.REFN}`).set({
+            ...rawOut,
+            createdAtIso: nowIso
+        });
+
+        let totalDebitKop = Number(paymentDoc.amountKop || 0);
+
+        // Опціональна комісія РКО ПриватБанку за платіж
+        const feeKop = Math.max(0, Math.round(Number(options.feeKop || 0)));
+        if (feeKop > 0) {
+            const rawFee = core.buildPrivatRawTransaction({
+                account: paymentDoc.account || core.DEFAULT_SIM_ACCOUNTS[0].iban,
+                direction: 'out',
+                trantype: 'D',
+                amountKop: feeKop,
+                counterpartyName: 'АТ КБ «ПРИВАТБАНК»',
+                counterpartyCode: '14360570',
+                counterpartyIban: 'UA173052990000026000000000001',
+                purpose: `Комісія банку за проведення платіжної інструкції № ${docNumber} у Приват24`,
+                date: options.date,
+                time: options.time,
+                ref: `P24FEE${docNumber}${Date.now().toString(36).slice(-3).toUpperCase()}`,
+                refn: '1',
+                docNumber: `FEE${docNumber.slice(-5)}`,
+                myName: options.myName,
+                myEdrpou: options.myEdrpou
+            });
+            await targetDb.doc(`_privat24_sandbox_tx/${rawFee.REF}_${rawFee.REFN}`).set({
+                ...rawFee,
+                createdAtIso: nowIso
+            });
+            totalDebitKop += feeKop;
+        }
+
+        // 2. Оновлюємо статус платіжної інструкції на сервері Приват24 (_privat24_sandbox_payments)
+        await targetDb.doc(`_privat24_sandbox_payments/${paymentRef}`).set({
+            id: paymentRef,
+            paymentRef,
+            bankRef,
+            docNumber,
+            status: 'signed',
+            payment_status: 'signed',
+            txRef: `${rawOut.REF}_${rawOut.REFN}`,
+            signers: [{
+                level: '1',
+                fio: signerName,
+                state: 'Підписано КЕП (Перший підпис)',
+                date: nowIso
+            }],
+            updatedAt: nowIso
+        }, { merge: true });
+
+        // 3. Зменшуємо баланс на сервері Приват24 (_privat24_sandbox/state)
+        await adjustSandboxServerBalance(
+            targetDb,
+            paymentDoc.account || core.DEFAULT_SIM_ACCOUNTS[0].iban,
+            -totalDebitKop,
+            'out'
+        );
+
+        const expectedOsbbTxId = safeId(`${normIban(rawOut.AUT_MY_ACC)}_${rawOut.REF}_${rawOut.REFN}`);
+        return {
+            paymentId: paymentDoc.id,
+            txId: expectedOsbbTxId,
+            bankRef,
+            paymentRef,
+            amountKop: paymentDoc.amountKop,
+            feeKop,
+            rawTransaction: rawOut
+        };
+    }
+
+    async function bankSignPayment(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Підписувати платежі КЕП у Приват24 може лише голова (супер-адмін)');
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const paymentId = String(data.paymentId || '').trim();
+        if (!paymentId) fail('invalid-argument', 'Вкажіть ID платежу для підпису');
+
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+
+        const [paySnap, finSnap] = await Promise.all([
+            targetDb.doc(`payments/${paymentId}`).get(),
+            targetDb.doc('osbb_settings/finance').get().catch(() => ({ exists: false }))
+        ]);
+        if (!paySnap.exists) fail('not-found', 'Платіж не знайдено');
+        const p = { id: paySnap.id, ...paySnap.data() };
+        if (p.status === 'paid') fail('failed-precondition', 'Цей платіж уже підписано та проведено у виписці');
+        if (p.status === 'canceled') fail('failed-precondition', 'Скасований платіж не можна підписати');
+
+        const fin = finSnap.exists ? finSnap.data() : {};
+        const signed = await signSinglePaymentOnBankServer(targetDb, p, {
+            date: data.date,
+            time: data.time,
+            feeKop: data.feeKop || 0,
+            signerName: data.signerName,
+            myName: fin.payeeName || 'ОСББ «Успіх-25»',
+            myEdrpou: fin.edrpou || '40562894'
+        });
+
+        // Якщо увімкнено авто-синхронізацію (за замовчуванням так) — запускаємо штатний bankSvc.sync(),
+        // який через privat.fetchTransactions(token) забирає виписку з тестового банку!
+        let syncResult = null;
+        if (data.autoSync !== false && typeof bankSvc?.sync === 'function') {
+            syncResult = await bankSvc.sync(`simulator:sign:${actor}`).catch(() => null);
+        }
+
+        await writeAudit(targetDb, actor, role, 'platform.bank.signPayment', `_privat24_sandbox_payments/${signed.paymentRef}`,
+            `КЕП-підпис платежу на сервері Приват24: ${p.recipient?.name || ''} — ${fromKop(p.amountKop)} грн (DLR: ${signed.bankRef})`,
+            { tenantId, paymentId, bankRef: signed.bankRef, amountKop: p.amountKop, synced: Boolean(syncResult) });
+
+        return { ok: true, ...signed, syncResult };
+    }
+
+    async function bankSignAllPayments(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Підписувати пачку платежів КЕП може лише голова (супер-адмін)');
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+
+        const [pendingSnap, finSnap] = await Promise.all([
+            targetDb.collection('payments').where('status', 'in', ['sent', 'sending', 'unknown']).get(),
+            targetDb.doc('osbb_settings/finance').get().catch(() => ({ exists: false }))
+        ]);
+
+        if (pendingSnap.empty) {
+            return { ok: true, signedCount: 0, results: [] };
+        }
+
+        const fin = finSnap.exists ? finSnap.data() : {};
+        const results = [];
+        for (const docSnap of pendingSnap.docs) {
+            const p = { id: docSnap.id, ...docSnap.data() };
+            const res = await signSinglePaymentOnBankServer(targetDb, p, {
+                date: data.date,
+                time: data.time,
+                feeKop: data.feeKop || 0,
+                signerName: data.signerName,
+                myName: fin.payeeName || 'ОСББ «Успіх-25»',
+                myEdrpou: fin.edrpou || '40562894'
+            });
+            results.push(res);
+        }
+
+        let syncResult = null;
+        if (data.autoSync !== false && typeof bankSvc?.sync === 'function') {
+            syncResult = await bankSvc.sync(`simulator:signAll:${actor}`).catch(() => null);
+        }
+
+        const totalKop = pendingSnap.docs.reduce((s, d) => s + Number(d.data().amountKop || 0), 0);
+        await writeAudit(targetDb, actor, role, 'platform.bank.signAll', '_privat24_sandbox_payments',
+            `Пачковий КЕП-підпис на сервері Приват24: підписано ${results.length} платежів на суму ${fromKop(totalKop)} грн`,
+            { tenantId, signedCount: results.length, totalKop, synced: Boolean(syncResult) });
+
+        return { ok: true, signedCount: results.length, totalKop, results, syncResult };
+    }
+
+    /**
+     * Відхилення чернетки платежу на сервері Приват24 (_privat24_sandbox_payments).
+     * Сама бухгалтерська база дізнається про це через штатну кнопку «Перевірити стан підпису в Приват24»
+     * (GET /api/proxy/payment/get) або при скасуванні платежу (POST /api/proxy/payment/delete).
+     */
+    async function bankRejectPayment(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Відхиляти платежі в симуляторі банку може лише голова (супер-адмін)');
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const paymentId = String(data.paymentId || '').trim();
+        const reason = String(data.reason || 'Відхилено банком / забраковано підпис у Приват24').trim().slice(0, 260);
+        if (!paymentId) fail('invalid-argument', 'Вкажіть ID платежу');
+
+        const targetDb = resolveTenantDb(tenantId);
+        const snap = await targetDb.doc(`payments/${paymentId}`).get();
+        if (!snap.exists) fail('not-found', 'Платіж не знайдено');
+        const p = snap.data();
+        if (p.status === 'paid') fail('failed-precondition', 'Уже проведений у виписці платіж не можна відхилити як чернетку (використайте сторно виписки)');
+
+        const docNumber = String(p.docNumber || createHash('sha256').update(paymentId).digest('hex').slice(0, 10)).toUpperCase();
+        const paymentRef = String(p.paymentRef || `P24DOC-${docNumber}`);
+        const bankRef = String(p.bankRef || `P24PACK-${docNumber}`);
+        const nowIso = new Date().toISOString();
+
+        await targetDb.doc(`_privat24_sandbox_payments/${paymentRef}`).set({
+            id: paymentRef,
+            paymentRef,
+            bankRef,
+            docNumber,
+            status: 'rejected',
+            payment_status: 'відхилений банком',
+            error: reason,
+            signers: [{
+                level: '1',
+                fio: 'Приват24 Бізнес (Контроль платежів)',
+                state: `Відхилено: ${reason}`,
+                date: nowIso
+            }],
+            updatedAt: nowIso
+        }, { merge: true });
+
+        // Якщо увімкнено авто-перевірку статусу підпису — викликаємо штатний paymentsSvc.actions.checkSignStatus
+        const { paymentsSvc } = resolveServices(targetDb, actor);
+        if (data.autoSync !== false && paymentsSvc?.actions?.checkSignStatus) {
+            await paymentsSvc.actions.checkSignStatus(actor, role, { id: paymentId }).catch(() => {});
+        }
+
+        await writeAudit(targetDb, actor, role, 'platform.bank.rejectPayment', `_privat24_sandbox_payments/${paymentRef}`,
+            `Платіж ${p.recipient?.name || ''} (${fromKop(p.amountKop)} грн) забраковано на сервері Приват24: ${reason}`,
+            { tenantId, paymentId, paymentRef, reason });
+
+        return { ok: true, paymentId, paymentRef, status: 'rejected' };
+    }
+
+    /**
+     * Створення вхідної (TRANTYPE: 'C') або вихідної (TRANTYPE: 'D') банківської операції
+     * на ЗОВНІШНЬОМУ сервері Приват24 (_privat24_sandbox_tx).
+     * Бухгалтерія отримує її виключно через штатний bankSvc.sync() -> privat.fetchTransactions(token)!
+     */
+    async function bankSimulateTransaction(actor, role, data) {
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+
+        const amountKop = Math.abs(Math.round(Number(data.amountKop || 0)));
+        if (!Number.isSafeInteger(amountKop) || amountKop <= 0) {
+            fail('invalid-argument', 'Вкажіть суму операції більшу за 0,00 грн');
+        }
+        const purpose = String(data.purpose || '').replace(/\s+/g, ' ').trim();
+        if (purpose.length < 3) {
+            fail('invalid-argument', 'Вкажіть призначення платежу (поле OSND у Приват24)');
+        }
+
+        const [{ state: sandboxState }, finSnap] = await Promise.all([
+            privat.ensureSandboxState(targetDb),
+            targetDb.doc('osbb_settings/finance').get().catch(() => ({ exists: false }))
+        ]);
+
+        const fin = finSnap.exists ? finSnap.data() : {};
+        const sandboxAccounts = Object.keys(sandboxState.accounts || {});
+        const myAccount = normIban(data.account || sandboxAccounts[0] || fin.iban || core.DEFAULT_SIM_ACCOUNTS[0].iban);
+
+        const direction = data.trantype === 'D' || data.direction === 'out' ? 'out' : 'in';
+        const rawPrivatTx = core.buildPrivatRawTransaction({
+            account: myAccount,
+            direction,
+            trantype: direction === 'out' ? 'D' : 'C',
+            amountKop,
+            counterpartyName: String(data.counterpartyName || 'Платник').trim(),
+            counterpartyCode: String(data.counterpartyCode || '00000000').trim(),
+            counterpartyIban: normIban(data.counterpartyIban || 'UA213052990000026201234567891'),
+            purpose,
+            date: data.date,
+            time: data.time,
+            ref: data.ref || `P24SIM${Date.now().toString(36).toUpperCase()}`,
+            refn: data.refn || '1',
+            dlr: data.dlr || '',
+            docNumber: data.docNumber || '',
+            myName: fin.payeeName || 'ОСББ «Успіх-25»',
+            myEdrpou: fin.edrpou || '40562894'
+        });
+
+        const normalized = privat.normalizeTransaction(rawPrivatTx);
+        if (!normalized) {
+            fail('invalid-argument', 'Не вдалося нормалізувати банківську транзакцію за правилами Приват24 (перевірте дату та реквізити)');
+        }
+
+        // 1. Записуємо сиру транзакцію у виписку на сервері Приват24 (_privat24_sandbox_tx)
+        const sandboxDocId = `${rawPrivatTx.REF}_${rawPrivatTx.REFN}`;
+        await targetDb.doc(`_privat24_sandbox_tx/${sandboxDocId}`).set({
+            ...rawPrivatTx,
+            createdAtIso: new Date().toISOString()
+        });
+
+        // 2. Оновлюємо баланс рахунку на сервері Приват24 (_privat24_sandbox/state)
+        const deltaKop = direction === 'in' ? amountKop : -amountKop;
+        await adjustSandboxServerBalance(targetDb, myAccount, deltaKop, direction);
+
+        // 3. Якщо увімкнено autoSync — запускаємо штатний bankSvc.sync(), який через privat.fetchTransactions(token)
+        // завантажує нову операцію в бухгалтерію і розносить її за квартирами / документами!
+        let syncResult = null;
+        if (data.autoSync !== false && typeof bankSvc?.sync === 'function') {
+            syncResult = await bankSvc.sync(`simulator:tx:${actor}`).catch(() => null);
+        }
+
+        const txId = safeId(`${normalized.account}_${normalized.bankId}`);
+        const txSnap = await targetDb.doc(`bank_tx/${txId}`).get();
+        const storedTx = txSnap.exists ? { id: txSnap.id, ...serializeValue(txSnap.data()) } : null;
+
+        await writeAudit(targetDb, actor, role, 'platform.bank.simulateTx', `_privat24_sandbox_tx/${sandboxDocId}`,
+            `Операція на сервері Приват24 (${direction === 'in' ? '+' : '−'}${fromKop(amountKop)} грн, ${rawPrivatTx.AUT_CNTR_NAM}): ${storedTx ? (storedTx.status === 'done' ? `синхронізовано й рознесено (${storedTx.kind})` : 'синхронізовано у «Рішення»') : 'очікує синхронізації виписки'}`,
+            { tenantId, sandboxDocId, txId, direction, amountKop, synced: Boolean(storedTx), status: storedTx?.status, kind: storedTx?.kind });
+
+        return {
+            ok: true,
+            sandboxDocId,
+            txId,
+            rawPrivatTx,
+            storedTx,
+            syncResult
+        };
+    }
+
+    /**
+     * Симуляція банківського сторно (PR_PR: 't') на ЗОВНІШНЬОМУ сервері Приват24 (_privat24_sandbox_tx).
+     * Бухгалтерія дізнається про сторно виключно під час штатного bankSvc.sync()!
+     */
+    async function bankVoidTransaction(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Симулювати банківське сторно може лише голова (супер-адмін)');
+        const tenantId = String(data.tenantId || 'uspih-25').trim();
+        const txId = safeId(data.txId);
+        if (!txId) fail('invalid-argument', 'Вкажіть ID транзакції для сторнування');
+
+        const targetDb = resolveTenantDb(tenantId);
+        const { bankSvc } = resolveServices(targetDb, actor);
+
+        // Можемо прийняти або ID з bank_tx, або REF_REFN з _privat24_sandbox_tx
+        const [osbbTxSnap, sandboxTxSnap] = await Promise.all([
+            targetDb.doc(`bank_tx/${txId}`).get(),
+            targetDb.doc(`_privat24_sandbox_tx/${txId}`).get()
+        ]);
+
+        let rawVoid;
+        let accountIban;
+        let direction;
+        let amountKop;
+        let sandboxDocId;
+
+        if (sandboxTxSnap.exists) {
+            const sData = sandboxTxSnap.data();
+            if (sData.PR_PR === 't') fail('failed-precondition', 'Цю операцію вже сторновано на сервері Приват24');
+            sandboxDocId = sandboxTxSnap.id;
+            accountIban = normIban(sData.AUT_MY_ACC);
+            direction = sData.TRANTYPE === 'D' ? 'out' : 'in';
+            amountKop = Math.abs(Math.round(Number(sData.SUM || 0) * 100));
+            rawVoid = { ...sData, FL_REAL: 'r', PR_PR: 't', updatedAtIso: new Date().toISOString() };
+        } else if (osbbTxSnap.exists) {
+            const oldTx = osbbTxSnap.data();
+            if (oldTx.bankVoided) fail('failed-precondition', 'Цю операцію вже сторновано банком');
+            const [refPart, refnPart = '1'] = String(oldTx.bankId || '').split('_');
+            const ref = oldTx.statementRef || refPart;
+            const refn = oldTx.statementRefn || refnPart;
+            sandboxDocId = `${ref}_${refn}`;
+            accountIban = oldTx.account;
+            direction = oldTx.direction;
+            amountKop = oldTx.amountKop;
+            rawVoid = core.buildPrivatRawTransaction({
+                account: oldTx.account,
+                direction: oldTx.direction,
+                trantype: oldTx.direction === 'out' ? 'D' : 'C',
+                amountKop: oldTx.amountKop,
+                counterpartyName: oldTx.counterparty?.name || '',
+                counterpartyCode: oldTx.counterparty?.code || '',
+                counterpartyIban: oldTx.counterparty?.account || '',
+                purpose: oldTx.purpose || '',
+                ref,
+                refn,
+                flReal: 'r',
+                prPr: 't' // PR_PR: 't' — сторнована банком операція за документацією Автоклієнта
+            });
+        } else {
+            fail('not-found', 'Транзакцію не знайдено');
+        }
+
+        // 1. Оновлюємо запис у _privat24_sandbox_tx на PR_PR = 't'
+        await targetDb.doc(`_privat24_sandbox_tx/${sandboxDocId}`).set(rawVoid, { merge: true });
+
+        // 2. Сторнуємо баланс на сервері Приват24 (_privat24_sandbox/state)
+        const reverseDelta = direction === 'in' ? -amountKop : amountKop;
+        await adjustSandboxServerBalance(targetDb, accountIban, reverseDelta, direction === 'in' ? 'out' : 'in');
+
+        // 3. Якщо увімкнено autoSync — запускаємо штатний bankSvc.sync(), який прочитає PR_PR='t' і виконає voidTransaction!
+        let syncResult = null;
+        if (data.autoSync !== false && typeof bankSvc?.sync === 'function') {
+            syncResult = await bankSvc.sync(`simulator:void:${actor}`).catch(() => null);
+        }
+
+        await writeAudit(targetDb, actor, role, 'platform.bank.voidTx', `_privat24_sandbox_tx/${sandboxDocId}`,
+            `Банківське сторно на сервері Приват24 (PR_PR='t') для ${sandboxDocId} на суму ${fromKop(amountKop)} грн`,
+            { tenantId, txId, sandboxDocId, syncResult });
+
+        return { ok: true, txId, sandboxDocId, syncResult };
+    }
+
+    // ============================================================
+    // РЕЄСТР ОСББ, ІНСПЕКТОР ТА ДІАГНОСТИКА
+    // ============================================================
     async function saveTenant(actor, role, data) {
         if (role !== 'chair') fail('permission-denied', 'Додавати або змінювати ОСББ у платформі може лише супер-адмін (голова)');
         const v = core.validateTenantInput(data);
@@ -337,8 +1226,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
 
         let recomputed = null;
         const targetApt = colName === 'apartments' ? (aptId || docId) : null;
-        if (targetApt && data.recomputeBalance !== false && tenantId === 'uspih-25' && charges?.recompute) {
-            recomputed = await charges.recompute([targetApt]);
+        const { chargesSvc } = resolveServices(targetDb, actor);
+        if (targetApt && data.recomputeBalance !== false && chargesSvc?.recompute) {
+            recomputed = await chargesSvc.recompute([targetApt]);
         }
 
         return {
@@ -349,109 +1239,84 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         };
     }
 
-    async function ledgerAdjustment(actor, role, data) {
-        if (role !== 'chair') fail('permission-denied', 'Коригувальні записи в історію квартири вносить лише супер-адмін (голова)');
-        const tenantId = String(data.tenantId || 'uspih-25').trim();
-        const apt = cleanApt(data.apt) || String(data.apt || '').trim();
-        const kind = String(data.kind || 'payment').trim();
-        const period = String(data.period || '').trim();
-        const amountKop = Math.round(Number(data.amountKop || 0));
-        const reason = String(data.reason || '').replace(/\s+/g, ' ').trim();
-
-        if (!apt) fail('invalid-argument', 'Вкажіть номер квартири');
-        if (!['charge', 'payment', 'refund', 'opening'].includes(kind)) fail('invalid-argument', 'Непідтримуваний вид запису');
-        if (!/^\d{4}-\d{2}$/.test(period)) fail('invalid-argument', 'Вкажіть період у форматі РРРР-ММ');
-        if (!Number.isSafeInteger(amountKop) || amountKop === 0) fail('invalid-argument', 'Вкажіть ненульову суму в копійках');
-        if (reason.length < 5) fail('invalid-argument', 'Вкажіть детальну підставу коригування (щонайменше 5 символів)');
-
-        const targetDb = resolveTenantDb(tenantId);
-        const entryId = String(data.entryId || `manual-${period}-${Date.now().toString(36)}`).trim();
-        const ref = targetDb.doc(`apartments/${apt}/ledger/${entryId}`);
-
-        const entryData = {
-            at: Timestamp.fromDate(new Date()),
-            period,
-            kind,
-            amount: fromKop(amountKop),
-            amountKop,
-            note: `[Ручне коригування] ${reason}`,
-            source: 'manual_adjustment',
-            adjustedBy: actor,
-            updatedAt: FieldValue.serverTimestamp()
-        };
-
-        await ref.set(entryData, { merge: true });
-
-        await writeAudit(targetDb, actor, role, 'platform.ledgerAdjustment', `apartments/${apt}/ledger/${entryId}`,
-            `Коригувальний запис кв. ${apt} (${kind}, ${fromKop(amountKop)} грн за ${period}): ${reason}`,
-            { tenantId, apt, entryId, kind, period, amountKop, reason });
-
-        let recomputed = null;
-        if (tenantId === 'uspih-25' && charges?.recompute) {
-            recomputed = await charges.recompute([apt]);
-        }
-
-        return { ok: true, apt, entryId, recomputed };
-    }
-
-    async function runDiagnostics(actor, role, data) {
+    async function repairInvariants(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Запускати перерахунок балансів може лише супер-адмін (голова)');
         const tenantId = String(data.tenantId || 'uspih-25').trim();
         const targetDb = resolveTenantDb(tenantId);
+        const { chargesSvc } = resolveServices(targetDb, actor);
 
-        const [aptsSnap, ledgersSnap, bankTxSnap, paymentsSnap, periodsSnap] = await Promise.all([
-            targetDb.collection('apartments').get().catch(() => ({ docs: [] })),
-            targetDb.collectionGroup('ledger').get().catch(() => ({ docs: [] })),
-            targetDb.collection('bank_tx').get().catch(() => ({ docs: [] })),
-            targetDb.collection('payments').get().catch(() => ({ docs: [] })),
-            targetDb.collection('journal_periods').get().catch(() => ({ docs: [] }))
-        ]);
-
-        const apartments = (aptsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
-        const ledgersByApt = new Map();
-        for (const d of ledgersSnap.docs || []) {
-            const apt = d.ref?.parent?.parent?.id;
-            if (!apt) continue;
-            if (!ledgersByApt.has(apt)) ledgersByApt.set(apt, []);
-            ledgersByApt.get(apt).push({ id: d.id, ...serializeValue(d.data()) });
+        let result = { updated: 0 };
+        if (chargesSvc?.recompute) {
+            result = await chargesSvc.recompute();
         }
 
-        const bankTx = (bankTxSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
-        const payments = (paymentsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
-        const closedPeriods = (periodsSnap.docs || []).map(d => ({ id: d.id, ...serializeValue(d.data()) }));
+        await writeAudit(targetDb, actor, role, 'platform.repairInvariants', 'apartments',
+            `Глобальна звірка та перерахунок балансів квартир з історії ledger: оновлено ${result.updated || 0} кв.`,
+            { tenantId, ...result });
 
-        const result = core.evaluateAccountingInvariants({
-            apartments,
-            ledgersByApt,
-            bankTx,
-            payments,
-            closedPeriods
-        });
-
-        await writeAudit(targetDb, actor, role, 'platform.diagnostics', `diagnostics/${tenantId}`,
-            `Перевірка цілісності бази ${tenantId}: ${result.allOk ? 'усі перевірки пройдено' : `розбіжностей: ${result.failedCount}`}`,
-            { tenantId, passedCount: result.passedCount, failedCount: result.failedCount });
-
-        return { ok: true, tenantId, ...result };
+        return { ok: true, ...result };
     }
 
     const platformAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('platformAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
-        const actorUid = request.auth?.uid || '';
+        const actorUid = request.auth?.uid || actor;
         const data = request.data || {};
+
         switch (data.action) {
-            case 'overview': return overview(actor, role, data, actorUid);
-            case 'saveTenant': return saveTenant(actor, role, data);
-            case 'inspectCollection': return inspectCollection(actor, role, data);
-            case 'manualPatch': return manualPatch(actor, role, data);
-            case 'ledgerAdjustment': return ledgerAdjustment(actor, role, data);
-            case 'runDiagnostics': return runDiagnostics(actor, role, data);
-            default: fail('invalid-argument', 'Невідома дія платформи');
+            case 'overview':
+                return overview(actor, role, data, actorUid);
+            case 'bankContext':
+            case 'bankSimulatorContext':
+                return bankSimulatorContext(actor, role, data);
+            case 'bankSetupSimulator':
+                return bankSetupSimulator(actor, role, data);
+            case 'bankDisableSimulator':
+                return bankDisableSimulator(actor, role, data);
+            case 'bankTriggerSync':
+                return bankTriggerSync(actor, role, data);
+            case 'bankSignPayment':
+                return bankSignPayment(actor, role, data);
+            case 'bankSignAllPayments':
+                return bankSignAllPayments(actor, role, data);
+            case 'bankRejectPayment':
+                return bankRejectPayment(actor, role, data);
+            case 'bankSimulateTx':
+            case 'bankSimulateTransaction':
+                return bankSimulateTransaction(actor, role, data);
+            case 'bankVoidTx':
+            case 'bankVoidTransaction':
+                return bankVoidTransaction(actor, role, data);
+            case 'saveTenant':
+                return saveTenant(actor, role, data);
+            case 'inspectCollection':
+                return inspectCollection(actor, role, data);
+            case 'manualPatch':
+                return manualPatch(actor, role, data);
+            case 'repairInvariants':
+                return repairInvariants(actor, role, data);
+            default:
+                fail('invalid-argument', 'Невідома дія платформи управління');
         }
     }));
 
     return {
         platformAction,
-        actions: { overview, saveTenant, inspectCollection, manualPatch, ledgerAdjustment, runDiagnostics }
+        actions: {
+            overview,
+            bankSimulatorContext,
+            bankSetupSimulator,
+            bankDisableSimulator,
+            bankTriggerSync,
+            bankSignPayment,
+            bankSignAllPayments,
+            bankRejectPayment,
+            bankSimulateTransaction,
+            bankVoidTransaction,
+            saveTenant,
+            inspectCollection,
+            manualPatch,
+            repairInvariants
+        }
     };
 };

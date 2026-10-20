@@ -39,9 +39,19 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
 
     async function context() {
         const [settings, secret] = await Promise.all([db.doc('bank/settings').get(), db.doc('bank_secrets/privat').get()]);
-        const accounts = settings.exists ? settings.data().accounts || {} : {};
-        return { accounts, isDemo: settings.data()?.demo === true, connectionId: settings.data()?.connectionId || null,
-            ownAccounts: new Set(Object.keys(accounts).map(normIban)), token: secret.exists ? secret.data().token : null };
+        const data = settings.exists ? settings.data() : {};
+        const accounts = data.accounts || {};
+        const rawToken = secret.exists ? secret.data().token : null;
+        const isSimToken = typeof rawToken === 'string' && rawToken.startsWith('PRIVAT24_SIM_');
+        const isSimulated = Boolean(data.simulator === true || isSimToken);
+        return {
+            accounts,
+            isDemo: data.demo === true,
+            isSimulated,
+            connectionId: data.connectionId || null,
+            ownAccounts: new Set(Object.keys(accounts).map(normIban)),
+            token: isSimToken ? null : rawToken
+        };
     }
 
     const sameRecipient = (a, b) => ['name', 'iban', 'code'].every(k => String(a?.[k] || '') === String(b?.[k] || ''));
@@ -71,10 +81,10 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
             purpose: String(data.purpose || '').replace(/\s+/g, ' ').trim(),
             account: normIban(data.account)
         };
-        const { ownAccounts, token, isDemo, accounts, connectionId } = await context();
+        const { ownAccounts, token, isDemo, isSimulated, accounts, connectionId } = await context();
         const error = core.checkPayment(payment, ownAccounts);
         if (error) fail('invalid-argument', error);
-        if (!token && !isDemo) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
+        if (!token && !isDemo && !isSimulated) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
         if (!payable(accounts[payment.account])) fail('failed-precondition', 'Для платежу потрібен доступний гривневий рахунок ОСББ');
 
         // Повторне «Так» на ту саму пропозицію не створює другий платіж.
@@ -157,11 +167,13 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         });
         if (!reserved) return { id: ref.id };
         try {
-            const result = (!token && isDemo)
-                ? { bankRef: `DEMO-PAY-${docNumber}`, paymentRef: docNumber, status: 'sent' }
-                : await bankApi.createPayment(token, { ...payment, docNumber });
+            const result = (!token && isSimulated && !isDemo)
+                ? { bankRef: `P24PACK-${docNumber}`, paymentRef: `P24DOC-${docNumber}`, status: 'sent' }
+                : (!token && (isDemo || isSimulated))
+                    ? { bankRef: `DEMO-PAY-${docNumber}`, paymentRef: docNumber, status: 'sent' }
+                    : await bankApi.createPayment(token, { ...payment, docNumber });
             await ref.update({ status: 'sent', bankRef: result.bankRef || null, paymentRef: result.paymentRef || null,
-                bankStatus: result.status || null, ...(!token && isDemo ? { source: 'demo' } : {}), sentAt: FieldValue.serverTimestamp() });
+                bankStatus: result.status || null, ...(!token && isSimulated ? { source: 'simulator' } : !token && isDemo ? { source: 'demo' } : {}), sentAt: FieldValue.serverTimestamp() });
         } catch (e) {
             logger.error('Створення платежу в ПриватБанку', e);
             const status = e.bankRejected === true ? 'failed' : 'unknown';
@@ -266,8 +278,12 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         let deletedInBank = false;
         let error = null;
         if (p.status === 'sent' && p.paymentRef) {
-            const { token } = await context();
-            try { deletedInBank = token ? await bankApi.deletePayment(token, p.paymentRef) : false; }
+            const { token, isDemo, isSimulated } = await context();
+            try {
+                deletedInBank = (!token && (isDemo || isSimulated)) || p.source === 'simulator' || p.source === 'demo'
+                    ? true
+                    : (token ? await bankApi.deletePayment(token, p.paymentRef) : false);
+            }
             catch (e) { error = e; logger.warn('Видалення платежу в банку', e); }
         }
         const uncertain = p.status === 'sent' && error && error.bankRejected !== true;
@@ -344,10 +360,16 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
     async function checkSignStatus(actor, role, { id }) {
         const cleanId = String(id || '').replace(/[^\w-]/g, '');
         const ref = db.doc(`payments/${cleanId}`);
-        const [snap, { token }] = await Promise.all([ref.get(), context()]);
+        const [snap, { token, isDemo, isSimulated }] = await Promise.all([ref.get(), context()]);
         if (!snap.exists) fail('not-found', 'Платіж не знайдено');
-        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
+        if (!token && !isDemo && !isSimulated) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
         const p = snap.data();
+        if (!token && (isDemo || isSimulated || p.source === 'simulator' || p.source === 'demo')) {
+            const bankStatus = p.status === 'paid' ? 'проведений' : p.status === 'failed' ? 'відхилений банком' : (p.bankStatus || 'очікує підпису КЕП');
+            const signers = Array.isArray(p.signers) ? p.signers : [];
+            await ref.update({ bankStatus, signers, signCheckedAt: FieldValue.serverTimestamp() });
+            return { bankStatus, signers };
+        }
         const paymentRef = p.paymentRef || p.bankRef;
         if (!paymentRef) fail('failed-precondition', 'Платіж ще не має номера в Приват24');
         let info;

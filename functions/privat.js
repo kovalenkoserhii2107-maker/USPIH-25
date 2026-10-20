@@ -8,6 +8,14 @@
 //   • перевірка контрагентів і ФОП через ЄДР/УБКІ (/api/ubki/check);
 //   • вивантаження XML-звітів ДПС в «Електронну звітність» Приват24 (/api/proxy/eo/documents/create-b64);
 //   • електронний документообіг ЕДО (/api/proxy/edoc/*) та корпоративні картки (/api/corpcards/v2/*).
+//
+// Підтримує прозору маршрутизацію за ключем (токеном Автоклієнта):
+//   • Якщо введено тестовий ключ (SANDBOX_TOKEN = 'PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3'
+//     або будь-який ключ із префіксом PRIVAT24_TEST_KEY_ / PRIVAT24_SANDBOX_),
+//     усі запити call() та post() адресуються на ізольоване тестове середовище банку
+//     (_privat24_sandbox*), яке керується з вікна Супер-Адміна (platform.html#bank).
+//   • Якщо введено реальний токен ПриватБанку, усі запити йдуть напряму на
+//     промисловий сервер https://acp.privatbank.ua.
 // ===================================================
 const { toKop, normIban } = require('./bank-core');
 
@@ -23,6 +31,127 @@ const CORPCARDS_BASE = `${HOST}/api/corpcards/v2`;
 const PAGE = 100;
 const MAX_PAGES = 50;
 const TREASURY_MFO = '899998';
+
+// Тестовий ключ Автоклієнта Приват24 (для роботи з тестовим середовищем банку)
+const SANDBOX_TOKEN = 'PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3';
+
+const DEFAULT_SANDBOX_ACCOUNTS = [
+  {
+    iban: 'UA213052990000026007054321001',
+    purpose: 'current',
+    name: 'Поточний рахунок ОСББ (311 · ПриватБанк)',
+    currency: 'UAH',
+    balanceKop: 28540000
+  },
+  {
+    iban: 'UA893052990000026007233567891',
+    purpose: 'reserve',
+    name: 'Резервний / ремонтний фонд ОСББ (311 · ПриватБанк)',
+    currency: 'UAH',
+    balanceKop: 9400000
+  }
+];
+
+let sandboxRootDb = null;
+
+function setSandboxDb(dbInstance) {
+  sandboxRootDb = dbInstance;
+}
+
+function isSandboxToken(token) {
+  const s = String(token || '').trim();
+  return s === SANDBOX_TOKEN || /^PRIVAT24_(?:TEST_KEY|SANDBOX)_[A-Z0-9_~-]{4,90}$/i.test(s);
+}
+
+function tokenForTenant(tenantId) {
+  const clean = String(tenantId || 'uspih-25').trim();
+  if (!clean || clean === 'uspih-25' || clean === 'default') return SANDBOX_TOKEN;
+  if (clean.startsWith('sandbox~')) {
+    const uid = clean.slice('sandbox~'.length).replace(/[^A-Za-z0-9_-]/g, '');
+    return `PRIVAT24_TEST_KEY_SANDBOX_${uid}_V3`;
+  }
+  const slug = clean.toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 32);
+  return `PRIVAT24_TEST_KEY_TENANT_${slug}_V3`;
+}
+
+function getSandboxDb(token) {
+  const root = sandboxRootDb || require('firebase-admin/firestore').getFirestore();
+  const s = String(token || '').trim();
+  const mSandbox = s.match(/^PRIVAT24_TEST_KEY_SANDBOX_([A-Za-z0-9_-]+)_V3$/);
+  if (mSandbox) {
+    const scopedDatabase = require('./accounting-test-db');
+    return scopedDatabase(root, mSandbox[1]);
+  }
+  const mTenant = s.match(/^PRIVAT24_TEST_KEY_TENANT_([A-Z0-9_]+)_V3$/i);
+  if (mTenant) {
+    const slug = mTenant[1].toLowerCase().replace(/_/g, '-');
+    if (slug && slug !== 'uspih-25' && slug !== 'default') {
+      const scopedDatabase = require('./accounting-test-db');
+      return scopedDatabase(root, `tenant_${slug}`);
+    }
+  }
+  return root;
+}
+
+async function ensureSandboxState(sDb) {
+  const stateRef = sDb.doc('_privat24_sandbox/state');
+  const snap = await stateRef.get();
+  if (snap.exists && snap.data()?.accounts && Object.keys(snap.data().accounts).length > 0) {
+    return { ref: stateRef, state: snap.data() };
+  }
+
+  // Підхоплюємо існуючі IBAN ОСББ, якщо вони вже були налаштовані раніше
+  const [bankSnap, finSnap] = await Promise.all([
+    sDb.doc('bank/settings').get().catch(() => ({ exists: false })),
+    sDb.doc('osbb_settings/finance').get().catch(() => ({ exists: false }))
+  ]);
+  const existingAccs = bankSnap.exists ? (bankSnap.data()?.accounts || {}) : {};
+  const finIban = finSnap.exists ? normIban(finSnap.data()?.iban || '') : '';
+
+  const accounts = {};
+  for (const [iban, a] of Object.entries(existingAccs)) {
+    const clean = normIban(iban);
+    if (/^UA\d{27}$/.test(clean)) {
+      const kop = Number.isInteger(a.balanceKop) ? a.balanceKop : DEFAULT_SANDBOX_ACCOUNTS[0].balanceKop;
+      accounts[clean] = {
+        iban: clean,
+        purpose: a.purpose || 'current',
+        name: a.name || 'Поточний рахунок ОСББ (311 · ПриватБанк)',
+        currency: a.currency || 'UAH',
+        balanceInKop: kop,
+        balanceKop: kop,
+        turnoverDebtKop: 0,
+        turnoverCredKop: 0,
+        active: a.active !== false
+      };
+    }
+  }
+
+  if (Object.keys(accounts).length === 0) {
+    const primaryIban = /^UA\d{27}$/.test(finIban) ? finIban : DEFAULT_SANDBOX_ACCOUNTS[0].iban;
+    accounts[primaryIban] = {
+      ...DEFAULT_SANDBOX_ACCOUNTS[0],
+      iban: primaryIban,
+      balanceInKop: DEFAULT_SANDBOX_ACCOUNTS[0].balanceKop
+    };
+    const reserveIban = DEFAULT_SANDBOX_ACCOUNTS[1].iban;
+    if (reserveIban !== primaryIban) {
+      accounts[reserveIban] = {
+        ...DEFAULT_SANDBOX_ACCOUNTS[1],
+        balanceInKop: DEFAULT_SANDBOX_ACCOUNTS[1].balanceKop
+      };
+    }
+  }
+
+  const initial = {
+    phase: 'WRK',
+    work_balance: 'N',
+    accounts,
+    updatedAt: new Date().toISOString()
+  };
+  await stateRef.set(initial, { merge: true });
+  return { ref: stateRef, state: initial };
+}
 
 /** «09-10-2026» — формат дат у запитах Автоклієнта. */
 function apiDate(date) {
@@ -105,7 +234,317 @@ function normalizeBalance(raw) {
   };
 }
 
+// ===================================================
+// ОБРОБНИК ЗАПИТІВ ТЕСТОВОГО СЕРЕДОВИЩА БАНКУ (SANDBOX)
+// ===================================================
+async function sandboxCall(token, path, params = {}, baseUrl = BASE) {
+  const sDb = getSandboxDb(token);
+  const { state } = await ensureSandboxState(sDb);
+
+  if (baseUrl === BASE && path === '/settings') {
+    const now = new Date();
+    return {
+      status: 'SUCCESS',
+      settings: {
+        phase: state.phase || 'WRK',
+        work_balance: state.work_balance || 'N',
+        server_date_time: `${dotDate(now)} ${now.toTimeString().slice(0, 8)}`,
+        today: dotDate(now),
+        lastday: dotDate(new Date(now.getTime() - 86400000))
+      }
+    };
+  }
+
+  if (baseUrl === BASE && path === '/balance') {
+    const balances = Object.values(state.accounts || {})
+      .filter(a => a && a.active !== false && normIban(a.iban))
+      .map(a => ({
+        acc: normIban(a.iban),
+        currency: a.currency || 'UAH',
+        balanceIn: (Number(a.balanceInKop ?? a.balanceKop ?? 0) / 100).toFixed(2),
+        balanceOut: (Number(a.balanceKop ?? 0) / 100).toFixed(2),
+        turnoverDebt: (Number(a.turnoverDebtKop ?? 0) / 100).toFixed(2),
+        turnoverCred: (Number(a.turnoverCredKop ?? 0) / 100).toFixed(2),
+        nameACC: String(a.name || 'Поточний рахунок ОСББ (311 · ПриватБанк)')
+      }));
+    return {
+      status: 'SUCCESS',
+      exist_next_page: false,
+      balances
+    };
+  }
+
+  if (baseUrl === BASE && (path === '/transactions' || path === '/transactions/interim' || path === '/transactions/final')) {
+    const snap = await sDb.collection('_privat24_sandbox_tx').get();
+    const targetAcc = params.acc ? normIban(params.acc) : '';
+    const rows = snap.docs
+      .map(d => d.data())
+      .filter(raw => {
+        if (!raw || !raw.REF) return false;
+        if (targetAcc && normIban(raw.AUT_MY_ACC) !== targetAcc) return false;
+        return true;
+      })
+      .sort((a, b) => String(a.createdAtIso || a.DATE_TIME_DAT_OD_TIM_P || '').localeCompare(String(b.createdAtIso || b.DATE_TIME_DAT_OD_TIM_P || '')));
+    return {
+      status: 'SUCCESS',
+      exist_next_page: false,
+      transactions: rows
+    };
+  }
+
+  if (baseUrl === PAY_BASE && path === '/get') {
+    const ref = String(params.ref || '').trim();
+    let docSnap = await sDb.doc(`_privat24_sandbox_payments/${ref}`).get();
+    if (!docSnap.exists) {
+      const byPack = await sDb.collection('_privat24_sandbox_payments').where('bankRef', '==', ref).limit(1).get();
+      if (!byPack.empty) docSnap = byPack.docs[0];
+    }
+    if (!docSnap.exists) {
+      const byPayRef = await sDb.collection('_privat24_sandbox_payments').where('paymentRef', '==', ref).limit(1).get();
+      if (!byPayRef.empty) docSnap = byPayRef.docs[0];
+    }
+    if (!docSnap.exists) {
+      throw Object.assign(new Error('Платіж у Приват24 не знайдено (404)'), { bankRejected: true });
+    }
+    const d = docSnap.data();
+    return {
+      status: 'SUCCESS',
+      payment_ref: d.paymentRef,
+      payment_pack_ref: d.bankRef,
+      payment_status: d.payment_status || 'new',
+      signers: d.signers || [],
+      payment_data: {
+        ...(d.body || {}),
+        payment_ref: d.paymentRef,
+        payment_pack_ref: d.bankRef,
+        payment_status: d.payment_status || 'new',
+        signers: d.signers || []
+      }
+    };
+  }
+
+  return { status: 'SUCCESS' };
+}
+
+function buildSandboxReceiptPdf(transactions) {
+  const lines = transactions.map((t, idx) =>
+    `#${idx + 1} IBAN: ${t.account} | REF: ${t.reference}/${t.refn}`
+  ).join(' ; ');
+  const streamText = `BT /F1 11 Tf 40 750 Td (PrivatBank Official Payment Instruction Receipt - Sandbox) Tj 0 -20 Td (${lines.replace(/[()\\]/g, '')}) Tj ET`;
+  const pdf = [
+    '%PDF-1.4',
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
+    `4 0 obj << /Length ${streamText.length} >> stream\n${streamText}\nendstream endobj`,
+    '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+    'xref\n0 6\n0000000000 65535 f \n',
+    'trailer << /Size 6 /Root 1 0 R >>\nstartxref\n0\n%%EOF'
+  ].join('\n');
+  return Buffer.from(pdf, 'utf8');
+}
+
+async function sandboxPost(token, path, body, options = {}) {
+  const sDb = getSandboxDb(token);
+  await ensureSandboxState(sDb);
+  const { baseUrl = PAY_BASE, rawResponse = false } = options;
+
+  // 1. Створення платіжної інструкції (POST /api/proxy/payment/create або /create_pred)
+  if (baseUrl === PAY_BASE && (path === '/create' || path === '/create_pred')) {
+    const payload = typeof body === 'string' ? JSON.parse(body) : (body || {});
+    const rawDocNum = String(payload.document_number || Date.now().toString().slice(-8)).trim();
+    const safeDocNum = rawDocNum.replace(/[^\w-]/g, '') || Date.now().toString().slice(-8);
+    const paymentRef = `P24DOC-${safeDocNum}`;
+    const bankRef = `P24PACK-${safeDocNum}`;
+    const nowIso = new Date().toISOString();
+
+    await sDb.doc(`_privat24_sandbox_payments/${paymentRef}`).set({
+      id: paymentRef,
+      paymentRef,
+      bankRef,
+      docNumber: rawDocNum,
+      endpoint: `${PAY_BASE}${path}`,
+      status: 'wait_sign',
+      payment_status: 'new',
+      body: payload,
+      account: normIban(payload.payer_account),
+      recipient: {
+        name: String(payload.payment_naming || ''),
+        iban: normIban(payload.recipient_account || ''),
+        card: String(payload.recipient_card || ''),
+        code: String(payload.recipient_nceo || '')
+      },
+      amountKop: toKop(payload.payment_amount),
+      currency: String(payload.payment_ccy || 'UAH'),
+      purpose: String(payload.payment_destination || ''),
+      structCode: payload.struct_code || null,
+      signers: [],
+      createdAt: nowIso,
+      updatedAt: nowIso
+    }, { merge: true });
+
+    return {
+      status: 'SUCCESS',
+      payment_ref: paymentRef,
+      payment_pack_ref: bankRef,
+      payment_data: {
+        payment_ref: paymentRef,
+        payment_pack_ref: bankRef,
+        payment_status: 'new'
+      }
+    };
+  }
+
+  // 2. Додавання КЕП-підпису через API (POST /api/proxy/payment/add-sign?ref=...)
+  if (baseUrl === PAY_BASE && path.startsWith('/add-sign')) {
+    const u = new URL(`https://sandbox.local${path}`);
+    const ref = String(u.searchParams.get('ref') || '').trim();
+    const docRef = sDb.doc(`_privat24_sandbox_payments/${ref}`);
+    const snap = await docRef.get();
+    const nowIso = new Date().toISOString();
+    const signerEntry = {
+      level: '1',
+      fio: 'Голова правління ОСББ (КЕП)',
+      state: 'Підписано КЕП',
+      date: nowIso
+    };
+    if (snap.exists) {
+      const prevSigns = Array.isArray(snap.data().signers) ? snap.data().signers : [];
+      await docRef.update({
+        signers: [...prevSigns, signerEntry],
+        updatedAt: nowIso
+      });
+    }
+    return { status: 'SUCCESS', payment_ref: ref };
+  }
+
+  // 3. Видалення непідписаного платежу (POST /api/proxy/payment/delete?ref=...)
+  if (baseUrl === PAY_BASE && path.startsWith('/delete')) {
+    const u = new URL(`https://sandbox.local${path}`);
+    const ref = String(u.searchParams.get('ref') || '').trim();
+    let docSnap = await sDb.doc(`_privat24_sandbox_payments/${ref}`).get();
+    if (!docSnap.exists) {
+      const byPack = await sDb.collection('_privat24_sandbox_payments').where('bankRef', '==', ref).limit(1).get();
+      if (!byPack.empty) docSnap = byPack.docs[0];
+    }
+    if (docSnap.exists) {
+      const d = docSnap.data();
+      if (d.status === 'signed' || d.payment_status === 'signed' || d.payment_status === 'r') {
+        throw Object.assign(new Error('already signed: платіж вже підписано КЕП та проведено банком'), { bankRejected: true });
+      }
+      await docSnap.ref.update({
+        status: 'deleted',
+        payment_status: 'deleted',
+        updatedAt: new Date().toISOString()
+      });
+    }
+    return { status: 'SUCCESS' };
+  }
+
+  // 4. Друк PDF-квитанцій (POST /api/paysheets/print_receipt)
+  if (path === RECEIPT_URL || rawResponse) {
+    const payload = typeof body === 'string' ? JSON.parse(body) : (body || {});
+    return buildSandboxReceiptPdf(payload.transactions || []);
+  }
+
+  // 5. Перевірка контрагента в ЄДР/УБКІ (POST /api/ubki/check)
+  if (path === UBKI_URL) {
+    const payload = typeof body === 'string' ? JSON.parse(body) : (body || {});
+    const code = String(payload.edrpou || '').trim();
+    let matchedSup = null;
+    try {
+      const supSnap = await sDb.collection('suppliers').where('code', '==', code).limit(1).get();
+      if (!supSnap.empty) matchedSup = supSnap.docs[0].data();
+    } catch { /* ignore */ }
+
+    const isFop = code.length === 10;
+    const defaultName = matchedSup?.name || (isFop ? `ФОП Ковальчук Олександр Іванович (${code})` : `ТОВ «Сервіс-Південь Одеса» (${code})`);
+    const resp = {
+      dossier: {
+        found: '1',
+        okpo: code,
+        curstate: '1',
+        curstatetxt: 'зареєстровано',
+        record: [{
+          names: {
+            display: defaultName,
+            shortname: defaultName,
+            name: defaultName
+          },
+          address: {
+            address: '65000, Одеська обл., м. Одеса, вул. Інглезі, буд. 3'
+          },
+          state: { state: '1', statetext: 'зареєстровано' },
+          primaryactivitykind: {
+            code: isFop ? '43.22' : '81.10',
+            name: isFop ? 'Монтаж водопровідних мереж, систем опалення та кондиціонування' : 'Комплексне обслуговування об’єктів'
+          },
+          activitykinds: [
+            { code: '81.10', name: 'Комплексне обслуговування об’єктів', isprimary: isFop ? '0' : '1' },
+            { code: '43.21', name: 'Електромонтажні роботи', isprimary: '0' },
+            { code: '43.22', name: 'Монтаж водопровідних мереж, систем опалення та кондиціонування', isprimary: isFop ? '1' : '0' },
+            { code: '81.29', name: 'Інші види діяльності із прибирання', isprimary: '0' }
+          ]
+        }]
+      },
+      warnings: {
+        taxDebts: { total: 0 },
+        wageDebt: { debt: 0 },
+        penalties: { value: 0 },
+        bancruptcy: { value: 0 },
+        singletaxRisk: { valueis: false },
+        aggressor: { isAggressor: '0' },
+        sanctions: { value: false }
+      }
+    };
+
+    await sDb.doc(`_privat24_sandbox_edr/${code || Date.now()}`).set({
+      code,
+      name: defaultName,
+      isFop,
+      at: new Date().toISOString()
+    }).catch(() => {});
+
+    return resp;
+  }
+
+  // 6. Вивантаження XML-звіту ДПС в «Електронну звітність» Приват24 (POST /api/proxy/eo/documents/create-b64)
+  if (baseUrl === EO_BASE && path === '/documents/create-b64') {
+    const params = new URLSearchParams(typeof body === 'string' ? body : '');
+    const uploadedFileName = params.get('uploadedFileName') || 'report.xml';
+    const okpo = params.get('okpo') || '';
+    const duplicate = params.get('duplicate') || 'remove';
+    const b64 = params.get('uploadedFileB64') || '';
+    const buf = Buffer.from(b64, 'base64');
+    const reportId = `P24EO-${Date.now().toString(36).toUpperCase()}`;
+
+    await sDb.doc(`_privat24_sandbox_reports/${reportId}`).set({
+      id: reportId,
+      uploadedFileName,
+      okpo,
+      duplicate,
+      sizeBytes: buf.length,
+      preview: buf.toString('utf8').slice(0, 400),
+      status: 'ACCEPTED',
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      status: 'SUCCESS',
+      id: reportId,
+      fileName: uploadedFileName,
+      okpo,
+      message: 'Звіт прийнято в «Електронну звітність» Приват24 (тестове середовище)'
+    };
+  }
+
+  return { status: 'SUCCESS', list: [], statements: [], cards: [] };
+}
+
 async function call(token, path, params, retry = true, baseUrl = BASE) {
+  if (isSandboxToken(token)) {
+    return sandboxCall(token, path, params, baseUrl);
+  }
   const url = new URL(`${baseUrl}${path}`);
   Object.entries(params || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v); });
   const res = await fetch(url, {
@@ -204,6 +643,9 @@ async function fetchFinalTransactions(token, { iban } = {}) {
 // ---------------------------------------------------
 
 async function post(token, path, body, options = {}) {
+  if (isSandboxToken(token)) {
+    return sandboxPost(token, path, body, options);
+  }
   const {
     baseUrl = PAY_BASE,
     contentType = 'application/json;charset=utf8',
@@ -580,6 +1022,12 @@ async function fetchCorpCardStatements(token, { id, code, type = 'ACCKEY', dateS
 }
 
 module.exports = {
+  SANDBOX_TOKEN,
+  isSandboxToken,
+  tokenForTenant,
+  setSandboxDb,
+  getSandboxDb,
+  ensureSandboxState,
   apiDate,
   dotDate,
   parseBankDate,

@@ -18,6 +18,7 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 
 initializeApp();
 const db = getFirestore();
+require('./privat').setSandboxDb(db);
 const { computeQuorum, meetingSummary, chairVoteError, QUORUM_PCT } = require('./meeting-core');
 
 // Ключ лежить у Secret Manager, а не в коді: інакше він потрапив би
@@ -482,5 +483,5 @@ exports.databaseReset = databaseReset.databaseReset;
 // Private training books; external bank and notifications are closed drivers.
 exports.accountingTestAction = require('./accounting-test')({ db, FieldValue, Timestamp, requireAdmin }).accountingTestAction;
 
-// Super-Admin Platform Control Plane (Multi-OSBB, Database Inspector, Diagnostics & Audited Manual Patch).
-exports.platformAction = require('./platform')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges }).platformAction;
+// Super-Admin Platform Control Plane (Multi-OSBB, Privat24 Bank Simulator, Database Inspector, Diagnostics & Audited Manual Patch).
+exports.platformAction = require('./platform')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, payments, expenses }).platformAction;

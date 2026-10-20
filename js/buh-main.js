@@ -166,6 +166,7 @@ function renderAccount(apartment) {
         <nav class="mn-group" aria-label="Налаштування й переходи">
             ${row('data-view="settings"', 'settings', 'Налаштування', 'реквізити, банк, облік, довідники, стартові дані')}
             ${row('href="platform.html"', 'finance', 'Платформа ОСББ (Super-Admin)', 'усі ОСББ і бази, інспектор БД, тести, активність')}
+            ${row('href="platform.html#bank"', 'finance', 'Симулятор Приват24 API', 'підпис КЕП платежів, вхідні операції, рахунки')}
             ${row('href="accounting-test.html"', 'check', 'Тестова бухгалтерія', 'окремий будинок, імітований банк, звірки')}
             ${links.join('')}
         </nav>`;

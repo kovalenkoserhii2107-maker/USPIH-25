@@ -789,5 +789,5 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     );
 
     // Для інтеграційних тестів на емуляторі (tests/rules/bank-server.test.mjs).
-    return { bankAction, syncBank, storeTransactions, loadContext, actions: { assign, classifyTx, matchPayment, unassign, refund, refundResident, receiptPdf } };
+    return { bankAction, syncBank, sync, storeTransactions, loadContext, actions: { assign, classifyTx, matchPayment, unassign, refund, refundResident, receiptPdf, saveToken, removeToken, setAccount, sync } };
 };

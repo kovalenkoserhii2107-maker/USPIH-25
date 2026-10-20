@@ -6,10 +6,15 @@
 // (Multi-Tenant SaaS Architecture):
 //   1. Реєстр ОСББ (Tenants) та ізоляція баз даних (Scoped Prefix /
 //      Named Firestore DB / Dedicated Project).
-//   2. Тестовий полігон і симуляція банківських операцій, нарахувань
+//   2. Симулятор Приват24 Бізнес API «Автоклієнт» v3.0.0:
+//      - черга вихідних платежів ОСББ на підпис КЕП та генерація
+//        проведених банківських транзакцій (TRANTYPE: 'D', FL_REAL: 'r', PR_PR: 'r', DLR);
+//      - генератор вхідних платежів (TRANTYPE: 'C') за шаблонами та довільними
+//        реквізитами у точному форматі /api/statements/transactions.
+//   3. Тестовий полігон і симуляція банківських операцій, нарахувань
 //      та податкових звітів (J0500111, Д1, 4ДФ, Д5, Звіт НПО).
-//   3. Статистика користувачів, ролей та активності (Audit & Telemetry).
-//   4. Інспектор колекцій бази даних та безпечні ручні коригування
+//   4. Статистика користувачів, ролей та активності (Audit & Telemetry).
+//   5. Інспектор колекцій бази даних та безпечні ручні коригування
 //      (Break-Glass Manual Overrides з обовʼязковою причиною та diff у audit_log).
 // ============================================================
 
@@ -205,6 +210,157 @@ const SIMULATION_SCENARIOS = [
     }
 ];
 
+// ============================================================
+// ШАБЛОНИ ОПЕРАЦІЙ ПРИВАТ24 БІЗНЕС API v3.0.0
+// ============================================================
+const BANK_SIM_TEMPLATES = [
+    {
+        id: 'resident_exact',
+        group: 'in_resident',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Внесок мешканця (точний збіг за квартирою та о/р)',
+        subtitle: 'Автоматично розноситься в історію квартири (Дт 311 Кт 377) та перераховує баланс',
+        badge: 'Авто-рознесення',
+        badgeCls: 'is-done',
+        defaultAmountGrn: '850,00',
+        needsApartment: true,
+        counterpartyName: 'Мешканець будинку',
+        counterpartyCode: '3124567890',
+        counterpartyIban: 'UA213052990000026201234567891',
+        purposeTemplate: 'Внески на утримання будинку, кв. {apt}, особовий рахунок {account}, {owner}'
+    },
+    {
+        id: 'resident_unrecognized',
+        group: 'in_resident',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Невизначений платіж без номера квартири (у «Рішення»)',
+        subtitle: 'Потрапляє в чергу «Розібрати» (status: review) — для перевірки ручного привʼязування та запамʼятовування платника',
+        badge: 'У «Рішення»',
+        badgeCls: 'is-work',
+        defaultAmountGrn: '640,00',
+        needsApartment: false,
+        counterpartyName: 'Бондаренко Марія Степанівна',
+        counterpartyCode: '2984512369',
+        counterpartyIban: 'UA213052990000026209876543210',
+        purposeTemplate: 'Сплата за комунальні послуги та утримання будинку від родичів'
+    },
+    {
+        id: 'resident_split',
+        group: 'in_resident',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Спільний платіж за дві квартири одним переказом',
+        subtitle: 'Потрапляє в «Рішення» з підказками обох квартир — для тестування поділу суми між кількома приміщеннями',
+        badge: 'Поділ суми',
+        badgeCls: 'is-work',
+        defaultAmountGrn: '1700,00',
+        needsApartment: true,
+        counterpartyName: 'Шевченко Олександр Іванович',
+        counterpartyCode: '3011223344',
+        counterpartyIban: 'UA213052990000026205554443332',
+        purposeTemplate: 'Сплата внесків на утримання будинку за кв. {apt} та кв. {apt2}'
+    },
+    {
+        id: 'income_equipment',
+        group: 'in_other',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Сервітут / розміщення обладнання інтернет-провайдера',
+        subtitle: 'Автоматично класифікується як дохід від розміщення обладнання (equipment, Дт 311 Кт 48/719)',
+        badge: 'Дохід ОСББ',
+        badgeCls: 'is-done',
+        defaultAmountGrn: '2500,00',
+        needsApartment: false,
+        counterpartyName: 'ТОВ «Одеса-Телеком Мережа»',
+        counterpartyCode: '38451920',
+        counterpartyIban: 'UA443052990000026005556667771',
+        purposeTemplate: 'Оплата за договором сервітуту (доступ та розміщення телекомунікаційного обладнання) за жовтень 2026 р., без ПДВ'
+    },
+    {
+        id: 'income_interest',
+        group: 'in_other',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Відсотки банку на залишок коштів / депозит',
+        subtitle: 'Автоматично класифікується як процентний дохід (interest, Дт 311 Кт 73/48)',
+        badge: 'Відсотки банку',
+        badgeCls: 'is-done',
+        defaultAmountGrn: '1240,50',
+        needsApartment: false,
+        counterpartyName: 'АТ КБ «ПРИВАТБАНК»',
+        counterpartyCode: '14360570',
+        counterpartyIban: 'UA173052990000026000000000001',
+        purposeTemplate: 'Нарахування процентів за залишком коштів на рахунку згідно з умовами договору банківського обслуговування'
+    },
+    {
+        id: 'income_grant',
+        group: 'in_other',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Міська програма співфінансування / цільовий грант',
+        subtitle: 'Надходження цільового фінансування з бюджету або фонду (grant, Дт 311 Кт 48)',
+        badge: 'Цільовий грант',
+        badgeCls: 'is-done',
+        defaultAmountGrn: '45000,00',
+        needsApartment: false,
+        counterpartyName: 'Департамент міського господарства ОМР',
+        counterpartyCode: '03351542',
+        counterpartyIban: 'UA778201720344200002000012345',
+        purposeTemplate: 'Цільове співфінансування капітального ремонту інженерних мереж за програмою підтримки ОСББ, без ПДВ'
+    },
+    {
+        id: 'supplier_refund',
+        group: 'in_other',
+        direction: 'in',
+        trantype: 'C',
+        title: 'Повернення коштів від постачальника (переплата / сторно)',
+        subtitle: 'Визначається як можливе повернення списаного (possible-refund) для привʼязки до вихідного платежу',
+        badge: 'Повернення',
+        badgeCls: 'is-work',
+        defaultAmountGrn: '1500,00',
+        needsApartment: false,
+        counterpartyName: 'ТОВ «Одесаліфт-Сервіс»',
+        counterpartyCode: '34512890',
+        counterpartyIban: 'UA553052990000026007778889991',
+        purposeTemplate: 'Повернення надміру перерахованих коштів згідно з актом звірки взаєморозрахунків, без ПДВ'
+    },
+    {
+        id: 'expense_bank_fee',
+        group: 'out_other',
+        direction: 'out',
+        trantype: 'D',
+        title: 'Комісія ПриватБанку за розрахунково-касове обслуговування (РКО)',
+        subtitle: 'Автоматично проводиться як банківська комісія (bank_fee, Дт 92 Кт 311)',
+        badge: 'Витрата (РКО)',
+        badgeCls: 'is-soft',
+        defaultAmountGrn: '150,00',
+        needsApartment: false,
+        counterpartyName: 'АТ КБ «ПРИВАТБАНК»',
+        counterpartyCode: '14360570',
+        counterpartyIban: 'UA173052990000026000000000001',
+        purposeTemplate: 'Комісія за розрахунково-касове обслуговування рахунку згідно з тарифами банку'
+    }
+];
+
+const DEFAULT_SIM_ACCOUNTS = [
+    {
+        iban: 'UA213052990000026007054321001',
+        purpose: 'current',
+        name: 'Поточний рахунок ОСББ (311 · ПриватБанк)',
+        currency: 'UAH',
+        defaultBalanceKop: 28540000 // 285 400,00 грн
+    },
+    {
+        iban: 'UA663052990000026007054321002',
+        purpose: 'reserve',
+        name: 'Резервний та ремонтний фонд (311 · ПриватБанк)',
+        currency: 'UAH',
+        defaultBalanceKop: 15000000 // 150 000,00 грн
+    }
+];
+
 const IMMUTABLE_FIELDS = new Set(['id', '_id', '_tenantId', '_sandboxUid', 'createdAt', 'createdBy']);
 
 const CYR_MAP = {
@@ -216,6 +372,195 @@ const CYR_MAP = {
 };
 
 const fmtKop = kop => (Number(kop || 0) / 100).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Форматує дату та час у точний формат Приват24 Автоклієнт v3.0.0:
+ * DAT_OD: «20.10.2026», TIM_P: «14:35», DATE_TIME_DAT_OD_TIM_P: «20.10.2026 14:35:00».
+ */
+function formatPrivatDateTime(dateInput, timeInput) {
+    let yyyy = '2026', mm = '10', dd = '20', hh = '14', mi = '30', ss = '00';
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+        [yyyy, mm, dd] = dateInput.trim().split('-');
+    } else if (typeof dateInput === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(dateInput.trim())) {
+        [dd, mm, yyyy] = dateInput.trim().split('.');
+    } else {
+        const d = dateInput instanceof Date && !Number.isNaN(dateInput.getTime()) ? dateInput : new Date();
+        const parts = new Intl.DateTimeFormat('uk-UA', {
+            timeZone: 'Europe/Kyiv',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        }).formatToParts(d);
+        const get = t => parts.find(p => p.type === t)?.value || '00';
+        yyyy = get('year');
+        mm = get('month');
+        dd = get('day');
+        hh = get('hour');
+        mi = get('minute');
+        ss = get('second');
+    }
+
+    if (typeof timeInput === 'string' && /^\d{1,2}:\d{2}(?::\d{2})?$/.test(timeInput.trim())) {
+        const tParts = timeInput.trim().split(':');
+        hh = String(tParts[0]).padStart(2, '0');
+        mi = String(tParts[1]).padStart(2, '0');
+        ss = String(tParts[2] || '00').padStart(2, '0');
+    }
+
+    const datOd = `${dd}.${mm}.${yyyy}`;
+    const timP = `${hh}:${mi}`;
+    return {
+        DAT_OD: datOd,
+        DAT_KL: datOd,
+        TIM_P: timP,
+        DATE_TIME_DAT_OD_TIM_P: `${datOd} ${timP}:${ss}`,
+        isoDate: `${yyyy}-${mm}-${dd}`
+    };
+}
+
+/**
+ * Будує точний JSON-обʼєкт операції виписки у форматі
+ * GET https://acp.privatbank.ua/api/statements/transactions (API Автоклієнт v3.0.0).
+ */
+function buildPrivatRawTransaction(input = {}) {
+    const direction = input.trantype === 'D' || input.direction === 'out' ? 'out' : 'in';
+    const trantype = direction === 'out' ? 'D' : 'C';
+    const amountKop = Math.abs(Math.round(Number(input.amountKop || 0)));
+    const sumStr = (amountKop / 100).toFixed(2);
+    const myAcc = String(input.account || DEFAULT_SIM_ACCOUNTS[0].iban).replace(/\s+/g, '').toUpperCase();
+    const cntrAcc = String(input.counterpartyIban || input.counterpartyAccount || 'UA213052990000026201234567891').replace(/\s+/g, '').toUpperCase();
+    const cntrCrf = String(input.counterpartyCode || '00000000').trim();
+    const cntrNam = String(input.counterpartyName || 'Контрагент').trim();
+    const purpose = String(input.purpose || '').replace(/\s+/g, ' ').trim();
+    const dt = formatPrivatDateTime(input.date, input.time);
+    const suffix = String(input.ref || `P24SIM${Date.now().toString(36).toUpperCase()}`);
+    const refn = String(input.refn || '1');
+    const flReal = input.flReal || 'r';
+    const prPr = input.prPr || 'r';
+    const cntrMfo = /^UA\d{8}/.test(cntrAcc) ? cntrAcc.slice(4, 10) : '305299';
+    const myMfo = /^UA\d{8}/.test(myAcc) ? myAcc.slice(4, 10) : '305299';
+
+    const raw = {
+        REF: suffix,
+        REFN: refn,
+        ID: `${suffix}_${refn}`,
+        TRANTYPE: trantype,
+        FL_REAL: flReal,
+        PR_PR: prPr,
+        AUT_MY_MFO: myMfo,
+        AUT_MY_ACC: myAcc,
+        AUT_MY_NAM: String(input.myName || 'ОСББ «Успіх-25»'),
+        AUT_MY_CRF: String(input.myEdrpou || '40562894'),
+        AUT_CNTR_MFO: cntrMfo,
+        AUT_CNTR_ACC: cntrAcc,
+        AUT_CNTR_CRF: cntrCrf,
+        AUT_CNTR_NAM: cntrNam,
+        SUM: sumStr,
+        SUM_E: sumStr,
+        CCY: 'UAH',
+        OSND: purpose,
+        DAT_OD: dt.DAT_OD,
+        DAT_KL: dt.DAT_KL,
+        TIM_P: dt.TIM_P,
+        DATE_TIME_DAT_OD_TIM_P: dt.DATE_TIME_DAT_OD_TIM_P,
+        NUM_DOC: String(input.docNumber || suffix.slice(-8)),
+        DLR: input.dlr ? String(input.dlr) : ''
+    };
+
+    if (input.ultmtName) {
+        if (direction === 'in') raw.PAYER_ULTMT_NAME = String(input.ultmtName);
+        else raw.RECIPIENT_ULTMT_NAME = String(input.ultmtName);
+    }
+    if (input.ultmtCode) {
+        if (direction === 'in') raw.PAYER_ULTMT_NCEO = String(input.ultmtCode);
+        else raw.RECIPIENT_ULTMT_NCEO = String(input.ultmtCode);
+    }
+
+    return raw;
+}
+
+/**
+ * Формує повний опис життєвого циклу вихідного платежу ОСББ за протоколом
+ * Приват24 Автоклієнт v3.0.0:
+ *   1. Запит створення чернетки: POST /api/proxy/payment/create
+ *   2. КЕП-підпис голови: POST /api/proxy/payment/add-sign + GET /api/proxy/payment/get
+ *   3. Проведення у виписці: GET /api/statements/transactions (TRANTYPE: 'D', DLR = bankRef)
+ */
+function buildPrivatPaymentApiLifecycle(payment = {}, options = {}) {
+    const recipient = payment.recipient || {};
+    const recipientIban = String(recipient.iban || '').replace(/\s+/g, '').toUpperCase();
+    const recipientMfo = /^UA\d{8}/.test(recipientIban) ? recipientIban.slice(4, 10) : '305299';
+    const isTreasury = recipientMfo === '899998' || payment.kind === 'tax';
+    const docNumber = String(payment.docNumber || String(payment.id || '001').slice(-8)).toUpperCase();
+    const packRef = String(payment.bankRef || `P24PACK-${docNumber}`);
+    const paymentRef = String(payment.paymentRef || `P24DOC-${docNumber}`);
+    const amountStr = ((Number(payment.amountKop || 0)) / 100).toFixed(2);
+    const purpose = String(payment.purpose || '').trim();
+
+    const createPayload = {
+        document_number: docNumber.slice(0, 10),
+        payer_account: String(payment.account || DEFAULT_SIM_ACCOUNTS[0].iban),
+        recipient_name: String(recipient.name || '').slice(0, 38),
+        recipient_nceo: String(recipient.code || ''),
+        recipient_ifi: recipientMfo,
+        recipient_account: recipientIban,
+        payment_amount: amountStr,
+        payment_Currency: 'UAH',
+        payment_destination: isTreasury ? purpose.slice(0, 140) : purpose.slice(0, 160),
+        payment_naming: String(payment.id || docNumber).slice(0, 30),
+        ...(isTreasury ? {
+            struct_code: '101',
+            payer_ultmt_nceo: String(options.myEdrpou || '40562894'),
+            payer_ultmt_name: String(options.myName || 'ОСББ «Успіх-25»').slice(0, 140)
+        } : {})
+    };
+
+    const isPaid = payment.status === 'paid';
+    const isFailed = payment.status === 'failed';
+    const signStatusPayload = {
+        payment_pack_ref: packRef,
+        payment_ref: paymentRef,
+        payment_data: {
+            payment_status: isPaid ? 'проведений' : isFailed ? 'відхилений банком' : 'очікує підпису КЕП',
+            signers: isPaid
+                ? [{
+                    level: '1',
+                    fio: String(options.signerName || 'Голова правління ОСББ (КЕП)'),
+                    state: 'підписано КЕП (Перший підпис)',
+                    date: options.signedAt || new Date().toISOString()
+                }]
+                : []
+        }
+    };
+
+    const statementTx = buildPrivatRawTransaction({
+        account: payment.account || DEFAULT_SIM_ACCOUNTS[0].iban,
+        direction: 'out',
+        trantype: 'D',
+        amountKop: payment.amountKop || 0,
+        counterpartyName: recipient.name || '',
+        counterpartyCode: recipient.code || '',
+        counterpartyIban: recipientIban,
+        purpose,
+        date: options.date,
+        time: options.time,
+        ref: `P24OUT${docNumber}`,
+        refn: '1',
+        dlr: packRef,
+        docNumber
+    });
+
+    return {
+        endpoints: {
+            create: 'POST https://acp.privatbank.ua/api/proxy/payment/create',
+            addSign: 'POST https://acp.privatbank.ua/api/proxy/payment/add-sign',
+            getStatus: 'GET https://acp.privatbank.ua/api/proxy/payment/get',
+            statement: 'GET https://acp.privatbank.ua/api/statements/transactions'
+        },
+        createPayload,
+        signStatusPayload,
+        statementTx
+    };
+}
 
 function validEdrpouChecksum(code) {
     const s = String(code || '').trim();
@@ -559,8 +904,13 @@ module.exports = {
     ISOLATION_MODES,
     INSPECTABLE_COLLECTIONS,
     SIMULATION_SCENARIOS,
+    BANK_SIM_TEMPLATES,
+    DEFAULT_SIM_ACCOUNTS,
     IMMUTABLE_FIELDS,
     fmtKop,
+    formatPrivatDateTime,
+    buildPrivatRawTransaction,
+    buildPrivatPaymentApiLifecycle,
     validEdrpouChecksum,
     normalizeTenantSlug,
     validateTenantInput,
