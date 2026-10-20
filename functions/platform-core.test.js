@@ -204,3 +204,92 @@ test('buildPrivatRawTransaction та buildPrivatPaymentApiLifecycle повніс
     assert.equal(normOut.dlr, 'P24PACK-A1B2C3D4E5');
     assert.equal(paymentsCore.matchesPayment(normOut, samplePayment), true);
 });
+
+test('Тестовий ключ PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3 перемикає privat.js на ізольовану пісочницю банку, а реальний ключ — на бойовий API', async () => {
+    assert.equal(privat.SANDBOX_TOKEN, 'PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3');
+    assert.equal(privat.isSandboxToken('PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3'), true);
+    assert.equal(privat.isSandboxToken('PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3__osbb-morskyi'), true);
+    assert.equal(privat.isSandboxToken('real_live_privatbank_token_1234567890'), false);
+    assert.equal(privat.isSandboxToken('tok-1'), false);
+
+    // Створюємо in-memory mock Firestore для перевірки зовнішнього контуру _privat24_sandbox*
+    const store = new Map();
+    const mockDb = {
+        doc(path) {
+            return {
+                path,
+                id: path.split('/').pop(),
+                async get() {
+                    const data = store.get(path);
+                    return { exists: data !== undefined, id: path.split('/').pop(), data: () => data };
+                },
+                async set(val, opts) {
+                    const prev = opts?.merge ? (store.get(path) || {}) : {};
+                    store.set(path, { ...prev, ...val });
+                }
+            };
+        },
+        collection(colPath) {
+            return {
+                doc(id) {
+                    const docId = id || `doc_${store.size + 1}`;
+                    return mockDb.doc(`${colPath}/${docId}`);
+                },
+                async get() {
+                    const docs = [];
+                    for (const [k, v] of store.entries()) {
+                        if (k.startsWith(`${colPath}/`) && !k.slice(colPath.length + 1).includes('/')) {
+                            const id = k.slice(colPath.length + 1);
+                            docs.push({
+                                id,
+                                data: () => v,
+                                ref: mockDb.doc(k)
+                            });
+                        }
+                    }
+                    return { docs, empty: docs.length === 0 };
+                }
+            };
+        }
+    };
+
+    privat.setSandboxDb(mockDb);
+
+    // 1. Отримання налаштувань та балансів рахунків через тестовий ключ (без виклику реального fetch)
+    const settings = await privat.fetchSettings(privat.SANDBOX_TOKEN);
+    assert.equal(settings.phase, 'WRK');
+
+    const balances = await privat.fetchBalances(privat.SANDBOX_TOKEN);
+    assert.equal(balances.length, 2);
+    assert.equal(balances[0].iban, 'UA213052990000026007054321001');
+    assert.equal(balances[0].balanceKop, 28540000);
+
+    // 2. Відправка платежу з бухгалтерії через privat.createPayment -> потрапляє у _privat24_sandbox_payments
+    const created = await privat.createPayment(privat.SANDBOX_TOKEN, {
+        account: 'UA213052990000026007054321001',
+        docNumber: 'DOC101',
+        amountKop: 420000,
+        purpose: 'Оплата за обслуговування ліфтів згідно з актом № 18, без ПДВ',
+        recipient: {
+            name: 'ТОВ «Одесаліфт-Сервіс»',
+            code: '34512890',
+            iban: 'UA553052990000026007778889991'
+        }
+    });
+    assert.ok(created.bankRef);
+    assert.ok(created.paymentRef);
+    assert.equal(created.status, 'new');
+
+    // Платіж лежить у зовнішній таблиці банку зі статусом new (очікує КЕП)
+    const paymentInBank = await privat.getPayment(privat.SANDBOX_TOKEN, created.paymentRef);
+    assert.equal(paymentInBank.payment_status, 'new');
+    assert.equal(paymentInBank.payment_data.document_number, 'DOC101');
+
+    // 3. Перевірка контрагента в ЄДР/УБКІ через тестовий ключ
+    const edr = await privat.checkCounterparty(privat.SANDBOX_TOKEN, '34512890');
+    assert.equal(edr.found, true);
+    assert.equal(edr.edrpou, '34512890');
+    assert.equal(edr.isSafe, true);
+
+    privat.setSandboxDb(null);
+});

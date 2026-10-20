@@ -18,6 +18,7 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 
 initializeApp();
 const db = getFirestore();
+require('./privat').setSandboxDb(db);
 const { computeQuorum, meetingSummary, chairVoteError, QUORUM_PCT } = require('./meeting-core');
 
 // Ключ лежить у Secret Manager, а не в коді: інакше він потрапив би

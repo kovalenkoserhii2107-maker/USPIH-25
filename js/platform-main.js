@@ -94,7 +94,9 @@ let showNewTenantForm = false;
 let editingTenant = null;
 
 // Стан для вкладки «Банк Приват24»
+const DEFAULT_TEST_TOKEN = 'PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3';
 let bankSimData = null;
+let autoSyncBank = true;
 let showBankSetupForm = false;
 let showTestOutPayForm = false;
 let activeTemplateId = 'resident_exact';
@@ -842,7 +844,7 @@ function testOutPaymentFormHtml() {
     const curIban = accs.find(a => a.purpose === 'current')?.iban || accs[0]?.iban || DEFAULT_SIM_ACCOUNTS[0].iban;
     const openExps = bankSimData?.openExpenses || [];
     const sups = bankSimData?.suppliers || [];
-    const defaultSup = sups[0] || { name: 'ТОВ «Одесаліфт-Сервіс»', code: '34512890', iban: 'UA553052990000026007778889991' };
+    const defaultSup = sups[0] || { name: 'ТОВ «Одесаліфт-Сервіс»', code: '34512890', iban: 'UA053052990000026007778889991' };
 
     return `<section class="buh-card ex-form" id="pfTestOutPayForm" style="margin-bottom:14px">
         <div class="buh-card-head">
@@ -874,7 +876,7 @@ function testOutPaymentFormHtml() {
             <label class="field"><span class="field-label">Код ЄДРПОУ або РНОКПП отримувача</span>
                 <input id="tpRecCode" class="field-input" maxlength="10" value="${esc(defaultSup.code || '34512890')}"></label>
             <label class="field"><span class="field-label">IBAN отримувача</span>
-                <input id="tpRecIban" class="field-input" maxlength="34" value="${esc(defaultSup.iban || 'UA553052990000026007778889991')}"></label>
+                <input id="tpRecIban" class="field-input" maxlength="34" value="${esc(defaultSup.iban || 'UA053052990000026007778889991')}"></label>
             <label class="field"><span class="field-label">Сума платежу, грн</span>
                 <input id="tpAmount" class="field-input" inputmode="decimal" value="4200,00"></label>
             <label class="field pay-wide"><span class="field-label">Призначення платежу (payment_destination)</span>
@@ -922,32 +924,54 @@ async function renderBankView() {
     });
 
     host.innerHTML = `
-        <!-- Статус підключення Приват24 Автоклієнт v3.0.0 -->
-        <div class="buh-card pf-bank-banner ${bs.connected ? '' : 'is-disconnected'}" style="margin-bottom: 14px;">
-            <div style="flex: 1 1 320px;">
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-                    <span class="pf-p24-pill ${bs.connected ? '' : 'is-warn'}">
-                        ${bs.connected ? '● Приват24 Автоклієнт v3.0.0 ПІДКЛЮЧЕНО' : '○ Приват24 Автоклієнт не активовано'}
-                    </span>
-                    ${bs.simulator ? '<span class="buh-tag is-payment">Режим симулятора (Ключ ••••SIM3)</span>' : ''}
-                    <span class="buh-note">Контур: <b>${esc(bankSimData.org?.name || activeTenantId)}</b> (ЄДРПОУ ${esc(bankSimData.org?.edrpou || '—')})</span>
+        <!-- Статус підключення Приват24 Автоклієнт v3.0.0 та Тестовий ключ -->
+        <div class="buh-card pf-bank-banner ${bs.connected ? '' : 'is-disconnected'}" style="margin-bottom: 14px; flex-direction: column; align-items: stretch;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+                <div style="flex: 1 1 320px;">
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+                        <span class="pf-p24-pill ${bs.connected ? '' : 'is-warn'}">
+                            ${bs.connected ? '● Приват24 Автоклієнт v3.0.0 ПІДКЛЮЧЕНО' : '○ Приват24 Автоклієнт не активовано'}
+                        </span>
+                        ${bs.simulator
+                            ? `<span class="buh-tag is-payment">Тестове середовище Приват24 (Ключ ••••${esc(bs.tokenHint || '_V3')})</span>`
+                            : bs.tokenSet
+                                ? `<span class="buh-tag is-work">Бойовий сервер acp.privatbank.ua (Ключ ••••${esc(bs.tokenHint || '')})</span>`
+                                : ''}
+                        <span class="buh-note">Контур: <b>${esc(bankSimData.org?.name || activeTenantId)}</b> (ЄДРПОУ ${esc(bankSimData.org?.edrpou || '—')})</span>
+                    </div>
+                    <p class="buh-note" style="margin:0">
+                        Зовнішня симуляція на рівні HTTP-транспорту (<code>functions/privat.js</code> та <code>functions/privat-payroll-api.js</code>): якщо в «Налаштуваннях» бухгалтерії введено <b>тестовий ключ</b>, усі запити йдуть у ізольоване тестове середовище банку (<code>_privat24_sandbox*</code>). Якщо ввести <b>реальний ключ Автоклієнта</b> — система автоматично перемикається на бойовий сервер <code>https://acp.privatbank.ua</code> без жодних змін у коді бухгалтерії.
+                    </p>
                 </div>
-                <p class="buh-note" style="margin:0">
-                    ${bs.connected
-                        ? `Банківські рахунки активні. Всі платежі з кабінету бухгалтера потрапляють сюди на підпис КЕП, а всі згенеровані нижче вхідні платежі проходять повний конвеєр <code>privat.normalizeTransaction → bank.storeTransactions</code>.`
-                        : `Натисніть «Активувати віртуальний ключ Приват24», щоб підключити рахунки ОСББ і одразу тестувати вхідні та вихідні банківські операції в усіх розділах системи.`}
-                </p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    ${!bs.connected || !bs.simulator ? `
+                        <button type="button" class="sv-btn btn-compact" data-pf-act="quick-enable-sim">⚡ Підключити тестовий ключ (saveToken)</button>
+                    ` : ''}
+                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="bank-trigger-sync" title="Викликати штатний bank.sync() так само, як кнопка «Виписка» у бухгалтерії">
+                        🔄 Синхронізувати виписку (bank.sync)
+                    </button>
+                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-bank-setup">
+                        ${showBankSetupForm ? 'Сховати рахунки банку' : 'Рахунки та баланси в банку'}
+                    </button>
+                </div>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                ${!bs.connected || !bs.simulator ? `
-                    <button type="button" class="sv-btn btn-compact" data-pf-act="quick-enable-sim">⚡ Активувати віртуальний ключ Приват24</button>
-                ` : ''}
-                <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-bank-setup">
-                    ${showBankSetupForm ? 'Сховати налаштування рахунків' : 'Налаштувати рахунки та залишки'}
-                </button>
-                <a href="buh.html#bank" class="btn-ghost-small">У «Банк» бухгалтерії ↗</a>
-                <a href="buh.html#inbox" class="btn-ghost-small">У «Рішення» ↗</a>
-                <a href="buh.html#payments" class="btn-ghost-small">У «Платежі» ↗</a>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;margin-top:8px">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span class="buh-note" style="font-weight:700;color:#0F172A">Тестовий ключ Автоклієнта (для введення в <a href="buh.html#settings">«Налаштуваннях»</a>):</span>
+                    <code id="pfTestTokenCode" style="background:#EFF6FF;color:#1D4ED8;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;border:1px solid #BFDBFE;user-select:all">${esc(bs.testTokenForTenant || bs.sandboxToken || DEFAULT_TEST_TOKEN)}</code>
+                    <button type="button" class="btn-ghost-small" data-pf-act="copy-test-token">📋 Скопіювати ключ</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:#334155;cursor:pointer" title="Якщо увімкнено, після підписання платежу або генерації вхідної транзакції в банку одразу викликається штатний bank.sync(). Якщо вимкнути — подія залишиться тільки на боці банку до натискання кнопки «Виписка» у бухгалтерії.">
+                        <input type="checkbox" id="pfAutoSync" ${autoSyncBank ? 'checked' : ''}>
+                        <span>Авто-виклик <code>bank.sync()</code> після події в банку</span>
+                    </label>
+                    <a href="buh.html#settings" class="btn-ghost-small">У «Налаштування» ↗</a>
+                    <a href="buh.html#bank" class="btn-ghost-small">У «Банк» ↗</a>
+                    <a href="buh.html#inbox" class="btn-ghost-small">У «Рішення» ↗</a>
+                    <a href="buh.html#payments" class="btn-ghost-small">У «Платежі» ↗</a>
+                </div>
             </div>
         </div>
 
@@ -1895,7 +1919,20 @@ function initEvents() {
                 await switchView('inspector');
             }
             // ---- ПОДІЇ СИМУЛЯТОРА БАНКУ ПРИВАТ24 ----
-            else if (act === 'toggle-bank-setup') {
+            else if (act === 'copy-test-token') {
+                const tokenStr = bankSimData?.bankSettings?.testTokenForTenant || bankSimData?.bankSettings?.sandboxToken || DEFAULT_TEST_TOKEN;
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(tokenStr);
+                }
+                toast(`Тестовий ключ скопійовано: ${tokenStr}`, 'success');
+            } else if (act === 'bank-trigger-sync') {
+                setBusy(actBtn, true, 'Синхронізую виписку…');
+                const res = await callPlatform({ action: 'bankTriggerSync', tenantId: activeTenantId });
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                const s = res.syncResult || {};
+                toast(`Штатний bank.sync() виконано! Імпортовано: ${s.imported ?? 0}, авто-рознесено: ${s.autoAssigned ?? 0}, на перевірку: ${s.review ?? 0}`, 'success');
+                await refreshAllData();
+            } else if (act === 'toggle-bank-setup') {
                 showBankSetupForm = !showBankSetupForm;
                 await renderBankView();
             } else if (act === 'quick-enable-sim') {
@@ -1975,7 +2012,8 @@ function initEvents() {
                     paymentId,
                     date,
                     time,
-                    feeKop
+                    feeKop,
+                    autoSync: autoSyncBank
                 });
                 bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
                 toast(`Платіж підписано КЕП у Приват24 та проведено у виписці (${fmtKop(res.amountKop)} грн, DLR: ${res.bankRef})!`, 'success');
@@ -1990,7 +2028,8 @@ function initEvents() {
                     tenantId: activeTenantId,
                     date,
                     time,
-                    feeKop
+                    feeKop,
+                    autoSync: autoSyncBank
                 });
                 bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
                 toast(`Пачку з ${res.signedCount} платежів на суму ${fmtKop(res.totalKop)} грн підписано КЕП та проведено у виписці!`, 'success');
@@ -2023,7 +2062,8 @@ function initEvents() {
                 const res = await callPlatform({
                     action: 'bankSimulateTransaction',
                     tenantId: activeTenantId,
-                    ...vals
+                    ...vals,
+                    autoSync: autoSyncBank
                 });
                 lastSimulatedTxResult = res;
                 bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
@@ -2046,7 +2086,8 @@ function initEvents() {
                 const res = await callPlatform({
                     action: 'bankSimulateTransaction',
                     tenantId: activeTenantId,
-                    ...vals
+                    ...vals,
+                    autoSync: autoSyncBank
                 });
                 lastSimulatedTxResult = res;
                 bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
@@ -2069,7 +2110,8 @@ function initEvents() {
                 await callPlatform({
                     action: 'bankVoidTransaction',
                     tenantId: activeTenantId,
-                    txId
+                    txId,
+                    autoSync: autoSyncBank
                 });
                 bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
                 toast('Операцію сторновано банком (PR_PR="t"), повʼязані баланси оновлено', 'info');
@@ -2235,6 +2277,10 @@ function initEvents() {
     });
 
     document.addEventListener('change', async e => {
+        if (e.target.id === 'pfAutoSync') {
+            autoSyncBank = e.target.checked === true;
+            return;
+        }
         if (e.target.id === 'pfTenantSelect') {
             activeTenantId = e.target.value;
             inspectorDocs = [];

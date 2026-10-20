@@ -403,7 +403,7 @@ function renderBankTab(settings, ex) {
                 <button type="button" class="btn-primary btn-compact" data-act="token-save">Перевірити й зберегти</button>
                 ${connected ? '<button type="button" class="btn-ghost-small" data-act="token-remove">Відключити</button>' : ''}
             </div>
-            <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно.</p>
+            <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно. Для підключення до тестового середовища банку (<a href="platform.html#bank">Симулятор Приват24</a>) можна ввести тестовий ключ: <code>PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3</code>.</p>
         </section>
 
         ${accounts.length ? `<section class="buh-card">
