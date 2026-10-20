@@ -1,0 +1,321 @@
+/* ============================================================
+   Стилі панелі Super-Admin / Platform Control Plane (platform.html)
+   ============================================================ */
+
+.pf-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.pf-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pf-db-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #FFFFFF;
+    border: 1.5px solid #CBD5E1;
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0F172A;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.pf-db-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #16A34A;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+    flex-shrink: 0;
+}
+
+.pf-db-switcher.is-sandbox .pf-db-dot {
+    background: #D97706;
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2);
+}
+
+.pf-db-switcher select {
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    outline: none;
+    cursor: pointer;
+    max-width: 240px;
+}
+
+/* Картки ОСББ (Multi-Tenant Registry) */
+.pf-tenant-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.pf-tenant-card {
+    background: #FFFFFF;
+    border: 1.5px solid #E2E8F0;
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pf-tenant-card.is-active-context {
+    border-color: #1D4ED8;
+    box-shadow: 0 6px 20px rgba(29, 78, 216, 0.09);
+}
+
+.pf-tenant-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.pf-tenant-title {
+    font-size: 17px;
+    font-weight: 800;
+    color: #0F172A;
+    margin: 0 0 4px;
+}
+
+.pf-tenant-sub {
+    font-size: 13px;
+    color: #475569;
+    margin: 0;
+}
+
+.pf-tenant-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    padding: 12px;
+    background: #F8FAFC;
+    border-radius: 12px;
+    font-size: 13px;
+}
+
+.pf-tenant-meta div span {
+    display: block;
+    font-size: 11.5px;
+    color: #64748B;
+}
+
+.pf-tenant-meta div b {
+    color: #0F172A;
+    font-weight: 700;
+}
+
+.pf-tenant-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Матриця перевірок інваріантів */
+.pf-check-list {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0;
+    display: grid;
+    gap: 8px;
+}
+
+.pf-check-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+}
+
+.pf-check-item.is-ok {
+    border-left: 4px solid #16A34A;
+}
+
+.pf-check-item.is-fail {
+    border-left: 4px solid #DC2626;
+    background: #FEF2F2;
+}
+
+.pf-check-badge {
+    font-weight: 700;
+    font-size: 12.5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.pf-check-badge.is-ok {
+    background: #DCFCE7;
+    color: #166534;
+}
+
+.pf-check-badge.is-fail {
+    background: #FEE2E2;
+    color: #991B1B;
+}
+
+/* Інспектор бази даних і Break-Glass редактор */
+.pf-inspector-layout {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 960px) {
+    .pf-inspector-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.pf-doc-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0;
+    max-height: 580px;
+    overflow-y: auto;
+    display: grid;
+    gap: 6px;
+}
+
+.pf-doc-btn {
+    width: 100%;
+    text-align: left;
+    background: #F8FAFC;
+    border: 1.5px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.pf-doc-btn:hover {
+    background: #F1F5F9;
+}
+
+.pf-doc-btn.is-selected {
+    background: #EFF6FF;
+    border-color: #2563EB;
+}
+
+.pf-doc-btn b {
+    font-size: 13.5px;
+    color: #0F172A;
+    word-break: break-all;
+}
+
+.pf-doc-btn small {
+    font-size: 12px;
+    color: #475569;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pf-json-editor {
+    width: 100%;
+    min-height: 240px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1.5px solid #CBD5E1;
+    background: #0F172A;
+    color: #F8FAFC;
+    resize: vertical;
+}
+
+.pf-diff-box {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+}
+
+.pf-diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    margin-top: 8px;
+}
+
+.pf-diff-table th,
+.pf-diff-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #FDE68A;
+    text-align: left;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.pf-diff-before {
+    color: #B91C1C;
+    background: #FEF2F2;
+}
+
+.pf-diff-after {
+    color: #15803D;
+    background: #F0FDF4;
+}
+
+/* Картки архітектури світових практик */
+.pf-arch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.pf-arch-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.pf-arch-card h3 {
+    font-size: 15.5px;
+    margin: 6px 0 8px;
+    color: #0F172A;
+}
+
+.pf-arch-card p {
+    font-size: 13.5px;
+    color: #334155;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.pf-tier-badge {
+    display: inline-block;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #EFF6FF;
+    color: #1D4ED8;
+}

@@ -275,7 +275,7 @@ const XML_INPUTS = [
 function testModeHtml() {
     return `<section class="buh-card"><div class="buh-card-head"><h2>Тестова бухгалтерія</h2></div>
         <p class="buh-note">Окремий навчальний будинок: нарахування, імітована виписка, зарплата, проводки та звірка звітів. Продовження з будь-якого пристрою під вашим входом.</p>
-        <a class="sv-btn is-soft" href="accounting-test.html">Відкрити тестовий режим</a>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="sv-btn" style="width:auto" href="platform.html">Платформа управління ОСББ (Super-Admin) ›</a><a class="sv-btn is-soft" style="width:auto" href="accounting-test.html">Відкрити тестовий полігон ›</a></div>
         <p class="buh-note">Попередні тестові дані у робочій базі автоматично не видаляються. За потреби голова може використати повне очищення з резервною копією вище.</p></section>`;
 }
 
