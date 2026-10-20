@@ -11,9 +11,10 @@ const [html, adminHtml, buhHtml, sw, firebaseJson, firestoreIndexesJson] = await
 ]);
 
 const testHtml=await read('accounting-test.html');
+const platformHtml=await read('platform.html');
 const swVersion = sw.match(/const VERSION = '(\d+)'/)?.[1];
-for (const [name, page] of [['index.html', html], ['admin.html', adminHtml], ['buh.html', buhHtml],['accounting-test.html',testHtml]]) {
-    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh|-sv|-accounting-test)?\.css|js\/(?:app|admin-main|admin-preview|buh-main|accounting-test)\.js)\?v=(\d+)/g)].map(m => m[1]);
+for (const [name, page] of [['index.html', html], ['admin.html', adminHtml], ['buh.html', buhHtml],['accounting-test.html',testHtml],['platform.html',platformHtml]]) {
+    const versions = [...page.matchAll(/(?:style(?:-chat|-admin|-buh|-sv|-accounting-test|-platform)?\.css|js\/(?:app|admin-main|admin-preview|buh-main|accounting-test|platform-main)\.js)\?v=(\d+)/g)].map(m => m[1]);
     if (!swVersion || !versions.length || versions.some(version => version !== swVersion)) {
         errors.push(`Версії ${name} (${versions.join(', ')}) і sw.js (${swVersion || 'немає'}) не збігаються`);
     }

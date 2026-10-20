@@ -481,3 +481,6 @@ exports.databaseReset = databaseReset.databaseReset;
 
 // Private training books; external bank and notifications are closed drivers.
 exports.accountingTestAction = require('./accounting-test')({ db, FieldValue, Timestamp, requireAdmin }).accountingTestAction;
+
+// Super-Admin Platform Control Plane (Multi-OSBB, Database Inspector, Diagnostics & Audited Manual Patch).
+exports.platformAction = require('./platform')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges }).platformAction;

@@ -6,7 +6,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 // content-hashed chunks, so residents never download the board's features.
 await rm('_site', { recursive: true, force: true });
 await mkdir('_site', { recursive: true });
-for (const path of ['index.html', 'admin.html', 'buh.html', 'accounting-test.html', 'style-accounting-test.css', 'landing.html', 'style-landing.css', 'style.css', 'style-admin.css', 'style-buh.css', 'style-sv.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
+for (const path of ['index.html', 'admin.html', 'buh.html', 'accounting-test.html', 'style-accounting-test.css', 'platform.html', 'style-platform.css', 'landing.html', 'style-landing.css', 'style.css', 'style-admin.css', 'style-buh.css', 'style-sv.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
     await cp(path, `_site/${path}`, { recursive: true });
 }
 await mkdir('_site/docs/accounting', { recursive:true });
@@ -15,7 +15,7 @@ await cp('docs/accounting/IMPORT-AND-RESET.md', '_site/docs/accounting/IMPORT-AN
 await cp('docs/accounting/TEST-MODE.md', '_site/docs/accounting/TEST-MODE.md');
 await cp('docs/accounting/ANNUAL-FORMS.md', '_site/docs/accounting/ANNUAL-FORMS.md');
 await cp('docs/accounting/fixtures', '_site/docs/accounting/fixtures', {recursive:true});
-const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js', 'js/buh-main.js','js/accounting-test.js'], outdir: '_site/js', entryNames: '[name]',
+const result = await build({ entryPoints: ['js/app.js', 'js/admin-main.js', 'js/buh-main.js','js/accounting-test.js', 'js/platform-main.js'], outdir: '_site/js', entryNames: '[name]',
     chunkNames: 'chunks/[name]-[hash]', bundle: true, splitting: true, format: 'esm', target: ['es2020'],
     minify: true, external: ['https://*'], metafile: true });
 const outputs = result.metafile.outputs;
@@ -55,6 +55,7 @@ await injectPreloads('index.html', residentChunks);
 await injectPreloads('admin.html', adminChunks);
 await injectPreloads('buh.html', buhChunks);
 await injectPreloads('accounting-test.html',startupChunks('_site/js/accounting-test.js'));
+await injectPreloads('platform.html',startupChunks('_site/js/platform-main.js'));
 
 const kib = paths => Math.round(paths.reduce((sum, path) => sum + outputs[path.replace('./', '_site/')].bytes, 0) / 1024);
 const all = Object.keys(outputs).filter(path => path.endsWith('.js'));
