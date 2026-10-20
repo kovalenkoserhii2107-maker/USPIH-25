@@ -4,15 +4,22 @@
 // Єдиний центр управління платформою ОСББ:
 //   1. Мульти-ОСББ та бази (tenants): реєстр усіх підключених ОСББ,
 //      режими ізоляції БД, перемикання активного контексту, онбординг нового ОСББ.
-//   2. Тести й симуляції (testing): перевірка інваріантів бази, керування
+//   2. Банк Приват24 — Симулятор Автоклієнт v3.0.0 (bank):
+//      - віртуальний ключ Автоклієнта та рахунки ОСББ (поточний 311, резервний 311);
+//      - черга всіх вихідних платежів ОСББ на підпис КЕП та проведення через
+//        normalizeTransaction -> bank.storeTransactions;
+//      - конструктор вхідних і вихідних операцій за шаблонами в 1 клік,
+//        вибором реальної квартири або вільними реквізитами у форматі Приват24 API;
+//      - живий журнал виписки (bank_tx) із симуляцією банківського сторно (PR_PR='t').
+//   3. Тести й симуляції (testing): перевірка інваріантів бази, керування
 //      ізольованим тестовим полігоном (банківські операції, нарахування,
 //      зарплата, податкові та річні звіти).
-//   3. Користувачі й активність (users): статистика ролей, кабінетів
+//   4. Користувачі й активність (users): статистика ролей, кабінетів
 //      співвласників, боржників/переплат та живий потік журналу аудиту.
-//   4. Інспектор БД і ручне коригування (inspector): перегляд колекцій,
+//   5. Інспектор БД і ручне коригування (inspector): перегляд колекцій,
 //      попередній перегляд diff (Було -> Стане), безпечне збереження з
 //      обовʼязковою причиною для audit_log та перерахунком балансу квартири.
-//   5. Архітектура Multi-Tenant (architecture): світові практики SaaS/Fintech
+//   6. Архітектура Multi-Tenant (architecture): світові практики SaaS/Fintech
 //      та дорожня карта масштабування платформи на сотні ОСББ.
 // ============================================================
 import { auth, db, session, currentApt, resetSession } from './firebase.js';
@@ -21,16 +28,22 @@ import {
     collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, query, orderBy, limit, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { callBackend } from './backend.js';
-import { escapeHtml as esc, toast, setBusy, hideAppLoader, confirmDialog } from './ui.js';
+import { escapeHtml as esc, toast, setBusy, hideAppLoader, confirmDialog, promptDialog } from './ui.js';
 import { hasRight, ROLE_LABELS } from './staff-core.js';
 import { loadProfile, sessionExpired, rememberWorkMode } from './app-common.js';
 import { registerServiceWorker } from './install.js';
 import { fmtKop, periodName, toKop } from './charges-core.js';
+const cleanApt = v => String(v ?? '').trim().replace(/^0+(?=\d)/, '');
+const normIban = v => String(v || '').replace(/\s+/g, '').toUpperCase();
 import {
     TENANT_STATUSES,
     ISOLATION_MODES,
     INSPECTABLE_COLLECTIONS,
     SIMULATION_SCENARIOS,
+    BANK_SIM_TEMPLATES,
+    DEFAULT_SIM_ACCOUNTS,
+    buildPrivatRawTransaction,
+    buildPrivatPaymentApiLifecycle,
     normalizeTenantSlug,
     validateTenantInput,
     computePatchDiff,
@@ -43,6 +56,10 @@ const VIEW_META = {
     tenants: {
         title: 'Управління всіма ОСББ та базами даних',
         sub: 'Реєстр підключених ОСББ, перемикання активного контуру БД, онбординг нових будинків та моніторинг стану'
+    },
+    bank: {
+        title: 'Симулятор Приват24 Бізнес API «Автоклієнт» v3.0.0',
+        sub: 'Підписання КЕП вихідних платежів ОСББ, генератор вхідних операцій за шаблонами й вільними реквізитами та жива виписка рахунків'
     },
     testing: {
         title: 'Тестовий полігон і симуляція операцій',
@@ -62,11 +79,29 @@ const VIEW_META = {
     }
 };
 
+const PAYMENT_KIND_LABELS = {
+    supplier: 'Постачальнику (631)',
+    salary: 'Зарплата (661)',
+    tax: 'Податки / ЄСВ (641/651)',
+    advance: 'Авансовий звіт (372)',
+    other: 'Інший платіж'
+};
+
 let activeView = 'tenants';
 let activeTenantId = 'uspih-25';
 let overviewData = null;
 let showNewTenantForm = false;
 let editingTenant = null;
+
+// Стан для вкладки «Банк Приват24»
+let bankSimData = null;
+let showBankSetupForm = false;
+let showTestOutPayForm = false;
+let activeTemplateId = 'resident_exact';
+let selectedSimApt = '';
+let selectedSimApt2 = '';
+let lastSimulatedTxResult = null;
+let bankBuilderDraft = null;
 
 // Стан для вкладки «Тести й симуляції»
 let sandboxState = null;
@@ -100,16 +135,15 @@ function serializeDocData(val) {
 }
 
 /**
- * Універсальний виклик сервісу платформи з автоматичним клієнтським фолбеком,
- * щоб адмін-панель миттєво працювала з реальними даними Firestore навіть до
- * оновлення Cloud Functions.
+ * Універсальний виклик сервісу платформи з автоматичним клієнтським фолбеком
+ * для читання даних, якщо Cloud Functions ще не оновлено.
  */
 async function callPlatform(payload) {
     try {
         return await callBackend('platformAction', { tenantId: activeTenantId, ...payload });
     } catch (err) {
         const msg = String(err?.message || '');
-        if (/not-found|unimplemented|function.*not.*exist|CORS|internal|Failed to fetch/i.test(msg)) {
+        if (/not-found|unimplemented|function.*not.*exist|CORS|internal|Failed to fetch|Невідома дія платформи/i.test(msg)) {
             return clientFallbackPlatform({ tenantId: activeTenantId, ...payload });
         }
         throw err;
@@ -217,6 +251,7 @@ async function clientFallbackPlatform(data) {
                 bankTx: bankTx.length,
                 bankReview: bankTx.filter(t => t.status === 'review').length,
                 payments: payments.length,
+                paymentsPending: payments.filter(p => ['sent', 'sending', 'unknown'].includes(p.status)).length,
                 expenses: expenses.length,
                 claims: claims.length,
                 closedPeriods: closedPeriods.filter(p => p.status === 'closed').length
@@ -224,6 +259,142 @@ async function clientFallbackPlatform(data) {
             userStats: summarizeUserActivity({ apartments, staff, auditLogs, nowMs: Date.now() }),
             diagnostics: evaluateAccountingInvariants({ apartments, bankTx, payments, closedPeriods }),
             recentAudit: auditLogs.slice(0, 50)
+        };
+    }
+
+    if (action === 'bankSimulatorContext') {
+        const [
+            bankSettingsSnap,
+            finSnap,
+            paymentsSnap,
+            txSnap,
+            aptsSnap,
+            ownersSnap,
+            expensesSnap,
+            advSnap,
+            suppliersSnap
+        ] = await Promise.all([
+            getDoc(doc(db, 'bank', 'settings')).catch(() => ({ exists: () => false })),
+            getDoc(doc(db, 'osbb_settings', 'finance')).catch(() => ({ exists: () => false })),
+            getDocs(query(collection(db, 'payments'), limit(200))).catch(() => ({ docs: [] })),
+            getDocs(query(collection(db, 'bank_tx'), limit(150))).catch(() => ({ docs: [] })),
+            getDocs(collection(db, 'apartments')).catch(() => ({ docs: [] })),
+            getDocs(collectionGroup(db, 'owners')).catch(() => ({ docs: [] })),
+            getDocs(query(collection(db, 'expenses'), limit(150))).catch(() => ({ docs: [] })),
+            getDocs(query(collection(db, 'advance_reports'), limit(80))).catch(() => ({ docs: [] })),
+            getDocs(query(collection(db, 'suppliers'), limit(150))).catch(() => ({ docs: [] }))
+        ]);
+
+        const fin = finSnap.exists?.() ? finSnap.data() : {};
+        const reg = fin.registry || {};
+        const org = {
+            name: fin.payeeName || reg.legalName || 'ОСББ «Успіх-25»',
+            edrpou: fin.edrpou || reg.code || '40562894',
+            address: fin.houseAddress || reg.legalAddress || 'вул. Інглезі, 3/3, м. Одеса',
+            iban: fin.iban || ''
+        };
+
+        const bankSettings = bankSettingsSnap.exists?.() ? serializeDocData(bankSettingsSnap.data()) : {};
+        const rawAccounts = bankSettings.accounts || {};
+        const accounts = Object.entries(rawAccounts).map(([iban, acc]) => ({
+            iban: normIban(iban),
+            purpose: acc.purpose || 'current',
+            name: acc.name || (acc.purpose === 'reserve' ? 'Резервний фонд ОСББ' : 'Поточний рахунок ОСББ'),
+            currency: acc.currency || 'UAH',
+            balanceKop: Number(acc.balanceKop || 0),
+            active: acc.active !== false,
+            syncedTo: acc.syncedTo || bankSettings.syncedTo || null
+        }));
+
+        const ownersByApt = new Map();
+        for (const d of ownersSnap.docs || []) {
+            const aptId = cleanApt(d.ref?.parent?.parent?.id || '');
+            if (!aptId) continue;
+            const o = d.data() || {};
+            const name = String(o.name || '').trim();
+            if (!name) continue;
+            const docInfo = String(o.docInfo || '');
+            const rnokpp = String(o.rnokpp || o.tin || (docInfo.match(/\b(\d{10})\b/) || [])[1] || '').trim();
+            if (!ownersByApt.has(aptId)) ownersByApt.set(aptId, []);
+            ownersByApt.get(aptId).push({ name, rnokpp });
+        }
+
+        const apartments = (aptsSnap.docs || [])
+            .filter(d => d.data().isAdmin !== true)
+            .map(d => {
+                const a = d.data();
+                const apt = cleanApt(d.id) || d.id;
+                const owners = ownersByApt.get(apt) || [];
+                return {
+                    apt,
+                    id: d.id,
+                    personalAccount: String(a.personalAccount || '').trim(),
+                    area: Number(a.area || 0),
+                    balance: Number(a.balance || 0),
+                    balanceKop: Math.round(Number(a.balance || 0) * 100),
+                    ownerName: owners[0]?.name || '',
+                    ownerCode: owners[0]?.rnokpp || ''
+                };
+            })
+            .sort((a, b) => Number(a.apt) - Number(b.apt) || String(a.apt).localeCompare(String(b.apt), 'uk', { numeric: true }));
+
+        const expensesById = new Map((expensesSnap.docs || []).map(d => [d.id, { id: d.id, ...serializeDocData(d.data()) }]));
+        const advById = new Map((advSnap.docs || []).map(d => [d.id, { id: d.id, ...serializeDocData(d.data()) }]));
+        const suppliers = (suppliersSnap.docs || []).map(d => ({ id: d.id, ...serializeDocData(d.data()) }));
+
+        const allPayments = (paymentsSnap.docs || [])
+            .map(d => {
+                const p = { id: d.id, ...serializeDocData(d.data()) };
+                const linkedExp = p.expenseId ? expensesById.get(p.expenseId) : null;
+                const linkedAdv = p.advanceReportId ? advById.get(p.advanceReportId) : null;
+                p.linkedInfo = linkedExp
+                    ? `Документ № ${linkedExp.number || '—'} (${linkedExp.supplierName || ''})`
+                    : linkedAdv
+                        ? `Авансовий звіт № ${linkedAdv.number || linkedAdv.id} (${linkedAdv.personName || ''})`
+                        : p.payroll
+                            ? `Зарплатна відомість за ${p.payroll.period} (${p.payroll.stage === 'advance' ? 'аванс' : 'основна виплата'})`
+                            : 'Прямий платіж';
+                p.privatApi = buildPrivatPaymentApiLifecycle(p, {
+                    myName: org.name,
+                    myEdrpou: org.edrpou
+                });
+                return p;
+            })
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+        const pendingPayments = allPayments.filter(p => ['sent', 'sending', 'unknown'].includes(p.status));
+        const historyPayments = allPayments.filter(p => !['sent', 'sending', 'unknown'].includes(p.status)).slice(0, 50);
+
+        const recentTx = (txSnap.docs || [])
+            .map(d => ({ id: d.id, ...serializeDocData(d.data()) }))
+            .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+            .slice(0, 80);
+
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+
+        return {
+            ok: true,
+            tenantId: data.tenantId || 'uspih-25',
+            today,
+            org,
+            bankSettings: {
+                connected: Boolean(bankSettings.tokenSet || accounts.length > 0),
+                simulator: Boolean(bankSettings.simulator || bankSettings.demo),
+                tokenSet: Boolean(bankSettings.tokenSet),
+                tokenHint: bankSettings.tokenHint || (bankSettings.simulator ? 'SIM3' : ''),
+                startDate: bankSettings.startDate || '2026-10-01',
+                syncedTo: bankSettings.syncedTo || null,
+                lastSync: bankSettings.lastSync || null
+            },
+            accounts,
+            defaultSimAccounts: DEFAULT_SIM_ACCOUNTS,
+            pendingPayments,
+            historyPayments,
+            recentTx,
+            apartments,
+            suppliers,
+            openExpenses: [...expensesById.values()].filter(e => e.status === 'approved'),
+            templates: BANK_SIM_TEMPLATES
         };
     }
 
@@ -335,12 +506,27 @@ async function clientFallbackPlatform(data) {
         };
     }
 
-    throw new Error(`Непідтримувана дія: ${action}`);
+    throw new Error(`Для дії «${action}» потрібне оновлення Cloud Functions (розгорніть функції з оновленого архіву)`);
 }
 
 // ============================================================
 // НАВІГАЦІЯ ТА ПЕРЕМИКАЧ КОНТЕКСТУ БАЗИ
 // ============================================================
+function updateBankBadges(pendingCount) {
+    const count = Number(pendingCount ?? bankSimData?.pendingPayments?.length ?? overviewData?.counts?.paymentsPending ?? 0);
+    ['pfBankBadge', 'pfBankBadgeTab'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (count > 0) {
+            el.hidden = false;
+            el.textContent = String(count);
+        } else {
+            el.hidden = true;
+            el.textContent = '';
+        }
+    });
+}
+
 function updateTenantSwitcher() {
     const sel = document.getElementById('pfTenantSelect');
     const wrap = sel?.closest('.pf-db-switcher');
@@ -349,6 +535,7 @@ function updateTenantSwitcher() {
         `<option value="${esc(t.id)}"${t.id === activeTenantId ? ' selected' : ''}>${esc(t.name)} (${t.isSandbox ? 'Пісочниця' : `ЄДРПОУ ${t.edrpou}`})</option>`
     ).join('');
     if (wrap) wrap.classList.toggle('is-sandbox', activeTenantId.startsWith('sandbox~'));
+    updateBankBadges();
 }
 
 async function switchView(viewName, { push = true } = {}) {
@@ -372,6 +559,9 @@ async function switchView(viewName, { push = true } = {}) {
 
 async function refreshAllData() {
     overviewData = await callPlatform({ action: 'overview', tenantId: activeTenantId });
+    if (activeView === 'bank') {
+        bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+    }
     updateTenantSwitcher();
     await renderCurrentView();
 }
@@ -382,6 +572,7 @@ async function renderCurrentView() {
         updateTenantSwitcher();
     }
     if (activeView === 'tenants') renderTenantsView();
+    else if (activeView === 'bank') await renderBankView();
     else if (activeView === 'testing') await renderTestingView();
     else if (activeView === 'users') renderUsersView();
     else if (activeView === 'inspector') await renderInspectorView();
@@ -453,9 +644,9 @@ function renderTenantsView() {
                 <small>адмін-акаунтів: ${c.staff || 0} · судових справ: ${c.claims || 0}</small>
             </div>
             <div class="kpi">
-                <span>Операцій банку та витрат</span>
-                <b>${(c.bankTx || 0) + (c.expenses || 0)}</b>
-                <small>виписка: ${c.bankTx || 0} (чекають: ${c.bankReview || 0}) · док.: ${c.expenses || 0}</small>
+                <span>Операцій банку та платежів</span>
+                <b>${(c.bankTx || 0) + (c.payments || 0)}</b>
+                <small>на підписі КЕП: ${c.paymentsPending || 0} · чекають рішення: ${c.bankReview || 0}</small>
             </div>
             <div class="kpi">
                 <span>Цілісність обліку (Invariants)</span>
@@ -470,9 +661,12 @@ function renderTenantsView() {
             <div class="buh-toolbar">
                 <div>
                     <h2 style="margin:0;font-size:17px">Реєстр організацій та баз даних (Multi-Tenant Control Plane)</h2>
-                    <p class="buh-note" style="margin:2px 0 0">Перемикайте активну базу даних для огляду, тестування, аудиту користувачів або точкового коригування записів.</p>
+                    <p class="buh-note" style="margin:2px 0 0">Перемикайте активну базу даних для огляду, симуляції банку Приват24, тестування, аудиту користувачів або точкового коригування записів.</p>
                 </div>
-                <button type="button" class="sv-btn" style="width:auto;min-height:40px;padding:0 18px" data-pf-act="open-new-tenant">+ Підключити нове ОСББ</button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="open-bank-tab">Відкрити Банк Приват24 ›</button>
+                    <button type="button" class="sv-btn" style="width:auto;min-height:40px;padding:0 18px" data-pf-act="open-new-tenant">+ Підключити нове ОСББ</button>
+                </div>
             </div>
 
             <div class="pf-tenant-grid">
@@ -502,6 +696,7 @@ function renderTenantsView() {
                             <button type="button" class="sv-btn${isCurrent ? ' is-soft' : ''} btn-compact" data-pf-act="select-tenant" data-id="${esc(t.id)}">
                                 ${isCurrent ? '✓ Активний контур' : 'Перемкнути на цю базу'}
                             </button>
+                            <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="open-tenant-bank" data-id="${esc(t.id)}">Банк Приват24 ›</button>
                             <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="inspect-tenant" data-id="${esc(t.id)}">Інспектор БД ›</button>
                             ${!t.isSandbox ? `<button type="button" class="btn-ghost-small" data-pf-act="edit-tenant" data-id="${esc(t.id)}">Реквізити</button>` : `<a href="accounting-test.html" class="btn-ghost-small">Повний полігон ›</a>`}
                         </div>
@@ -513,7 +708,580 @@ function renderTenantsView() {
 }
 
 // ============================================================
-// ВКЛАДКА 2: ТЕСТОВИЙ ПОЛІГОН І СИМУЛЯЦІЇ (testing)
+// ВКЛАДКА 2: БАНК ПРИВАТ24 — СИМУЛЯТОР АВТОКЛІЄНТ v3.0.0 (bank)
+// ============================================================
+function buildDefaultBuilderDraft() {
+    if (!bankSimData) return {};
+    const tpl = BANK_SIM_TEMPLATES.find(t => t.id === activeTemplateId) || BANK_SIM_TEMPLATES[0];
+    const currentAcc = bankSimData.accounts.find(a => a.purpose === 'current')?.iban
+        || bankSimData.accounts[0]?.iban
+        || DEFAULT_SIM_ACCOUNTS[0].iban;
+
+    const apts = bankSimData.apartments || [];
+    const defaultAptObj = apts.find(a => String(a.apt) === String(selectedSimApt))
+        || apts.find(a => a.balanceKop < 0 && a.ownerName)
+        || apts[0]
+        || { apt: '12', personalAccount: '0012', ownerName: 'Коваленко Олена Василівна', ownerCode: '3124567890', balanceKop: -85000 };
+
+    if (!selectedSimApt && defaultAptObj?.apt) {
+        selectedSimApt = String(defaultAptObj.apt);
+    }
+    const secondAptObj = apts.find(a => String(a.apt) === String(selectedSimApt2))
+        || apts.find(a => String(a.apt) !== String(selectedSimApt))
+        || { apt: '14' };
+    if (!selectedSimApt2 && secondAptObj?.apt) {
+        selectedSimApt2 = String(secondAptObj.apt);
+    }
+
+    let purpose = tpl.purposeTemplate || '';
+    let counterpartyName = tpl.counterpartyName || '';
+    let counterpartyCode = tpl.counterpartyCode || '';
+    let counterpartyIban = tpl.counterpartyIban || 'UA213052990000026201234567891';
+    let amountGrn = tpl.defaultAmountGrn || '850,00';
+
+    if (tpl.id === 'resident_exact') {
+        const owner = defaultAptObj.ownerName || `Мешканець кв. ${defaultAptObj.apt}`;
+        const accNo = defaultAptObj.personalAccount || String(defaultAptObj.apt).padStart(4, '0');
+        purpose = `Внески на утримання будинку, кв. ${defaultAptObj.apt}, особовий рахунок ${accNo}, ${owner}`;
+        counterpartyName = owner;
+        counterpartyCode = defaultAptObj.ownerCode || '3124567890';
+        if (defaultAptObj.balanceKop < 0) {
+            amountGrn = (Math.abs(defaultAptObj.balanceKop) / 100).toFixed(2).replace('.', ',');
+        }
+    } else if (tpl.id === 'resident_split') {
+        purpose = `Сплата внесків на утримання будинку за кв. ${defaultAptObj.apt} та кв. ${secondAptObj.apt}`;
+        if (defaultAptObj.ownerName) counterpartyName = defaultAptObj.ownerName;
+        if (defaultAptObj.ownerCode) counterpartyCode = defaultAptObj.ownerCode;
+    }
+
+    const nowTime = new Intl.DateTimeFormat('uk-UA', {
+        timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(new Date());
+
+    return {
+        trantype: tpl.trantype || 'C',
+        account: currentAcc,
+        amountGrn,
+        date: bankSimData.today || '2026-10-20',
+        time: nowTime,
+        counterpartyName,
+        counterpartyCode,
+        counterpartyIban,
+        purpose,
+        ref: `P24SIM${Date.now().toString(36).toUpperCase().slice(-6)}`,
+        dlr: ''
+    };
+}
+
+function readBuilderFormValues() {
+    const amountKop = toKop(document.getElementById('bsAmount')?.value || '0') || 0;
+    const trantype = document.getElementById('bsTrantype')?.value || 'C';
+    return {
+        trantype,
+        direction: trantype === 'D' ? 'out' : 'in',
+        account: document.getElementById('bsAccount')?.value || DEFAULT_SIM_ACCOUNTS[0].iban,
+        amountKop,
+        amountGrn: document.getElementById('bsAmount')?.value || '0,00',
+        date: document.getElementById('bsDate')?.value || bankSimData?.today || '2026-10-20',
+        time: document.getElementById('bsTime')?.value || '14:30',
+        counterpartyName: document.getElementById('bsCntrName')?.value?.trim() || '',
+        counterpartyCode: document.getElementById('bsCntrCode')?.value?.trim() || '',
+        counterpartyIban: document.getElementById('bsCntrIban')?.value?.trim() || '',
+        purpose: document.getElementById('bsPurpose')?.value?.trim() || '',
+        ref: document.getElementById('bsRef')?.value?.trim() || `P24SIM${Date.now().toString(36).toUpperCase().slice(-6)}`,
+        dlr: document.getElementById('bsDlr')?.value?.trim() || '',
+        myName: bankSimData?.org?.name || 'ОСББ «Успіх-25»',
+        myEdrpou: bankSimData?.org?.edrpou || '40562894'
+    };
+}
+
+function updateLivePrivatJsonPreview() {
+    const pre = document.getElementById('bsJsonPreview');
+    if (!pre) return;
+    const vals = readBuilderFormValues();
+    const rawTx = buildPrivatRawTransaction(vals);
+    pre.textContent = JSON.stringify({
+        status: 'SUCCESS',
+        exist_next_page: false,
+        transactions: [rawTx]
+    }, null, 2);
+}
+
+function bankSetupFormHtml() {
+    const accs = bankSimData?.accounts || [];
+    const curAcc = accs.find(a => a.purpose === 'current') || accs[0] || DEFAULT_SIM_ACCOUNTS[0];
+    const resAcc = accs.find(a => a.purpose === 'reserve') || accs[1] || DEFAULT_SIM_ACCOUNTS[1];
+    const curGrn = ((curAcc.balanceKop ?? curAcc.defaultBalanceKop ?? 28540000) / 100).toFixed(2).replace('.', ',');
+    const resGrn = ((resAcc.balanceKop ?? resAcc.defaultBalanceKop ?? 15000000) / 100).toFixed(2).replace('.', ',');
+
+    return `<section class="buh-card ex-form" id="pfBankSetupForm" style="margin-bottom:14px">
+        <div class="buh-card-head">
+            <h2>Налаштування віртуального підключення Приват24 Автоклієнт v3.0.0 та рахунків ОСББ</h2>
+            <button type="button" class="btn-ghost-small" data-pf-act="toggle-bank-setup">Закрити</button>
+        </div>
+        <p class="buh-note">Після активації віртуального ключа всі розділи Бухгалтерії (<code>buh.html</code>: «Документи», «Зарплата», «Авансові звіти», «Платежі», «Банк») працюють так, ніби введено бойовий токен ПриватБанку: рахунки доступні для оплати, а всі відправлені платежі потрапляють сюди в чергу на КЕП-підпис.</p>
+        <div class="pay-grid">
+            <label class="field"><span class="field-label">Поточний рахунок ОСББ (IBAN, рах. 311)</span>
+                <input id="bsSetupCurIban" class="field-input" maxlength="34" value="${esc(curAcc.iban || DEFAULT_SIM_ACCOUNTS[0].iban)}"></label>
+            <label class="field"><span class="field-label">Початковий / поточний залишок на рахунку, грн</span>
+                <input id="bsSetupCurBal" class="field-input" inputmode="decimal" value="${esc(curGrn)}"></label>
+            <label class="field"><span class="field-label">Резервний / Ремонтний фонд (IBAN, рах. 311)</span>
+                <input id="bsSetupResIban" class="field-input" maxlength="34" value="${esc(resAcc.iban || DEFAULT_SIM_ACCOUNTS[1].iban)}"></label>
+            <label class="field"><span class="field-label">Залишок резервного фонду, грн</span>
+                <input id="bsSetupResBal" class="field-input" inputmode="decimal" value="${esc(resGrn)}"></label>
+        </div>
+        <div class="pay-form-actions" style="display:flex;gap:10px;flex-wrap:wrap">
+            <button type="button" class="sv-btn" style="width:auto" data-pf-act="save-bank-setup">✓ Активувати віртуальний ключ Приват24 та зберегти рахунки</button>
+            ${bankSimData?.bankSettings?.simulator ? `<button type="button" class="btn-ghost-small" style="color:#B91C1C" data-pf-act="disable-bank-sim">Вимкнути режим симулятора</button>` : ''}
+        </div>
+    </section>`;
+}
+
+function testOutPaymentFormHtml() {
+    const accs = bankSimData?.accounts || [];
+    const curIban = accs.find(a => a.purpose === 'current')?.iban || accs[0]?.iban || DEFAULT_SIM_ACCOUNTS[0].iban;
+    const openExps = bankSimData?.openExpenses || [];
+    const sups = bankSimData?.suppliers || [];
+    const defaultSup = sups[0] || { name: 'ТОВ «Одесаліфт-Сервіс»', code: '34512890', iban: 'UA553052990000026007778889991' };
+
+    return `<section class="buh-card ex-form" id="pfTestOutPayForm" style="margin-bottom:14px">
+        <div class="buh-card-head">
+            <h2>Створити тестовий вихідний платіж ОСББ (відправити в Приват24 на підпис КЕП)</h2>
+            <button type="button" class="btn-ghost-small" data-pf-act="toggle-test-out-pay">Закрити</button>
+        </div>
+        <p class="buh-note">Ви можете створити платіж у розділах Бухгалтерії (<a href="buh.html#expenses">«Документи»</a>, <a href="buh.html#payroll">«Зарплата»</a>, <a href="buh.html#advance">«Авансові звіти»</a>, <a href="buh.html#payments">«Платежі»</a>) або прямо тут — він одразу зʼявиться в черзі на підпис КЕП нижче.</p>
+        <div class="pay-grid">
+            ${openExps.length ? `
+                <label class="field pay-wide"><span class="field-label">Швидке заповнення із затвердженого документа витрат (необовʼязково)</span>
+                    <select id="tpExpenseSelect" class="field-input field-select">
+                        <option value="">— Вільний платіж (без привʼязки або оберіть документ) —</option>
+                        ${openExps.map(e => `<option value="${esc(e.id)}">№ ${esc(e.number || '—')} від ${esc(e.date || '')} · ${esc(e.supplierName || '')} — ${fmtKop((e.amountKop || 0) - (e.paidKop || 0))} грн</option>`).join('')}
+                    </select>
+                </label>
+            ` : ''}
+            <label class="field"><span class="field-label">З рахунку ОСББ</span>
+                <select id="tpAccount" class="field-input field-select">
+                    ${(accs.length ? accs : DEFAULT_SIM_ACCOUNTS).map(a => `<option value="${esc(a.iban)}"${a.iban === curIban ? ' selected' : ''}>${esc(a.iban)} (${fmtKop(a.balanceKop ?? a.defaultBalanceKop ?? 0)} грн)</option>`).join('')}
+                </select>
+            </label>
+            <label class="field"><span class="field-label">Вид платежу</span>
+                <select id="tpKind" class="field-input field-select">
+                    ${Object.entries(PAYMENT_KIND_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
+                </select>
+            </label>
+            <label class="field"><span class="field-label">Отримувач (назва ТОВ / ФОП / ДПС / ПІБ)</span>
+                <input id="tpRecName" class="field-input" maxlength="140" value="${esc(defaultSup.name || 'ТОВ «Одесаліфт-Сервіс»')}"></label>
+            <label class="field"><span class="field-label">Код ЄДРПОУ або РНОКПП отримувача</span>
+                <input id="tpRecCode" class="field-input" maxlength="10" value="${esc(defaultSup.code || '34512890')}"></label>
+            <label class="field"><span class="field-label">IBAN отримувача</span>
+                <input id="tpRecIban" class="field-input" maxlength="34" value="${esc(defaultSup.iban || 'UA553052990000026007778889991')}"></label>
+            <label class="field"><span class="field-label">Сума платежу, грн</span>
+                <input id="tpAmount" class="field-input" inputmode="decimal" value="4200,00"></label>
+            <label class="field pay-wide"><span class="field-label">Призначення платежу (payment_destination)</span>
+                <input id="tpPurpose" class="field-input" maxlength="160" value="Оплата за технічне обслуговування ліфтів згідно з актом № 10/26, без ПДВ"></label>
+        </div>
+        <div class="pay-form-actions">
+            <button type="button" class="sv-btn" style="width:auto" data-pf-act="create-test-out-pay">Відправити платіж у Приват24 на підпис КЕП</button>
+        </div>
+    </section>`;
+}
+
+async function renderBankView() {
+    const host = document.getElementById('viewBank');
+    if (!host) return;
+
+    if (!bankSimData) {
+        bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+    }
+    updateBankBadges(bankSimData.pendingPayments?.length || 0);
+
+    if (!bankBuilderDraft) {
+        bankBuilderDraft = buildDefaultBuilderDraft();
+    }
+
+    const bs = bankSimData.bankSettings || {};
+    const accs = bankSimData.accounts || [];
+    const curAcc = accs.find(a => a.purpose === 'current') || accs[0] || null;
+    const resAcc = accs.find(a => a.purpose === 'reserve') || accs[1] || null;
+    const pending = bankSimData.pendingPayments || [];
+    const pendingTotalKop = pending.reduce((s, p) => s + Number(p.amountKop || 0), 0);
+    const recentTx = bankSimData.recentTx || [];
+    const reviewTxCount = recentTx.filter(t => t.status === 'review').length;
+    const apts = bankSimData.apartments || [];
+    const activeTpl = BANK_SIM_TEMPLATES.find(t => t.id === activeTemplateId) || BANK_SIM_TEMPLATES[0];
+
+    const nowTime = new Intl.DateTimeFormat('uk-UA', {
+        timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(new Date());
+
+    const previewRawTx = buildPrivatRawTransaction({
+        ...bankBuilderDraft,
+        amountKop: toKop(bankBuilderDraft.amountGrn) || 0,
+        myName: bankSimData.org?.name,
+        myEdrpou: bankSimData.org?.edrpou
+    });
+
+    host.innerHTML = `
+        <!-- Статус підключення Приват24 Автоклієнт v3.0.0 -->
+        <div class="buh-card pf-bank-banner ${bs.connected ? '' : 'is-disconnected'}" style="margin-bottom: 14px;">
+            <div style="flex: 1 1 320px;">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+                    <span class="pf-p24-pill ${bs.connected ? '' : 'is-warn'}">
+                        ${bs.connected ? '● Приват24 Автоклієнт v3.0.0 ПІДКЛЮЧЕНО' : '○ Приват24 Автоклієнт не активовано'}
+                    </span>
+                    ${bs.simulator ? '<span class="buh-tag is-payment">Режим симулятора (Ключ ••••SIM3)</span>' : ''}
+                    <span class="buh-note">Контур: <b>${esc(bankSimData.org?.name || activeTenantId)}</b> (ЄДРПОУ ${esc(bankSimData.org?.edrpou || '—')})</span>
+                </div>
+                <p class="buh-note" style="margin:0">
+                    ${bs.connected
+                        ? `Банківські рахунки активні. Всі платежі з кабінету бухгалтера потрапляють сюди на підпис КЕП, а всі згенеровані нижче вхідні платежі проходять повний конвеєр <code>privat.normalizeTransaction → bank.storeTransactions</code>.`
+                        : `Натисніть «Активувати віртуальний ключ Приват24», щоб підключити рахунки ОСББ і одразу тестувати вхідні та вихідні банківські операції в усіх розділах системи.`}
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                ${!bs.connected || !bs.simulator ? `
+                    <button type="button" class="sv-btn btn-compact" data-pf-act="quick-enable-sim">⚡ Активувати віртуальний ключ Приват24</button>
+                ` : ''}
+                <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-bank-setup">
+                    ${showBankSetupForm ? 'Сховати налаштування рахунків' : 'Налаштувати рахунки та залишки'}
+                </button>
+                <a href="buh.html#bank" class="btn-ghost-small">У «Банк» бухгалтерії ↗</a>
+                <a href="buh.html#inbox" class="btn-ghost-small">У «Рішення» ↗</a>
+                <a href="buh.html#payments" class="btn-ghost-small">У «Платежі» ↗</a>
+            </div>
+        </div>
+
+        ${showBankSetupForm ? bankSetupFormHtml() : ''}
+
+        <!-- KPI Рахунків та черги -->
+        <div class="kpi-grid" style="margin-bottom: 16px;">
+            <div class="kpi">
+                <span>Поточний рахунок (311)</span>
+                <b>${curAcc ? `${fmtKop(curAcc.balanceKop)} грн` : 'Не підключено'}</b>
+                <small>${curAcc ? esc(curAcc.iban) : 'активуйте ключ вище'}</small>
+            </div>
+            <div class="kpi">
+                <span>Резервний / Ремонтний фонд (311)</span>
+                <b>${resAcc ? `${fmtKop(resAcc.balanceKop)} грн` : '—'}</b>
+                <small>${resAcc ? esc(resAcc.iban) : 'другий рахунок ОСББ'}</small>
+            </div>
+            <div class="kpi">
+                <span>Очікують підпису КЕП у Приват24</span>
+                <b style="color:${pending.length ? '#2563EB' : '#0F172A'}">${pending.length} пл. (${fmtKop(pendingTotalKop)} грн)</b>
+                <small>${pending.length ? 'готові до підписання нижче' : 'усі вихідні платежі проведено'}</small>
+            </div>
+            <div class="kpi">
+                <span>Виписка рахунку (bank_tx)</span>
+                <b>${recentTx.length} опер.</b>
+                <small>чекають рішення: ${reviewTxCount} · авто-рознесено: ${recentTx.length - reviewTxCount}</small>
+            </div>
+        </div>
+
+        <!-- БЛОК 1: ЧЕРГА ВИХІДНИХ ПЛАТЕЖІВ НА ПІДПИС КЕП -->
+        <div class="buh-card" style="margin-bottom: 16px;">
+            <div class="buh-toolbar">
+                <div>
+                    <h2 style="margin:0;font-size:17.5px">1. Приват24 для бізнесу — Платежі ОСББ, що очікують підпису КЕП (${pending.length})</h2>
+                    <p class="buh-note" style="margin:3px 0 0">
+                        Сюди автоматично потрапляють усі платежі, відправлені з <a href="buh.html#expenses">«Документів»</a>, <a href="buh.html#payroll">«Зарплати»</a>, <a href="buh.html#advance">«Авансових звітів»</a> та <a href="buh.html#payments">«Платежів»</a>.
+                        Натисніть <b>«Підписати КЕП і провести»</b> — система виконає <code>POST /api/proxy/payment/add-sign</code> і <code>GET /api/statements/transactions</code> (<code>TRANTYPE: "D"</code>, <code>DLR</code>), спише кошти з рахунку та закриє платіж і первинний документ.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-test-out-pay">+ Створити платіж на підпис</button>
+                    ${pending.length > 1 ? `<button type="button" class="sv-btn btn-compact" data-pf-act="bank-sign-all">✍️ Підписати КЕП всі (${pending.length})</button>` : ''}
+                </div>
+            </div>
+
+            ${showTestOutPayForm ? testOutPaymentFormHtml() : ''}
+
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:10px 12px;background:#F8FAFC;border-radius:10px;margin-top:10px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+                    <span class="t-muted">Дата проведення банком (DAT_OD):</span>
+                    <input type="date" id="pfSignDate" class="field-input" style="width:auto;height:34px;padding:0 10px" value="${esc(bankSimData.today || '2026-10-20')}">
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+                    <span class="t-muted">Час (TIM_P):</span>
+                    <input type="time" id="pfSignTime" class="field-input" style="width:auto;height:34px;padding:0 10px" value="${esc(nowTime)}">
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="pfSignFee">
+                    <span>Одночасно списати комісію ПриватБанку за платіж (5,00 грн, Дт 92 Кт 311)</span>
+                </label>
+            </div>
+
+            ${pending.length ? `
+                <div class="pf-pay-queue">
+                    ${pending.map(p => `
+                        <article class="pf-pay-card" data-id="${esc(p.id)}">
+                            <div class="pf-pay-head">
+                                <div>
+                                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+                                        <span class="buh-tag is-review">Чекає підпису КЕП</span>
+                                        <span class="buh-tag">${esc(PAYMENT_KIND_LABELS[p.kind] || p.kind || 'Платіж')}</span>
+                                        <small class="t-muted">${esc(p.linkedInfo || '')}</small>
+                                    </div>
+                                    <h3 style="margin:0;font-size:16px;color:#0F172A">${esc(p.recipient?.name || 'Отримувач')}</h3>
+                                </div>
+                                <div class="pf-pay-amount">−${fmtKop(p.amountKop)} грн</div>
+                            </div>
+
+                            <div class="pf-pay-meta">
+                                <div><span>Рахунок платника (ОСББ)</span><b>${esc(p.account || '—')}</b></div>
+                                <div><span>IBAN отримувача</span><b>${esc(p.recipient?.iban || '—')}</b></div>
+                                <div><span>Код ЄДРПОУ / РНОКПП</span><b>${esc(p.recipient?.code || '—')}</b></div>
+                                <div><span>Референс пачки (DLR / bankRef)</span><b>${esc(p.bankRef || `P24PACK-${p.docNumber || ''}`)}</b></div>
+                            </div>
+
+                            <div style="font-size:13px;color:#1E293B">
+                                <b>Призначення (OSND):</b> ${esc(p.purpose || '')}
+                            </div>
+
+                            <div class="pf-pay-actions">
+                                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                                    <button type="button" class="sv-btn btn-compact" data-pf-act="bank-sign-one" data-id="${esc(p.id)}">✍️ Підписати КЕП і провести в Приват24</button>
+                                    <button type="button" class="sv-btn is-soft btn-compact" style="color:#B91C1C" data-pf-act="bank-reject-one" data-id="${esc(p.id)}">✕ Відхилити банком</button>
+                                </div>
+                                <details>
+                                    <summary class="buh-note" style="cursor:pointer;font-weight:600;color:#2563EB">{ } Показати JSON-пакети API Приват24 v3.0.0</summary>
+                                    <pre class="pf-api-preview">${esc(JSON.stringify(p.privatApi, null, 2))}</pre>
+                                </details>
+                            </div>
+                        </article>
+                    `).join('')}
+                </div>
+            ` : `
+                <div class="list-empty" style="margin-top:12px;padding:18px;background:#F8FAFC;border-radius:12px">
+                    <b>Зараз немає вихідних платежів, що очікують підпису КЕП</b>
+                    <div class="buh-note" style="margin-top:4px">
+                        Створіть платіж у розділі <a href="buh.html#expenses">«Документи»</a> (кнопка «Створити платіж» на затвердженому рахунку/акті), у <a href="buh.html#payments">«Платежах»</a> або натисніть <b>«+ Створити платіж на підпис»</b> вище.
+                    </div>
+                </div>
+            `}
+        </div>
+
+        <!-- БЛОК 2: КОНСТРУКТОР ВХІДНИХ (І ВИХІДНИХ) ПЛАТЕЖІВ НА БАНК -->
+        <div class="buh-card" style="margin-bottom: 16px;">
+            <div class="buh-toolbar">
+                <div>
+                    <h2 style="margin:0;font-size:17.5px">2. Генератор вхідних (та вихідних) операцій по рахунку Приват24 (Шаблони + Вільні реквізити)</h2>
+                    <p class="buh-note" style="margin:3px 0 0">
+                        Оберіть готовий шаблон або введіть будь-які власні реквізити. Операція формується рівно за специфікацією <code>GET https://acp.privatbank.ua/api/statements/transactions</code> і проходить через штатний класифікатор <code>bank.js</code>.
+                    </p>
+                </div>
+            </div>
+
+            <h3 style="margin:12px 0 6px;font-size:14.5px;color:#334155">Швидкі шаблони операцій Приват24 (натисніть картку для заповнення форми або «⚡ В 1 клік» для миттєвого проведення):</h3>
+            <div class="pf-tpl-grid">
+                ${BANK_SIM_TEMPLATES.map(tpl => `
+                    <div class="pf-tpl-card${tpl.id === activeTemplateId ? ' is-active' : ''}" data-pf-act="bank-pick-tpl" data-tpl="${esc(tpl.id)}">
+                        <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                                <span class="sv-chip ${tpl.badgeCls || 'is-soft'}">${esc(tpl.badge)}</span>
+                                <small class="t-muted"><b>TRANTYPE: "${esc(tpl.trantype)}"</b> · ${esc(tpl.defaultAmountGrn)} грн</small>
+                            </div>
+                            <h4>${esc(tpl.title)}</h4>
+                            <p>${esc(tpl.subtitle)}</p>
+                        </div>
+                        <div class="pf-tpl-foot">
+                            <span class="buh-note" style="font-size:11.5px">${tpl.id === activeTemplateId ? '✓ Обрано у формі нижче' : 'Натисніть для редагування'}</span>
+                            <button type="button" class="sv-btn is-soft btn-compact" style="min-height:30px;padding:0 10px;font-size:12px" data-pf-act="bank-quick-tpl" data-tpl="${esc(tpl.id)}">⚡ В 1 клік</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+
+            <!-- Вибір реальної квартири будинку для шаблонів мешканців -->
+            ${apts.length ? `
+                <div style="padding:12px 14px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;margin-bottom:14px">
+                    <div class="pay-grid">
+                        <label class="field ${activeTpl.id === 'resident_split' ? '' : 'pay-wide'}">
+                            <span class="field-label">Швидка підстановка реальної квартири з бази ОСББ (автозаповнення ПІБ власника, особового рахунку та суми боргу)</span>
+                            <select id="bsAptSelect" class="field-input field-select">
+                                ${apts.map(a => `<option value="${esc(a.apt)}"${String(a.apt) === String(selectedSimApt) ? ' selected' : ''}>кв. ${esc(a.apt)}${a.personalAccount ? ` · о/р ${esc(a.personalAccount)}` : ''}${a.ownerName ? ` · ${esc(a.ownerName)}` : ''} · баланс: ${a.balance >= 0 ? '+' : ''}${a.balance.toFixed(2)} грн</option>`).join('')}
+                            </select>
+                        </label>
+                        ${activeTpl.id === 'resident_split' ? `
+                            <label class="field">
+                                <span class="field-label">Друга квартира (для спільного платежу за 2 квартири)</span>
+                                <select id="bsApt2Select" class="field-input field-select">
+                                    ${apts.map(a => `<option value="${esc(a.apt)}"${String(a.apt) === String(selectedSimApt2) ? ' selected' : ''}>кв. ${esc(a.apt)}${a.ownerName ? ` · ${esc(a.ownerName)}` : ''}</option>`).join('')}
+                                </select>
+                            </label>
+                        ` : ''}
+                    </div>
+                </div>
+            ` : ''}
+
+            <!-- Форма вільних реквізитів Приват24 API -->
+            <div class="pay-grid" id="bsBuilderForm">
+                <label class="field">
+                    <span class="field-label">Тип операції (TRANTYPE)</span>
+                    <select id="bsTrantype" class="field-input field-select">
+                        <option value="C"${bankBuilderDraft.trantype === 'C' ? ' selected' : ''}>C — Вхідне надходження на рахунок ОСББ (Кредит)</option>
+                        <option value="D"${bankBuilderDraft.trantype === 'D' ? ' selected' : ''}>D — Вихідне списання з рахунку ОСББ (Дебет)</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field-label">Рахунок ОСББ (AUT_MY_ACC)</span>
+                    <select id="bsAccount" class="field-input field-select">
+                        ${(accs.length ? accs : DEFAULT_SIM_ACCOUNTS).map(a => `<option value="${esc(a.iban)}"${a.iban === bankBuilderDraft.account ? ' selected' : ''}>${esc(a.iban)} (${esc(a.name || a.purpose)})</option>`).join('')}
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field-label">Сума операції (SUM), грн</span>
+                    <input id="bsAmount" class="field-input" inputmode="decimal" placeholder="850,00" value="${esc(bankBuilderDraft.amountGrn || '850,00')}">
+                </label>
+                <label class="field">
+                    <span class="field-label">Дата та час проведення (DAT_OD / TIM_P)</span>
+                    <div style="display:flex;gap:6px">
+                        <input id="bsDate" type="date" class="field-input" value="${esc(bankBuilderDraft.date || bankSimData.today || '2026-10-20')}">
+                        <input id="bsTime" type="time" class="field-input" style="max-width:110px" value="${esc(bankBuilderDraft.time || nowTime)}">
+                    </div>
+                </label>
+                <label class="field">
+                    <span class="field-label">Назва / ПІБ контрагента (AUT_CNTR_NAM)</span>
+                    <input id="bsCntrName" class="field-input" maxlength="160" placeholder="Коваленко Олена Василівна" value="${esc(bankBuilderDraft.counterpartyName || '')}">
+                </label>
+                <label class="field">
+                    <span class="field-label">ЄДРПОУ або РНОКПП контрагента (AUT_CNTR_CRF)</span>
+                    <input id="bsCntrCode" class="field-input" maxlength="10" placeholder="3124567890" value="${esc(bankBuilderDraft.counterpartyCode || '')}">
+                </label>
+                <label class="field">
+                    <span class="field-label">IBAN контрагента (AUT_CNTR_ACC)</span>
+                    <input id="bsCntrIban" class="field-input" maxlength="34" placeholder="UA…" value="${esc(bankBuilderDraft.counterpartyIban || '')}">
+                </label>
+                <label class="field">
+                    <span class="field-label">Референс банку (REF) та пачки (DLR)</span>
+                    <div style="display:flex;gap:6px">
+                        <input id="bsRef" class="field-input" maxlength="40" placeholder="REF" value="${esc(bankBuilderDraft.ref || '')}">
+                        <input id="bsDlr" class="field-input" maxlength="40" placeholder="DLR (опц.)" value="${esc(bankBuilderDraft.dlr || '')}">
+                    </div>
+                </label>
+                <label class="field pay-wide">
+                    <span class="field-label">Призначення платежу (OSND)</span>
+                    <input id="bsPurpose" class="field-input" maxlength="420" placeholder="Внески на утримання будинку, кв. 12, особовий рахунок 0012…" value="${esc(bankBuilderDraft.purpose || '')}">
+                </label>
+            </div>
+
+            <details style="margin-top:10px">
+                <summary class="buh-note" style="cursor:pointer;font-weight:600;color:#2563EB">{ } Живий попередній перегляд JSON-відповіді Приват24 API (GET /api/statements/transactions)</summary>
+                <pre id="bsJsonPreview" class="pf-api-preview">${esc(JSON.stringify({ status: 'SUCCESS', exist_next_page: false, transactions: [previewRawTx] }, null, 2))}</pre>
+            </details>
+
+            <div class="pay-form-actions" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button type="button" class="sv-btn" style="width:auto" data-pf-act="bank-sim-submit">
+                    🚀 Провести операцію через API Приват24 у виписку ОСББ
+                </button>
+                <span class="buh-note">Операція одразу зʼявиться у виписці нижче та в Бухгалтерії (<a href="buh.html#bank">«Банк»</a> / <a href="buh.html#inbox">«Рішення»</a>).</span>
+            </div>
+
+            ${lastSimulatedTxResult ? renderLastSimResultHtml(lastSimulatedTxResult) : ''}
+        </div>
+
+        <!-- БЛОК 3: ЖИВИЙ ЖУРНАЛ БАНКІВСЬКОЇ ВИПИСКИ (bank_tx) -->
+        <div class="buh-card">
+            <div class="buh-toolbar">
+                <div>
+                    <h2 style="margin:0;font-size:17.5px">3. Живий журнал банківської виписки ОСББ (bank_tx · ${recentTx.length})</h2>
+                    <p class="buh-note" style="margin:3px 0 0">Усі проведені вхідні та вихідні операції. Ви можете протестувати навіть банківське сторно (<code>PR_PR: "t"</code>) будь-якої операції.</p>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <a href="buh.html#bank" class="sv-btn is-soft btn-compact">Відкрити у Бухгалтерії ›</a>
+                </div>
+            </div>
+
+            <div class="jr-scroll" tabindex="0">
+                <table class="buh-table is-compact">
+                    <thead>
+                        <tr>
+                            <th>Дата / REF</th>
+                            <th>Контрагент (AUT_CNTR_*)</th>
+                            <th>Призначення (OSND)</th>
+                            <th>Статус і класифікація</th>
+                            <th class="t-sum">Сума, грн</th>
+                            <th>Дії симулятора</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${recentTx.length ? recentTx.map(tx => {
+                            const isOut = tx.direction === 'out';
+                            const aptsList = (tx.allocations || []).map(a => a.apt).filter(Boolean);
+                            const badgeText = tx.bankVoided
+                                ? 'Сторновано банком (PR_PR=t)'
+                                : tx.status === 'review'
+                                    ? 'Чекає рішення (review)'
+                                    : tx.kind === 'payment' && aptsList.length
+                                        ? `Авто: кв. ${aptsList.join(', ')}`
+                                        : tx.paymentId
+                                            ? `Платіж КЕП (${tx.category || 'expense'})`
+                                            : `${tx.kind || ''} ${tx.category ? `· ${tx.category}` : ''}`;
+                            const badgeCls = tx.bankVoided
+                                ? 'is-bad'
+                                : tx.status === 'review'
+                                    ? 'is-review'
+                                    : isOut
+                                        ? 'is-soft'
+                                        : 'is-payment';
+                            return `<tr>
+                                <td class="t-date" style="white-space:nowrap">
+                                    <b>${esc(tx.at ? new Date(tx.at).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')}</b>
+                                    <br><small class="t-muted">${esc(tx.bankId || tx.id)}</small>
+                                </td>
+                                <td>
+                                    <b>${esc(tx.counterparty?.name || '—')}</b>
+                                    <br><small class="t-muted">${esc(tx.counterparty?.code || '')}${tx.counterparty?.account ? ` · ${esc(tx.counterparty.account.slice(0, 8))}…${esc(tx.counterparty.account.slice(-4))}` : ''}</small>
+                                </td>
+                                <td>
+                                    <div style="max-width:340px">${esc(tx.purpose || '')}</div>
+                                    ${tx.dlr ? `<small class="t-muted">DLR: ${esc(tx.dlr)}</small>` : ''}
+                                </td>
+                                <td>
+                                    <span class="buh-tag ${badgeCls}">${esc(badgeText)}</span>
+                                    ${tx.suggestions?.length && tx.status === 'review' ? `<br><small class="t-muted">Підказка: кв. ${esc(tx.suggestions.map(s => s.apt).join(', '))}</small>` : ''}
+                                </td>
+                                <td class="t-sum ${isOut ? 'is-out' : ''}" style="white-space:nowrap">
+                                    <b>${isOut ? '−' : '+'}${fmtKop(tx.amountKop)}</b>
+                                </td>
+                                <td style="white-space:nowrap">
+                                    ${!tx.bankVoided ? `<button type="button" class="btn-ghost-small" style="color:#B91C1C" data-pf-act="bank-void-tx" data-id="${esc(tx.id)}" title="Симулювати сторнування цієї операції банком (PR_PR='t')">Сторно (PR_PR='t')</button>` : '<span class="t-muted">сторновано</span>'}
+                                </td>
+                            </tr>`;
+                        }).join('') : '<tr><td colspan="6" class="list-empty">У виписці ще немає операцій. Запустіть будь-який шаблон вище!</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderLastSimResultHtml(res) {
+    const tx = res.storedTx || {};
+    const isReview = tx.status === 'review';
+    const aptsList = (tx.allocations || []).map(a => a.apt).filter(Boolean);
+    const outcomeText = isReview
+        ? `Операція потрапила в чергу «Рішення» (status: review${tx.reason ? `, причина: ${tx.reason}` : ''})${tx.suggestions?.length ? ` · Підказки квартир: ${tx.suggestions.map(s => s.apt).join(', ')}` : ''}. Перейдіть у «Рішення» або «Банк» у Бухгалтерії, щоб рознести її.`
+        : tx.kind === 'payment' && aptsList.length
+            ? `Автоматично розпізнано та рознесено на кв. ${aptsList.join(', ')} (метод: ${tx.method || 'auto'}). Запис додано в історію квартири (ledger), баланс квартири перераховано!`
+            : `Автоматично проведено як «${tx.kind || 'done'}${tx.category ? ` / ${tx.category}` : ''}».`;
+
+    return `<div class="pf-tx-result ${isReview ? 'is-review' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div>
+                <b>${isReview ? '⏳ Операцію імпортовано у виписку — очікує рішення бухгалтера' : '✓ Операцію імпортовано та автоматично рознесено системою!'}</b>
+                <p class="buh-note" style="margin:4px 0 0;color:#0F172A">
+                    ID у виписці: <code>bank_tx/${esc(res.txId || '')}</code> · Сума: <b>${tx.direction === 'out' ? '−' : '+'}${fmtKop(tx.amountKop || 0)} грн</b> · ${esc(outcomeText)}
+                </p>
+            </div>
+            <div style="display:flex;gap:8px">
+                ${isReview ? `<a href="buh.html#inbox" class="sv-btn is-soft btn-compact">Розібрати у «Рішеннях» ↗</a>` : `<a href="buh.html#bank" class="sv-btn is-soft btn-compact">Переглянути в Бухгалтерії ↗</a>`}
+            </div>
+        </div>
+    </div>`;
+}
+
+// ============================================================
+// ВКЛАДКА 3: ТЕСТОВИЙ ПОЛІГОН І СИМУЛЯЦІЇ (testing)
 // ============================================================
 const SANDBOX_STAGES = [
     ['charge', '1. Нарахування внесків', 'Масове нарахування за площу та кількість проживаючих (Дт 377 Кт 48).'],
@@ -642,7 +1410,7 @@ async function renderTestingView() {
 }
 
 // ============================================================
-// ВКЛАДКА 3: КОРИСТУВАЧІ ТА АКТИВНІСТЬ (users)
+// ВКЛАДКА 4: КОРИСТУВАЧІ ТА АКТИВНІСТЬ (users)
 // ============================================================
 function renderUsersView() {
     const host = document.getElementById('viewUsers');
@@ -762,7 +1530,7 @@ function renderUsersView() {
 }
 
 // ============================================================
-// ВКЛАДКА 4: ІНСПЕКТОР БД І РУЧНЕ КОРИГУВАННЯ (inspector)
+// ВКЛАДКА 5: ІНСПЕКТОР БД І РУЧНЕ КОРИГУВАННЯ (inspector)
 // ============================================================
 function docSummaryLine(col, d) {
     const data = d.data || {};
@@ -964,7 +1732,7 @@ async function renderInspectorView() {
 }
 
 // ============================================================
-// ВКЛАДКА 5: АРХІТЕКТУРА MULTI-TENANT (architecture)
+// ВКЛАДКА 6: АРХІТЕКТУРА MULTI-TENANT (architecture)
 // ============================================================
 function renderArchitectureView() {
     const host = document.getElementById('viewArchitecture');
@@ -995,9 +1763,9 @@ function renderArchitectureView() {
                 </div>
 
                 <div class="pf-arch-card">
-                    <span class="pf-tier-badge">4. Shadow Sandbox & Closed Drivers</span>
-                    <h3>Ізольований полігон для банку і податкової</h3>
-                    <p>Реальні зовнішні сервіси (Приват24 Автоклієнт, FCM-сповіщення, форми ДПС) замінюються у тестовому контурі на детерміновані Closed-Loop драйвери. Це дозволяє проганяти повний річний цикл ОСББ та податкові звіти без ризику відправити реальний платіж.</p>
+                    <span class="pf-tier-badge">4. Privat24 Autoclient v3.0.0 Twin</span>
+                    <h3>Цифровий двійник Приват24 API</h3>
+                    <p>Модуль «Банк Приват24» відтворює 100% специфікації <code>acp.privatbank.ua</code>: чергу платежів на підпис КЕП (<code>/api/proxy/payment/*</code>), пакетні референси <code>DLR</code>, дебетові та кредитові транзакції (<code>TRANTYPE: C/D</code>, <code>FL_REAL: r</code>, <code>PR_PR: r/t</code>) і автоматичне закриття рахунків та відомостей.</p>
                 </div>
 
                 <div class="pf-arch-card">
@@ -1027,7 +1795,7 @@ function renderArchitectureView() {
                 <tbody>
                     <tr>
                         <td><b>Етап 1 (Поточний фундамент)</b></td>
-                        <td>Super-Admin Control Plane (<code>platform.html</code>), реєстр ОСББ (<code>platform_tenants</code>), перемикач контексту БД, інспектор колекцій з Diff-превʼю та обовʼязковим аудитом, інтеграція тестового полігону й діагностики інваріантів.</td>
+                        <td>Super-Admin Control Plane (<code>platform.html</code>), реєстр ОСББ (<code>platform_tenants</code>), симулятор Приват24 Автоклієнт v3.0.0 з КЕП-підписом платежів, інспектор колекцій з Diff-превʼю та обовʼязковим аудитом.</td>
                         <td><span class="sv-chip is-done">✓ Запроваджено</span></td>
                     </tr>
                     <tr>
@@ -1105,8 +1873,19 @@ function initEvents() {
                 inspectorDocs = [];
                 selectedDoc = null;
                 liveDiagnostics = null;
+                bankSimData = null;
+                bankBuilderDraft = null;
                 toast(`Активний контур перемкнено на: ${activeTenantId}`, 'info');
                 await refreshAllData();
+            } else if (act === 'open-bank-tab') {
+                await switchView('bank');
+            } else if (act === 'open-tenant-bank') {
+                activeTenantId = actBtn.dataset.id;
+                bankSimData = null;
+                bankBuilderDraft = null;
+                overviewData = await callPlatform({ action: 'overview', tenantId: activeTenantId });
+                updateTenantSwitcher();
+                await switchView('bank');
             } else if (act === 'inspect-tenant') {
                 activeTenantId = actBtn.dataset.id;
                 inspectorDocs = [];
@@ -1114,7 +1893,190 @@ function initEvents() {
                 overviewData = await callPlatform({ action: 'overview', tenantId: activeTenantId });
                 updateTenantSwitcher();
                 await switchView('inspector');
-            } else if (act === 'run-diagnostics') {
+            }
+            // ---- ПОДІЇ СИМУЛЯТОРА БАНКУ ПРИВАТ24 ----
+            else if (act === 'toggle-bank-setup') {
+                showBankSetupForm = !showBankSetupForm;
+                await renderBankView();
+            } else if (act === 'quick-enable-sim') {
+                setBusy(actBtn, true, 'Активую ключ Приват24…');
+                await callPlatform({ action: 'bankSetupSimulator', tenantId: activeTenantId });
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                bankBuilderDraft = buildDefaultBuilderDraft();
+                toast('Віртуальний ключ Приват24 Автоклієнт v3.0.0 та рахунки ОСББ активовано!', 'success');
+                await refreshAllData();
+            } else if (act === 'save-bank-setup') {
+                setBusy(actBtn, true, 'Зберігаю рахунки…');
+                const currentIban = document.getElementById('bsSetupCurIban')?.value?.trim() || '';
+                const currentBalanceKop = toKop(document.getElementById('bsSetupCurBal')?.value || '0') ?? 28540000;
+                const reserveIban = document.getElementById('bsSetupResIban')?.value?.trim() || '';
+                const reserveBalanceKop = toKop(document.getElementById('bsSetupResBal')?.value || '0') ?? 15000000;
+                await callPlatform({
+                    action: 'bankSetupSimulator',
+                    tenantId: activeTenantId,
+                    currentIban,
+                    currentBalanceKop,
+                    reserveIban,
+                    reserveBalanceKop
+                });
+                showBankSetupForm = false;
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                bankBuilderDraft = buildDefaultBuilderDraft();
+                toast('Рахунки та віртуальний ключ Приват24 успішно збережено', 'success');
+                await refreshAllData();
+            } else if (act === 'disable-bank-sim') {
+                setBusy(actBtn, true, 'Вимикаю…');
+                await callPlatform({ action: 'bankDisableSimulator', tenantId: activeTenantId });
+                showBankSetupForm = false;
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                toast('Режим симулятора Приват24 вимкнено', 'info');
+                await refreshAllData();
+            } else if (act === 'toggle-test-out-pay') {
+                showTestOutPayForm = !showTestOutPayForm;
+                await renderBankView();
+            } else if (act === 'create-test-out-pay') {
+                const amountKop = toKop(document.getElementById('tpAmount')?.value || '');
+                if (!amountKop || amountKop <= 0) {
+                    toast('Вкажіть суму платежу більшу за 0,00 грн', 'error');
+                    return;
+                }
+                setBusy(actBtn, true, 'Відправляю на підпис…');
+                // Переконуємося, що віртуальний банк підключено
+                if (!bankSimData?.bankSettings?.connected) {
+                    await callPlatform({ action: 'bankSetupSimulator', tenantId: activeTenantId });
+                }
+                const expId = document.getElementById('tpExpenseSelect')?.value || null;
+                await callBackend('paymentAction', {
+                    action: 'create',
+                    kind: document.getElementById('tpKind')?.value || 'supplier',
+                    account: document.getElementById('tpAccount')?.value || DEFAULT_SIM_ACCOUNTS[0].iban,
+                    recipient: {
+                        name: document.getElementById('tpRecName')?.value?.trim() || '',
+                        code: document.getElementById('tpRecCode')?.value?.trim() || '',
+                        iban: document.getElementById('tpRecIban')?.value?.trim() || ''
+                    },
+                    amountKop,
+                    purpose: document.getElementById('tpPurpose')?.value?.trim() || '',
+                    ...(expId ? { expenseId: expId } : {})
+                });
+                showTestOutPayForm = false;
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                toast('Платіж створено і доставлено в чергу Приват24 на підпис КЕП!', 'success');
+                await refreshAllData();
+            } else if (act === 'bank-sign-one') {
+                const paymentId = actBtn.dataset.id;
+                const date = document.getElementById('pfSignDate')?.value || bankSimData?.today;
+                const time = document.getElementById('pfSignTime')?.value || '14:35';
+                const feeKop = document.getElementById('pfSignFee')?.checked ? 500 : 0;
+                setBusy(actBtn, true, 'Підписую КЕП і проводжу…');
+                const res = await callPlatform({
+                    action: 'bankSignPayment',
+                    tenantId: activeTenantId,
+                    paymentId,
+                    date,
+                    time,
+                    feeKop
+                });
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                toast(`Платіж підписано КЕП у Приват24 та проведено у виписці (${fmtKop(res.amountKop)} грн, DLR: ${res.bankRef})!`, 'success');
+                await refreshAllData();
+            } else if (act === 'bank-sign-all') {
+                const date = document.getElementById('pfSignDate')?.value || bankSimData?.today;
+                const time = document.getElementById('pfSignTime')?.value || '14:35';
+                const feeKop = document.getElementById('pfSignFee')?.checked ? 500 : 0;
+                setBusy(actBtn, true, 'Підписую пачку КЕП…');
+                const res = await callPlatform({
+                    action: 'bankSignAllPayments',
+                    tenantId: activeTenantId,
+                    date,
+                    time,
+                    feeKop
+                });
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                toast(`Пачку з ${res.signedCount} платежів на суму ${fmtKop(res.totalKop)} грн підписано КЕП та проведено у виписці!`, 'success');
+                await refreshAllData();
+            } else if (act === 'bank-reject-one') {
+                const paymentId = actBtn.dataset.id;
+                const reason = await promptDialog(
+                    'Відхилити платіж у Приват24?',
+                    'Симулюється забракування платежу банком або відмова підписанта. Вкажіть причину відхилення:',
+                    { confirmLabel: 'Відхилити платіж', placeholder: 'Невірний рахунок отримувача / скасовано підписантом' }
+                );
+                if (!reason) return;
+                setBusy(actBtn, true, 'Відхиляю…');
+                await callPlatform({
+                    action: 'bankRejectPayment',
+                    tenantId: activeTenantId,
+                    paymentId,
+                    reason
+                });
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                toast('Платіж позначено як відхилений банком (status: failed)', 'info');
+                await refreshAllData();
+            } else if (act === 'bank-quick-tpl') {
+                e.stopPropagation();
+                activeTemplateId = actBtn.dataset.tpl;
+                bankBuilderDraft = buildDefaultBuilderDraft();
+                await renderBankView();
+                const vals = readBuilderFormValues();
+                setBusy(actBtn, true, 'Проводжу…');
+                const res = await callPlatform({
+                    action: 'bankSimulateTransaction',
+                    tenantId: activeTenantId,
+                    ...vals
+                });
+                lastSimulatedTxResult = res;
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                bankBuilderDraft.ref = `P24SIM${Date.now().toString(36).toUpperCase().slice(-6)}`;
+                toast(res.storedTx?.status === 'done'
+                    ? `Операцію проведено в 1 клік та автоматично рознесено (${fmtKop(vals.amountKop)} грн)!`
+                    : `Операцію проведено в 1 клік — очікує рішення в Бухгалтерії (${fmtKop(vals.amountKop)} грн)`, 'success');
+                await refreshAllData();
+            } else if (act === 'bank-pick-tpl') {
+                activeTemplateId = actBtn.dataset.tpl;
+                bankBuilderDraft = buildDefaultBuilderDraft();
+                await renderBankView();
+            } else if (act === 'bank-sim-submit') {
+                const vals = readBuilderFormValues();
+                if (!vals.amountKop || vals.amountKop <= 0) {
+                    toast('Вкажіть суму операції більшу за 0,00 грн', 'error');
+                    return;
+                }
+                setBusy(actBtn, true, 'Проводжу через API Приват24…');
+                const res = await callPlatform({
+                    action: 'bankSimulateTransaction',
+                    tenantId: activeTenantId,
+                    ...vals
+                });
+                lastSimulatedTxResult = res;
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                bankBuilderDraft = {
+                    ...vals,
+                    ref: `P24SIM${Date.now().toString(36).toUpperCase().slice(-6)}`
+                };
+                toast(res.storedTx?.status === 'done'
+                    ? `Операцію проведено у виписці Приват24 та автоматично рознесено!`
+                    : `Операцію проведено у виписці Приват24 — чекає рішення в «Рішеннях»`, 'success');
+                await refreshAllData();
+            } else if (act === 'bank-void-tx') {
+                const txId = actBtn.dataset.id;
+                if (!await confirmDialog(
+                    'Симулювати банківське сторно (PR_PR="t")?',
+                    `ПриватБанк надішле у виписці ознаку сторнування PR_PR="t" для операції ${txId}. Рознесення в історії квартири або оплату документа буде автоматично скасовано.`,
+                    'Провести сторно банку'
+                )) return;
+                setBusy(actBtn, true, 'Сторную…');
+                await callPlatform({
+                    action: 'bankVoidTransaction',
+                    tenantId: activeTenantId,
+                    txId
+                });
+                bankSimData = await callPlatform({ action: 'bankSimulatorContext', tenantId: activeTenantId });
+                toast('Операцію сторновано банком (PR_PR="t"), повʼязані баланси оновлено', 'info');
+                await refreshAllData();
+            }
+            // ---- ПОДІЇ ТЕСТОВОГО ПОЛІГОНУ ТА ІНСПЕКТОРА ----
+            else if (act === 'run-diagnostics') {
                 setBusy(actBtn, true, 'Перевіряю базу…');
                 liveDiagnostics = await callPlatform({ action: 'runDiagnostics', tenantId: activeTenantId });
                 toast(liveDiagnostics.allOk ? 'Усі перевірки цілісності пройдено успішно!' : `Виявлено розбіжностей: ${liveDiagnostics.failedCount}`, liveDiagnostics.allOk ? 'success' : 'error');
@@ -1278,7 +2240,31 @@ function initEvents() {
             inspectorDocs = [];
             selectedDoc = null;
             liveDiagnostics = null;
+            bankSimData = null;
+            bankBuilderDraft = null;
             await refreshAllData();
+        } else if (e.target.id === 'bsAptSelect') {
+            selectedSimApt = e.target.value;
+            if (activeTemplateId !== 'resident_exact' && activeTemplateId !== 'resident_split') {
+                activeTemplateId = 'resident_exact';
+            }
+            bankBuilderDraft = buildDefaultBuilderDraft();
+            await renderBankView();
+        } else if (e.target.id === 'bsApt2Select') {
+            selectedSimApt2 = e.target.value;
+            bankBuilderDraft = buildDefaultBuilderDraft();
+            await renderBankView();
+        } else if (e.target.id === 'tpExpenseSelect' && e.target.value) {
+            const exp = (bankSimData?.openExpenses || []).find(x => x.id === e.target.value);
+            const sup = exp ? (bankSimData?.suppliers || []).find(s => s.id === exp.supplierId) : null;
+            if (exp) {
+                const remKop = Math.max(0, (exp.amountKop || 0) - (exp.stornoKop || 0) - (exp.paidKop || 0));
+                if (document.getElementById('tpRecName')) document.getElementById('tpRecName').value = sup?.name || exp.supplierName || '';
+                if (document.getElementById('tpRecCode') && sup?.code) document.getElementById('tpRecCode').value = sup.code;
+                if (document.getElementById('tpRecIban') && sup?.iban) document.getElementById('tpRecIban').value = sup.iban;
+                if (document.getElementById('tpAmount')) document.getElementById('tpAmount').value = (remKop / 100).toFixed(2).replace('.', ',');
+                if (document.getElementById('tpPurpose')) document.getElementById('tpPurpose').value = `${exp.description || 'Оплата згідно з документом'} № ${exp.number || ''} від ${exp.date || ''}, без ПДВ`;
+            }
         } else if (e.target.id === 'pfSbPeriod') {
             sandboxPeriod = e.target.value;
             sandboxVerifyResult = null;
@@ -1299,6 +2285,9 @@ function initEvents() {
             selectedDoc = null;
             await loadInspectorDocs();
             await renderInspectorView();
+        } else if (e.target.closest('#bsBuilderForm')) {
+            bankBuilderDraft = readBuilderFormValues();
+            updateLivePrivatJsonPreview();
         }
     });
 
@@ -1313,6 +2302,9 @@ function initEvents() {
             const next = document.getElementById('pfAuditSearch');
             next?.focus();
             next?.setSelectionRange(pos, pos);
+        } else if (e.target.closest('#bsBuilderForm')) {
+            bankBuilderDraft = readBuilderFormValues();
+            updateLivePrivatJsonPreview();
         }
     });
 
@@ -1321,6 +2313,7 @@ function initEvents() {
         setBusy(btn, true, 'Оновлюю…');
         try {
             if (activeView === 'inspector') await loadInspectorDocs();
+            if (activeView === 'bank') bankSimData = null;
             await refreshAllData();
             toast('Дані платформи оновлено', 'success');
         } catch (err) {

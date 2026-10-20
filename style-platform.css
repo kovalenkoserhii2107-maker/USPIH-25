@@ -126,6 +126,182 @@
     gap: 8px;
 }
 
+/* ============================================================
+   Симулятор Приват24 Автоклієнт v3.0.0 (#viewBank)
+   ============================================================ */
+.pf-bank-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-left: 5px solid #16A34A;
+    background: linear-gradient(135deg, #F0FDF4 0%, #FFFFFF 65%);
+}
+
+.pf-bank-banner.is-disconnected {
+    border-left-color: #D97706;
+    background: linear-gradient(135deg, #FFFBEB 0%, #FFFFFF 65%);
+}
+
+.pf-p24-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #DCFCE7;
+    color: #15803D;
+}
+
+.pf-p24-pill.is-warn {
+    background: #FEF3C7;
+    color: #B45309;
+}
+
+.pf-pay-queue {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.pf-pay-card {
+    background: #FFFFFF;
+    border: 1.5px solid #CBD5E1;
+    border-left: 5px solid #2563EB;
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.pf-pay-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.pf-pay-amount {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0F172A;
+    white-space: nowrap;
+}
+
+.pf-pay-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px 14px;
+    padding: 10px 12px;
+    background: #F8FAFC;
+    border-radius: 10px;
+    font-size: 12.5px;
+}
+
+.pf-pay-meta div span {
+    display: block;
+    font-size: 11px;
+    color: #64748B;
+}
+
+.pf-pay-meta div b {
+    color: #0F172A;
+    word-break: break-all;
+}
+
+.pf-pay-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Картки шаблонів вхідних/вихідних операцій Приват24 */
+.pf-tpl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
+    gap: 10px;
+    margin: 12px 0 16px;
+}
+
+.pf-tpl-card {
+    background: #F8FAFC;
+    border: 1.5px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+
+.pf-tpl-card:hover {
+    background: #F1F5F9;
+    border-color: #94A3B8;
+}
+
+.pf-tpl-card.is-active {
+    background: #EFF6FF;
+    border-color: #2563EB;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.1);
+}
+
+.pf-tpl-card h4 {
+    margin: 4px 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #0F172A;
+}
+
+.pf-tpl-card p {
+    margin: 0;
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.4;
+}
+
+.pf-tpl-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.pf-api-preview {
+    background: #0F172A;
+    color: #E2E8F0;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-x: auto;
+    margin-top: 10px;
+    border: 1px solid #1E293B;
+}
+
+.pf-tx-result {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1.5px solid #86EFAC;
+    background: #F0FDF4;
+}
+
+.pf-tx-result.is-review {
+    border-color: #FDE047;
+    background: #FEFCE8;
+}
+
 /* Матриця перевірок інваріантів */
 .pf-check-list {
     list-style: none;

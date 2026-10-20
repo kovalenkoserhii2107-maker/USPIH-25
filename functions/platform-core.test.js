@@ -2,6 +2,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const core = require('./platform-core');
+const privat = require('./privat');
+const bankCore = require('./bank-core');
+const paymentsCore = require('./payments-core');
 
 test('validEdrpouChecksum та normalizeTenantSlug коректно перевіряють код ЄДРПОУ і генерують slug', () => {
     assert.equal(core.validEdrpouChecksum('40562894'), true);
@@ -86,7 +89,6 @@ test('evaluateAccountingInvariants виявляє розбіжності між 
     assert.equal(okRes.allOk, true);
     assert.equal(okRes.failedCount, 0);
 
-    // Тепер зіпсуємо баланс кв. 1 вручну без запису в ledger
     apartments[0].balance = 0;
     const failRes = core.evaluateAccountingInvariants({
         apartments,
@@ -126,4 +128,79 @@ test('summarizeUserActivity рахує активацію кабінетів, б
     assert.equal(summary.staffByRole.chair, 1);
     assert.equal(summary.staffByRole.accountant, 1);
     assert.equal(summary.events24h, 2);
+});
+
+test('buildPrivatRawTransaction та buildPrivatPaymentApiLifecycle повністю сумісні з privat.normalizeTransaction і bank-core', () => {
+    // 1. Перевірка вхідного платежу мешканця (TRANTYPE: 'C')
+    const rawIn = core.buildPrivatRawTransaction({
+        account: 'UA213052990000026007054321001',
+        direction: 'in',
+        amountKop: 85000,
+        counterpartyName: 'Коваленко Олена Василівна',
+        counterpartyCode: '3124567890',
+        counterpartyIban: 'UA213052990000026201234567891',
+        purpose: 'Внески на утримання будинку, кв. 12, особовий рахунок 0012',
+        date: '2026-10-20',
+        time: '14:25',
+        ref: 'P24SIM001',
+        refn: '1'
+    });
+    assert.equal(rawIn.TRANTYPE, 'C');
+    assert.equal(rawIn.FL_REAL, 'r');
+    assert.equal(rawIn.PR_PR, 'r');
+    assert.equal(rawIn.SUM, '850.00');
+    assert.equal(rawIn.DAT_OD, '20.10.2026');
+
+    const normIn = privat.normalizeTransaction(rawIn);
+    assert.ok(normIn);
+    assert.equal(normIn.direction, 'in');
+    assert.equal(normIn.amountKop, 85000);
+    assert.equal(normIn.final, true);
+    assert.equal(normIn.void, false);
+
+    const decision = bankCore.classify(normIn, {
+        known: {
+            apts: new Set(['12', '14']),
+            accounts: new Map([['0012', '12']])
+        },
+        owners: [{ apt: '12', name: 'Коваленко Олена Василівна' }],
+        links: new Map(),
+        ownAccounts: new Set(['UA213052990000026007054321001'])
+    });
+    assert.equal(decision.status, 'matched');
+    assert.equal(decision.apt, '12');
+
+    // 2. Перевірка підписання вихідного платежу (TRANTYPE: 'D', DLR == payment.bankRef)
+    const samplePayment = {
+        id: 'pay-exp-1',
+        kind: 'supplier',
+        account: 'UA213052990000026007054321001',
+        amountKop: 420000,
+        purpose: 'Оплата за тех. обслуговування ліфтів згідно з актом № 18 від 15.10.2026, без ПДВ',
+        recipient: {
+            name: 'ТОВ «Одесаліфт-Сервіс»',
+            code: '34512890',
+            iban: 'UA553052990000026007778889991'
+        },
+        docNumber: 'A1B2C3D4E5',
+        bankRef: 'P24PACK-A1B2C3D4E5',
+        paymentRef: 'P24DOC-A1B2C3D4E5',
+        status: 'sent',
+        sentAt: new Date('2026-10-20T10:00:00Z')
+    };
+
+    const lifecycle = core.buildPrivatPaymentApiLifecycle(samplePayment, {
+        date: '2026-10-20',
+        time: '15:10'
+    });
+    assert.equal(lifecycle.createPayload.document_number, 'A1B2C3D4E5');
+    assert.equal(lifecycle.statementTx.TRANTYPE, 'D');
+    assert.equal(lifecycle.statementTx.DLR, 'P24PACK-A1B2C3D4E5');
+
+    const normOut = privat.normalizeTransaction(lifecycle.statementTx);
+    assert.ok(normOut);
+    assert.equal(normOut.direction, 'out');
+    assert.equal(normOut.amountKop, 420000);
+    assert.equal(normOut.dlr, 'P24PACK-A1B2C3D4E5');
+    assert.equal(paymentsCore.matchesPayment(normOut, samplePayment), true);
 });
