@@ -1,8 +1,9 @@
 // ============================================================
-// «Банк» (рахунки, розширені фільтри, операції за днями з візуально
-// різними стрілками вхідних/вихідних платежів, окреме модальне вікно
-// деталей платежу з інтерактивними переходами на контрагента, договір,
-// квартиру та проводку в ОСВ, а також кнопка «← Назад у Банк»)
+// «Банк» (рахунки, згортаємі фільтри, операції за днями з простими
+// значками вхідних/вихідних платежів, позначкою способу розподілу
+// «Автоматично / Вручну», окреме модальне вікно деталей платежу
+// з інтерактивними переходами на контрагента, договір, квартиру
+// та проводку в ОСВ, а також компактна кнопка «← Назад»)
 // і «Налаштування» (5 підвкладок:
 //   1. Організація та реквізити
 //   2. Банк та інтеграції
@@ -25,7 +26,8 @@ import { toKop, fmtKop, periodName, parseOpeningLines, openingSummary } from './
 import { registryHtml, saveRegistry } from './buh-registry.js';
 import {
     TABS, DIRECTION_FILTERS, DATE_PRESETS, BANK_CATEGORY_OPTIONS,
-    byDay, quickAssign, filterTx, txCategoryInfo, describeTxAccountingEntry, resolveTxLinks
+    byDay, quickAssign, filterTx, txCategoryInfo, txDistributionInfo,
+    describeTxAccountingEntry, resolveTxLinks
 } from './bank-view-core.js';
 import { openTxSheet, openPaymentSheet } from './buh-chain.js';
 import { openExpenses } from './buh-expenses.js';
@@ -47,6 +49,7 @@ let last = null;
 let more = false;
 let tab = 'all';
 let query = '';
+let filtersOpen = false; // За замовчуванням панель фільтрів згорнута
 let opened = null; // ID операції, відкритої в окремому модальному вікні
 let highlightedTxId = null;
 let bankSettingsCache = {};
@@ -87,15 +90,11 @@ export function renderBankReturnBanner(currentView) {
     }
     const main = document.querySelector('.buh-main');
     if (!main) return;
-    const html = `<div id="buhBackNavBanner" class="buh-back-nav-bar" role="region" aria-label="Повернення в Банк">
+    const html = `<div id="buhBackNavBanner" class="buh-back-nav-wrap" role="region" aria-label="Повернення в Банк">
         <button type="button" class="buh-back-nav-btn" id="buhBackNavGo">
             <span class="buh-back-nav-arrow" aria-hidden="true">←</span>
-            <span class="buh-back-nav-copy">
-                <b>Назад у «Банк» до платежу: ${escapeHtml(bankNavReturnState.txTitle)}</b>
-                <small>Повернутися на ту саму позицію списку й відкрити вікно операції${bankNavReturnState.targetLabel ? ` (перехід: ${escapeHtml(bankNavReturnState.targetLabel)})` : ''}</small>
-            </span>
+            <span>Назад</span>
         </button>
-        <button type="button" class="buh-back-nav-close" id="buhBackNavDismiss" aria-label="Закрити панель повернення" title="Залишитись у цьому розділі">✕</button>
     </div>`;
     if (existing) {
         existing.outerHTML = html;
@@ -104,9 +103,6 @@ export function renderBankReturnBanner(currentView) {
     }
     document.getElementById('buhBackNavGo')?.addEventListener('click', () => {
         returnToBankPosition();
-    });
-    document.getElementById('buhBackNavDismiss')?.addEventListener('click', () => {
-        clearBankReturnBanner();
     });
 }
 
@@ -128,6 +124,7 @@ function navigateFromBankModal(tx, targetLabel, navigateFn) {
         targetLabel,
         tab,
         query,
+        filtersOpen,
         filters: { ...filters },
         scrollY: window.scrollY,
         reopenModal: true,
@@ -148,28 +145,13 @@ const humanDate = d => {
     return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split('-').reverse().join('.') : s;
 };
 
-// SVG-іконки з чітко різною геометрією для вхідних (↓ у лоток) та вихідних (↑ зі штрихової планки) платежів
-const INCOMING_ARROW_SVG = `<svg class="bk-arrow-svg is-in" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
-    <path d="M12 3.5v11.5" stroke="currentColor" stroke-width="2.7" stroke-linecap="round"/>
-    <path d="m7.2 10.8 4.8 4.8 4.8-4.8" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M5 17.5v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
-</svg>`;
-
-const OUTGOING_ARROW_SVG = `<svg class="bk-arrow-svg is-out" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
-    <path d="M12 19.5V8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-    <path d="m7.2 12.2 4.8-4.8 4.8 4.8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M5.5 4.2h13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="2.5 2.5"/>
-</svg>`;
-
+/** Лаконічні значки: зелений + у кружку (надходження), чорний − у квадраті з плавними кутами (списання). */
 function directionIconHtml(tx, large = false) {
     const out = tx.direction === 'out';
     const wait = tx.status === 'review' || Boolean(tx.bankConflict);
     const cls = `bk-ico ${out ? 'is-out' : 'is-in'}${wait ? ' is-wait' : ''}${large ? ' is-lg' : ''}`;
     const label = out ? 'Вихідний платіж (списання з рахунку)' : 'Вхідний платіж (надходження на рахунок)';
-    return `<span class="${cls}" title="${label}" aria-label="${label}">
-        ${out ? OUTGOING_ARROW_SVG : INCOMING_ARROW_SVG}
-        <span class="bk-ico-badge" aria-hidden="true">${out ? '−' : '+'}</span>
-    </span>`;
+    return `<span class="${cls}" title="${label}" aria-label="${label}">${out ? '−' : '+'}</span>`;
 }
 
 function accountBalance(a) {
@@ -213,19 +195,32 @@ function normalizedFilters() {
     };
 }
 
+function countActivePanelFilters() {
+    let count = 0;
+    if (filters.direction !== 'all') count++;
+    if (filters.category !== 'all') count++;
+    if (filters.counterparty.trim()) count++;
+    if (filters.account) count++;
+    if (filters.datePreset !== 'all' || filters.dateFrom || filters.dateTo) count++;
+    if (filters.amountMin.trim() || filters.amountMax.trim()) count++;
+    return count;
+}
+
 function hasActiveFilters() {
-    return Boolean(
-        query.trim()
-        || filters.direction !== 'all'
-        || filters.category !== 'all'
-        || filters.counterparty.trim()
-        || filters.account
-        || filters.datePreset !== 'all'
-        || filters.dateFrom
-        || filters.dateTo
-        || filters.amountMin.trim()
-        || filters.amountMax.trim()
-    );
+    return Boolean(query.trim() || countActivePanelFilters() > 0);
+}
+
+function updateFilterToggleBtn() {
+    const btn = document.getElementById('bankFilterToggle');
+    if (!btn) return;
+    const activeCount = countActivePanelFilters();
+    btn.classList.toggle('is-open', filtersOpen);
+    btn.classList.toggle('has-active', activeCount > 0);
+    btn.setAttribute('aria-expanded', String(filtersOpen));
+    const labelEl = btn.querySelector('.bk-filter-toggle-label');
+    if (labelEl) labelEl.textContent = activeCount > 0 ? `Фільтр (${activeCount})` : 'Фільтр';
+    const caretEl = btn.querySelector('.bk-filter-caret');
+    if (caretEl) caretEl.textContent = filtersOpen ? '▴' : '▾';
 }
 
 function collectCounterpartySuggestions() {
@@ -242,7 +237,7 @@ function collectCounterpartySuggestions() {
 function filtersBarHtml(settings) {
     const accounts = Object.entries(settings.accounts || {});
     const cpSuggestions = collectCounterpartySuggestions();
-    return `<div class="bk-filters-panel" id="bankFiltersPanel">
+    return `<div class="bk-filters-panel" id="bankFiltersPanel"${filtersOpen ? '' : ' hidden'}>
         <div class="bk-filter-pills-row">
             <div class="bk-pill-group" role="group" aria-label="Напрямок платежу">
                 ${Object.entries(DIRECTION_FILTERS).map(([k, v]) =>
@@ -308,18 +303,20 @@ function renderFilterSummary(list) {
     box.innerHTML = `
         <div class="bk-summary-stats">
             <span>Знайдено: <b>${list.length} ${opsWord(list.length)}</b></span>
-            ${inKop ? `<span class="bk-stat-in">↓ Надходження: <b>+${fmtKop(inKop)} грн</b></span>` : ''}
-            ${outKop ? `<span class="bk-stat-out">↑ Списання: <b>−${fmtKop(outKop)} грн</b></span>` : ''}
+            ${inKop ? `<span class="bk-stat-in">+ Надходження: <b>+${fmtKop(inKop)} грн</b></span>` : ''}
+            ${outKop ? `<span class="bk-stat-out">− Списання: <b>−${fmtKop(outKop)} грн</b></span>` : ''}
         </div>
         ${active ? '<button type="button" class="btn-ghost-small bk-reset-btn" data-act="reset-filters">Скинути фільтри ✕</button>' : ''}
     `;
+    updateFilterToggleBtn();
 }
 
 /** Модальне вікно з повною інформацією про платіж та інтерактивними посиланнями. */
-function txModalHtml(tx) {
+function txModalHtml(tx, topOffsetPx = 88) {
     if (!tx) return '';
     const out = tx.direction === 'out';
     const cat = txCategoryInfo(tx);
+    const dist = txDistributionInfo(tx);
     const entry = describeTxAccountingEntry(tx, {
         expenses: bankExpensesCache.expenses,
         accounts: bankSettingsCache.accounts
@@ -346,15 +343,20 @@ function txModalHtml(tx) {
         : '';
 
     return `<div class="modal-backdrop bk-modal-backdrop" id="bankTxModalBackdrop" data-act="close-modal"></div>
-    <div class="modal-dialog bk-modal-dialog" id="bankTxModal" role="dialog" aria-modal="true" aria-labelledby="bankTxModalTitle">
+    <div class="modal-dialog bk-modal-dialog" id="bankTxModal" role="dialog" aria-modal="true" aria-labelledby="bankTxModalTitle" style="--bk-top-offset: ${topOffsetPx}px">
         <div class="bk-modal-head ${out ? 'is-out' : 'is-in'}">
             <div class="bk-modal-head-top">
                 <div class="bk-modal-dir-wrap">
                     ${directionIconHtml(tx, true)}
                     <div>
-                        <span class="bk-modal-dir-badge ${out ? 'is-out' : 'is-in'}">
-                            ${out ? '↑ Вихідний платіж (списання)' : '↓ Вхідний платіж (надходження)'}
-                        </span>
+                        <div class="bk-modal-badges-line">
+                            <span class="bk-modal-dir-badge ${out ? 'is-out' : 'is-in'}">
+                                ${out ? 'Вихідний платіж (списання)' : 'Вхідний платіж (надходження)'}
+                            </span>
+                            <span class="bk-dist-badge ${dist.badgeCls}" title="${escapeHtml(dist.reason)}">
+                                ${escapeHtml(dist.label)}
+                            </span>
+                        </div>
                         <div class="bk-modal-date">Дата і час проведення: <b>${escapeHtml(when(tx.at))}</b></div>
                     </div>
                 </div>
@@ -420,11 +422,18 @@ function txModalHtml(tx) {
                 </div>
                 <div class="bk-modal-field">
                     <dt>Категорія платежу</dt>
-                    <dd><b>${escapeHtml(cat.label)}</b>${tx.kind === 'payment' && tx.method ? ` <small class="t-muted">(${escapeHtml(METHOD[tx.method] || '')}${tx.resolvedBy ? ` · ${escapeHtml(tx.resolvedBy)}` : ''})</small>` : ''}</dd>
+                    <dd><b>${escapeHtml(cat.label)}</b></dd>
                 </div>
                 <div class="bk-modal-field">
+                    <dt>Спосіб розподілу</dt>
+                    <dd>
+                        <span class="bk-dist-badge ${dist.badgeCls}">${escapeHtml(dist.label)}</span>
+                        <small class="bk-dist-sub">${escapeHtml(dist.reason)}</small>
+                    </dd>
+                </div>
+                <div class="bk-modal-field is-wide">
                     <dt>Рахунок ОСББ (${out ? 'списано з' : 'зараховано на'})</dt>
-                    <dd><b>${escapeHtml(accPurpose)}</b><br><code class="bk-code-iban">${escapeHtml(tx.account || '—')}</code> <small class="t-muted">(${escapeHtml(maskIban(tx.account))})</small></dd>
+                    <dd><b>${escapeHtml(accPurpose)}</b> · <code class="bk-code-iban">${escapeHtml(tx.account || '—')}</code> <small class="t-muted">(${escapeHtml(maskIban(tx.account))})</small></dd>
                 </div>
                 ${(tx.allocations || []).length > 0 ? `<div class="bk-modal-field is-wide">
                     <dt>Розподіл за квартирами (особовими рахунками)</dt>
@@ -465,7 +474,9 @@ function openTxModal(txId) {
         host.innerHTML = '';
         return;
     }
-    host.innerHTML = txModalHtml(tx);
+    const topBarRect = document.querySelector('.buh-top')?.getBoundingClientRect();
+    const topOffsetPx = Math.max(76, Math.ceil((topBarRect?.bottom || 74) + 12));
+    host.innerHTML = txModalHtml(tx, topOffsetPx);
     document.querySelectorAll('#bankList .bk-row').forEach(r => {
         r.classList.toggle('is-open', r.dataset.id === txId);
     });
@@ -480,8 +491,12 @@ function closeTxModal() {
 
 function chipHtml(tx) {
     const cat = txCategoryInfo(tx);
+    const dist = txDistributionInfo(tx);
     if (tx.status !== 'review') {
-        return `<span class="bk-done ${cat.badgeCls}" title="${escapeHtml(cat.label)}">✓ ${escapeHtml(cat.shortLabel)}</span>`;
+        return `<span class="bk-right-chips">
+            <span class="bk-done ${cat.badgeCls}" title="${escapeHtml(cat.label)}">✓ ${escapeHtml(cat.shortLabel)}</span>
+            <span class="bk-dist-chip ${dist.badgeCls}" title="${escapeHtml(`${dist.label}: ${dist.reason}`)}">${escapeHtml(dist.shortLabel)}</span>
+        </span>`;
     }
     const q = quickAssign(tx);
     if (busy.has(tx.id)) return '<span class="bk-done">Зберігаю…</span>';
@@ -560,12 +575,13 @@ export async function loadBankView() {
     rows = page.rows; last = page.last; more = page.full;
     queue = q;
 
-    // Якщо повертаємось за кнопкою «← Назад у Банк» — відновлюємо фільтри та обраний платіж
+    // Якщо повертаємось за кнопкою «← Назад» — відновлюємо фільтри та обраний платіж
     let restoreSnapshot = null;
     if (bankNavReturnState) {
         restoreSnapshot = { ...bankNavReturnState };
         tab = restoreSnapshot.tab || 'all';
         query = restoreSnapshot.query || '';
+        filtersOpen = Boolean(restoreSnapshot.filtersOpen);
         filters = { ...DEFAULT_FILTERS(), ...(restoreSnapshot.filters || {}) };
         opened = restoreSnapshot.reopenModal ? restoreSnapshot.txId : null;
         highlightedTxId = restoreSnapshot.txId;
@@ -573,6 +589,7 @@ export async function loadBankView() {
         document.getElementById('buhBackNavBanner')?.remove();
     }
 
+    const activeCount = countActivePanelFilters();
     const signing = payments.filter(p => p.status === 'sent');
     const host = document.getElementById('viewBank');
     host.innerHTML = `${signing.length ? `<div class="bk-links"><button type="button" class="bk-link" data-go="payments">Платежі на підписі голови · ${signing.length} ›</button></div>` : ''}
@@ -587,8 +604,15 @@ export async function loadBankView() {
         <section class="bk-card bk-ops">
             <div class="bk-ops-head">
                 <h2>Операції за випискою</h2>
-                <div class="bk-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
-                    `<button type="button" class="bk-tab${k === tab ? ' active' : ''}" role="tab" aria-selected="${k === tab}" data-tab="${k}">${v}${k === 'review' && queue.length ? ` <span>${queue.length}</span>` : ''}</button>`).join('')}</div>
+                <div class="bk-ops-controls">
+                    <div class="bk-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
+                        `<button type="button" class="bk-tab${k === tab ? ' active' : ''}" role="tab" aria-selected="${k === tab}" data-tab="${k}">${v}${k === 'review' && queue.length ? ` <span>${queue.length}</span>` : ''}</button>`).join('')}</div>
+                    <button type="button" class="bk-filter-toggle${filtersOpen ? ' is-open' : ''}${activeCount ? ' has-active' : ''}" id="bankFilterToggle" data-act="toggle-filters" aria-expanded="${filtersOpen}" aria-controls="bankFiltersPanel">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                        <span class="bk-filter-toggle-label">${activeCount ? `Фільтр (${activeCount})` : 'Фільтр'}</span>
+                        <span class="bk-filter-caret" aria-hidden="true">${filtersOpen ? '▴' : '▾'}</span>
+                    </button>
+                </div>
             </div>
             <label class="fl-search dc-search bk-search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
                 <input type="search" id="bankQuery" placeholder="Квартира, платник, ЄДРПОУ, договір, сума або призначення" value="${escapeHtml(query)}" aria-label="Пошук операції"></label>
@@ -666,7 +690,8 @@ function handleBankModalNavigation(navBtn) {
                     id: cp.id || '',
                     name: cp.name || tx.counterparty?.name || '',
                     code: cp.code || tx.counterparty?.code || '',
-                    iban: cp.iban || tx.counterparty?.account || ''
+                    iban: cp.iban || tx.counterparty?.account || '',
+                    contract: links.contractLink ? { ...links.contractLink, amountKop: tx.amountKop || 0 } : null
                 });
             });
         }
@@ -682,6 +707,7 @@ function handleBankModalNavigation(navBtn) {
                 supplierId: con.supplierId || '',
                 supplierName: con.supplierName || tx.counterparty?.name || '',
                 code: tx.counterparty?.code || '',
+                iban: tx.counterparty?.account || '',
                 amountKop: tx.amountKop || 0
             });
         });
@@ -738,6 +764,13 @@ export function initBankView() {
     host.addEventListener('click', async e => {
         if (e.target.closest('[data-act="close-modal"]')) {
             closeTxModal();
+            return;
+        }
+        if (e.target.closest('[data-act="toggle-filters"]')) {
+            filtersOpen = !filtersOpen;
+            const panel = document.getElementById('bankFiltersPanel');
+            if (panel) panel.hidden = !filtersOpen;
+            updateFilterToggleBtn();
             return;
         }
         const navBtn = e.target.closest('[data-bank-nav]');
