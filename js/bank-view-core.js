@@ -1,7 +1,8 @@
 // ============================================================
 // «Банк»: операції за днями, розширені фільтри, категорії,
-// визначення бухгалтерської проводки (Дт/Кт) та інтерактивних
-// звʼязків (контрагент, договір, первинний документ, квартира).
+// спосіб розподілу (автоматично / вручну), визначення бухгалтерської
+// проводки (Дт/Кт) та інтерактивних звʼязків (контрагент, договір,
+// первинний документ, квартира).
 // Тут немає ні мережі, ні DOM: тести — tests/unit/bank-view-core.test.mjs.
 // ============================================================
 
@@ -130,6 +131,65 @@ export function quickAssign(tx) {
     return { apt: String(s[0].apt), sure: SURE[s[0].reason] === true };
 }
 
+/**
+ * Визначає спосіб розподілу операції: автоматично системою чи вручну бухгалтером/головою.
+ */
+export function txDistributionInfo(tx) {
+    if (!tx || tx.status === 'review' || tx.bankConflict) {
+        return {
+            mode: 'review',
+            isAuto: null,
+            label: 'Очікує рішення (не розподілено)',
+            shortLabel: 'Очікує рішення',
+            reason: 'потребує підтвердження бухгалтера',
+            badgeCls: 'is-wait'
+        };
+    }
+    if (tx.bankVoided) {
+        return {
+            mode: 'auto',
+            isAuto: true,
+            label: 'Сторновано банком автоматично',
+            shortLabel: 'Автоматично',
+            reason: 'за банківською випискою',
+            badgeCls: 'is-auto'
+        };
+    }
+    const isManual = tx.auto === false || tx.method === 'manual' || Boolean(tx.resolvedBy);
+    if (isManual) {
+        const who = tx.resolvedBy ? `підтверджено: ${tx.resolvedBy}` : 'рішенням бухгалтера';
+        return {
+            mode: 'manual',
+            isAuto: false,
+            label: 'Розподілено вручну',
+            shortLabel: 'Вручну',
+            reason: who,
+            badgeCls: 'is-manual'
+        };
+    }
+    const reason = tx.method === 'account'
+        ? 'за особовим рахунком'
+        : tx.method === 'marked'
+            ? 'за номером квартири в призначенні'
+            : tx.method === 'link'
+                ? 'за запамʼятованим платником'
+                : tx.method === 'document'
+                    ? 'за документом постачальника'
+                    : tx.paymentId
+                        ? 'за платіжним дорученням ОСББ'
+                        : tx.kind === 'internal'
+                            ? 'переказ між власними рахунками'
+                            : 'за правилами розпізнавання виписки';
+    return {
+        mode: 'auto',
+        isAuto: true,
+        label: 'Розподілено автоматично',
+        shortLabel: 'Автоматично',
+        reason,
+        badgeCls: 'is-auto'
+    };
+}
+
 /** Визначає ключ категорії операції для фільтрації та відображення. */
 export function txCategoryKey(tx) {
     if (!tx) return 'review';
@@ -247,12 +307,14 @@ export function filterTx(list, tab = 'all', query = '', filters = {}, now = new 
         // 2. Текстовий пошук
         if (q) {
             const catInfo = txCategoryInfo(tx);
+            const distInfo = txDistributionInfo(tx);
             const matchQuery = (tx.allocations || []).some(a => String(a.apt) === apt)
                 || String(tx.counterparty?.name || '').toLowerCase().includes(q)
                 || String(tx.counterparty?.code || '').toLowerCase().includes(q)
                 || String(tx.counterparty?.account || '').toLowerCase().includes(q)
                 || String(tx.purpose || '').toLowerCase().includes(q)
                 || String(catInfo.label || '').toLowerCase().includes(q)
+                || String(distInfo.label || '').toLowerCase().includes(q)
                 || String((tx.amountKop || 0) / 100).includes(q.replace(',', '.'));
             if (!matchQuery) return false;
         }
@@ -304,7 +366,6 @@ export function describeTxAccountingEntry(tx, { expenses = [], accounts = {} } =
     if (!tx) return null;
     const accObj = accounts?.[tx.account] || {};
     const cashAcc = accObj.purpose === 'deposit' ? '313' : '311';
-    const cashName = ACCOUNT_NAMES[cashAcc];
     const period = tx.period || (tx.at ? isoDay(tx.at).slice(0, 7) : '');
     const cpName = tx.counterparty?.name || '';
     const apts = (tx.allocations || []).map(a => a.apt).filter(Boolean);
@@ -560,11 +621,12 @@ export function resolveTxLinks(tx, { expenses = [], contracts = [], suppliers = 
             inDatabase: true
         };
     } else if (/догов[оі]р|контракт|сервітут|оренд|акт\w*\s+№/i.test(purposeText) || tx.category === 'supplier' || tx.category === 'rent' || tx.category === 'equipment') {
-        // Якщо в призначенні платежу прямо згадано договір (напр. «Оплата за договором сервітуту...»),
-        // робимо посилання інтерактивним для переходу в реєстр договорів цього контрагента
-        const subjMatch = purposeText.match(/за\s+(договором\s+[^,;]+?)(?:\s+за\s+\w+\s+\d{4}|\s*,\s*без\s+пдв|\s*,\s*у\s+т\.?\s*ч\.?|$)/i);
+        const subjMatch = purposeText.match(/за\s+(договором\s+[^,;]+?)(?:\s+за\s+[А-Яа-яІіЇїЄєҐґ]+\s+\d{4}\s*(?:р\.?|року)?|\s*,\s*без\s+пдв|\s*,\s*у\s+т\.?\s*ч\.?|$)/i);
         let subjectText = subjMatch ? subjMatch[1].trim() : (INCOME_LABELS[tx.category] || 'Договір з контрагентом');
-        subjectText = subjectText.replace(/^договором\b/i, 'Договір');
+        subjectText = subjectText
+            .replace(/^договором(?=\s|$)/i, 'Договір')
+            .replace(/\s+за\s+[А-Яа-яІіЇїЄєҐґ]+\s+\d{4}\s*(?:р\.?|року)?$/i, '')
+            .trim();
         contractLink = {
             id: '',
             number: extractedNum || 'б/н',

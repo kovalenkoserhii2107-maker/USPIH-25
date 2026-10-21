@@ -798,21 +798,36 @@ body.buh-mode .field-input { border-radius: 14px; }
 .bk-ops { gap: 4px; }
 .bk-ops-head { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .bk-ops-head h2 { margin: 0; font-size: 22px; font-weight: 800; }
+.bk-ops-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .bk-tabs { display: flex; min-width: 0; gap: 4px; padding: 4px; border-radius: 999px; background: var(--sv-soft-2); }
 .bk-tab { min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: #000; font: 700 14.5px var(--font); white-space: nowrap; cursor: pointer; transition: background .2s ease, color .2s ease; }
 .bk-tab span { opacity: .6; }
 .bk-tab.active { background: #000; color: #fff; }
+.bk-filter-toggle {
+    display: inline-flex; align-items: center; gap: 7px;
+    min-height: 40px; padding: 0 16px;
+    border: 1.5px solid #CBD5E1; border-radius: 999px;
+    background: #fff; color: #0F172A;
+    font: 700 14px var(--font); white-space: nowrap; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.bk-filter-toggle:hover { background: var(--sv-soft-2); border-color: #94A3B8; }
+.bk-filter-toggle.is-open, .bk-filter-toggle.has-active {
+    background: #0F172A; border-color: #0F172A; color: #fff;
+}
+.bk-filter-caret { font-size: 12px; line-height: 1; opacity: .8; }
 .bk-search { margin: 4px 0 8px; }
 
-/* Розширена панель фільтрів у «Банку» */
+/* Розширена панель фільтрів у «Банку» (за замовчуванням згорнута) */
 .bk-filters-panel { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid var(--sv-line, #e2e8f0); border-radius: 20px; background: #F8FAFC; }
+.bk-filters-panel[hidden] { display: none !important; }
 .bk-filter-pills-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
 .bk-pill-group { display: flex; flex-wrap: wrap; gap: 6px; }
 .bk-pill { min-height: 34px; padding: 0 13px; border: 1px solid #D5DEE8; border-radius: 999px; background: #fff; color: #1E293B; font: 700 13px var(--font); cursor: pointer; transition: all .15s ease; white-space: nowrap; }
 .bk-pill:hover { border-color: #94A3B8; background: #F1F5F9; }
 .bk-pill.active { border-color: #0F172A; background: #0F172A; color: #fff; }
 .bk-pill.is-dir-in.active { border-color: #15803D; background: #16A34A; color: #fff; }
-.bk-pill.is-dir-out.active { border-color: #B91C1C; background: #DC2626; color: #fff; }
+.bk-pill.is-dir-out.active { border-color: #0F172A; background: #0F172A; color: #fff; }
 .bk-filter-inputs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px 12px; align-items: end; }
 .bk-filter-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .bk-filter-field > span { color: var(--sv-muted); font-size: 12px; font-weight: 700; }
@@ -821,7 +836,7 @@ body.buh-mode .field-input { border-radius: 14px; }
 .bk-summary-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .bk-summary-stats b { color: #0F172A; }
 .bk-stat-in b { color: #15803D; }
-.bk-stat-out b { color: #B91C1C; }
+.bk-stat-out b { color: #0F172A; }
 .bk-reset-btn { color: #B91C1C !important; font-weight: 700 !important; }
 
 /* Дні та рядки операцій */
@@ -831,79 +846,96 @@ body.buh-mode .field-input { border-radius: 14px; }
 .bk-day-totals { display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .bk-day-totals .is-in { color: #15803D; }
 .bk-day-totals .is-out { color: #475569; }
-.bk-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 70px; padding: 10px 12px; margin: 2px -10px; border-radius: 18px; cursor: pointer; transition: background .18s ease, box-shadow .18s ease; }
+.bk-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 70px; padding: 10px 12px; margin: 2px -10px; border-radius: 18px; cursor: pointer; transition: background .18s ease, box-shadow .18s ease; }
 .bk-row:hover, .bk-row.is-open { background: var(--sv-soft-2); }
 .bk-row:focus-visible { outline: 2px solid #000; outline-offset: 2px; }
 
-/* Візуально та фактурно різні іконки вхідних (↓) та вихідних (↑) платежів */
-.bk-ico { position: relative; display: grid; place-items: center; width: 46px; height: 46px; font-size: 18px; font-weight: 800; flex-shrink: 0; transition: transform .15s ease; }
+/* Прості значки: зелений + у кружку (надходження), чорний − у квадраті з плавними кутами (списання) */
+.bk-ico {
+    position: relative; display: inline-grid; place-items: center;
+    width: 40px; height: 40px; font-size: 22px; font-weight: 800; line-height: 1;
+    flex-shrink: 0; user-select: none; transition: transform .15s ease;
+}
 .bk-row:hover .bk-ico { transform: scale(1.04); }
-/* Вхідний платіж: круглий смарагдовий градієнт із суцільною рамкою */
 .bk-ico.is-in {
     border-radius: 50%;
-    background: linear-gradient(145deg, #DCFCE7 0%, #BBF7D0 100%);
+    background: #DCFCE7;
     border: 2px solid #16A34A;
-    color: #14532D;
-    box-shadow: 0 2px 6px rgba(22, 163, 74, .18), inset 0 1px 0 rgba(255, 255, 255, .8);
+    color: #15803D;
 }
-/* Вихідний платіж: заокруглений квадрат зі штриховою діагональною фактурою та пунктирним контуром */
 .bk-ico.is-out {
-    border-radius: 13px;
-    background: repeating-linear-gradient(-45deg, #FFF1F2, #FFF1F2 4px, #FFE4E6 4px, #FFE4E6 8px);
-    border: 2px dashed #E11D48;
-    color: #9F1239;
-    box-shadow: 0 2px 6px rgba(225, 29, 72, .14);
+    border-radius: 12px;
+    background: #F1F5F9;
+    border: 2px solid #0F172A;
+    color: #0F172A;
 }
 .bk-ico.is-wait {
-    box-shadow: 0 0 0 3px #FACC15, 0 2px 8px rgba(234, 179, 8, .35);
+    box-shadow: 0 0 0 3px #FACC15;
 }
-.bk-ico.is-lg { width: 52px; height: 52px; }
-.bk-ico-badge {
-    position: absolute; right: -3px; bottom: -3px;
-    display: grid; place-items: center;
-    width: 18px; height: 18px; border-radius: 50%;
-    font-size: 12px; font-weight: 900; line-height: 1;
-    border: 2px solid #fff;
-}
-.bk-ico.is-in .bk-ico-badge { background: #16A34A; color: #fff; }
-.bk-ico.is-out .bk-ico-badge { background: #E11D48; color: #fff; border-radius: 5px; }
+.bk-ico.is-lg { width: 46px; height: 46px; font-size: 26px; }
 
 .bk-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .bk-main-top { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .bk-main b { overflow: hidden; font-size: 15.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; color: #0F172A; }
 .bk-row-subpill { display: inline-flex; align-items: center; max-width: 260px; padding: 2px 8px; border-radius: 6px; background: #EFF6FF; border: 1px solid #BFDBFE; color: #1D4ED8; font-size: 11.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bk-main small { overflow: hidden; color: var(--sv-muted); font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.bk-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.bk-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.bk-right-chips { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 5px; }
 .bk-sum { font-size: 16px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .bk-sum.is-in { color: #15803D; }
 .bk-sum.is-out { color: #0F172A; }
-.bk-done { max-width: 240px; overflow: hidden; padding: 2px 8px; border-radius: 999px; background: var(--sv-soft); color: #334155; font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bk-done { max-width: 220px; overflow: hidden; padding: 2px 8px; border-radius: 999px; background: var(--sv-soft); color: #334155; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .bk-done.is-payment, .bk-done.is-income { background: #ECFDF5; color: #14532D; }
-.bk-done.is-expense { background: #FFF1F2; color: #881337; }
+.bk-done.is-expense { background: #F1F5F9; color: #0F172A; }
+
+/* Позначка способу розподілу: Автоматично / Вручну */
+.bk-dist-chip, .bk-dist-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.bk-dist-chip.is-auto, .bk-dist-badge.is-auto {
+    background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;
+}
+.bk-dist-chip.is-manual, .bk-dist-badge.is-manual {
+    background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;
+}
+.bk-dist-chip.is-wait, .bk-dist-badge.is-wait {
+    background: var(--sv-yellow-soft); color: var(--sv-amber); border: 1px solid #FDE68A;
+}
+.bk-dist-sub { display: block; margin-top: 3px; color: #64748B; font-size: 12px; }
+.bk-modal-badges-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
 .bk-yes { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: #000; color: #fff; font: 800 13.5px var(--font); white-space: nowrap; cursor: pointer; transition: transform .15s ease; }
 .bk-yes.is-ask { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
 .bk-yes:active { transform: scale(.96); }
 .bk-ops > .sv-btn.is-wide { margin-top: 10px; }
 
-/* Окреме модальне вікно деталей платежу (#bankTxModal) */
-.bk-modal-backdrop { position: fixed; inset: 0; z-index: 990; background: rgba(15, 23, 42, .48); backdrop-filter: blur(2px); }
+/* Окреме модальне вікно деталей платежу (#bankTxModal) — з урахуванням верхньої смуги .buh-top */
+.bk-modal-backdrop { position: fixed; inset: 0; z-index: 2100; background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); }
 .bk-modal-dialog {
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    z-index: 1000; width: min(680px, 95vw); max-height: 90vh;
+    position: fixed;
+    top: var(--bk-top-offset, 88px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2110;
+    width: min(680px, 95vw);
+    max-height: calc(100vh - var(--bk-top-offset, 88px) - 20px);
+    max-height: calc(100dvh - var(--bk-top-offset, 88px) - 20px);
     display: flex; flex-direction: column; overflow: hidden;
     border-radius: 24px; background: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, .28);
     border: 1px solid #E2E8F0;
 }
-.bk-modal-head { padding: 18px 22px 16px; border-bottom: 1px solid #E2E8F0; background: #F8FAFC; }
+.bk-modal-head { padding: 16px 22px 14px; border-bottom: 1px solid #E2E8F0; background: #F8FAFC; }
 .bk-modal-head.is-in { background: linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%); }
-.bk-modal-head.is-out { background: linear-gradient(180deg, #FFF1F2 0%, #FFFFFF 100%); }
+.bk-modal-head.is-out { background: linear-gradient(180deg, #F1F5F9 0%, #FFFFFF 100%); }
 .bk-modal-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .bk-modal-dir-wrap { display: flex; align-items: center; gap: 14px; }
 .bk-modal-dir-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
 .bk-modal-dir-badge.is-in { background: #DCFCE7; color: #15803D; }
-.bk-modal-dir-badge.is-out { background: #FFE4E6; color: #BE123C; }
+.bk-modal-dir-badge.is-out { background: #E2E8F0; color: #0F172A; }
 .bk-modal-date { margin-top: 4px; color: #475569; font-size: 13px; }
-.bk-modal-amount-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.bk-modal-amount-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; }
 .bk-modal-amount { margin: 0; font-size: clamp(26px, 3.5vw, 34px); font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .bk-modal-amount.is-in { color: #15803D; }
 .bk-modal-amount.is-out { color: #0F172A; }
@@ -951,36 +983,171 @@ body.buh-mode .field-input { border-radius: 14px; }
 .bk-modal-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 22px; border-top: 1px solid #E2E8F0; background: #F8FAFC; }
 .bk-modal-foot .sv-btn { width: auto; min-height: 38px; padding: 0 16px; font-size: 13.5px; }
 
-/* Панель повернення «← Назад у Банк» на цільових сторінках */
-.buh-back-nav-bar {
-    position: sticky; top: 10px; z-index: 350;
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin: 0 0 16px; padding: 10px 14px;
-    border: 2px solid #0F172A; border-radius: 16px;
-    background: #FEF9C3; color: #0F172A;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
+/* Компактна кнопка повернення «← Назад» */
+.buh-back-nav-wrap {
+    display: flex; align-items: center;
+    margin: 4px 0 12px;
 }
 .buh-back-nav-btn {
-    display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;
-    padding: 4px 8px; border: 0; border-radius: 10px; background: transparent;
-    color: inherit; font: inherit; text-align: left; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    width: max-content; min-height: 38px; padding: 0 16px;
+    border: 1.5px solid #0F172A; border-radius: 999px;
+    background: #fff; color: #0F172A;
+    font: 800 14px var(--font); white-space: nowrap; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+    transition: background .15s ease, transform .12s ease;
 }
-.buh-back-nav-btn:hover { background: rgba(15, 23, 42, .06); }
-.buh-back-nav-arrow {
-    display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
-    border-radius: 50%; background: #0F172A; color: #fff; font-size: 18px; font-weight: 800;
-}
-.buh-back-nav-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.buh-back-nav-copy b { font-size: 14.5px; font-weight: 800; color: #0F172A; }
-.buh-back-nav-copy small { font-size: 12.5px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.buh-back-nav-close {
-    width: 34px; height: 34px; border: 0; border-radius: 50%;
-    background: rgba(15, 23, 42, .1); color: #0F172A; font-size: 15px; font-weight: 800; cursor: pointer;
-}
-.buh-back-nav-close:hover { background: rgba(15, 23, 42, .18); }
+.buh-back-nav-btn:hover { background: #F1F5F9; }
+.buh-back-nav-btn:active { transform: scale(.97); }
+.buh-back-nav-arrow { font-size: 16px; line-height: 1; font-weight: 800; }
 
-/* Підсвітка цільового елемента при переході та поверненні */
-.buh-focus-card { border: 2px solid #2563EB !important; background: #F8FAFF !important; box-shadow: 0 6px 20px rgba(37, 99, 235, .12); }
+/* Картки контрагента й договору, форми та таблиці в «Документах» */
+.buh-focus-card {
+    border: 1.5px solid #CBD5E1 !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 10px 28px -12px rgba(15, 23, 42, .14);
+}
+.sup-info-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 12px;
+    margin: 12px 0 14px;
+}
+.sup-info-cell {
+    display: flex; flex-direction: column; gap: 4px;
+    min-width: 0; padding: 12px 14px;
+    border-radius: 14px; background: var(--sv-soft-2, #F4F6F9);
+    border: 1px solid #E2E8F0;
+}
+.sup-info-cell.is-span-2 { grid-column: span 2; }
+.sup-info-cell.is-full { grid-column: 1 / -1; }
+.sup-info-cell > span { color: var(--sv-muted); font-size: 12px; font-weight: 700; }
+.sup-info-cell > b { color: #0F172A; font-size: 14.5px; font-weight: 800; word-break: break-word; }
+.sup-info-cell > small { color: var(--sv-muted); font-size: 12.5px; margin-top: 2px; }
+.sup-iban-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; font-weight: 700; color: #0F172A;
+    word-break: break-all;
+}
+.sup-inline-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 0; border: 0; background: none; color: #1D4ED8;
+    font: inherit; text-align: left; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px;
+}
+.sup-inline-link:hover { color: #1E3A8A; }
+
+/* Клікабельні договори в картці контрагента */
+.sup-contracts-block {
+    margin: 14px 0 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--sv-line, #E2E8F0);
+}
+.sup-contracts-head {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+}
+.sup-contracts-title {
+    color: #475569; font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .03em;
+}
+.sup-contracts-empty {
+    padding: 12px 14px; border-radius: 12px;
+    background: var(--sv-soft-2, #F4F6F9); color: var(--sv-muted);
+    font-size: 13.5px; font-weight: 600;
+}
+.sup-contracts-list { display: flex; flex-direction: column; gap: 8px; }
+.sup-contract-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    width: 100%; padding: 12px 16px;
+    border: 1.5px solid #BFDBFE; border-radius: 16px;
+    background: #F8FAFC; color: #0F172A;
+    font: inherit; text-align: left; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, transform .12s ease;
+    box-sizing: border-box;
+}
+.sup-contract-card:hover { background: #EFF6FF; border-color: #2563EB; }
+.sup-contract-card:active { transform: scale(.99); }
+.sup-cc-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.sup-cc-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sup-cc-top b { font-size: 14.5px; font-weight: 800; color: #1E3A8A; text-decoration: underline; text-underline-offset: 3px; }
+.sup-cc-subj { font-size: 13.5px; font-weight: 600; color: #0F172A; }
+.sup-cc-dates { font-size: 12px; color: #64748B; }
+.sup-cc-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.sup-cc-sum { font-size: 14.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: #0F172A; white-space: nowrap; }
+.sup-cc-go { padding: 4px 10px; border-radius: 999px; background: #fff; border: 1px solid #CBD5E1; font-size: 12px; font-weight: 800; color: #1D4ED8; white-space: nowrap; }
+.buh-focus-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.buh-focus-actions .sv-btn { width: auto; }
+
+/* Рівна сітка форми постачальника та договору (#exForm) */
+.ex-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 18px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.ex-form-grid > .field, .ex-form-grid > .am-check { margin: 0; min-width: 0; }
+.ex-form-grid > .ex-full, .ex-form .pay-wide { grid-column: 1 / -1; }
+.ex-form .field-input { width: 100%; box-sizing: border-box; min-height: 44px; }
+.sf-code-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: stretch;
+}
+.sf-edr-btn {
+    min-height: 44px; height: 44px; padding: 0 18px;
+    white-space: nowrap; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-sizing: border-box;
+}
+
+/* Таблиці договорів та постачальників без виходу за межі блоку .buh-card */
+.ex-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+.ex-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.ex-table td.t-main b,
+.ex-table td.t-main small,
+.ex-table .ex-subj-text {
+    white-space: normal !important;
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: break-word;
+    line-height: 1.4;
+}
+.ex-contracts-table td.ex-doc { width: 118px; min-width: 108px; white-space: nowrap; vertical-align: top; }
+.ex-contracts-table td.ex-con-main { min-width: 180px; vertical-align: top; }
+.ex-contracts-table td.ex-dates { width: 104px; white-space: nowrap; font-variant-numeric: tabular-nums; vertical-align: top; }
+.ex-contracts-table td.ex-dates > span { display: block; line-height: 1.35; }
+.ex-contracts-table td.ex-status-cell { width: 104px; vertical-align: top; }
+.ex-contracts-table td.t-sum { width: 108px; vertical-align: top; }
+.ex-contracts-table td.t-act, .ex-suppliers-table td.t-act { width: 1%; white-space: normal; vertical-align: top; }
+.ex-act-group {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+    gap: 6px;
+}
+.ex-act-group .btn-ghost-small, .ex-act-group .btn-soft {
+    min-height: 32px; padding: 0 11px; font-size: 12.5px; white-space: nowrap;
+}
+.ex-row-link, .ex-sup-link {
+    display: inline-flex; flex-direction: column; align-items: flex-start;
+    padding: 0; border: 0; background: none; color: inherit;
+    font: inherit; text-align: left; cursor: pointer;
+}
+.ex-row-link:hover b, .ex-sup-link:hover b {
+    color: #1D4ED8; text-decoration: underline; text-underline-offset: 3px;
+}
+.sup-table-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.sup-contract-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border: 1px solid #BFDBFE; border-radius: 999px;
+    background: #EFF6FF; color: #1D4ED8;
+    font: 700 12px var(--font); white-space: nowrap; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease;
+}
+.sup-contract-pill:hover { background: #DBEAFE; border-color: #2563EB; }
+
 @keyframes buhTargetPulse {
     0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, .55); background-color: #DBEAFE; }
     60% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); background-color: #EFF6FF; }
@@ -999,15 +1166,24 @@ body.buh-mode .field-input { border-radius: 14px; }
     .bk-hero { grid-column: auto; }
     .bk-card { border-radius: 24px; }
     .bk-ops-head { flex-direction: column; align-items: stretch; }
-    .bk-tabs { overflow-x: auto; scrollbar-width: none; }
+    .bk-ops-controls { justify-content: space-between; width: 100%; }
+    .bk-tabs { overflow-x: auto; scrollbar-width: none; flex: 1; }
     .bk-tab { flex: 1 0 auto; padding: 0 12px; }
-    .bk-row { grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px; }
-    .bk-ico { width: 42px; height: 42px; }
+    .bk-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; }
+    .bk-ico { width: 38px; height: 38px; font-size: 20px; }
     .bk-done { max-width: 140px; }
     .bk-modal-grid { grid-template-columns: 1fr; }
-    .bk-modal-dialog { width: 96vw; max-height: 92vh; border-radius: 20px; }
+    .bk-modal-dialog { width: 96vw; border-radius: 20px; }
     .bk-modal-head, .bk-modal-body, .bk-modal-foot { padding: 14px 16px; }
     .bk-ic-arrow { display: none; }
+    .sup-info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sup-info-cell.is-span-2 { grid-column: 1 / -1; }
+    .ex-form-grid { grid-template-columns: 1fr; }
+    .sup-contract-card { flex-direction: column; align-items: flex-start; }
+    .sup-cc-right { align-items: flex-start; flex-direction: row; width: 100%; justify-content: space-between; }
+}
+@media (max-width: 560px) {
+    .sup-info-grid { grid-template-columns: 1fr; }
 }
 
 /* ---------- Зарплата: підсумки, люди, розрахунок обраної людини ---------- */

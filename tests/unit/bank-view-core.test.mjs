@@ -1,9 +1,10 @@
-// «Банк»: операції за днями, відбори, категорії, проводки та інтерактивні звʼязки.
+// «Банк»: операції за днями, відбори, категорії, спосіб розподілу, проводки та інтерактивні звʼязки.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     dayLabel, byDay, quickAssign, filterTx,
-    txCategoryKey, txCategoryInfo, describeTxAccountingEntry, resolveTxLinks
+    txCategoryKey, txCategoryInfo, txDistributionInfo,
+    describeTxAccountingEntry, resolveTxLinks
 } from '../../js/bank-view-core.js';
 
 const now = new Date(2026, 9, 21, 15, 0); // 21 жовтня 2026
@@ -29,6 +30,24 @@ test('рішення в один дотик — лише одна квартир
     assert.equal(quickAssign({ status: 'done', direction: 'in', suggestions: [{ apt: '1' }] }), null);
 });
 
+test('спосіб розподілу платежу: автоматично, вручну, очікує рішення', () => {
+    const autoTx = { status: 'done', kind: 'payment', auto: true, method: 'account' };
+    assert.equal(txDistributionInfo(autoTx).mode, 'auto');
+    assert.equal(txDistributionInfo(autoTx).shortLabel, 'Автоматично');
+    assert.equal(txDistributionInfo(autoTx).label, 'Розподілено автоматично');
+    assert.equal(txDistributionInfo(autoTx).reason, 'за особовим рахунком');
+
+    const manualTx = { status: 'done', kind: 'payment', auto: false, method: 'manual', resolvedBy: 'Бухгалтер' };
+    assert.equal(txDistributionInfo(manualTx).mode, 'manual');
+    assert.equal(txDistributionInfo(manualTx).shortLabel, 'Вручну');
+    assert.equal(txDistributionInfo(manualTx).label, 'Розподілено вручну');
+    assert.match(txDistributionInfo(manualTx).reason, /Бухгалтер/);
+
+    const reviewTx = { status: 'review', kind: 'payment' };
+    assert.equal(txDistributionInfo(reviewTx).mode, 'review');
+    assert.equal(txDistributionInfo(reviewTx).shortLabel, 'Очікує рішення');
+});
+
 test('відбори, пошук та розширені фільтри (дата, сума, контрагент, категорія, напрямок)', () => {
     const list = [
         {
@@ -37,6 +56,7 @@ test('відбори, пошук та розширені фільтри (дат�
             direction: 'in',
             kind: 'income',
             category: 'equipment',
+            auto: true,
             amountKop: 250000,
             at: at(21, 8),
             account: 'UA213052990000026001234567890',
@@ -49,6 +69,7 @@ test('відбори, пошук та розширені фільтри (дат�
             direction: 'out',
             kind: 'expense',
             category: 'bank_fee',
+            auto: true,
             amountKop: 15000,
             at: at(20, 14),
             account: 'UA213052990000026001234567890',
@@ -60,6 +81,8 @@ test('відбори, пошук та розширені фільтри (дат�
             status: 'done',
             direction: 'in',
             kind: 'payment',
+            auto: false,
+            method: 'manual',
             amountKop: 85000,
             at: at(19, 11),
             account: 'UA213052990000026001234567890',
@@ -84,6 +107,7 @@ test('відбори, пошук та розширені фільтри (дат�
     assert.deepEqual(filterTx(list, 'done').map(t => t.id), ['tx-telecom', 'tx-fee', 'tx-apt']);
     assert.deepEqual(filterTx(list, 'all', 'кв 19').map(t => t.id), ['tx-apt']);
     assert.deepEqual(filterTx(list, 'all', '2500').map(t => t.id), ['tx-telecom']);
+    assert.deepEqual(filterTx(list, 'all', 'вручну').map(t => t.id), ['tx-apt']);
 
     // Напрямок
     assert.deepEqual(filterTx(list, 'all', '', { direction: 'out' }, now).map(t => t.id), ['tx-fee']);
@@ -131,6 +155,7 @@ test('категорії, проводки (Дт/Кт) та інтерактив
     assert.equal(entry.codeText, 'Дт 311 — Кт 48');
     assert.equal(entry.focusAcc, '48');
 
+    // Коли договір є в реєстрі
     const links = resolveTxLinks(telecomTx, {
         suppliers: [{ id: 'sup-1', name: 'ТОВ «Одеса-Телеком Мережа»', code: '38451920', iban: 'UA443052990000026005556667771' }],
         contracts: [{ id: 'con-1', supplierId: 'sup-1', supplierName: 'ТОВ «Одеса-Телеком Мережа»', number: 'С-10/26', date: '2026-01-15', subject: 'Договір сервітуту (доступ та розміщення телекомунікаційного обладнання)', status: 'approved' }]
@@ -140,4 +165,8 @@ test('категорії, проводки (Дт/Кт) та інтерактив
     assert.equal(links.contractLink.id, 'con-1');
     assert.equal(links.contractLink.number, 'С-10/26');
     assert.equal(links.contractLink.inDatabase, true);
+
+    // Коли договір витягується з призначення платежу
+    const fallbackLinks = resolveTxLinks(telecomTx, { suppliers: [], contracts: [] });
+    assert.equal(fallbackLinks.contractLink.subject, 'Договір сервітуту (доступ та розміщення телекомунікаційного обладнання)');
 });
