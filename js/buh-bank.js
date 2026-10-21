@@ -14,13 +14,13 @@
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { db, session } from './firebase.js';
-import { doc, setDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { doc, setDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import {
     loadSettings, loadPage, loadQueue, loadPayments, loadExpenses, loadRequisites,
     loadCharges, loadPayroll, loadBudget,
     expAct, act, chargeAct, payrollAct, budgetAct, reportsQuery, reportsAct,
     money, signed, when, dateOnly, tagOf, maskIban,
-    ACCOUNT_PURPOSES, METHOD, loadStaffNames, authorLabel
+    ACCOUNT_PURPOSES, METHOD, loadStaffNames, authorLabel, invalidate
 } from './buh-data.js';
 import { toKop, fmtKop, periodName, parseOpeningLines, openingSummary } from './charges-core.js';
 import { registryHtml, saveRegistry } from './buh-registry.js';
@@ -307,6 +307,7 @@ function renderFilterSummary(list) {
             ${outKop ? `<span class="bk-stat-out">− Списання: <b>−${fmtKop(outKop)} грн</b></span>` : ''}
         </div>
         ${active ? '<button type="button" class="btn-ghost-small bk-reset-btn" data-act="reset-filters">Скинути фільтри ✕</button>' : ''}
+        ${more && tab !== 'review' ? `<p class="buh-note">Пошук і суми враховують лише завантажені операції (${rows.length}). Старіші — кнопкою «Показати ще» внизу.</p>` : ''}
     `;
     updateFilterToggleBtn();
 }
@@ -343,7 +344,7 @@ function txModalHtml(tx, topOffsetPx = 88) {
         : '';
 
     return `<div class="modal-backdrop bk-modal-backdrop" id="bankTxModalBackdrop" data-act="close-modal"></div>
-    <div class="modal-dialog bk-modal-dialog" id="bankTxModal" role="dialog" aria-modal="true" aria-labelledby="bankTxModalTitle" style="--bk-top-offset: ${topOffsetPx}px">
+    <div class="modal-dialog bk-modal-dialog" id="bankTxModal" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="bankTxModalTitle" style="--bk-top-offset: ${topOffsetPx}px">
         <div class="bk-modal-head ${out ? 'is-out' : 'is-in'}">
             <div class="bk-modal-head-top">
                 <div class="bk-modal-dir-wrap">
@@ -400,7 +401,7 @@ function txModalHtml(tx, topOffsetPx = 88) {
             </div>` : ''}
 
             ${entry ? `<div class="bk-modal-section">
-                <span class="bk-modal-label">Проводка в бухгалтерському обліку (ОСВ)</span>
+                <span class="bk-modal-label">Проводка в обліку (ОСВ) — попередній вигляд, точна — у «Проводках»</span>
                 <button type="button" class="bk-interactive-card is-journal" data-bank-nav="journal" data-tx-id="${escapeHtml(tx.id)}">
                     <div class="bk-ic-main">
                         <div class="bk-ic-title-row">
@@ -477,16 +478,20 @@ function openTxModal(txId) {
     const topBarRect = document.querySelector('.buh-top')?.getBoundingClientRect();
     const topOffsetPx = Math.max(76, Math.ceil((topBarRect?.bottom || 74) + 12));
     host.innerHTML = txModalHtml(tx, topOffsetPx);
+    // Фокус у вікно: Esc і Tab працюють одразу, а не лише після кліку всередині.
+    document.getElementById('bankTxModal')?.focus({ preventScroll: true });
     document.querySelectorAll('#bankList .bk-row').forEach(r => {
         r.classList.toggle('is-open', r.dataset.id === txId);
     });
 }
 
 function closeTxModal() {
+    const wasOpen = opened;
     opened = null;
     const host = document.getElementById('bankModalHost');
     if (host) host.innerHTML = '';
     document.querySelectorAll('#bankList .bk-row.is-open').forEach(r => r.classList.remove('is-open'));
+    if (wasOpen) [...document.querySelectorAll('#bankList .bk-row')].find(r => r.dataset.id === wasOpen)?.focus({ preventScroll: true });
 }
 
 function chipHtml(tx) {
@@ -1059,7 +1064,7 @@ function renderBankTab(settings, ex) {
                 <button type="button" class="btn-primary btn-compact" data-act="token-save">Перевірити й зберегти</button>
                 ${connected ? '<button type="button" class="btn-ghost-small" data-act="token-remove">Відключити</button>' : ''}
             </div>
-            <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно. Для підключення до тестового середовища банку (<a href="platform.html#bank">Симулятор Приват24</a>) можна ввести тестовий ключ: <code>PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3</code>.</p>
+            <p class="buh-note">Токен зберігається лише на сервері — у браузері й базі його не видно. Тестовий банк підключає голова в <a href="platform.html#bank">Симуляторі Приват24</a>; поки підключено справжній токен, симулятор вимкнено.</p>
         </section>
 
         ${accounts.length ? `<section class="buh-card">
@@ -1302,11 +1307,11 @@ function renderDirectoriesTab() {
                 <button type="button" class="btn-soft btn-compact" data-act="st-premises-bulk">Призначити групу</button>
             </div>
             <div class="buh-inline-form ch-form">
-                <input id="stResBulk" class="field-input" placeholder="Кількість проживаючих списком: «298;2» або «298 2», через кому чи з нового рядка" aria-label="Проживаючі">
+                <textarea id="stResBulk" class="field-input" rows="3" placeholder="Кількість проживаючих: «298;2» або «298 2» — кожна квартира з нового рядка чи через кому" aria-label="Проживаючі"></textarea>
                 <button type="button" class="btn-soft btn-compact" data-act="st-residents-bulk">Внести проживаючих</button>
             </div>
             <div class="buh-inline-form ch-form">
-                <input id="stPaBulk" class="field-input" placeholder="Особові рахунки списком: «45;00045» або «101 250101», через кому чи з нового рядка" aria-label="Особові рахунки">
+                <textarea id="stPaBulk" class="field-input" rows="3" placeholder="Особові рахунки: «45;00045» або «101 250101» — кожна квартира з нового рядка чи через кому" aria-label="Особові рахунки"></textarea>
                 <button type="button" class="btn-soft btn-compact" data-act="st-personal-accounts-bulk">Зберегти особові рахунки</button>
             </div>
             <p class="buh-note">Площі та ПІБ співвласників синхронізуються з реєстром правління (<a href="admin.html">Панель правління → Квартири</a>) та початковим переносом бази.</p>
@@ -1609,6 +1614,7 @@ export function initSettingsView() {
                 await setDoc(doc(db, 'osbb_settings', 'finance'), {
                     payeeName, edrpou, iban, houseAddress, purposeTemplate
                 }, { merge: true });
+                invalidate(); // квитанції й платежі беруть реквізити з кешу — інакше друкувалися б старі
                 toast('Платіжні реквізити ОСББ збережено', 'success');
                 await loadSettingsView();
             } else if (a === 'save-xml-settings') {
@@ -1622,6 +1628,7 @@ export function initSettingsView() {
                     ...(data.email ? { email: data.email } : {}),
                     ...(data.headName ? { headName: data.headName } : {})
                 }, { merge: true }).catch(() => {});
+                invalidate();
                 toast('Реквізити для звітності та XML збережено', 'success');
                 await loadSettingsView();
             } else if (a === 'registry-save') {
@@ -1744,20 +1751,13 @@ export function initSettingsView() {
             } else if (a === 'st-personal-accounts-bulk') {
                 const pairs = val('stPaBulk').split(/[\n,]+/).map(x => x.trim()).filter(Boolean).map(x => {
                     const [apt, pa] = x.split(/[;\t\s]+/);
-                    return { apt: String(apt || '').trim().toLowerCase(), personalAccount: String(pa || '').trim() };
+                    return { apt: String(apt || '').trim(), personalAccount: String(pa || '').trim() };
                 }).filter(p => p.apt);
                 if (!pairs.length) { toast('Вкажіть квартири та особові рахунки (напр. 45;00045)', 'error'); return; }
-                const known = new Set((stChargesCtx?.apartments || []).map(x => String(x.apt).toLowerCase()));
-                const unknown = pairs.filter(p => known.size && !known.has(p.apt));
-                if (unknown.length) { toast(`Квартири немає в довіднику: ${unknown[0].apt}`, 'error'); return; }
                 setBusy(btn, true, 'Зберігаю…');
-                let batch = writeBatch(db), ops = 0;
-                for (const p of pairs) {
-                    batch.set(doc(db, 'apartments', p.apt), { personalAccount: p.personalAccount }, { merge: true });
-                    if (++ops >= 400) { await batch.commit(); batch = writeBatch(db); ops = 0; }
-                }
-                if (ops) await batch.commit();
-                toast(`Особові рахунки збережено: ${pairs.length} прим.`, 'success');
+                // Сервер сам знаходить справжній документ квартири (н1 / Н1) і пише журнал дій.
+                const r = await chargeAct({ action: 'setPersonalAccounts', rows: pairs });
+                toast(`Особові рахунки збережено: ${r.count} прим.`, 'success');
                 await loadSettingsView();
             } else if (a === 'st-person-new') {
                 openPayrollPerson('new');

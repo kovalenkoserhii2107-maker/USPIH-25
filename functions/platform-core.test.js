@@ -293,3 +293,13 @@ test('Тестовий ключ PRIVAT24_TEST_KEY_USPIH25_SANDBOX_V3 перем�
 
     privat.setSandboxDb(null);
 });
+
+test('Тестовий ключ ОСББ з «_» і «-» у slug веде в той самий контур, що й платформа', () => {
+    for (const slug of ['osbb-morskyi', 'osbb_morskyi', 'a-b_c']) {
+        const token = privat.tokenForTenant(slug);
+        assert.equal(privat.isSandboxToken(token), true, token);
+        const mTenant = token.match(/^PRIVAT24_TEST_KEY_TENANT_([A-Z0-9_~]+)_V3$/i);
+        assert.equal(mTenant[1].toLowerCase().replace(/_/g, '-').replace(/~/g, '_'), slug);
+    }
+    assert.notEqual(privat.tokenForTenant('osbb-morskyi'), privat.tokenForTenant('osbb_morskyi'));
+});

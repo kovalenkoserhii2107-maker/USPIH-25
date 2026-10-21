@@ -25,7 +25,7 @@
 import { auth, db, session, currentApt, resetSession } from './firebase.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
-    collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, query, orderBy, limit, serverTimestamp
+    collection, collectionGroup, doc, getDoc, getDocs, query, orderBy, limit
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { callBackend } from './backend.js';
 import { escapeHtml as esc, toast, setBusy, hideAppLoader, confirmDialog, promptDialog } from './ui.js';
@@ -45,9 +45,7 @@ import {
     buildPrivatRawTransaction,
     buildPrivatPaymentApiLifecycle,
     normalizeTenantSlug,
-    validateTenantInput,
     computePatchDiff,
-    validateManualPatch,
     evaluateAccountingInvariants,
     summarizeUserActivity
 } from './platform-core.js';
@@ -145,7 +143,10 @@ async function callPlatform(payload) {
         return await callBackend('platformAction', { tenantId: activeTenantId, ...payload });
     } catch (err) {
         const msg = String(err?.message || '');
-        if (/not-found|unimplemented|function.*not.*exist|CORS|internal|Failed to fetch|Невідома дія платформи/i.test(msg)) {
+        // Обхід сервера — лише для читання. Запис (реєстр ОСББ, ручні коригування) без сервера
+        // обійшов би перевірки закритого місяця й дозволених полів, тож помилку показуємо як є.
+        const readOnly = ['overview', 'bankSimulatorContext', 'inspectCollection', 'runDiagnostics'].includes(payload?.action);
+        if (readOnly && /not-found|unimplemented|function.*not.*exist|CORS|internal|Failed to fetch|Невідома дія платформи/i.test(msg)) {
             return clientFallbackPlatform({ tenantId: activeTenantId, ...payload });
         }
         throw err;
@@ -400,18 +401,6 @@ async function clientFallbackPlatform(data) {
         };
     }
 
-    if (action === 'saveTenant') {
-        const v = validateTenantInput(data);
-        if (!v.ok) throw new Error(v.error);
-        const t = v.tenant;
-        await setDoc(doc(db, 'platform_tenants', t.id), {
-            ...t,
-            updatedBy: String(session.apt || 'admin'),
-            updatedAt: serverTimestamp()
-        }, { merge: true });
-        return { ok: true, tenant: t };
-    }
-
     if (action === 'inspectCollection') {
         const colName = String(data.collection || 'apartments').trim();
         const maxDocs = Math.min(300, Math.max(10, Number(data.limit || 100)));
@@ -438,48 +427,6 @@ async function clientFallbackPlatform(data) {
         }
 
         return { ok: true, tenantId: data.tenantId, collection: colName, count: docs.length, docs };
-    }
-
-    if (action === 'manualPatch') {
-        const v = validateManualPatch({
-            collection: data.collection,
-            docId: data.docId,
-            patch: data.patch,
-            reason: data.reason
-        });
-        if (!v.ok) throw new Error(v.error);
-
-        const docPath = (data.collection === 'apartments' && data.aptId && ['ledger', 'owners'].includes(data.subcollection))
-            ? `apartments/${data.aptId}/${data.subcollection}/${data.docId}`
-            : `${data.collection}/${data.docId}`;
-        const ref = doc(db, ...docPath.split('/'));
-        const snap = await getDoc(ref);
-        const beforeData = snap.exists() ? serializeDocData(snap.data()) : {};
-        const diffs = computePatchDiff(beforeData, v.cleanPatch);
-
-        if (data.dryRun === true) {
-            return { ok: true, dryRun: true, docPath, exists: snap.exists(), diffs, before: beforeData };
-        }
-        await setDoc(ref, {
-            ...v.cleanPatch,
-            manualAdjustedBy: String(session.apt || 'admin'),
-            manualAdjustedAt: serverTimestamp()
-        }, { merge: true });
-
-        await addDoc(collection(db, 'audit_log'), {
-            actor: String(session.apt || 'admin'),
-            role: session.role || 'chair',
-            action: 'platform.manualPatch',
-            target: docPath,
-            summary: `Ручне коригування ${docPath}: ${v.reason}`,
-            details: { diffs, reason: v.reason },
-            at: serverTimestamp()
-        }).catch(() => {});
-
-        if (data.collection === 'apartments' && data.recomputeBalance !== false) {
-            await callBackend('chargesAction', { action: 'recompute' }).catch(() => {});
-        }
-        return { ok: true, docPath, diffs };
     }
 
     if (action === 'runDiagnostics') {
@@ -944,7 +891,9 @@ async function renderBankView() {
                     </p>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    ${!bs.connected || !bs.simulator ? `
+                    ${bs.tokenSet && !bs.simulator ? `
+                        <span class="buh-tag is-work">Підключено справжній Приват24 — дії симулятора вимкнено</span>
+                    ` : !bs.connected || !bs.simulator ? `
                         <button type="button" class="sv-btn btn-compact" data-pf-act="quick-enable-sim">⚡ Підключити тестовий ключ (saveToken)</button>
                     ` : ''}
                     <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="bank-trigger-sync" title="Викликати штатний bank.sync() так само, як кнопка «Виписка» у бухгалтерії">
@@ -958,7 +907,7 @@ async function renderBankView() {
 
             <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;margin-top:8px">
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <span class="buh-note" style="font-weight:700;color:#0F172A">Тестовий ключ Автоклієнта (для введення в <a href="buh.html#settings">«Налаштуваннях»</a>):</span>
+                    <span class="buh-note" style="font-weight:700;color:#0F172A">Тестовий ключ Автоклієнта (вводить голова в <a href="buh.html#settings">«Налаштуваннях»</a>, лише замість іншого тестового):</span>
                     <code id="pfTestTokenCode" style="background:#EFF6FF;color:#1D4ED8;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;border:1px solid #BFDBFE;user-select:all">${esc(bs.testTokenForTenant || bs.sandboxToken || DEFAULT_TEST_TOKEN)}</code>
                     <button type="button" class="btn-ghost-small" data-pf-act="copy-test-token">📋 Скопіювати ключ</button>
                 </div>

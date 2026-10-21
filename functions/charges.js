@@ -497,6 +497,25 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         return { ok: true, count: list.length };
     }
 
+    /** Особові рахунки списком: [{ apt, personalAccount }]; порожнє — прибрати. */
+    async function setPersonalAccounts(actor, role, { rows }) {
+        const ids = new Map((await loadApartments()).map(a => [a.apt, a.id]));
+        const list = (Array.isArray(rows) ? rows : []).slice(0, 2000)
+            .map(r => ({ apt: cleanApt(r?.apt), personalAccount: String(r?.personalAccount ?? '').trim() }));
+        if (!list.length) fail('invalid-argument', 'Немає жодного рядка');
+        const bad = list.find(r => !ids.has(r.apt));
+        if (bad) fail('invalid-argument', `Квартири ${bad.apt || '?'} немає в довіднику`);
+        if (list.some(r => r.personalAccount && !/^[0-9A-Za-zА-ЯІЇЄҐа-яіїєґ/-]{1,20}$/.test(r.personalAccount))) fail('invalid-argument', 'Особовий рахунок — до 20 цифр чи літер без пробілів');
+        let batch = db.batch(), ops = 0;
+        for (const r of list) {
+            batch.set(db.doc(`apartments/${ids.get(r.apt)}`), { personalAccount: r.personalAccount || FieldValue.delete() }, { merge: true });
+            if (++ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+        }
+        if (ops) await batch.commit();
+        await audit(actor, role, 'charges.personalAccounts', 'apartments', `Особові рахунки: ${list.length} кв.`, { count: list.length });
+        return { ok: true, count: list.length };
+    }
+
     async function setPremises(actor, role, { apts, group }) {
         const settings = await loadSettings();
         if (!settings.groups.some(g => g.id === group)) fail('invalid-argument', 'Невідома група приміщень');
@@ -585,7 +604,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
         return{written:clean.length};
     }
 
-    const changes = { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPremises, setOpening, recompute, resume, importHistory, confirmImportedStartMonth };
+    const changes = { run, revert, addTariff, removeTariff, addGroup, addComponent, renameComponent, setResidents, setPersonalAccounts, setPremises, setOpening, recompute, resume, importHistory, confirmImportedStartMonth };
     const actions = { context, preview, getStatement, ...Object.fromEntries(Object.entries(changes).map(([name, fn]) =>
         [name, (...args) => withOperation(name, () => fn(...args), args[2]?.period)])) };
 
@@ -600,7 +619,7 @@ module.exports = function chargeFunctions({ db, FieldValue, Timestamp, requireAd
             case 'preview': return preview(data);
             case 'statement': return getStatement(data);
             case 'run': case 'revert': case 'addTariff': case 'removeTariff': case 'addGroup': case 'addComponent':
-            case 'setResidents': case 'renameComponent': case 'setPremises': case 'setOpening': case 'resume': return actions[data.action](actor, role, data);
+            case 'setResidents': case 'setPersonalAccounts': case 'renameComponent': case 'setPremises': case 'setOpening': case 'resume': return actions[data.action](actor, role, data);
             case 'recompute': {
                 const r = await actions.recompute();
                 if (r.skipped) fail('failed-precondition', 'Спершу внесіть вхідні залишки на 30.09.2026');

@@ -17,7 +17,7 @@ before(() => {
     bank = bankFunctions({ db, FieldValue, Timestamp, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
 });
 const wipe = async () => {
-    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'bank_secrets']) {
+    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'bank_secrets', 'advance_reports']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -134,4 +134,34 @@ test('платіж через API: створюється в банку, чек�
     assert.deepEqual([after.status, after.txId], ['paid', 'UA213052990000026001234567890_OUT1']);
     const tx = (await db.doc('bank_tx/UA213052990000026001234567890_OUT1').get()).data();
     assert.deepEqual([tx.kind, tx.category, tx.status, tx.paymentId], ['expense', 'supplier', 'done', id]);
+});
+
+test('відшкодування за авансовим звітом: виписка й ручна звірка зараховують його, повернення у «Вхідні» знімає лише зараховане', async () => {
+    await seed();
+    const acc = 'UA213052990000026001234567890';
+    const person = { name: 'Підзвітна особа (демо)', iban: 'UA906543210000000260323012024', code: '1234567890' };
+    await db.doc('advance_reports/a1').set({ status: 'approved', reimburseKop: 30000, reimbursedKop: 0, personName: person.name });
+    await db.doc('advance_reports/a2').set({ status: 'approved', reimburseKop: 20000, reimbursedKop: 0, personName: person.name });
+    const pay = (id, adv, amountKop, bankRef) => db.doc(`payments/${id}`).set({ kind: 'advance', status: 'sent', amountKop, account: acc,
+        recipient: person, purpose: 'Відшкодування перевитрати', bankRef, advanceReportId: adv, sentAt: new Date() });
+    await pay('p1', 'a1', 30000, 'PACK-A1');
+    await pay('p2', 'a2', 20000, 'PACK-A2');
+    const out = (bankId, amountKop, dlr) => ({ bankId, account: acc, at: new Date(), direction: 'out', amountKop, purpose: 'Відшкодування перевитрати', dlr,
+        counterparty: { name: person.name, account: person.iban, code: person.code } });
+
+    // 1. Виписка сама закриває платіж — і авансовий звіт теж.
+    await bank.storeTransactions([out('ADV1', 30000, 'PACK-A1')], 'privat', await bank.loadContext());
+    let a1 = (await db.doc('advance_reports/a1').get()).data();
+    assert.deepEqual([a1.reimbursedKop, a1.status, a1.reimburseTxIds], [30000, 'settled', [`${acc}_ADV1`]]);
+
+    // 2. Ручна звірка (раніше падала: читання після запису в транзакції).
+    await db.doc(`bank_tx/${acc}_ADV2`).set({ ...out('ADV2', 20000, ''), at: new Date(), period: '2026-10', status: 'review', kind: 'expense', allocations: [] });
+    await bank.actions.matchPayment('900', 'accountant', { txId: `${acc}_ADV2`, paymentId: 'p2' });
+    const a2 = (await db.doc('advance_reports/a2').get()).data();
+    assert.deepEqual([a2.reimbursedKop, a2.status], [20000, 'settled']);
+
+    // 3. Повернення у «Вхідні» знімає саме це відшкодування і не йде в мінус.
+    await bank.actions.unassign('900', 'accountant', { txId: `${acc}_ADV1` });
+    a1 = (await db.doc('advance_reports/a1').get()).data();
+    assert.deepEqual([a1.reimbursedKop, a1.status], [0, 'approved']);
 });

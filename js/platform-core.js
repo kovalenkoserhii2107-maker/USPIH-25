@@ -65,7 +65,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Реєстр та мешканці',
         pkLabel: 'Номер приміщення (ID)',
         summaryFields: ['personalAccount', 'area', 'residents', 'balance', 'entrance', 'ownersStatus'],
-        editableFields: ['personalAccount', 'area', 'residents', 'balance', 'entrance', 'floor', 'ownersStatus', 'notes']
+        editableFields: ['personalAccount', 'area', 'residents', 'entrance', 'floor', 'ownersStatus', 'notes']
     },
     bank_tx: {
         label: 'Банківська виписка (bank_tx)',

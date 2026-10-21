@@ -255,6 +255,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 const expenseId = paid?.expenseId || byDoc?.auto;
                 const expenseSnap = expenseId ? await t.get(db.doc(`expenses/${expenseId}`)) : null;
                 const expense = expenseSnap?.exists ? { id: expenseSnap.id, ...expenseSnap.data() } : null;
+                const advSnap = paid?.advanceReportId && !closed ? await t.get(db.doc(`advance_reports/${paid.advanceReportId}`)) : null;
                 const canSettle = !closed && expenses && expense?.status === 'approved' && raw.amountKop <= expense.amountKop - (expense.paidKop || 0);
                 const doc = {
                     bankId: String(raw.bankId), dlr: raw.dlr ? String(raw.dlr).slice(0, 100) : null, account: raw.account, at, period,
@@ -281,6 +282,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                     Object.assign(doc, { kind: 'expense', category: paid.kind === 'tax' ? (core.isEsv(raw.purpose) ? 'esv' : 'taxes') : paid.kind === 'salary' ? 'salary' : paid.kind === 'advance' ? 'advance' : 'supplier', ...(paid.advanceReportId ? { advanceReportId: paid.advanceReportId } : {}), status: 'done', paymentId: paid.id });
                     if(['salary','tax'].includes(paid.kind)&&!paid.payroll)Object.assign(doc,{status:'review',reason:'payroll-unlinked'});
                     t.update(db.doc(`payments/${paid.id}`), { status: 'paid', paidAt: at, txId: id });
+                    if (advSnap?.exists) t.update(advSnap.ref, advanceReimburse(advSnap.data(), id, raw.amountKop));
                 } else if (byDoc?.auto && canSettle) {
                     Object.assign(doc, { kind: 'expense', category: 'supplier', status: 'done', method: 'document' });
                 } else if (decision.status === 'expense') {
@@ -470,6 +472,18 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     }
 
     /** Однакові суми/IBAN: вибір людиною, а не ще одна витрата поверх відомості. */
+    /** Відшкодування за авансовим звітом: та сама зміна і для ручної звірки, і для виписки. */
+    function advanceReimburse(advData, txId, amountKop) {
+        const reimbursedKop = (advData.reimbursedKop || 0) + amountKop;
+        const isSettled = reimbursedKop >= (advData.reimburseKop || 0);
+        return {
+            reimbursedKop,
+            reimburseTxIds: FieldValue.arrayUnion(txId),
+            status: isSettled ? 'settled' : 'approved',
+            ...(isSettled ? { settledAt: FieldValue.serverTimestamp() } : {})
+        };
+    }
+
     async function matchPayment(actor, role, { txId, paymentId }) {
         const txRef = db.doc(`bank_tx/${core.safeId(txId)}`);
         const payRef = db.doc(`payments/${core.safeId(paymentId)}`);
@@ -482,7 +496,11 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 fail('failed-precondition', 'Операцію вже розібрано або проведено');
             if (p.txId || !matchesPayment({ ...tx, at: tx.at?.toDate?.() }, { ...p, sentAt: p.sentAt?.toDate?.() || p.createdAt?.toDate?.() }))
                 fail('failed-precondition', 'Сума, рахунки, дата або стан платежу не відповідають виписці');
-            const expense = p.expenseId ? await t.get(db.doc(`expenses/${p.expenseId}`)) : null;
+            // Усі читання — до першого запису: інакше Firestore відхиляє транзакцію.
+            const [expense, advSnap] = await Promise.all([
+                p.expenseId ? t.get(db.doc(`expenses/${p.expenseId}`)) : null,
+                p.advanceReportId ? t.get(db.doc(`advance_reports/${p.advanceReportId}`)) : null
+            ]);
             if (p.expenseId && (!expenses || !expense?.exists || expense.data().status !== 'approved'
                 || tx.amountKop > expense.data().amountKop - (expense.data().stornoKop || 0) - (expense.data().paidKop || 0)))
                 fail('failed-precondition', 'Документ змінився або сума перевищує залишок: звірте документ і оплату');
@@ -494,20 +512,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
             t.update(payRef, { status: 'paid', paidAt: tx.at, txId: txRef.id });
             if (expense) t.update(expense.ref, expenses.linkUpdate({ id: expense.id, ...expense.data() }, txRef.id, tx.amountKop));
-            if (p.advanceReportId) {
-                const advSnap = await t.get(db.doc(`advance_reports/${p.advanceReportId}`));
-                if (advSnap.exists) {
-                    const advData = advSnap.data();
-                    const newReimbursed = (advData.reimbursedKop || 0) + tx.amountKop;
-                    const isSettled = newReimbursed >= (advData.reimburseKop || 0);
-                    t.update(advSnap.ref, {
-                        reimbursedKop: newReimbursed,
-                        reimburseTxIds: FieldValue.arrayUnion(txRef.id),
-                        status: isSettled ? 'settled' : 'approved',
-                        ...(isSettled ? { settledAt: FieldValue.serverTimestamp() } : {})
-                    });
-                }
-            }
+            if (advSnap?.exists) t.update(advSnap.ref, advanceReimburse(advSnap.data(), txRef.id, tx.amountKop));
             t.create(db.collection('audit_log').doc(), { actor, role, action: 'bank.matchPayment', target: txRef.path,
                 summary: `${core.fromKop(tx.amountKop)} грн → платіж ${payRef.id}`, details: { paymentId: payRef.id }, at: FieldValue.serverTimestamp() });
         });
@@ -642,6 +647,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const expenseRef = data.expenseId ? db.doc(`expenses/${data.expenseId}`) : null;
             const expense = expenseRef ? await t.get(expenseRef) : null;
             const payment = data.paymentId ? await t.get(db.doc(`payments/${data.paymentId}`)) : null;
+            const adv = data.advanceReportId ? await t.get(db.doc(`advance_reports/${data.advanceReportId}`)) : null;
             if (payment?.data()?.payroll) fail('failed-precondition', 'Проведений платіж за відомістю зарплати не можна рознести як іншу витрату');
             if ((data.refundTxIds || []).length) fail('failed-precondition', 'До цього списання привʼязано повернення — спершу поверніть у «Вхідні» його');
             // Повернення списаного: знімаємо привʼязку з оригіналу, документа й платежу.
@@ -666,9 +672,10 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (expense?.exists && (expense.data().txIds || []).includes(ref.id)) {
                 t.update(expenseRef, { paidKop: Math.max(0, (expense.data().paidKop || 0) - data.amountKop), txIds: FieldValue.arrayRemove(ref.id), status: 'approved', paidAt: null });
             }
-            if (data.advanceReportId) {
-                t.update(db.doc(`advance_reports/${data.advanceReportId}`), {
-                    reimbursedKop: FieldValue.increment(-data.amountKop),
+            // Знімаємо лише те відшкодування, яке ця операція справді зарахувала.
+            if (adv?.exists && (adv.data().reimburseTxIds || []).includes(ref.id)) {
+                t.update(adv.ref, {
+                    reimbursedKop: Math.max(0, (adv.data().reimbursedKop || 0) - data.amountKop),
                     reimburseTxIds: FieldValue.arrayRemove(ref.id),
                     status: 'approved',
                     settledAt: null
@@ -692,6 +699,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     async function saveToken(actor, role, { token }) {
         const value = String(token || '').trim();
         if (value.length < 20 || value.length > 1000 || /\s/.test(value)) fail('invalid-argument', 'Це не схоже на токен Автоклієнта');
+        if (privat.isSandboxToken(value)) {
+            // Тестовий ключ симулятора ставить лише голова і лише замість іншого тестового:
+            // інакше живий облік почав би приймати вигадані операції замість банківських.
+            if (role !== 'chair') fail('permission-denied', 'Тестовий ключ симулятора банку може підключити лише голова');
+            const current = String((await secretRef.get()).data()?.token || '').trim();
+            if (current && !privat.isSandboxToken(current)) fail('failed-precondition', 'Уже підключено справжній Приват24 — тестовий ключ не замінить його');
+        }
         let balances;
         try {
             balances = await bankApi.fetchBalances(value);

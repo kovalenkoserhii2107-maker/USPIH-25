@@ -613,10 +613,13 @@ async function openCaseModal(apt) {
     };
     const closeModal = () => {
         document.removeEventListener('keydown', onKeyDown);
+        window.removeEventListener('popstate', closeModal);
         document.body.style.overflow = prevOverflow;
         modalHost.innerHTML = '';
     };
     document.addEventListener('keydown', onKeyDown);
+    // Вікно висить на <body>: без цього «Назад» у браузері лишав би його поверх іншого розділу.
+    window.addEventListener('popstate', closeModal);
     if (closeBtn) closeBtn.onclick = closeModal;
     if (backdrop) {
         backdrop.onclick = e => {

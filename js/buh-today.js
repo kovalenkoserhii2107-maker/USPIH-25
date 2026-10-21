@@ -94,8 +94,12 @@ const ACCOUNT_PURPOSE_LABELS = {
     current: 'Поточний рахунок',
     reserve: 'Резервний фонд',
     repair: 'Ремонтний фонд',
-    special: 'Спецрахунок'
+    special: 'Спецрахунок',
+    deposit: 'Депозит',
+    grant: 'Грантовий рахунок'
 };
+/** 1, 2, 21 рішення; 5, 11, 12 рішень. */
+const decisionsWord = n => ([1, 2, 3, 4].includes(n % 10) && ![11, 12, 13, 14].includes(n % 100) ? 'рішення' : 'рішень');
 
 /**
  * Розрахунок очікуваних платежів за поточний місяць, які ще не проведено
@@ -280,7 +284,7 @@ export async function loadToday() {
 
     const totalTaskCount = list.reduce((s, t) => s + t.count, 0);
     const tasksCountLabel = totalTaskCount
-        ? `${totalTaskCount} ${totalTaskCount === 1 ? 'рішення' : 'рішень'}`
+        ? `${totalTaskCount} ${decisionsWord(totalTaskCount)}`
         : '';
 
     const primaryGo = list.length === 1 && list[0].go ? list[0].go : 'inbox';
@@ -349,7 +353,7 @@ export async function loadToday() {
                 <button type="button" class="sv-card td-balance" data-go="bank">
                     <span class="td-label">На рахунку</span>
                     <b class="td-big">${accounts.length ? escapeHtml(money(total)) : '—'}</b>
-                    ${uahAccounts.length > 1 ? `<div class="td-acc-list">${uahAccounts.slice(0, 3).map(a => `<span class="td-acc-row"><span>${escapeHtml(ACCOUNT_PURPOSE_LABELS[a.purpose] || a.name || `…${String(a.iban || '').slice(-4)}`)}</span><b>${escapeHtml(money(a.balanceKop || 0))}</b></span>`).join('')}</div>` : ''}
+                    ${uahAccounts.length > 1 ? `<div class="td-acc-list">${uahAccounts.slice(0, 3).map(a => `<span class="td-acc-row"><span>${escapeHtml(ACCOUNT_PURPOSE_LABELS[a.purpose] || a.name || `…${String(a.iban || '').slice(-4)}`)}</span><b>${escapeHtml(money(a.balanceKop || 0))}</b></span>`).join('')}${uahAccounts.length > 3 ? `<span class="td-acc-row is-muted"><span>Ще ${uahAccounts.length - 3} — у «Банку»</span></span>` : ''}</div>` : ''}
                     <span class="td-small${last?.ok === false ? ' is-bad' : last ? ' is-good' : ' is-muted'}">${!accounts.length ? 'Банк не підключено' : last?.ok === false ? 'Помилка оновлення виписки' : last ? `Виписка о ${escapeHtml(when(last.at))}` : 'Виписку ще не отримано'}</span>
                 </button>
                 ${signing.length ? `<button type="button" class="sv-card td-signing" data-go="payments">

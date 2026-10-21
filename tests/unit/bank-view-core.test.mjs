@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
     dayLabel, byDay, quickAssign, filterTx,
     txCategoryKey, txCategoryInfo, txDistributionInfo,
-    describeTxAccountingEntry, resolveTxLinks
+    describeTxAccountingEntry, resolveTxLinks, sameEntity
 } from '../../js/bank-view-core.js';
 
 const now = new Date(2026, 9, 21, 15, 0); // 21 жовтня 2026
@@ -169,4 +169,24 @@ test('категорії, проводки (Дт/Кт) та інтерактив
     // Коли договір витягується з призначення платежу
     const fallbackLinks = resolveTxLinks(telecomTx, { suppliers: [], contracts: [] });
     assert.equal(fallbackLinks.contractLink.subject, 'Договір сервітуту (доступ та розміщення телекомунікаційного обладнання)');
+});
+
+test('назви контрагентів: організаційна форма — лише окремим словом, договір іншого постачальника не підставляється', () => {
+    assert.equal(sameEntity('ТОВ «Водоканал»', 'водоканал'), true);
+    assert.equal(sameEntity('ФОП Іваненко', 'ФОП Іваненко Петро'), true);
+    assert.equal(sameEntity('ТОВ «Атлант»', 'ТОВ «Лант»'), false);
+    assert.equal(sameEntity('ат', 'Атлант'), false);
+    const contracts = [{ id: 'c-other', number: '1', supplierName: 'ТОВ «Ліфт-Сервіс» (демо)', status: 'approved' }];
+    const tx = { id: 't1', direction: 'out', amountKop: 10000, status: 'review', purpose: 'Оплата за договором № 1 від 01.10.2026', counterparty: { name: 'ТОВ «Клінінг» (демо)' } };
+    assert.equal(resolveTxLinks(tx, { contracts }).contractLink?.inDatabase, false);
+});
+
+test('пошук за сумою розуміє кому й пробіли: «1 250,50»', () => {
+    const list = [{ id: 'a', amountKop: 125050, status: 'done' }, { id: 'b', amountKop: 30000, status: 'done' }];
+    assert.deepEqual(filterTx(list, 'all', '1 250,50').map(t => t.id), ['a']);
+    assert.deepEqual(filterTx(list, 'all', '300,00').map(t => t.id), ['b']);
+});
+
+test('сторнована банком операція не має проводки', () => {
+    assert.equal(describeTxAccountingEntry({ id: 'v', direction: 'in', kind: 'payment', status: 'done', bankVoided: true, amountKop: 100 }), null);
 });

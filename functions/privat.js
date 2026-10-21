@@ -70,7 +70,8 @@ function tokenForTenant(tenantId) {
     const uid = clean.slice('sandbox~'.length).replace(/[^A-Za-z0-9_-]/g, '');
     return `PRIVAT24_TEST_KEY_SANDBOX_${uid}_V3`;
   }
-  const slug = clean.toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 32);
+  // «-» у ключі пишеться як «_», а власне «_» зі slug — як «~», щоб getSandboxDb відновив slug без втрат.
+  const slug = clean.toLowerCase().replace(/_/g, '~').replace(/[^a-z0-9~]/g, '_').toUpperCase().slice(0, 40);
   return `PRIVAT24_TEST_KEY_TENANT_${slug}_V3`;
 }
 
@@ -82,9 +83,9 @@ function getSandboxDb(token) {
     const scopedDatabase = require('./accounting-test-db');
     return scopedDatabase(root, mSandbox[1]);
   }
-  const mTenant = s.match(/^PRIVAT24_TEST_KEY_TENANT_([A-Z0-9_]+)_V3$/i);
+  const mTenant = s.match(/^PRIVAT24_TEST_KEY_TENANT_([A-Z0-9_~]+)_V3$/i);
   if (mTenant) {
-    const slug = mTenant[1].toLowerCase().replace(/_/g, '-');
+    const slug = mTenant[1].toLowerCase().replace(/_/g, '-').replace(/~/g, '_');
     if (slug && slug !== 'uspih-25' && slug !== 'default') {
       const scopedDatabase = require('./accounting-test-db');
       return scopedDatabase(root, `tenant_${slug}`);

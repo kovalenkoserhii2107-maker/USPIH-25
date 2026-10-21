@@ -18,6 +18,7 @@ import { defaultAccount } from './buh-payments.js';
 import { periodName, fmtKop, toKop } from './charges-core.js';
 import { TABS, remaining, bucketOf, chipOf, filterDocs, docCounts, mainsFor as mainsOf, twinOf, scanKind } from './docs-core.js';
 import { docPayments } from './chain-core.js';
+import { sameEntity } from './bank-view-core.js';
 import { openPaymentSheet, openTxSheet, openContractSheet } from './buh-chain.js';
 import { ASSET_SUBACCOUNTS, DEPR_METHODS, UNITS, defaultSubacc, defaultDeprMethod, suggestAssetId } from './assets-core.js';
 import { openAssets } from './buh-assets.js';
@@ -39,6 +40,13 @@ let files = [];           // нові файли форми, ще не зава�
 
 const isChair = () => session.role === 'chair';
 const human = d => (d ? String(d).split('-').reverse().join('.') : '');
+/** Для <input type="date">: дата з призначення платежу («12.03.2026») → 2026-03-12; інше — порожньо. */
+const isoDate = d => {
+    const v = String(d || '').trim();
+    const m = v.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+};
 const tag = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="buh-tag ${c}">${escapeHtml(t)}</span>`; };
 const contractOf = id => ctx.contracts.find(c => c.id === id);
 let attaching = null;     // документ, який привʼязують до основного
@@ -417,7 +425,7 @@ function docFormHtml(d = {}) {
             </label>
             <label class="field"><span class="field-label">Вид документа</span><select id="dfType" class="field-input field-select">${options(ctx.docTypes, d.docType || 'invoice')}</select></label>
             <label class="field"><span class="field-label">Номер</span><input id="dfNumber" class="field-input" maxlength="60" value="${escapeHtml(d.number || '')}"></label>
-            <label class="field"><span class="field-label">Дата</span><input id="dfDate" class="field-input" type="date" value="${escapeHtml(d.date || ctx.today)}"></label>
+            <label class="field"><span class="field-label">Дата</span><input id="dfDate" class="field-input" type="date" value="${escapeHtml(isoDate(d.date) || ctx.today)}"></label>
             <label class="field"><span class="field-label">За місяць</span><input id="dfPeriod" class="field-input" type="month" value="${escapeHtml(d.period || ctx.today.slice(0, 7))}"></label>
             <label class="field"><span class="field-label">Сума, грн</span><input id="dfAmount" class="field-input" inputmode="decimal" placeholder="0,00" value="${money2(d.amountKop)}"></label>
             <label class="field"><span class="field-label">У т.ч. ПДВ, грн</span><input id="dfVat" class="field-input" inputmode="decimal" placeholder="без ПДВ" value="${money2(d.vatKop)}"></label>
@@ -450,20 +458,16 @@ function docFormHtml(d = {}) {
     </section>`;
 }
 
-function normEntityName(v) {
-    return String(v || '').toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|тзов|«|»|"|'|`|\.|,|-|\(демо\))/gi, ' ').replace(/\s+/g, ' ').trim();
-}
-
 function getSupplierContracts(sup, fallbackName = '', extraContract = null) {
     const out = [];
     const seenIds = new Set();
     const supId = sup?.id || '';
-    const cleanTargetName = normEntityName(sup?.name || fallbackName);
+    const targetName = sup?.name || fallbackName;
 
     for (const c of ctx?.contracts || []) {
         const matchById = supId && c.supplierId === supId;
-        const cleanConSup = normEntityName(c.supplierName);
-        const matchByName = !matchById && cleanTargetName.length > 2 && cleanConSup && (cleanConSup === cleanTargetName || cleanConSup.includes(cleanTargetName) || cleanTargetName.includes(cleanConSup));
+        // За назвою — лише договори без картки постачальника: договір іншої картки не «приклеюється» за схожою назвою.
+        const matchByName = !matchById && (!c.supplierId || !supId) && sameEntity(c.supplierName, targetName);
         if (matchById || matchByName) {
             seenIds.add(c.id);
             out.push({ ...c, inDatabase: true });
@@ -541,12 +545,12 @@ function contractFormHtml(c = {}) {
                 <select id="cfSupplier" class="field-input field-select"><option value="">Оберіть…</option>${ctx.suppliers.map(s =>
                     `<option value="${escapeHtml(s.id)}"${s.id === c.supplierId ? ' selected' : ''}>${escapeHtml(s.name)} · ${escapeHtml(s.code)}</option>`).join('')}<option value="__new">+ Новий постачальник…</option></select></label>
             <label class="field"><span class="field-label">Номер договору</span><input id="cfNumber" class="field-input" maxlength="60" value="${escapeHtml(c.number || '')}"></label>
-            <label class="field"><span class="field-label">Дата укладення</span><input id="cfDate" class="field-input" type="date" value="${escapeHtml(c.date || ctx.today)}"></label>
+            <label class="field"><span class="field-label">Дата укладення</span><input id="cfDate" class="field-input" type="date" value="${escapeHtml(isoDate(c.date) || ctx.today)}"></label>
             <label class="field ex-full"><span class="field-label">Предмет договору</span><input id="cfSubject" class="field-input" maxlength="300" value="${escapeHtml(c.subject || '')}" placeholder="Технічне обслуговування ліфтів"></label>
             <label class="field"><span class="field-label">Вид договору</span><select id="cfType" class="field-input field-select">${options({ monthly: 'Щомісячний', fixed: 'Разовий' }, c.type || 'monthly')}</select></label>
             <label class="field"><span class="field-label" id="cfAmountLabel">${monthly ? 'Сума на місяць, грн' : 'Сума договору, грн'}</span><input id="cfAmount" class="field-input" inputmode="decimal" value="${money2(monthly ? c.monthlyKop : c.amountKop)}"></label>
-            <label class="field"><span class="field-label">Діє з</span><input id="cfFrom" class="field-input" type="date" value="${escapeHtml(c.validFrom || ctx.today)}"></label>
-            <label class="field"><span class="field-label">Діє по (порожньо — безстроковий)</span><input id="cfTo" class="field-input" type="date" value="${escapeHtml(c.validTo || '')}"></label>
+            <label class="field"><span class="field-label">Діє з</span><input id="cfFrom" class="field-input" type="date" value="${escapeHtml(isoDate(c.validFrom) || isoDate(c.date) || ctx.today)}"></label>
+            <label class="field"><span class="field-label">Діє по (порожньо — безстроковий)</span><input id="cfTo" class="field-input" type="date" value="${escapeHtml(isoDate(c.validTo))}"></label>
             <label class="field ex-full"><span class="field-label">Стаття витрат</span><select id="cfItem" class="field-input field-select">${options(ctx.items, c.item || 'other')}</select></label>
             <label class="field"><span class="field-label">Погодження правління (протокол, дата)</span><input id="cfBoard" class="field-input" maxlength="200" value="${escapeHtml(c.boardDecision || '')}"></label>
             <label class="field"><span class="field-label">Рішення загальних зборів (понад 50 000 грн)</span><input id="cfMeeting" class="field-input" maxlength="200" value="${escapeHtml(c.meetingDecision || '')}"></label>
@@ -774,14 +778,8 @@ function findFocusedSupplier() {
         if (byIban) return byIban;
     }
     if (activeFocus.name) {
-        const clean = String(activeFocus.name).toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
-        if (clean.length > 2) {
-            const byName = ctx.suppliers.find(s => {
-                const sn = String(s.name || "").toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
-                return sn && (sn === clean || sn.includes(clean) || clean.includes(sn));
-            });
-            if (byName) return byName;
-        }
+        const byName = ctx.suppliers.find(s => sameEntity(s.name, activeFocus.name));
+        if (byName) return byName;
     }
     return null;
 }
@@ -792,20 +790,14 @@ function findFocusedContract() {
         const byId = ctx.contracts.find(c => c.id === activeFocus.id);
         if (byId) return byId;
     }
+    // Номер договору шукаємо серед договорів того ж постачальника: «№ 1» є майже в кожного.
+    const ofSupplier = ctx.contracts.filter(c => (activeFocus.supplierId && c.supplierId === activeFocus.supplierId)
+        || (activeFocus.supplierName && sameEntity(c.supplierName, activeFocus.supplierName)));
     if (activeFocus.number && activeFocus.number !== "б/н") {
-        const byNum = ctx.contracts.find(c => String(c.number || "").toLowerCase() === String(activeFocus.number).toLowerCase());
+        const byNum = ofSupplier.find(c => String(c.number || "").toLowerCase() === String(activeFocus.number).toLowerCase());
         if (byNum) return byNum;
     }
-    if (activeFocus.supplierName) {
-        const clean = String(activeFocus.supplierName).toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
-        if (clean.length > 2) {
-            const bySup = ctx.contracts.find(c => {
-                const sn = String(c.supplierName || "").toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
-                return sn && (sn === clean || sn.includes(clean) || clean.includes(sn));
-            });
-            if (bySup) return bySup;
-        }
-    }
+    if (ofSupplier.length) return ofSupplier.find(c => c.status === 'approved') || ofSupplier[0];
     return null;
 }
 
@@ -1270,7 +1262,7 @@ export function initExpensesView() {
             return;
         }
         const seg = e.target.closest('[data-seg]');
-        if (seg) { segment = seg.dataset.seg; form = null; attaching = null; stornoing = null; loadExpensesView(); return; }
+        if (seg) { segment = seg.dataset.seg; form = null; attaching = null; stornoing = null; activeFocus = null; loadExpensesView(); return; }
         const btn = e.target.closest('[data-act]');
         if (!btn || btn.disabled) return;
         if (btn.dataset.act === 'pick') {
