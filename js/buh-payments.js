@@ -215,7 +215,7 @@ function fill(p) {
 export async function openForm(prefill) {
     if (prefill?.payroll) { location.hash = 'payroll'; toast('Повторіть відправку з відомості зарплати — суми залишаться затвердженими', 'info'); return; }
     formOpen = true;
-    formMetadata = { proposalKey: prefill?.proposalKey || `manual:${crypto.randomUUID()}`, ...(prefill?.expenseId ? { expenseId: prefill.expenseId } : {}) };
+    formMetadata = { proposalKey: prefill?.proposalKey || `manual:${crypto.randomUUID()}`, ...(prefill?.expenseId ? { expenseId: prefill.expenseId } : {}), ...(prefill?.status === 'failed' && prefill?.id ? { replaceId: prefill.id } : {}) };
     pendingFill = prefill || { recipient: {}, purpose: '', amountKop: 0 };
     await loadPaymentsView();
 }

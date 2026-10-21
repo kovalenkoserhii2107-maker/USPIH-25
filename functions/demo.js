@@ -373,8 +373,8 @@ module.exports = function demoFunctions({ db, FieldValue, Timestamp, requireAdmi
         // знаходить списання й проводить платіж — це справжній шлях платіж → документ → банк.
         const payAt = (day, hh = 9) => Timestamp.fromDate(new Date(Date.UTC(2026, 9, day, hh - 3, 5)));
         const writePayment = async p => {
-            const ref = db.collection('payments').doc();
-            await ref.set({ source: 'demo', account: OWN, createdBy: A[0], bankRef: `DEMO-PB-${ref.id.slice(0, 6).toUpperCase()}`, ...p });
+            const ref = p.proposalKey ? db.doc(`payments/proposal-${require('node:crypto').createHash('sha256').update(p.proposalKey).digest('hex').slice(0, 32)}`) : db.collection('payments').doc();
+            await ref.set({ source: 'demo', account: OWN, createdBy: A[0], bankRef: `DEMO-PB-${ref.id.slice(-6).toUpperCase()}`, ...p });
             return ref.id;
         };
         const payIds = {};

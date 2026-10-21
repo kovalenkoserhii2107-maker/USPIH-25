@@ -82,3 +82,178 @@ test('нагадування голові: кількість, сума й пе�
     assert.match(five.body, /^А, Б, В і ще 2: разом 5,00 грн/);
     assert.equal(pay.reminderText([{ amountKop: 1 }, { amountKop: 1 }]).title, '2 платежі чекають вашого підпису');
 });
+
+test('повторна відправка невдалого платежу (replaceId) скасовує старий failed-платіж, а classifyTx розносить payroll-unlinked без помилки', async () => {
+    const Module = require('node:module');
+    const origLoad = Module._load;
+    Module._load = function (request, parent, isMain) {
+        if (request === 'firebase-functions/v2/https') {
+            class HttpsError extends Error {
+                constructor(code, message, details) { super(message); this.code = code; this.details = details; }
+            }
+            return { onCall: (opts, fn) => typeof opts === 'function' ? opts : fn, HttpsError };
+        }
+        if (request === 'firebase-functions/v2/scheduler') return { onSchedule: (opts, fn) => fn };
+        if (request === 'firebase-functions/logger') return { info: () => {}, warn: () => {}, error: () => {} };
+        return origLoad.apply(this, arguments);
+    };
+
+    try {
+        const docs = new Map();
+        const FieldValue = {
+            serverTimestamp: () => 'TS',
+            delete: () => '__DELETE__',
+            increment: n => n,
+            arrayUnion: (...x) => x,
+            arrayRemove: (...x) => x
+        };
+        const applyPatch = (old = {}, patch = {}) => {
+            const next = { ...old };
+            for (const [k, v] of Object.entries(patch)) {
+                if (v === '__DELETE__') delete next[k];
+                else next[k] = v;
+            }
+            return next;
+        };
+        const docRef = path => ({
+            id: path.split('/').pop(),
+            path,
+            async get() {
+                const d = docs.get(path);
+                return { id: this.id, exists: d !== undefined, ref: this, data: () => d ? { ...d } : undefined };
+            },
+            async set(data, opts) {
+                docs.set(path, opts?.merge ? applyPatch(docs.get(path) || {}, data) : applyPatch({}, data));
+            },
+            async update(patch) {
+                docs.set(path, applyPatch(docs.get(path) || {}, patch));
+            }
+        });
+        const queryCollection = (col, filters = []) => ({
+            where(field, op, val) { return queryCollection(col, [...filters, { field, op, val }]); },
+            limit() { return this; },
+            async get() {
+                const res = [];
+                for (const [k, v] of docs.entries()) {
+                    if (!k.startsWith(col + '/')) continue;
+                    const match = filters.every(f => {
+                        const fieldVal = f.field.split('.').reduce((o, p) => o?.[p], v);
+                        if (f.op === '==') return fieldVal === f.val;
+                        if (f.op === 'in') return Array.isArray(f.val) && f.val.includes(fieldVal);
+                        return true;
+                    });
+                    if (match) {
+                        const r = docRef(k);
+                        res.push({ id: r.id, exists: true, ref: r, data: () => ({ ...v }) });
+                    }
+                }
+                return { empty: res.length === 0, size: res.length, docs: res };
+            }
+        });
+        let seq = 0;
+        const db = {
+            doc: path => docRef(path),
+            collection: name => ({
+                doc: (id) => docRef(`${name}/${id || `auto-${++seq}`}`),
+                add: async data => { const r = docRef(`${name}/auto-${++seq}`); await r.set(data); return r; },
+                where: (f, op, v) => queryCollection(name, [{ field: f, op, val: v }]),
+                get: () => queryCollection(name, []).get()
+            }),
+            async runTransaction(fn) {
+                const t = {
+                    get: r => r.get(),
+                    set: (r, d, o) => r.set(d, o),
+                    update: (r, p) => r.update(p),
+                    create: (r, d) => r.set(d),
+                    delete: r => { docs.delete(r.path); }
+                };
+                return fn(t);
+            }
+        };
+
+        const ownIban = 'UA213223130000026007233566001';
+        const recIban = 'UA903052992990004149123456789';
+        docs.set('bank/settings', {
+            demo: true,
+            accounts: { [ownIban]: { currency: 'UAH', available: true, purpose: 'current', balanceKop: 500000 } }
+        });
+        // Старий невдалий платіж із довільним ID (як у демо чи старій базі)
+        docs.set('payments/legacy-failed-id', {
+            kind: 'tax',
+            recipient: { name: 'ГУ ДПС', iban: recIban, code: '43005393' },
+            amountKop: 33294,
+            purpose: '*;101;Військовий збір за вересень 2026',
+            account: ownIban,
+            status: 'failed',
+            proposalKey: 'manual:demo-failed'
+        });
+
+        const paymentsMod = require('./payments')({
+            db, FieldValue, Timestamp: { fromDate: d => d },
+            requireAdmin: async () => '1', staffRole: async () => 'chair',
+            notify: async () => {}, lock: { assertOpen: async () => {} }
+        });
+
+        // 1. Повторна відправка з replaceId автоматично скасовує старий failed-платіж
+        const created = await paymentsMod.actions.create('1', 'chair', {
+            kind: 'tax',
+            recipient: { name: 'ГУ ДПС в Одеській обл.', iban: recIban, code: '43005393' },
+            amountKop: 33294,
+            purpose: '*;101;Військовий збір за вересень 2026',
+            account: ownIban,
+            proposalKey: 'manual:demo-failed',
+            replaceId: 'legacy-failed-id'
+        });
+        assert.equal(docs.get('payments/legacy-failed-id').status, 'canceled');
+        assert.equal(docs.get('payments/legacy-failed-id').replacedBy, created.id);
+        assert.equal(docs.get(`payments/${created.id}`).status, 'sent');
+
+        // 2. Класифікація списання з виписки, яке отримало paymentId + status: 'review' (payroll-unlinked)
+        const txId = `${ownIban}_TX-TAX-1`;
+        docs.set(`payments/${created.id}`, {
+            ...docs.get(`payments/${created.id}`),
+            status: 'paid',
+            txId
+        });
+        docs.set(`bank_tx/${txId}`, {
+            bankId: 'TX-TAX-1',
+            account: ownIban,
+            period: '2026-10',
+            direction: 'out',
+            currency: 'UAH',
+            amountKop: 33294,
+            purpose: '*;101;Військовий збір за вересень 2026',
+            kind: 'expense',
+            category: 'taxes',
+            status: 'review',
+            reason: 'payroll-unlinked',
+            paymentId: created.id
+        });
+
+        const bankMod = require('./bank')({
+            db, FieldValue, Timestamp: { fromDate: d => d },
+            requireAdmin: async () => '1', staffRole: async () => 'chair',
+            balances: { recompute: async () => {} },
+            lock: { assertOpen: async () => {} }
+        });
+
+        const clRes = await bankMod.actions.classifyTx('1', 'chair', { txId, kind: 'expense', category: 'taxes' });
+        assert.equal(clRes.ok, true);
+        const updatedTx = docs.get(`bank_tx/${txId}`);
+        assert.equal(updatedTx.status, 'done');
+        assert.equal(updatedTx.category, 'taxes');
+        assert.equal(updatedTx.paymentId, created.id);
+        assert.equal(updatedTx.reason, undefined);
+
+        // Перевіряємо, що reconciliation-core проходить без жодної помилки
+        const { reconcile } = require('./reconciliation-core');
+        const issues = reconcile({
+            period: '2026-10',
+            bankTx: [{ id: txId, ...updatedTx }],
+            payments: [{ id: created.id, ...docs.get(`payments/${created.id}`) }]
+        });
+        assert.deepEqual(issues, []);
+    } finally {
+        Module._load = origLoad;
+    }
+});

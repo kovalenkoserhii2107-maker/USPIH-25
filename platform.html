@@ -25,12 +25,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=200">
-    <link rel="stylesheet" href="style-sv.css?v=200">
-    <link rel="stylesheet" href="style-buh.css?v=200">
-    <link rel="stylesheet" href="style-platform.css?v=200">
+    <link rel="stylesheet" href="style.css?v=201">
+    <link rel="stylesheet" href="style-sv.css?v=201">
+    <link rel="stylesheet" href="style-buh.css?v=201">
+    <link rel="stylesheet" href="style-platform.css?v=201">
 
-    <link rel="modulepreload" href="js/platform-main.js?v=200">
+    <link rel="modulepreload" href="js/platform-main.js?v=201">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -151,7 +151,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/platform-main.js?v=200').catch(error => {
+    import('./js/platform-main.js?v=201').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження платформи:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
