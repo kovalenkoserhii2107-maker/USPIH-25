@@ -21,6 +21,7 @@ let rows = [];
 let filter = 'debt';
 let search = '';
 let selected = null;
+let wantedApt = null;
 let limit = SHOWN;
 const ledgers = new Map();   // кв → записи історії
 
@@ -105,7 +106,11 @@ function renderList() {
 }
 
 export function openFlat(apt) {
-    if (apt) { selected = String(apt); search = ''; }
+    if (apt) {
+        selected = String(apt);
+        wantedApt = String(apt);
+        search = '';
+    }
     if (location.hash !== '#flats') location.hash = 'flats';
     else loadFlatsView();
 }
@@ -117,6 +122,13 @@ export async function loadFlatsView() {
     rows = flatRows({ apartments: charges.apartments || [], monthly, owners });
     ledgers.clear();
     const counts = flatCounts(rows);
+    if (wantedApt) {
+        selected = wantedApt;
+        const inCurrent = filterFlats(rows, filter, search).some(r => r.apt === wantedApt);
+        if (!inCurrent) filter = 'all';
+        const idx = filterFlats(rows, filter, search).findIndex(r => r.apt === wantedApt);
+        if (idx >= limit) limit = Math.ceil((idx + 1) / SHOWN) * SHOWN;
+    }
     if (!selected) selected = filterFlats(rows, filter)[0]?.apt || null;
     document.getElementById('viewFlats').innerHTML = `
         <div class="fl-tools">
@@ -131,6 +143,21 @@ export async function loadFlatsView() {
         </div>`;
     renderList();
     await showCard();
+    if (wantedApt) {
+        const targetApt = wantedApt;
+        wantedApt = null;
+        setTimeout(() => {
+            const itemEl = document.querySelector(`#viewFlats .fl-item[data-apt="${CSS.escape(targetApt)}"]`);
+            const cardEl = document.getElementById('flCard');
+            itemEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            cardEl?.classList.add('buh-nav-target-highlight');
+            itemEl?.classList.add('buh-nav-target-highlight');
+            setTimeout(() => {
+                cardEl?.classList.remove('buh-nav-target-highlight');
+                itemEl?.classList.remove('buh-nav-target-highlight');
+            }, 2600);
+        }, 60);
+    }
     return counts.long;
 }
 
