@@ -305,9 +305,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             advanceSummary: (() => {
                 const paymentsList = data.payments || [];
                 const activePayIds = new Set(paymentsList.filter(p => ["sending", "unknown", "sent"].includes(p.status)).map(p => p.id));
-                const closedPayIds = new Set(paymentsList.filter(p => ["failed", "canceled"].includes(p.status)).map(p => p.id));
                 const activeAdvIds = new Set(paymentsList.filter(p => ["sending", "unknown", "sent"].includes(p.status) && p.advanceReportId).map(p => p.advanceReportId));
-                const isPaying = a => activeAdvIds.has(a.id) || Boolean(a.paymentId && (activePayIds.has(a.paymentId) || !closedPayIds.has(a.paymentId)));
+                const isPaying = a => activeAdvIds.has(a.id) || Boolean(a.paymentId && activePayIds.has(a.paymentId));
                 const owing = data.advanceReports.filter(a => a.status === "approved" && (a.reimburseKop || 0) > (a.reimbursedKop || 0));
                 const unpaid = owing.filter(a => !isPaying(a));
                 const inBank = owing.filter(a => isPaying(a));
@@ -912,6 +911,12 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             totals: advanceCore.calculateReportTotals(r)
         })).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
+        // «У банку» — лише поки платіж справді в дорозі; відхилений чи скасований знову означає «до виплати».
+        const payIds = [...new Set(reportsWithTotals.filter(r => r.status === 'approved' && r.paymentId).map(r => r.paymentId))];
+        const paySnaps = transaction ? [] : await Promise.all(payIds.map(id => db.doc(`payments/${id}`).get().catch(() => null)));
+        const livePayIds = transaction ? new Set(payIds)
+            : new Set(paySnaps.filter(s => s?.exists && ['sending', 'unknown', 'sent'].includes(s.data().status)).map(s => s.id));
+        const inBank = r => Boolean(r.paymentId && livePayIds.has(r.paymentId));
         const periodReports = reportsWithTotals.filter(r => r.period === p);
         const totalSpentPeriodKop = periodReports.reduce((s, r) => s + (r.totals.spentKop || 0), 0);
         const totalPendingReimburseKop = reportsWithTotals.filter(r => r.status === 'approved')
@@ -948,8 +953,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 totalPendingReimburseKop,
                 totalPendingReturnKop,
                 pendingCount,
-                toReimburseCount: reportsWithTotals.filter(r => r.status === "approved" && r.totals.pendingReimburseKop > 0 && !r.paymentId).length,
-                inBankCount: reportsWithTotals.filter(r => r.status === "approved" && r.totals.pendingReimburseKop > 0 && Boolean(r.paymentId)).length
+                toReimburseCount: reportsWithTotals.filter(r => r.status === "approved" && r.totals.pendingReimburseKop > 0 && !inBank(r)).length,
+                inBankCount: reportsWithTotals.filter(r => r.status === "approved" && r.totals.pendingReimburseKop > 0 && inBank(r)).length
             },
             docTypes: advanceCore.ADVANCE_DOC_TYPES,
             statusLabels: advanceCore.ADVANCE_STATUS_LABELS,

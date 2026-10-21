@@ -418,8 +418,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         const s = (await settingsRef.get()).data() || {};
         const raw = s.taxes || {};
         const missing = ['pdfo', 'vz', 'esv'].some(k =>
-            !String(raw[k]?.name || '').trim() ||
-            !String(raw[k]?.iban || '').trim() ||
+            !String(raw[k]?.name || '').trim() &&
+            !String(raw[k]?.iban || '').trim() &&
             !String(raw[k]?.code || '').trim()
         );
         if (missing) {

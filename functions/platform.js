@@ -61,6 +61,31 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         return scopedDatabase(db, `tenant_${slug}`);
     }
 
+    // Ключ симулятора рахуємо з того самого нормалізованого ідентифікатора, що й контур БД,
+    // інакше privat.js шукав би «банк» в іншому контурі, ніж той, куди пише платформа.
+    function testTokenFor(tenantId) {
+        const clean = String(tenantId || 'uspih-25').trim();
+        if (!clean || clean === 'uspih-25' || clean === 'default' || clean.startsWith('sandbox~')) return privat.tokenForTenant(clean);
+        return privat.tokenForTenant(core.normalizeTenantSlug(clean));
+    }
+
+    // Симулятор має право писати «банківські» операції лише туди, де стоїть тестовий ключ
+    // або ключа немає. Зі справжнім токеном Приват24 тестові надходження, підписи й сторно
+    // потрапили б у живий облік квартир — тому всі дії симулятора тоді відхиляються.
+    async function assertSimulatorAllowed(targetDb) {
+        const snap = await targetDb.doc('bank_secrets/privat').get();
+        const token = snap.exists ? String(snap.data()?.token || '').trim() : '';
+        if (token && !privat.isSandboxToken(token)) {
+            fail('failed-precondition', 'Підключено справжній Приват24 — симулятор банку вимкнено, щоб тестові операції не потрапили в облік');
+        }
+    }
+
+    function kopOrFail(value, label) {
+        const kop = Math.round(Number(value));
+        if (!Number.isSafeInteger(kop)) fail('invalid-argument', `Вкажіть залишок «${label}» числом`);
+        return kop;
+    }
+
     /**
      * Повертає сервіси { bankSvc, chargesSvc, expensesSvc, paymentsSvc } для обраного контуру БД.
      * Для основного ОСББ «Успіх-25» використовує основні інстанси, для ізольованих
@@ -292,7 +317,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
     async function bankSimulatorContext(actor, role, data) {
         const tenantId = String(data.tenantId || 'uspih-25').trim();
         const targetDb = resolveTenantDb(tenantId);
-        const testToken = privat.tokenForTenant(tenantId);
+        const testToken = testTokenFor(tenantId);
 
         const [
             { state: sandboxState },
@@ -553,8 +578,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         if (role !== 'chair') fail('permission-denied', 'Налаштування банківського контуру доступне лише супер-адміну (голові)');
         const tenantId = String(data.tenantId || 'uspih-25').trim();
         const targetDb = resolveTenantDb(tenantId);
+        await assertSimulatorAllowed(targetDb);
         const { bankSvc } = resolveServices(targetDb, actor);
-        const testToken = privat.tokenForTenant(tenantId);
+        const testToken = testTokenFor(tenantId);
 
         const { ref: stateRef, state: curState } = await privat.ensureSandboxState(targetDb);
         const existingAccounts = curState.accounts || {};
@@ -566,10 +592,10 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         if (reserveIban && !/^UA\d{27}$/.test(reserveIban)) fail('invalid-argument', 'IBAN резервного рахунку має починатися з UA та містити 29 символів');
 
         const currentBalanceKop = data.currentBalanceKop !== undefined
-            ? Math.round(Number(data.currentBalanceKop))
+            ? kopOrFail(data.currentBalanceKop, 'поточний рахунок')
             : (existingAccounts[currentIban]?.balanceKop ?? core.DEFAULT_SIM_ACCOUNTS[0].defaultBalanceKop);
         const reserveBalanceKop = data.reserveBalanceKop !== undefined
-            ? Math.round(Number(data.reserveBalanceKop))
+            ? kopOrFail(data.reserveBalanceKop, 'резервний рахунок')
             : (existingAccounts[reserveIban]?.balanceKop ?? core.DEFAULT_SIM_ACCOUNTS[1].defaultBalanceKop);
 
         const nextAccounts = { ...existingAccounts };
@@ -641,6 +667,8 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const tenantId = String(data.tenantId || 'uspih-25').trim();
         const targetDb = resolveTenantDb(tenantId);
         const { bankSvc } = resolveServices(targetDb, actor);
+        // Відключаємо лише тестовий ключ: справжній токен банку знімають у «Налаштуваннях» бухгалтерії.
+        await assertSimulatorAllowed(targetDb);
 
         if (bankSvc?.actions?.removeToken) {
             await bankSvc.actions.removeToken(actor, role);
@@ -686,6 +714,12 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const paymentRef = String(paymentDoc.paymentRef || `P24DOC-${docNumber}`);
         const nowIso = new Date().toISOString();
         const signerName = String(options.signerName || 'Голова правління ОСББ (КЕП Приват24)');
+        const sandboxPayRef = targetDb.doc(`_privat24_sandbox_payments/${paymentRef}`);
+        const prevSandbox = await sandboxPayRef.get();
+        if (prevSandbox.exists && prevSandbox.data()?.status === 'signed') {
+            // Повторний підпис уже підписаного платежу списав би гроші з рахунку вдруге.
+            return { paymentId: paymentDoc.id, bankRef, paymentRef, amountKop: paymentDoc.amountKop, feeKop: 0, alreadySigned: true };
+        }
         const txRef = `P24OUT${docNumber}${Date.now().toString(36).slice(-3).toUpperCase()}`;
 
         const rawOut = core.buildPrivatRawTransaction({
@@ -708,7 +742,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         });
 
         // 1. Записуємо проведену дебетову транзакцію на сервері Приват24 (_privat24_sandbox_tx)
-        await targetDb.doc(`_privat24_sandbox_tx/${rawOut.REF}_${rawOut.REFN}`).set({
+        await targetDb.doc(`_privat24_sandbox_tx/${rawOut.REF}_${rawOut.REFN}`).create({
             ...rawOut,
             createdAtIso: nowIso
         });
@@ -743,7 +777,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         }
 
         // 2. Оновлюємо статус платіжної інструкції на сервері Приват24 (_privat24_sandbox_payments)
-        await targetDb.doc(`_privat24_sandbox_payments/${paymentRef}`).set({
+        await sandboxPayRef.set({
             id: paymentRef,
             paymentRef,
             bankRef,
@@ -787,6 +821,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         if (!paymentId) fail('invalid-argument', 'Вкажіть ID платежу для підпису');
 
         const targetDb = resolveTenantDb(tenantId);
+        await assertSimulatorAllowed(targetDb);
         const { bankSvc } = resolveServices(targetDb, actor);
 
         const [paySnap, finSnap] = await Promise.all([
@@ -797,6 +832,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const p = { id: paySnap.id, ...paySnap.data() };
         if (p.status === 'paid') fail('failed-precondition', 'Цей платіж уже підписано та проведено у виписці');
         if (p.status === 'canceled') fail('failed-precondition', 'Скасований платіж не можна підписати');
+        if (!['sent', 'unknown'].includes(p.status)) fail('failed-precondition', 'Підписати можна лише платіж, уже переданий у Приват24');
 
         const fin = finSnap.exists ? finSnap.data() : {};
         const signed = await signSinglePaymentOnBankServer(targetDb, p, {
@@ -807,6 +843,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
             myName: fin.payeeName || 'ОСББ «Успіх-25»',
             myEdrpou: fin.edrpou || '40562894'
         });
+        if (signed.alreadySigned) fail('failed-precondition', 'Цей платіж уже підписано в Приват24 — він зʼявиться після синхронізації виписки');
 
         // Якщо увімкнено авто-синхронізацію (за замовчуванням так) — запускаємо штатний bankSvc.sync(),
         // який через privat.fetchTransactions(token) забирає виписку з тестового банку!
@@ -826,10 +863,12 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         if (role !== 'chair') fail('permission-denied', 'Підписувати пачку платежів КЕП може лише голова (супер-адмін)');
         const tenantId = String(data.tenantId || 'uspih-25').trim();
         const targetDb = resolveTenantDb(tenantId);
+        await assertSimulatorAllowed(targetDb);
         const { bankSvc } = resolveServices(targetDb, actor);
 
+        // 'sending' — платіж ще передається в банк: підписувати його рано.
         const [pendingSnap, finSnap] = await Promise.all([
-            targetDb.collection('payments').where('status', 'in', ['sent', 'sending', 'unknown']).get(),
+            targetDb.collection('payments').where('status', 'in', ['sent', 'unknown']).get(),
             targetDb.doc('osbb_settings/finance').get().catch(() => ({ exists: false }))
         ]);
 
@@ -849,7 +888,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
                 myName: fin.payeeName || 'ОСББ «Успіх-25»',
                 myEdrpou: fin.edrpou || '40562894'
             });
-            results.push(res);
+            if (!res.alreadySigned) results.push(res);
         }
 
         let syncResult = null;
@@ -857,7 +896,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
             syncResult = await bankSvc.sync(`simulator:signAll:${actor}`).catch(() => null);
         }
 
-        const totalKop = pendingSnap.docs.reduce((s, d) => s + Number(d.data().amountKop || 0), 0);
+        const totalKop = results.reduce((s, r) => s + Number(r.amountKop || 0), 0);
         await writeAudit(targetDb, actor, role, 'platform.bank.signAll', '_privat24_sandbox_payments',
             `Пачковий КЕП-підпис на сервері Приват24: підписано ${results.length} платежів на суму ${fromKop(totalKop)} грн`,
             { tenantId, signedCount: results.length, totalKop, synced: Boolean(syncResult) });
@@ -878,6 +917,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         if (!paymentId) fail('invalid-argument', 'Вкажіть ID платежу');
 
         const targetDb = resolveTenantDb(tenantId);
+        await assertSimulatorAllowed(targetDb);
         const snap = await targetDb.doc(`payments/${paymentId}`).get();
         if (!snap.exists) fail('not-found', 'Платіж не знайдено');
         const p = snap.data();
@@ -924,8 +964,10 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
      * Бухгалтерія отримує її виключно через штатний bankSvc.sync() -> privat.fetchTransactions(token)!
      */
     async function bankSimulateTransaction(actor, role, data) {
+        if (role !== 'chair') fail('permission-denied', 'Створювати операції в симуляторі банку може лише голова (супер-адмін)');
         const tenantId = String(data.tenantId || 'uspih-25').trim();
         const targetDb = resolveTenantDb(tenantId);
+        await assertSimulatorAllowed(targetDb);
         const { bankSvc } = resolveServices(targetDb, actor);
 
         const amountKop = Math.abs(Math.round(Number(data.amountKop || 0)));
@@ -958,8 +1000,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
             purpose,
             date: data.date,
             time: data.time,
-            ref: data.ref || `P24SIM${Date.now().toString(36).toUpperCase()}`,
-            refn: data.refn || '1',
+            // Номер операції видає «банк», а не клієнт: інакше чужий REF перезаписав би наявний рядок виписки.
+            ref: `P24SIM${Date.now().toString(36).toUpperCase()}${createHash('sha256').update(`${actor}:${Math.random()}`).digest('hex').slice(0, 4).toUpperCase()}`,
+            refn: '1',
             dlr: data.dlr || '',
             docNumber: data.docNumber || '',
             myName: fin.payeeName || 'ОСББ «Успіх-25»',
@@ -973,7 +1016,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
 
         // 1. Записуємо сиру транзакцію у виписку на сервері Приват24 (_privat24_sandbox_tx)
         const sandboxDocId = `${rawPrivatTx.REF}_${rawPrivatTx.REFN}`;
-        await targetDb.doc(`_privat24_sandbox_tx/${sandboxDocId}`).set({
+        await targetDb.doc(`_privat24_sandbox_tx/${sandboxDocId}`).create({
             ...rawPrivatTx,
             createdAtIso: new Date().toISOString()
         });
@@ -1018,6 +1061,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         if (!txId) fail('invalid-argument', 'Вкажіть ID транзакції для сторнування');
 
         const targetDb = resolveTenantDb(tenantId);
+        await assertSimulatorAllowed(targetDb);
         const { bankSvc } = resolveServices(targetDb, actor);
 
         // Можемо прийняти або ID з bank_tx, або REF_REFN з _privat24_sandbox_tx
@@ -1047,6 +1091,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
             const ref = oldTx.statementRef || refPart;
             const refn = oldTx.statementRefn || refnPart;
             sandboxDocId = `${ref}_${refn}`;
+            const sandboxTwin = await targetDb.doc(`_privat24_sandbox_tx/${sandboxDocId}`).get();
+            if (!sandboxTwin.exists) fail('failed-precondition', 'Ця операція прийшла не з симулятора — сторнувати її тут не можна');
+            if (sandboxTwin.data()?.PR_PR === 't') fail('failed-precondition', 'Цю операцію вже сторновано на сервері Приват24');
             accountIban = oldTx.account;
             direction = oldTx.direction;
             amountKop = oldTx.amountKop;
@@ -1185,6 +1232,18 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
             reason: data.reason
         });
         if (!validation.ok) fail('invalid-argument', validation.error);
+        // Дозволені лише поля зі списку інспектора; гроші — цілими копійками.
+        // Рядки історії квартири (ledger) — це гроші: їх змінюють лише операціями, не латкою.
+        if (subcollection === 'ledger') fail('invalid-argument', 'Рядки історії квартири змінюються лише через операції бухгалтерії (сторно, повернення)');
+        const meta = core.INSPECTABLE_COLLECTIONS[colName];
+        if (!subcollection) {
+            const allowed = new Set(meta.editableFields || []);
+            const bad = Object.keys(validation.cleanPatch).filter(k => !allowed.has(k));
+            if (bad.length) fail('invalid-argument', `Ці поля не можна змінювати вручну: ${bad.join(', ')}`);
+        }
+        for (const [k, v] of Object.entries(validation.cleanPatch)) {
+            if (/Kop$/.test(k) && v !== null && !Number.isSafeInteger(v)) fail('invalid-argument', `Поле ${k} має бути цілим числом копійок`);
+        }
 
         const targetDb = resolveTenantDb(tenantId);
         const docPath = (colName === 'apartments' && aptId && ['ledger', 'owners'].includes(subcollection))
@@ -1194,6 +1253,11 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const ref = targetDb.doc(docPath);
         const snap = await ref.get();
         const beforeData = snap.exists ? serializeValue(snap.data()) : {};
+        // Закритий місяць не правиться ні старим, ні новим періодом документа.
+        const periodLock = require('./period-lock')(targetDb);
+        if (colName !== 'journal_periods') for (const period of new Set([beforeData.period, validation.cleanPatch.period].filter(v => typeof v === 'string' && /^\d{4}-\d{2}$/.test(v)))) {
+            await periodLock.assertOpen(period, 'Ручне коригування');
+        }
         const diffs = core.computePatchDiff(beforeData, validation.cleanPatch);
 
         if (data.dryRun === true) {
@@ -1258,10 +1322,16 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
     }
 
     const platformAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('platformAction', async request => {
+        if (!request.auth?.uid || !request.auth.token?.email?.endsWith('@uspih-25.com')) fail('permission-denied', 'Потрібен службовий вхід у цей застосунок');
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const actorUid = request.auth?.uid || actor;
         const data = request.data || {};
+        // Тестовий контур бухгалтерії (sandbox~uid) належить тому, хто його створив.
+        const tenantRaw = String(data.tenantId || '').trim();
+        if (tenantRaw.startsWith('sandbox~') && tenantRaw.slice('sandbox~'.length) !== actorUid && role !== 'chair') {
+            fail('permission-denied', 'Це тестовий контур іншого користувача');
+        }
 
         switch (data.action) {
             case 'overview':

@@ -278,9 +278,11 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
         let deletedInBank = false;
         let error = null;
         if (p.status === 'sent' && p.paymentRef) {
-            const { token, isDemo, isSimulated } = await context();
+            const { token } = await context();
             try {
-                deletedInBank = (!token && (isDemo || isSimulated)) || p.source === 'simulator' || p.source === 'demo'
+                // Без банку «видаленим» вважаємо лише платіж, який і створювався без банку (демо/симулятор).
+                // Справжня чернетка в Приват24 так і лишилася б на підписі.
+                deletedInBank = p.source === 'simulator' || p.source === 'demo'
                     ? true
                     : (token ? await bankApi.deletePayment(token, p.paymentRef) : false);
             }
@@ -360,16 +362,16 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
     async function checkSignStatus(actor, role, { id }) {
         const cleanId = String(id || '').replace(/[^\w-]/g, '');
         const ref = db.doc(`payments/${cleanId}`);
-        const [snap, { token, isDemo, isSimulated }] = await Promise.all([ref.get(), context()]);
+        const [snap, { token }] = await Promise.all([ref.get(), context()]);
         if (!snap.exists) fail('not-found', 'Платіж не знайдено');
-        if (!token && !isDemo && !isSimulated) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
         const p = snap.data();
-        if (!token && (isDemo || isSimulated || p.source === 'simulator' || p.source === 'demo')) {
+        if (p.source === 'simulator' || p.source === 'demo') {
             const bankStatus = p.status === 'paid' ? 'проведений' : p.status === 'failed' ? 'відхилений банком' : (p.bankStatus || 'очікує підпису КЕП');
             const signers = Array.isArray(p.signers) ? p.signers : [];
             await ref.update({ bankStatus, signers, signCheckedAt: FieldValue.serverTimestamp() });
             return { bankStatus, signers };
         }
+        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен у «Налаштуваннях»');
         const paymentRef = p.paymentRef || p.bankRef;
         if (!paymentRef) fail('failed-precondition', 'Платіж ще не має номера в Приват24');
         let info;

@@ -34,11 +34,14 @@ function withDefaultTaxes(taxes = {}) {
     const merge = key => {
         const def = DEFAULT_TAXES[key] || { name: '', iban: '', code: '' };
         const cur = taxes?.[key] || {};
-        return {
-            name: String(cur.name || '').trim() || def.name,
-            iban: String(cur.iban || '').replace(/\s+/g, '').toUpperCase() || def.iban,
-            code: String(cur.code || '').replace(/\D/g, '').slice(0, 10) || def.code
+        const own = {
+            name: String(cur.name || '').trim(),
+            iban: String(cur.iban || '').replace(/\s+/g, '').toUpperCase(),
+            code: String(cur.code || '').replace(/\D/g, '').slice(0, 10)
         };
+        // Типовий отримувач підставляється цілком і лише замість порожнього: змішати свій IBAN
+        // з чужою назвою чи кодом означало б платіж податку не тому отримувачу.
+        return own.name || own.iban || own.code ? own : { ...def };
     };
     return { pdfo: merge('pdfo'), vz: merge('vz'), esv: merge('esv') };
 }

@@ -96,7 +96,18 @@ const isoDay = d => {
     return `${y}-${m}-${day}`;
 };
 const normIban = v => String(v || '').replace(/\s+/g, '').toUpperCase();
-const normName = v => String(v || '').toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|тзов|осбб|«|»|"|'|`|\.|,|-)/gi, ' ').replace(/\s+/g, ' ').trim();
+// Організаційна форма — лише окремим словом: «ат» у «Атлант» чи «тов» у «Товарна» не чіпаємо.
+const LEGAL_FORMS = /(?<![\p{L}\d])(?:тов|пп|фоп|прат|пат|ат|кб|кп|тзов|осбб)(?![\p{L}\d])/gu;
+export const normName = v => String(v || '').toLowerCase().replace(/\(демо\)/g, ' ').replace(/[«»"'`.,\-]/g, ' ')
+    .replace(LEGAL_FORMS, ' ').replace(/\s+/g, ' ').trim();
+/** Та сама організація: однакова назва або одна містить іншу цілими словами (від 4 літер). */
+export function sameEntity(a, b) {
+    const x = normName(a), y = normName(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+    return short.length >= 4 && ` ${long} `.includes(` ${short} `);
+}
 
 /** «Сьогодні», «Учора» або «10 листопада» (рік — лише якщо не поточний). */
 export function dayLabel(at, now = new Date()) {
@@ -280,6 +291,8 @@ export function txCategoryInfo(tx) {
 export function filterTx(list, tab = 'all', query = '', filters = {}, now = new Date()) {
     const q = String(query || '').trim().toLowerCase();
     const apt = q.replace(/^кв\.?\s*/, '');
+    // «1 250,50» → «1250.50»: суму шукаємо так, як її пишуть у застосунку.
+    const amountQ = /^[\d\s\u00a0]+(?:[.,]\d{0,2})?$/.test(q) ? q.replace(/[\s\u00a0]/g, '').replace(',', '.') : '';
     const dirFilter = filters?.direction && filters.direction !== 'all' ? filters.direction : '';
     const catFilter = filters?.category && filters.category !== 'all' ? filters.category : '';
     const cpFilter = String(filters?.counterparty || '').trim().toLowerCase();
@@ -315,7 +328,7 @@ export function filterTx(list, tab = 'all', query = '', filters = {}, now = new 
                 || String(tx.purpose || '').toLowerCase().includes(q)
                 || String(catInfo.label || '').toLowerCase().includes(q)
                 || String(distInfo.label || '').toLowerCase().includes(q)
-                || String((tx.amountKop || 0) / 100).includes(q.replace(',', '.'));
+                || (amountQ && [((tx.amountKop || 0) / 100).toFixed(2), String((tx.amountKop || 0) / 100)].some(v => v.includes(amountQ)));
             if (!matchQuery) return false;
         }
 
@@ -363,7 +376,8 @@ export function filterTx(list, tab = 'all', query = '', filters = {}, now = new 
  * та параметри для прямого переходу в розділ «ОСВ / Проводки» (#journal).
  */
 export function describeTxAccountingEntry(tx, { expenses = [], accounts = {} } = {}) {
-    if (!tx) return null;
+    // Сторновану банком операцію журнал не проводить (journal-core) — і тут проводки не показуємо.
+    if (!tx || tx.bankVoided) return null;
     const accObj = accounts?.[tx.account] || {};
     const cashAcc = accObj.purpose === 'deposit' ? '313' : '311';
     const period = tx.period || (tx.at ? isoDay(tx.at).slice(0, 7) : '');
@@ -401,6 +415,7 @@ export function describeTxAccountingEntry(tx, { expenses = [], accounts = {} } =
             focusAcc = '48';
             memo = `${INCOME_LABELS[tx.category] || 'Надходження'}: ${cpName}`;
         } else if (tx.kind === 'refund' && tx.status === 'done') {
+            // Журнал кредитує рахунок початкового списання; тут — найчастіший випадок (постачальник).
             cr = '631';
             crAnalytics = cpName || 'Постачальник';
             focusAcc = '631';
@@ -516,13 +531,7 @@ export function resolveTxLinks(tx, { expenses = [], contracts = [], suppliers = 
         matchedSupplier = (suppliers || []).find(s => normIban(s.iban) === cpIban) || null;
     }
     if (!matchedSupplier && cpName.length > 2) {
-        const cleanCp = normName(cpName);
-        if (cleanCp.length > 2) {
-            matchedSupplier = (suppliers || []).find(s => {
-                const cleanS = normName(s.name);
-                return cleanS && (cleanS === cleanCp || cleanS.includes(cleanCp) || cleanCp.includes(cleanS));
-            }) || null;
-        }
+        matchedSupplier = (suppliers || []).find(s => sameEntity(s.name, cpName)) || null;
     }
 
     // 3. Формуємо інтерактивне посилання для контрагента
@@ -596,17 +605,11 @@ export function resolveTxLinks(tx, { expenses = [], contracts = [], suppliers = 
             matchedContract = supContracts.find(c => c.status === 'approved') || supContracts[0];
         }
     }
-    if (!matchedContract && extractedNum) {
-        matchedContract = (contracts || []).find(c => String(c.number || '').toLowerCase() === extractedNum.toLowerCase()) || null;
-    }
-    if (!matchedContract && cpName.length > 2) {
-        const cleanCp = normName(cpName);
-        if (cleanCp.length > 2) {
-            matchedContract = (contracts || []).find(c => {
-                const cleanSup = normName(c.supplierName);
-                return cleanSup && (cleanSup === cleanCp || cleanSup.includes(cleanCp) || cleanCp.includes(cleanSup));
-            }) || null;
-        }
+    // Без картки постачальника договір беремо лише того ж контрагента: «№ 1» є майже в кожного.
+    if (!matchedContract && !matchedSupplier && cpName.length > 2) {
+        const sameCp = (contracts || []).filter(c => c.status !== 'rejected' && sameEntity(c.supplierName, cpName));
+        matchedContract = (extractedNum && sameCp.find(c => String(c.number || '').toLowerCase() === extractedNum.toLowerCase()))
+            || sameCp.find(c => c.status === 'approved') || sameCp[0] || null;
     }
 
     let contractLink = null;

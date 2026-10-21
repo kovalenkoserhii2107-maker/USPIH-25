@@ -240,6 +240,7 @@ kbd {
 .ch-sub { margin: 20px 0 8px; color: #000; font-size: 14.5px; }
 .ch-form { margin-bottom: 6px; }
 .ch-form select.field-input { flex: 0 1 220px; }
+.ch-form textarea.field-input { flex: 1 1 260px; min-height: 64px; resize: vertical; line-height: 1.4; font: inherit; }
 .ch-narrow { flex: 0 1 160px !important; }
 .ch-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .ch-period { flex: 0 1 200px; min-height: 38px; }

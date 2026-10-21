@@ -107,3 +107,12 @@ test('withDefaultTaxes заповнює бюджетні рахунки ПДФО
     const adv = p.stagePayments(run, 'advance', { code: '40562894', taxes });
     assert.deepEqual(p.paymentProblems(adv), []);
 });
+
+test('withDefaultTaxes не змішує свій IBAN із типовими назвою й кодом: типовий отримувач — лише замість порожнього', () => {
+    const own = { name: '', iban: 'UA538999980313010101000099999', code: '' };
+    const taxes = p.withDefaultTaxes({ pdfo: own });
+    assert.equal(taxes.pdfo.iban, own.iban);
+    assert.equal(taxes.pdfo.name, '');
+    assert.equal(taxes.pdfo.code, '');
+    assert.deepEqual(taxes.vz, p.DEFAULT_TAXES.vz);
+});
