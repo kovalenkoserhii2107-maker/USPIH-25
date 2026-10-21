@@ -26,12 +26,24 @@ const ENTRIES_SHOWN = 200;
 
 let period = null;          // null — місяць, який пропонує сервер
 let ctx = null;
+let wantedJournalFocus = null; // { acc, cashAcc, ref }
 const open = new Set();     // розгорнуті рахунки
 const allEntries = new Set();
 
-/** Відкрити розділ на місяці (із «Вхідних»). */
-export function openJournal(p) {
+/** Відкрити розділ на місяці (із «Вхідних» або з модального вікна «Банку» з фокусом на проводці). */
+export function openJournal(p, focusOpts = null) {
     if (p) period = p;
+    if (focusOpts) {
+        wantedJournalFocus = focusOpts;
+        if (focusOpts.acc) {
+            open.add(String(focusOpts.acc));
+            allEntries.add(String(focusOpts.acc));
+        }
+        if (focusOpts.cashAcc) {
+            open.add(String(focusOpts.cashAcc));
+            allEntries.add(String(focusOpts.cashAcc));
+        }
+    }
     if (location.hash !== '#journal') location.hash = 'journal';
     else loadJournalView();
 }
@@ -73,7 +85,7 @@ function entriesHtml(acc) {
         <tbody>${shown.map(e => {
             const attr = entryDrillAttr(e);
             const memo = escapeHtml(e.memo || 'Відкрити документ');
-            return `<tr><td class="t-date">${escapeHtml(human(e.date))}</td>
+            return `<tr data-entry-ref="${escapeHtml(e.ref || '')}" data-entry-acc="${escapeHtml(acc)}"><td class="t-date">${escapeHtml(human(e.date))}</td>
             <td><b>${escapeHtml(e.dr)}</b> <small>${escapeHtml(label(e.dr, e.dA))}</small></td>
             <td><b>${escapeHtml(e.cr)}</b> <small>${escapeHtml(label(e.cr, e.cA))}</small></td>
             <td class="t-sum">${fmtKop(e.kop)}</td>
@@ -88,7 +100,7 @@ function tbHtml() {
     if (!tb.rows.length) return '<section class="buh-card"><p class="list-empty">За цей місяць проводок немає</p></section>';
     const rows = tb.rows.map(r => {
         const isOpen = open.has(r.acc);
-        return `<tr class="jr-acc${isOpen ? ' is-open' : ''}"><td><button type="button" class="jr-toggle" data-act="toggle" data-acc="${escapeHtml(r.acc)}" aria-expanded="${isOpen}">${escapeHtml(r.acc)}</button></td>
+        return `<tr class="jr-acc${isOpen ? ' is-open' : ''}" data-acc-row="${escapeHtml(r.acc)}"><td><button type="button" class="jr-toggle" data-act="toggle" data-acc="${escapeHtml(r.acc)}" aria-expanded="${isOpen}">${escapeHtml(r.acc)}</button></td>
             <td class="t-main">${escapeHtml(r.name)}</td>${sums(r)}</tr>
             ${isOpen ? `${r.byA.length > 1 || (r.byA[0] && r.byA[0].a !== '') ? r.byA.map(x => `<tr class="jr-sub"><td></td><td>${r.acc === '377' && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-apt" data-apt="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : ['10','11','131','132','20','22'].includes(r.acc) && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-asset" data-asset="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : r.acc === '372' && x.a ? `<button type="button" class="btn-ghost-small" data-act="open-adv-person" data-person="${escapeHtml(x.a)}">${escapeHtml(label(r.acc, x.a))} ›</button>` : escapeHtml(label(r.acc, x.a))}</td>${sums(x)}</tr>`).join('') : ''}${entriesHtml(r.acc)}` : ''}`;
     }).join('');
@@ -134,6 +146,15 @@ function csvJournal() {
 export async function loadJournalView() {
     ctx = await loadJournal(period);
     period = ctx.period;
+    if (wantedJournalFocus) {
+        if (wantedJournalFocus.acc && ctx.tb.rows.some(r => r.acc === wantedJournalFocus.acc)) {
+            open.add(wantedJournalFocus.acc);
+            allEntries.add(wantedJournalFocus.acc);
+        } else if (wantedJournalFocus.cashAcc && ctx.tb.rows.some(r => r.acc === wantedJournalFocus.cashAcc)) {
+            open.add(wantedJournalFocus.cashAcc);
+            allEntries.add(wantedJournalFocus.cashAcc);
+        }
+    }
     const chair = session.role === 'chair';
     const closed = ctx.status === 'closed';
     const closing = ctx.status === 'closing';
@@ -173,6 +194,28 @@ export async function loadJournalView() {
         ${tbHtml()}<div id="jrNotes"></div>`;
     const notesHost=document.getElementById('jrNotes');
     loadNotes(notesHost,ctx.period,ctx.policy?.funds || [{id:'main',name:'Основний фонд'}]).catch(err=>{if(notesHost.isConnected)notesHost.textContent=err.message;});
+
+    if (wantedJournalFocus) {
+        const focus = wantedJournalFocus;
+        wantedJournalFocus = null;
+        setTimeout(() => {
+            let targetEl = null;
+            if (focus.ref) {
+                targetEl = document.querySelector(`#viewJournal tr[data-entry-ref="${CSS.escape(focus.ref)}"]`);
+            }
+            if (!targetEl && focus.acc) {
+                targetEl = document.querySelector(`#viewJournal tr[data-acc-row="${CSS.escape(focus.acc)}"]`);
+            }
+            if (!targetEl && focus.cashAcc) {
+                targetEl = document.querySelector(`#viewJournal tr[data-acc-row="${CSS.escape(focus.cashAcc)}"]`);
+            }
+            if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                targetEl.classList.add('buh-nav-target-highlight');
+                setTimeout(() => targetEl.classList.remove('buh-nav-target-highlight'), 3000);
+            }
+        }, 80);
+    }
     return 0;
 }
 

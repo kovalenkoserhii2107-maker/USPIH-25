@@ -31,6 +31,8 @@ let query = '';
 let paying = new Set();   // документи, платіж за якими вже в Приват24 на підписі
 let allPayments = [];     // платежі — для блоку «Оплата» в картці документа
 let wanted = null;        // документ, який треба показати (з «Рішень» чи картки ланцюжка) — вкладку визначаємо за ним
+let activeFocus = null;   // { kind: "supplier"|"contract", id, name, code, iban, number, date, subject, amountKop } — фокус при переході з «Банку»
+let shouldScrollFocus = false;
 let ctx = null;
 let form = null;          // { kind: 'doc'|'contract'|'supplier', data }
 let files = [];           // нові файли форми, ще не завантажені
@@ -50,9 +52,11 @@ const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${esc
 const allExistingAssetIds = () => ctx?.existingAssetIds || (ctx?.expenses || []).map(x => x.assetId).filter(Boolean);
 
 /** Відкрити розділ на потрібній вкладці, за потреби — з готовою формою чи документом. */
-export function openExpenses(seg = 'docs', prefill = null, docId = null) {
+export function openExpenses(seg = 'docs', prefill = null, docId = null, focusOpts = null) {
     segment = TABS[LEGACY[seg] || seg] ? LEGACY[seg] || seg : 'work';
     if (docId) { selected = docId; wanted = docId; }
+    activeFocus = focusOpts || null;
+    shouldScrollFocus = Boolean(focusOpts || docId);
     form = prefill;
     files = [];
     if (location.hash !== '#expenses') location.hash = 'expenses';
@@ -664,13 +668,103 @@ function docsHtml() {
         </div>`;
 }
 
+function findFocusedSupplier() {
+    if (!activeFocus || activeFocus.kind !== "supplier") return null;
+    if (activeFocus.id) {
+        const byId = ctx.suppliers.find(s => s.id === activeFocus.id);
+        if (byId) return byId;
+    }
+    if (activeFocus.code) {
+        const byCode = ctx.suppliers.find(s => String(s.code || "").trim() === String(activeFocus.code).trim());
+        if (byCode) return byCode;
+    }
+    if (activeFocus.iban) {
+        const cleanIban = String(activeFocus.iban).replace(/\s+/g, "").toUpperCase();
+        const byIban = ctx.suppliers.find(s => String(s.iban || "").replace(/\s+/g, "").toUpperCase() === cleanIban);
+        if (byIban) return byIban;
+    }
+    if (activeFocus.name) {
+        const clean = String(activeFocus.name).toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
+        if (clean.length > 2) {
+            const byName = ctx.suppliers.find(s => {
+                const sn = String(s.name || "").toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
+                return sn && (sn === clean || sn.includes(clean) || clean.includes(sn));
+            });
+            if (byName) return byName;
+        }
+    }
+    return null;
+}
+
+function findFocusedContract() {
+    if (!activeFocus || activeFocus.kind !== "contract") return null;
+    if (activeFocus.id) {
+        const byId = ctx.contracts.find(c => c.id === activeFocus.id);
+        if (byId) return byId;
+    }
+    if (activeFocus.number && activeFocus.number !== "б/н") {
+        const byNum = ctx.contracts.find(c => String(c.number || "").toLowerCase() === String(activeFocus.number).toLowerCase());
+        if (byNum) return byNum;
+    }
+    if (activeFocus.supplierName) {
+        const clean = String(activeFocus.supplierName).toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
+        if (clean.length > 2) {
+            const bySup = ctx.contracts.find(c => {
+                const sn = String(c.supplierName || "").toLowerCase().replace(/(?:тов|пп|фоп|прат|пат|ат|кб|кп|«|»|"|')/gi, "").trim();
+                return sn && (sn === clean || sn.includes(clean) || clean.includes(sn));
+            });
+            if (bySup) return bySup;
+        }
+    }
+    return null;
+}
+
 function contractsHtml() {
     const ending = c => c.validTo && c.validTo >= ctx.today && c.validTo <= new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
-    return `<section class="buh-card">
+    const matchedCon = findFocusedContract();
+    const focusBanner = activeFocus?.kind === "contract" ? (matchedCon
+        ? `<div class="buh-card buh-focus-card" id="exFocusedTarget">
+            <div class="buh-card-head">
+                <div>
+                    <span class="buh-tag is-payment">Обраний договір у реєстрі</span>
+                    <h2 style="margin-top:6px">Договір № ${escapeHtml(matchedCon.number)} від ${escapeHtml(human(matchedCon.date))} — ${escapeHtml(matchedCon.subject || "")}</h2>
+                </div>
+                <button type="button" class="btn-ghost-small" data-act="clear-focus">Сховати картку ✕</button>
+            </div>
+            <dl class="dc-fields" style="margin:8px 0 12px">
+                <dt>Контрагент</dt><dd><b>${escapeHtml(matchedCon.supplierName || "—")}</b></dd>
+                <dt>Предмет договору</dt><dd>${escapeHtml(matchedCon.subject || "—")}</dd>
+                <dt>Строк дії</dt><dd>${escapeHtml(human(matchedCon.validFrom))} — ${matchedCon.validTo ? escapeHtml(human(matchedCon.validTo)) : "безстроково"}</dd>
+                <dt>Сума</dt><dd><b>${matchedCon.type === "monthly" ? `${fmtKop(matchedCon.monthlyKop)} грн / міс.` : `${fmtKop(matchedCon.amountKop)} грн`}</b></dd>
+            </dl>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="sv-btn" style="width:auto" data-open="contract" data-id="${escapeHtml(matchedCon.id)}">Відкрити всі оплати за договором ›</button>
+                <button type="button" class="sv-btn is-soft" style="width:auto" data-act="focus-edit-contract" data-id="${escapeHtml(matchedCon.id)}">Редагувати договір</button>
+            </div>
+        </div>`
+        : `<div class="buh-card buh-focus-card" id="exFocusedTarget">
+            <div class="buh-card-head">
+                <div>
+                    <span class="buh-tag is-review">Договір із призначення банківського платежу</span>
+                    <h2 style="margin-top:6px">${escapeHtml(activeFocus.subject || "Договір")} · № ${escapeHtml(activeFocus.number || "б/н")}${activeFocus.date ? ` від ${escapeHtml(human(activeFocus.date))}` : ""}</h2>
+                </div>
+                <button type="button" class="btn-ghost-small" data-act="clear-focus">Сховати ✕</button>
+            </div>
+            <dl class="dc-fields" style="margin:8px 0 12px">
+                <dt>Контрагент</dt><dd><b>${escapeHtml(activeFocus.supplierName || "—")}</b>${activeFocus.code ? ` · код ${escapeHtml(activeFocus.code)}` : ""}</dd>
+                <dt>Реквізити договору</dt><dd>№ ${escapeHtml(activeFocus.number || "б/н")}${activeFocus.date ? ` від ${escapeHtml(human(activeFocus.date))}` : " (дату не вказано в платіжці)"}</dd>
+                ${activeFocus.amountKop ? `<dt>Сума платежу за випискою</dt><dd><b>${fmtKop(activeFocus.amountKop)} грн</b></dd>` : ""}
+            </dl>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="sv-btn" style="width:auto" data-act="register-focused-contract">+ Внести цей договір у реєстр ОСББ</button>
+            </div>
+        </div>`) : "";
+
+    return `${focusBanner}<section class="buh-card">
             <div class="buh-toolbar"><span class="buh-note">Договори понад 50 000 грн — лише за рішенням загальних зборів (п. 3.4.15 статуту). Підписує й затверджує голова.</span>
                 <button type="button" class="btn-primary btn-compact" data-act="new-contract">+ Договір</button></div>
             ${ctx.contracts.length ? `<table class="buh-table ex-table"><thead><tr><th>Договір</th><th>Постачальник і предмет</th><th>Діє</th><th>Стан</th><th class="t-sum">Сума, ₴</th><th></th></tr></thead>
-                <tbody>${ctx.contracts.map(c => `<tr data-id="${escapeHtml(c.id)}">
+                <tbody>${ctx.contracts.map(c => `<tr data-id="${escapeHtml(c.id)}"${matchedCon?.id === c.id ? ' class="buh-nav-target-highlight"' : ''}>
                     <td class="ex-doc"><b>№ ${escapeHtml(c.number)}</b><small class="t-muted"> від ${human(c.date)}</small></td>
                     <td class="t-main"><b>${escapeHtml(c.supplierName || '')}</b><small>${escapeHtml(c.subject)} · ${escapeHtml(ctx.items[c.item] || '')}${c.meetingDecision ? ` · збори: ${escapeHtml(c.meetingDecision)}` : ''}</small></td>
                     <td class="t-muted">${human(c.validFrom)} — ${c.validTo ? human(c.validTo) : 'безстроково'}${ending(c) ? ' <span class="buh-tag is-review">закінчується</span>' : ''}</td>
@@ -687,11 +781,55 @@ function contractsHtml() {
 function suppliersHtml() {
     const totals = new Map();
     ctx.expenses.filter(e => ['approved', 'paid'].includes(e.status)).forEach(e => totals.set(e.supplierId, (totals.get(e.supplierId) || 0) + e.amountKop));
-    return `<section class="buh-card">
+    const matchedSup = findFocusedSupplier();
+    const supContracts = matchedSup ? ctx.contracts.filter(c => c.supplierId === matchedSup.id) : [];
+    const supDocs = matchedSup ? ctx.expenses.filter(e => e.supplierId === matchedSup.id && e.status !== "canceled") : [];
+
+    const focusBanner = activeFocus?.kind === "supplier" ? (matchedSup
+        ? `<div class="buh-card buh-focus-card" id="exFocusedTarget">
+            <div class="buh-card-head">
+                <div>
+                    <span class="buh-tag is-payment">Картка контрагента в системі</span>
+                    <h2 style="margin-top:6px">${escapeHtml(matchedSup.name)}</h2>
+                </div>
+                <button type="button" class="btn-ghost-small" data-act="clear-focus">Сховати картку ✕</button>
+            </div>
+            <dl class="dc-fields" style="margin:8px 0 12px">
+                <dt>Вид контрагента</dt><dd>${escapeHtml(ctx.kinds[matchedSup.kind] || matchedSup.kind || "Юридична особа")}</dd>
+                <dt>Код ЄДРПОУ / РНОКПП</dt><dd><b>${escapeHtml(matchedSup.code || "—")}</b></dd>
+                <dt>Рахунок IBAN</dt><dd><code>${escapeHtml(matchedSup.iban || "—")}</code></dd>
+                <dt>Договорів у реєстрі</dt><dd>${supContracts.length ? supContracts.map(c => `№ ${escapeHtml(c.number)} від ${escapeHtml(human(c.date))} (${escapeHtml(c.subject)})`).join("; ") : "без окремого договору"}</dd>
+                <dt>Проведено документів</dt><dd>${supDocs.length} док. на суму <b>${fmtKop(totals.get(matchedSup.id) || 0)} грн</b></dd>
+                ${matchedSup.note ? `<dt>Примітка / КВЕД</dt><dd>${escapeHtml(matchedSup.note)}</dd>` : ""}
+            </dl>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="sv-btn" style="width:auto" data-act="focus-edit-supplier" data-id="${escapeHtml(matchedSup.id)}">Редагувати реквізити</button>
+                ${supContracts.length ? `<button type="button" class="sv-btn is-soft" style="width:auto" data-open="contract" data-id="${escapeHtml(supContracts[0].id)}">Відкрити договір № ${escapeHtml(supContracts[0].number)} ›</button>` : ""}
+            </div>
+        </div>`
+        : `<div class="buh-card buh-focus-card" id="exFocusedTarget">
+            <div class="buh-card-head">
+                <div>
+                    <span class="buh-tag is-review">Контрагент із банківської виписки</span>
+                    <h2 style="margin-top:6px">${escapeHtml(activeFocus.name || "Контрагент")}</h2>
+                </div>
+                <button type="button" class="btn-ghost-small" data-act="clear-focus">Сховати ✕</button>
+            </div>
+            <dl class="dc-fields" style="margin:8px 0 12px">
+                <dt>Назва у виписці</dt><dd><b>${escapeHtml(activeFocus.name || "—")}</b></dd>
+                <dt>Код ЄДРПОУ / РНОКПП</dt><dd><b>${escapeHtml(activeFocus.code || "—")}</b></dd>
+                <dt>Рахунок IBAN</dt><dd><code>${escapeHtml(activeFocus.iban || "—")}</code></dd>
+            </dl>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="sv-btn" style="width:auto" data-act="register-focused-supplier">+ Додати контрагента в довідник</button>
+            </div>
+        </div>`) : "";
+
+    return `${focusBanner}<section class="buh-card">
             <div class="buh-toolbar"><span class="buh-note">Код перевіряється за контрольною цифрою. Фізособі без ФОП через «Витрати» не платять — це виплата за ЦПД.</span>
                 <button type="button" class="btn-primary btn-compact" data-act="new-supplier">+ Постачальник</button></div>
             ${ctx.suppliers.length ? `<table class="buh-table ex-table"><thead><tr><th>Назва</th><th>Код</th><th>IBAN</th><th>Примітки</th><th class="t-sum">Витрати, ₴</th><th></th></tr></thead>
-                <tbody>${ctx.suppliers.map(s => `<tr data-id="${escapeHtml(s.id)}">
+                <tbody>${ctx.suppliers.map(s => `<tr data-id="${escapeHtml(s.id)}"${matchedSup?.id === s.id ? ' class="buh-nav-target-highlight"' : ''}>
                     <td class="t-main"><b>${escapeHtml(s.name)}</b><small>${escapeHtml(ctx.kinds[s.kind] || '')}</small></td>
                     <td>${escapeHtml(s.code)}</td><td class="t-muted">${escapeHtml(maskIban(s.iban || '')) || '—'}</td>
                     <td>${s.kind === 'fop' ? (s.fopChecked ? '<span class="buh-tag is-payment">витяг перевірено</span>' : '<span class="buh-tag is-review">перевірте витяг ЄДР</span>') : s.kind === 'person' ? '<span class="buh-tag is-error">лише через ЦПД</span>' : ''}</td>
@@ -728,6 +866,15 @@ export async function loadExpensesView() {
         ${formHtml()}${body}`;
     if (form) document.getElementById('exForm')?.querySelector('select, input')?.focus({ preventScroll: true });
     fillTxRows();
+    if (shouldScrollFocus) {
+        shouldScrollFocus = false;
+        setTimeout(() => {
+            const hlRow = host.querySelector('tr.buh-nav-target-highlight');
+            const focusCard = document.getElementById('exFocusedTarget') || document.getElementById('dcCard');
+            if (hlRow) hlRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            else if (focusCard) focusCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 60);
+    }
     return ctx.expenses.filter(e => e.status === 'pending').length;
 }
 
@@ -1039,6 +1186,43 @@ export function initExpensesView() {
                 };
                 loadExpensesView();
                 return;
+            }
+            else if (a === 'clear-focus') { activeFocus = null; loadExpensesView(); }
+            else if (a === 'focus-edit-supplier') {
+                const targetSup = ctx.suppliers.find(s => s.id === btn.dataset.id);
+                if (targetSup) openExpenses('suppliers', { kind: 'supplier', data: targetSup });
+            }
+            else if (a === 'focus-edit-contract') {
+                const targetCon = ctx.contracts.find(c => c.id === btn.dataset.id);
+                if (targetCon) openExpenses('contracts', { kind: 'contract', data: targetCon });
+            }
+            else if (a === 'register-focused-supplier') {
+                const f = activeFocus || {};
+                openExpenses('suppliers', {
+                    kind: 'supplier',
+                    data: {
+                        name: f.name || '',
+                        code: f.code || '',
+                        iban: f.iban || '',
+                        kind: String(f.code || '').length === 10 ? 'fop' : 'company'
+                    }
+                });
+            }
+            else if (a === 'register-focused-contract') {
+                const f = activeFocus || {};
+                const matchedS = findFocusedSupplier() || ctx.suppliers.find(s => s.id === f.supplierId);
+                openExpenses('contracts', {
+                    kind: 'contract',
+                    data: {
+                        supplierId: matchedS?.id || f.supplierId || '',
+                        number: f.number && f.number !== 'б/н' ? f.number : '',
+                        date: f.date || ctx.today,
+                        validFrom: f.date || ctx.today,
+                        subject: f.subject || '',
+                        type: 'monthly',
+                        monthlyKop: f.amountKop || null
+                    }
+                });
             }
             else if (a === 'new-doc') openExpenses('docs', { kind: 'doc', data: {} });
             else if (a === 'new-contract') openExpenses('contracts', { kind: 'contract', data: {} });

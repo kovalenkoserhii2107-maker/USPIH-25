@@ -777,7 +777,7 @@ body.buh-mode .field-input { border-radius: 14px; }
     .py-actions .sv-btn { flex: 1 1 auto; }
 }
 
-/* ---------- Банк: рахунки, «потрібне рішення», операції за днями ---------- */
+/* ---------- Банк: рахунки, фільтри, операції за днями та модальне вікно платежу ---------- */
 .bk-links { display: flex; justify-content: flex-end; margin: -8px 0 12px; }
 .bk-link { min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #fff; color: #000; font: 800 15px var(--font); cursor: pointer; }
 .bk-link:hover { background: var(--sv-soft); }
@@ -803,27 +803,195 @@ body.buh-mode .field-input { border-radius: 14px; }
 .bk-tab span { opacity: .6; }
 .bk-tab.active { background: #000; color: #fff; }
 .bk-search { margin: 4px 0 8px; }
-.bk-day { padding: 16px 0 6px; color: var(--sv-muted); font-size: 14px; font-weight: 800; }
-.bk-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 68px; padding: 8px 10px; margin: 0 -10px; border-radius: 18px; cursor: pointer; transition: background .2s ease; }
+
+/* Розширена панель фільтрів у «Банку» */
+.bk-filters-panel { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid var(--sv-line, #e2e8f0); border-radius: 20px; background: #F8FAFC; }
+.bk-filter-pills-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.bk-pill-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.bk-pill { min-height: 34px; padding: 0 13px; border: 1px solid #D5DEE8; border-radius: 999px; background: #fff; color: #1E293B; font: 700 13px var(--font); cursor: pointer; transition: all .15s ease; white-space: nowrap; }
+.bk-pill:hover { border-color: #94A3B8; background: #F1F5F9; }
+.bk-pill.active { border-color: #0F172A; background: #0F172A; color: #fff; }
+.bk-pill.is-dir-in.active { border-color: #15803D; background: #16A34A; color: #fff; }
+.bk-pill.is-dir-out.active { border-color: #B91C1C; background: #DC2626; color: #fff; }
+.bk-filter-inputs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px 12px; align-items: end; }
+.bk-filter-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bk-filter-field > span { color: var(--sv-muted); font-size: 12px; font-weight: 700; }
+.bk-filter-field .field-input { min-height: 38px; padding: 6px 10px; border-radius: 10px; background: #fff; font-size: 13.5px; }
+.bk-filter-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 8px; border-top: 1px dashed #CBD5E1; font-size: 13px; color: var(--sv-muted); }
+.bk-summary-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.bk-summary-stats b { color: #0F172A; }
+.bk-stat-in b { color: #15803D; }
+.bk-stat-out b { color: #B91C1C; }
+.bk-reset-btn { color: #B91C1C !important; font-weight: 700 !important; }
+
+/* Дні та рядки операцій */
+.bk-day-group { margin-top: 6px; }
+.bk-day { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 4px 6px; border-bottom: 1px solid var(--sv-soft); color: #334155; font-size: 14px; font-weight: 800; }
+.bk-day-title small { color: var(--sv-muted); font-weight: 700; }
+.bk-day-totals { display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bk-day-totals .is-in { color: #15803D; }
+.bk-day-totals .is-out { color: #475569; }
+.bk-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 70px; padding: 10px 12px; margin: 2px -10px; border-radius: 18px; cursor: pointer; transition: background .18s ease, box-shadow .18s ease; }
 .bk-row:hover, .bk-row.is-open { background: var(--sv-soft-2); }
 .bk-row:focus-visible { outline: 2px solid #000; outline-offset: 2px; }
-.bk-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--sv-soft); font-size: 18px; font-weight: 800; }
-.bk-ico.is-wait { background: var(--sv-yellow); }
-.bk-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.bk-main b { overflow: hidden; font-size: 15.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Візуально та фактурно різні іконки вхідних (↓) та вихідних (↑) платежів */
+.bk-ico { position: relative; display: grid; place-items: center; width: 46px; height: 46px; font-size: 18px; font-weight: 800; flex-shrink: 0; transition: transform .15s ease; }
+.bk-row:hover .bk-ico { transform: scale(1.04); }
+/* Вхідний платіж: круглий смарагдовий градієнт із суцільною рамкою */
+.bk-ico.is-in {
+    border-radius: 50%;
+    background: linear-gradient(145deg, #DCFCE7 0%, #BBF7D0 100%);
+    border: 2px solid #16A34A;
+    color: #14532D;
+    box-shadow: 0 2px 6px rgba(22, 163, 74, .18), inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+/* Вихідний платіж: заокруглений квадрат зі штриховою діагональною фактурою та пунктирним контуром */
+.bk-ico.is-out {
+    border-radius: 13px;
+    background: repeating-linear-gradient(-45deg, #FFF1F2, #FFF1F2 4px, #FFE4E6 4px, #FFE4E6 8px);
+    border: 2px dashed #E11D48;
+    color: #9F1239;
+    box-shadow: 0 2px 6px rgba(225, 29, 72, .14);
+}
+.bk-ico.is-wait {
+    box-shadow: 0 0 0 3px #FACC15, 0 2px 8px rgba(234, 179, 8, .35);
+}
+.bk-ico.is-lg { width: 52px; height: 52px; }
+.bk-ico-badge {
+    position: absolute; right: -3px; bottom: -3px;
+    display: grid; place-items: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    font-size: 12px; font-weight: 900; line-height: 1;
+    border: 2px solid #fff;
+}
+.bk-ico.is-in .bk-ico-badge { background: #16A34A; color: #fff; }
+.bk-ico.is-out .bk-ico-badge { background: #E11D48; color: #fff; border-radius: 5px; }
+
+.bk-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bk-main-top { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.bk-main b { overflow: hidden; font-size: 15.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; color: #0F172A; }
+.bk-row-subpill { display: inline-flex; align-items: center; max-width: 260px; padding: 2px 8px; border-radius: 6px; background: #EFF6FF; border: 1px solid #BFDBFE; color: #1D4ED8; font-size: 11.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bk-main small { overflow: hidden; color: var(--sv-muted); font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .bk-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .bk-sum { font-size: 16px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.bk-sum.is-in { color: var(--sv-green); }
-.bk-done { max-width: 220px; overflow: hidden; color: var(--sv-muted); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bk-sum.is-in { color: #15803D; }
+.bk-sum.is-out { color: #0F172A; }
+.bk-done { max-width: 240px; overflow: hidden; padding: 2px 8px; border-radius: 999px; background: var(--sv-soft); color: #334155; font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bk-done.is-payment, .bk-done.is-income { background: #ECFDF5; color: #14532D; }
+.bk-done.is-expense { background: #FFF1F2; color: #881337; }
 .bk-yes { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: #000; color: #fff; font: 800 13.5px var(--font); white-space: nowrap; cursor: pointer; transition: transform .15s ease; }
 .bk-yes.is-ask { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
 .bk-yes:active { transform: scale(.96); }
-.bk-detail { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 8px; padding: 16px 20px; border-radius: 20px; background: var(--sv-soft-2); }
-.bk-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.bk-detail-actions:empty { display: none; }
-.bk-detail-actions .sv-btn { width: auto; }
 .bk-ops > .sv-btn.is-wide { margin-top: 10px; }
+
+/* Окреме модальне вікно деталей платежу (#bankTxModal) */
+.bk-modal-backdrop { position: fixed; inset: 0; z-index: 990; background: rgba(15, 23, 42, .48); backdrop-filter: blur(2px); }
+.bk-modal-dialog {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 1000; width: min(680px, 95vw); max-height: 90vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 24px; background: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, .28);
+    border: 1px solid #E2E8F0;
+}
+.bk-modal-head { padding: 18px 22px 16px; border-bottom: 1px solid #E2E8F0; background: #F8FAFC; }
+.bk-modal-head.is-in { background: linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%); }
+.bk-modal-head.is-out { background: linear-gradient(180deg, #FFF1F2 0%, #FFFFFF 100%); }
+.bk-modal-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.bk-modal-dir-wrap { display: flex; align-items: center; gap: 14px; }
+.bk-modal-dir-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.bk-modal-dir-badge.is-in { background: #DCFCE7; color: #15803D; }
+.bk-modal-dir-badge.is-out { background: #FFE4E6; color: #BE123C; }
+.bk-modal-date { margin-top: 4px; color: #475569; font-size: 13px; }
+.bk-modal-amount-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.bk-modal-amount { margin: 0; font-size: clamp(26px, 3.5vw, 34px); font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.bk-modal-amount.is-in { color: #15803D; }
+.bk-modal-amount.is-out { color: #0F172A; }
+
+.bk-modal-body { padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.bk-modal-section { display: flex; flex-direction: column; gap: 6px; }
+.bk-modal-label { color: #64748B; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+
+/* Інтерактивні картки переходу (Контрагент, Договір, Проводка в ОСВ) */
+.bk-interactive-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    width: 100%; padding: 12px 16px; border: 1.5px solid #CBD5E1; border-radius: 16px;
+    background: #F8FAFC; color: #0F172A; font: inherit; text-align: left; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, transform .12s ease, box-shadow .15s ease;
+}
+.bk-interactive-card:hover {
+    border-color: #2563EB; background: #EFF6FF;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, .1);
+}
+.bk-interactive-card:active { transform: scale(.99); }
+.bk-interactive-card.is-contract { border-color: #BFDBFE; background: #F5F9FF; }
+.bk-interactive-card.is-contract:hover { border-color: #1D4ED8; background: #DBEAFE; }
+.bk-interactive-card.is-journal { border-color: #BBF7D0; background: #F0FDF4; }
+.bk-interactive-card.is-journal:hover { border-color: #16A34A; background: #DCFCE7; }
+.bk-ic-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.bk-ic-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bk-ic-title { font-size: 15px; font-weight: 800; color: #0F172A; text-decoration: underline; text-decoration-color: rgba(37, 99, 235, .4); text-underline-offset: 3px; }
+.bk-ic-pill { padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, .08); color: #334155; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.bk-ic-sub { color: #334155; font-size: 13px; word-break: break-word; }
+.bk-ic-hint { color: #2563EB; font-size: 12px; font-weight: 700; margin-top: 2px; }
+.bk-interactive-card.is-journal .bk-ic-hint { color: #15803D; }
+.bk-ic-arrow { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; background: #fff; border: 1px solid #CBD5E1; color: #0F172A; font-size: 12.5px; font-weight: 800; white-space: nowrap; }
+
+.bk-modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 0; }
+.bk-modal-field { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.bk-modal-field.is-wide { grid-column: 1 / -1; }
+.bk-modal-field dt { color: #64748B; font-size: 12px; font-weight: 700; }
+.bk-modal-field dd { margin: 0; color: #0F172A; font-size: 13.5px; line-height: 1.45; word-break: break-word; }
+.bk-purpose-box { padding: 10px 14px; border-radius: 12px; background: #F1F5F9; border: 1px solid #E2E8F0; font-weight: 600; color: #0F172A; }
+.bk-code-iban { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: #F1F5F9; padding: 2px 6px; border-radius: 6px; }
+.bk-apt-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.bk-apt-link { padding: 7px 14px; border: 1px solid #BFDBFE; border-radius: 999px; background: #EFF6FF; color: #1D4ED8; font: 700 13px var(--font); cursor: pointer; transition: background .15s ease; }
+.bk-apt-link:hover { background: #DBEAFE; }
+
+.bk-modal-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 22px; border-top: 1px solid #E2E8F0; background: #F8FAFC; }
+.bk-modal-foot .sv-btn { width: auto; min-height: 38px; padding: 0 16px; font-size: 13.5px; }
+
+/* Панель повернення «← Назад у Банк» на цільових сторінках */
+.buh-back-nav-bar {
+    position: sticky; top: 10px; z-index: 350;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin: 0 0 16px; padding: 10px 14px;
+    border: 2px solid #0F172A; border-radius: 16px;
+    background: #FEF9C3; color: #0F172A;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
+}
+.buh-back-nav-btn {
+    display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;
+    padding: 4px 8px; border: 0; border-radius: 10px; background: transparent;
+    color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.buh-back-nav-btn:hover { background: rgba(15, 23, 42, .06); }
+.buh-back-nav-arrow {
+    display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+    border-radius: 50%; background: #0F172A; color: #fff; font-size: 18px; font-weight: 800;
+}
+.buh-back-nav-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.buh-back-nav-copy b { font-size: 14.5px; font-weight: 800; color: #0F172A; }
+.buh-back-nav-copy small { font-size: 12.5px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.buh-back-nav-close {
+    width: 34px; height: 34px; border: 0; border-radius: 50%;
+    background: rgba(15, 23, 42, .1); color: #0F172A; font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.buh-back-nav-close:hover { background: rgba(15, 23, 42, .18); }
+
+/* Підсвітка цільового елемента при переході та поверненні */
+.buh-focus-card { border: 2px solid #2563EB !important; background: #F8FAFF !important; box-shadow: 0 6px 20px rgba(37, 99, 235, .12); }
+@keyframes buhTargetPulse {
+    0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, .55); background-color: #DBEAFE; }
+    60% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); background-color: #EFF6FF; }
+    100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+.buh-nav-target-highlight {
+    animation: buhTargetPulse 2.4s ease-out;
+    outline: 2px solid #2563EB !important;
+    background-color: #EFF6FF !important;
+}
+
 @media (max-width: 900px) {
     .bk-links { justify-content: stretch; margin-top: 0; }
     .bk-link { width: 100%; }
@@ -833,10 +1001,13 @@ body.buh-mode .field-input { border-radius: 14px; }
     .bk-ops-head { flex-direction: column; align-items: stretch; }
     .bk-tabs { overflow-x: auto; scrollbar-width: none; }
     .bk-tab { flex: 1 0 auto; padding: 0 12px; }
-    .bk-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; }
-    .bk-ico { width: 40px; height: 40px; }
-    .bk-done { max-width: 130px; }
-    .bk-detail-actions .sv-btn { width: 100%; }
+    .bk-row { grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px; }
+    .bk-ico { width: 42px; height: 42px; }
+    .bk-done { max-width: 140px; }
+    .bk-modal-grid { grid-template-columns: 1fr; }
+    .bk-modal-dialog { width: 96vw; max-height: 92vh; border-radius: 20px; }
+    .bk-modal-head, .bk-modal-body, .bk-modal-foot { padding: 14px 16px; }
+    .bk-ic-arrow { display: none; }
 }
 
 /* ---------- Зарплата: підсумки, люди, розрахунок обраної людини ---------- */

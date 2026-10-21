@@ -16,7 +16,7 @@ import { initInbox, loadInbox, setInboxFilter, restoreCachedBadges } from './buh
 import { loadToday, todayTitle } from './buh-today.js';
 import { initMonthView, loadMonthView } from './buh-month.js';
 import { initFlatsView, loadFlatsView } from './buh-flats.js';
-import { initBankView, loadBankView, initSettingsView, loadSettingsView, setSettingsTab } from './buh-bank.js';
+import { initBankView, loadBankView, initSettingsView, loadSettingsView, setSettingsTab, hasBankReturnState, renderBankReturnBanner } from './buh-bank.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 import { initChargesView, loadChargesView } from './buh-charges.js';
 import { initExpensesView, loadExpensesView } from './buh-expenses.js';
@@ -77,10 +77,13 @@ async function show(name, { push = true, refresh = false } = {}) {
     // Фокус на пункті меню перехоплював би Enter: «Так» у розділі
     // натискав би знову той самий пункт.
     if (document.activeElement?.closest?.('.buh-nav-item, .buh-tab, [data-go]')) document.activeElement.blur();
-    // Фонове оновлення після дії не повинно кидати сторінку вгору.
-    if (!refresh) window.scrollTo({ top: 0 });
+    // Фонове оновлення після дії або повернення в Банк на збережену позицію не повинно кидати сторінку вгору.
+    const restoringBank = name === 'bank' && hasBankReturnState();
+    if (!refresh && !restoringBank) window.scrollTo({ top: 0 });
+    renderBankReturnBanner(name);
     try {
         await loadResiliently(VIEWS[name].load);
+        renderBankReturnBanner(name);
     } catch (e) {
         console.error(`Розділ ${name}:`, e);
         toast('Не вдалося завантажити розділ', 'error');
