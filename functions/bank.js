@@ -459,11 +459,12 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             if (!snap.exists) fail('not-found', 'Операцію не знайдено');
             const data = snap.data();
             await lock?.assertOpen(data.period, 'Операція банку', t);
-            if (data.expenseId || data.paymentId || data.notePaymentId) fail('failed-precondition', 'Операцію привʼязано до документа або платежу. Спершу поверніть її у «Вхідні».');
+            const unlinked = (data.reason === 'payroll-unlinked' || (!data.expenseId && !data.notePaymentId && data.status === 'review'));
+            if ((data.expenseId || data.notePaymentId || (data.paymentId && !unlinked))) fail('failed-precondition', 'Операцію привʼязано до документа або платежу. Спершу поверніть її у «Вхідні».');
             if ((data.allocations || []).some(a => a.ledgerId)) fail('failed-precondition', 'Спершу поверніть оплату в «Розібрати»');
             if (kind === 'income' && data.direction !== 'in') fail('invalid-argument', 'Це списання, а не надходження');
             if (kind === 'expense' && data.direction !== 'out') fail('invalid-argument', 'Це надходження, а не витрата');
-            t.update(ref, { kind, category: category || null, status: 'done', auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
+            t.update(ref, { kind, category: category || null, status: 'done', reason: FieldValue.delete(), auto: false, resolvedBy: actor, resolvedAt: FieldValue.serverTimestamp() });
             return data;
         });
         await audit(actor, role, 'bank.classify', `bank_tx/${ref.id}`,
@@ -648,7 +649,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             const expense = expenseRef ? await t.get(expenseRef) : null;
             const payment = data.paymentId ? await t.get(db.doc(`payments/${data.paymentId}`)) : null;
             const adv = data.advanceReportId ? await t.get(db.doc(`advance_reports/${data.advanceReportId}`)) : null;
-            if (payment?.data()?.payroll) fail('failed-precondition', 'Проведений платіж за відомістю зарплати не можна рознести як іншу витрату');
+            if (payment?.data()?.payroll && data.status === 'done') fail('failed-precondition', 'Проведений платіж за відомістю зарплати не можна рознести як іншу витрату');
             if ((data.refundTxIds || []).length) fail('failed-precondition', 'До цього списання привʼязано повернення — спершу поверніть у «Вхідні» його');
             // Повернення списаного: знімаємо привʼязку з оригіналу, документа й платежу.
             const origRef = data.kind === 'refund' && data.refundOf ? db.doc(`bank_tx/${data.refundOf}`) : null;
@@ -668,7 +669,7 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 t.update(origEx.ref, { paidKop: paid, status: paid >= due ? 'paid' : 'approved', refundTxIds: FieldValue.arrayRemove(ref.id) });
             }
             if (origPay?.exists) t.update(origPay.ref, { returnedKop: Math.max(0, (origPay.data().returnedKop || 0) - data.amountKop), returnTxIds: FieldValue.arrayRemove(ref.id) });
-            if (data.status !== 'done' || data.kind === 'internal') fail('failed-precondition', 'Цю операцію не можна повернути');
+            if ((data.status !== 'done' && !(data.status === 'review' && (data.paymentId || data.expenseId || data.notePaymentId))) || data.kind === 'internal') fail('failed-precondition', 'Цю операцію не можна повернути');
             if (expense?.exists && (expense.data().txIds || []).includes(ref.id)) {
                 t.update(expenseRef, { paidKop: Math.max(0, (expense.data().paidKop || 0) - data.amountKop), txIds: FieldValue.arrayRemove(ref.id), status: 'approved', paidAt: null });
             }

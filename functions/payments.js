@@ -161,6 +161,18 @@ module.exports = function paymentFunctions({ db, FieldValue, requireAdmin, staff
                     && JSON.stringify(p.recipient) === JSON.stringify(payment.recipient) && p.purpose === payment.purpose) return false;
                 fail('already-exists', 'Цей платіж уже відправлено в банк або ще перевіряється');
             }
+            const staleIds = new Set();
+            if (data.replaceId && data.replaceId !== ref.id) staleIds.add(String(data.replaceId).replace(/[^\w-]/g, ''));
+            if (proposalKey) {
+                const staleSnap = await t.get(db.collection('payments').where('proposalKey', '==', proposalKey).where('status', '==', 'failed'));
+                staleSnap.docs.forEach(d => { if (d.id !== ref.id) staleIds.add(d.id); });
+            }
+            const staleDocs = await Promise.all([...staleIds].map(id => t.get(db.doc(`payments/${id}`))));
+            for (const repDoc of staleDocs) {
+                if (repDoc.exists && repDoc.data()?.status === 'failed') {
+                    t.update(repDoc.ref, { status: 'canceled', canceledBy: actor, canceledAt: FieldValue.serverTimestamp(), replacedBy: ref.id });
+                }
+            }
             t.set(ref, { ...payment, status: 'sending', proposalKey, docNumber, createdBy: actor, createdAt: FieldValue.serverTimestamp() });
             if (oldRef) t.update(oldRef, { repaidBy: FieldValue.arrayUnion(ref.id) });
             return true;
