@@ -351,6 +351,9 @@ export function filterTx(list, tab = 'all', query = '', filters = {}, now = new 
         // 6. Рахунок ОСББ
         if (accFilter && normIban(tx.account) !== accFilter) return false;
 
+        // 6а. Конкретний контрагент (з картки контрагента)
+        if (filters?.cpKey && counterpartyKey(tx.counterparty) !== filters.cpKey) return false;
+
         // 7. Сума (від — до)
         if (minKop !== null && (tx.amountKop || 0) < minKop) return false;
         if (maxKop !== null && (tx.amountKop || 0) > maxKop) return false;
@@ -647,5 +650,190 @@ export function resolveTxLinks(tx, { expenses = [], contracts = [], suppliers = 
         expenseDoc,
         paymentDoc,
         matchedSupplier
+    };
+}
+
+
+// ------------------------------------------------------------
+// ПІДСУМКИ РУХУ КОШТІВ
+// ------------------------------------------------------------
+const SUMMARY_SKIP = tx => tx.kind === 'internal' || tx.bankVoided;
+
+/**
+ * Надійшло / списано за відібрані операції з розбивкою за категоріями
+ * (найбільші — першими). Перекази між власними рахунками й сторно банку
+ * не рахуються: це не дохід і не витрата.
+ */
+export function bankSummary(list = []) {
+    const out = { inKop: 0, outKop: 0, count: 0, internal: 0, inCats: [], outCats: [] };
+    const cats = { in: new Map(), out: new Map() };
+    for (const tx of list) {
+        if (SUMMARY_SKIP(tx)) { out.internal++; continue; }
+        const dir = tx.direction === 'out' ? 'out' : 'in';
+        const kop = tx.amountKop || 0;
+        out[`${dir}Kop`] += kop;
+        out.count++;
+        const key = txCategoryKey(tx);
+        const c = cats[dir].get(key) || { key, label: BANK_CATEGORY_OPTIONS[key] || 'Інше', kop: 0, n: 0 };
+        c.kop += kop; c.n++;
+        cats[dir].set(key, c);
+    }
+    for (const dir of ['in', 'out']) {
+        const total = out[`${dir}Kop`] || 1;
+        out[`${dir}Cats`] = [...cats[dir].values()].sort((a, b) => b.kop - a.kop).map(c => ({ ...c, share: c.kop / total }));
+    }
+    out.netKop = out.inKop - out.outKop;
+    return out;
+}
+
+// ------------------------------------------------------------
+// КОНТРАГЕНТИ З ВИПИСКИ
+// ------------------------------------------------------------
+/** Ключ контрагента: код, інакше IBAN, інакше назва без організаційної форми. */
+export function counterpartyKey(cp = {}) {
+    const code = String(cp?.code || '').trim();
+    if (/^\d{8,10}$/.test(code)) return `c:${code}`;
+    const iban = normIban(cp?.account);
+    if (iban) return `i:${iban}`;
+    const name = normName(cp?.name);
+    return name ? `n:${name}` : '';
+}
+
+/** Співвласники, працівники й власні перекази — не контрагенти: їх ведуть «Квартири» й «Зарплата». */
+const PRIVATE = tx => tx.kind === 'payment' || tx.kind === 'internal' || ['resident_refund', 'salary'].includes(tx.category)
+    || (tx.status === 'review' && tx.direction === 'in' && !/^\d{8,10}$/.test(String(tx.counterparty?.code || '')));
+
+const ROLE = tx => {
+    const key = ['taxes', 'esv', 'bank_fee', 'interest'].includes(tx.category) ? tx.category : txCategoryKey(tx);
+    if (['taxes', 'esv'].includes(key)) return 'budget';
+    if (['bank_fee', 'interest'].includes(key)) return 'bank';
+    if (tx.direction === 'in') return 'income';
+    return 'supplier';
+};
+export const CP_ROLES = { supplier: 'Постачальник', income: 'Платить ОСББ', budget: 'Бюджет', bank: 'Банк' };
+
+/**
+ * Контрагенти з операцій: обороти, остання операція, картка в довіднику.
+ * Повертає від найбільшого обороту.
+ */
+export function counterparties(rows = [], suppliers = []) {
+    const map = new Map();
+    for (const tx of rows) {
+        if (PRIVATE(tx) || tx.bankVoided) continue;
+        const key = counterpartyKey(tx.counterparty);
+        if (!key) continue;
+        const g = map.get(key) || { key, name: '', code: '', iban: '', n: 0, inKop: 0, outKop: 0, lastAt: null, txIds: [], roles: new Map(), review: 0 };
+        g.name ||= String(tx.counterparty?.name || '').trim();
+        g.code ||= /^\d{8,10}$/.test(String(tx.counterparty?.code || '')) ? String(tx.counterparty.code) : '';
+        g.iban ||= normIban(tx.counterparty?.account);
+        g.n++;
+        g[tx.direction === 'out' ? 'outKop' : 'inKop'] += tx.amountKop || 0;
+        if (tx.status === 'review' || tx.bankConflict) g.review++;
+        const at = asDate(tx.at);
+        if (!g.lastAt || at > g.lastAt) g.lastAt = at;
+        g.txIds.push(tx.id);
+        const r = ROLE(tx);
+        g.roles.set(r, (g.roles.get(r) || 0) + (tx.amountKop || 0));
+        map.set(key, g);
+    }
+    return [...map.values()].map(g => {
+        const supplier = (g.code && suppliers.find(s => String(s.code || '') === g.code))
+            || (g.iban && suppliers.find(s => normIban(s.iban) === g.iban))
+            || suppliers.find(s => sameEntity(s.name, g.name)) || null;
+        const role = [...g.roles.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'supplier';
+        const { roles, ...rest } = g;
+        return { ...rest, role, supplier, checkable: /^\d{8}$|^\d{10}$/.test(g.code) };
+    }).sort((a, b) => (b.inKop + b.outKop) - (a.inKop + a.outKop));
+}
+
+export const CP_FILTERS = { all: 'Усі', unknown: 'Без картки', risk: 'Є ризики', supplier: 'Постачальники', income: 'Платять ОСББ' };
+
+/** Відбір контрагентів; risk — рівень, який розмітка вже обчислила ('bad' | 'warn' | ''). */
+export function filterCounterparties(list = [], filter = 'all', query = '') {
+    const q = String(query || '').trim().toLowerCase();
+    return list.filter(c => {
+        if (filter === 'unknown' && (c.supplier || c.role !== 'supplier')) return false;
+        if (filter === 'risk' && !c.risk) return false;
+        if (filter === 'supplier' && c.role !== 'supplier') return false;
+        if (filter === 'income' && c.role !== 'income') return false;
+        return !q || c.name.toLowerCase().includes(q) || c.code.includes(q) || c.iban.toLowerCase().includes(q);
+    });
+}
+
+// ------------------------------------------------------------
+// YOUCONTROL (YouScore): ДОСЬЄ КОНТРАГЕНТА
+// ------------------------------------------------------------
+const grnText = kop => `${Number(kop || 0).toLocaleString('uk-UA', { maximumFractionDigits: 2 })} грн`;
+const kvedText = k => (typeof k === 'string' ? k.trim() : k && (k.code || k.name) ? `${k.code || ''} ${k.name || ''}`.trim() : '');
+const isoToUa = v => (/^\d{4}-\d{2}-\d{2}/.test(String(v || '')) ? String(v).slice(0, 10).split('-').reverse().join('.') : String(v || ''));
+
+/**
+ * Досьє з відповіді checkSupplier (YouScore) у вигляді для картки:
+ * { level: 'ok'|'warn'|'bad'|'wait', title, facts: [[назва, значення]], flags: [{ level, text }], sandbox }.
+ */
+const LEGAL_PHRASES = /товариство з обмеженою відповідальністю|фізична особа[\s—-]*підприємець|приватне акціонерне товариство|акціонерне товариство|приватне підприємство|комунальне підприємство/giu;
+const sameName = (a, b) => sameEntity(String(a || '').replace(LEGAL_PHRASES, ' '), String(b || '').replace(LEGAL_PHRASES, ' '));
+
+/** expectedName — назва платника з виписки: якщо в ЄДР інша, код, ймовірно, чужий. */
+export function dossierView(d, expectedName = '') {
+    if (!d) return null;
+    if (!d.found) {
+        return d.needRetry
+            ? { level: 'wait', title: 'Реєстр ще готує відповідь — перевірте ще раз за хвилину', facts: [], flags: [], sandbox: Boolean(d.sandbox) }
+            : { level: 'bad', title: 'У ЄДР за цим кодом нічого не знайдено', facts: [], flags: [], sandbox: Boolean(d.sandbox) };
+    }
+    const enf = Number(d.totalEnforcements ?? d.enforcementTotal ?? 0);
+    const open = Number(d.openPenalties || 0);
+    const facts = [
+        ['Стан у ЄДР', d.stateText || (d.isRegistered ? 'Зареєстровано' : '')],
+        ['Керівник', d.director],
+        ['Оподаткування', d.taxSystem || d.taxSummary],
+        ['Код платника ПДВ', d.vatCode],
+        ['Дата реєстрації', isoToUa(d.registrationDate)],
+        ['Основний КВЕД', kvedText(d.mainKved) || kvedText((d.kveds || [])[0])],
+        ['Податковий борг', Number(d.taxDebtTotal || 0) > 0 ? grnText(d.taxDebtTotal) : 'немає'],
+        ['Виконавчі провадження', enf || open ? `${open} відкритих з ${Math.max(enf, open)}` : 'немає'],
+        ['Судові документи', d.courtTotal ? String(d.courtTotal) : 'немає'],
+        ['Експрес-оцінка', d.expressIndex ? String(d.expressIndex) : '']
+    ].filter(([, v]) => String(v || '').trim());
+    const flags = (d.riskFlags || []).map(text => ({ level: /борг|банкрут|припин|скасов|ліквід|1-ї групи|2-ї групи/i.test(text) ? 'bad' : 'warn', text }));
+    if (expectedName && ![d.name, d.shortName, d.fullName].some(n => sameName(n, expectedName))) {
+        flags.unshift({ level: 'warn', text: `Назва в ЄДР не збігається з платником у виписці — перевірте код` });
+    }
+    if (d.hasSanctions) flags.unshift({ level: 'bad', text: 'Під санкціями' });
+    if (d.isAggressor) flags.unshift({ level: 'bad', text: 'Повʼязаний з державою-агресором' });
+    const level = !d.isRegistered || flags.some(f => f.level === 'bad') ? 'bad' : flags.length ? 'warn' : 'ok';
+    return {
+        level,
+        title: level === 'ok' ? 'Ризиків не виявлено' : level === 'warn' ? 'Є на що звернути увагу' : 'Високий ризик — перевірте перед оплатою',
+        name: d.fullName || d.name || '',
+        facts,
+        flags,
+        sandbox: Boolean(d.sandbox)
+    };
+}
+
+/** Дані для форми постачальника з досьє YouScore (поверх наявної картки, якщо вона є). */
+export function supplierDraft(d, cp = {}, existing = null) {
+    const code = String(d?.edrpou || cp.code || '');
+    return {
+        ...(existing || {}),
+        name: d?.shortName || d?.name || existing?.name || cp.name || '',
+        fullName: d?.fullName || d?.name || existing?.fullName || '',
+        legalForm: d?.legalForm || existing?.legalForm || (code.length === 10 ? 'ФІЗИЧНА ОСОБА — ПІДПРИЄМЕЦЬ' : ''),
+        kind: code.length === 10 ? 'fop' : 'company',
+        code,
+        iban: existing?.iban || cp.iban || '',
+        director: d?.director || existing?.director || '',
+        address: d?.address || existing?.address || '',
+        phone: d?.phone || d?.contacts?.phone || existing?.phone || '',
+        email: d?.email || d?.contacts?.email || existing?.email || '',
+        mainKved: kvedText(d?.mainKved) || kvedText((d?.kveds || [])[0]) || existing?.mainKved || '',
+        taxSystem: d?.taxSystem || d?.taxSummary || existing?.taxSystem || '',
+        vatCode: d?.vatCode || existing?.vatCode || '',
+        registrationStatus: d?.stateText || existing?.registrationStatus || '',
+        taxDebtTotal: Number(d?.taxDebtTotal || 0),
+        openPenalties: Number(d?.openPenalties || 0),
+        expressIndex: String(d?.expressIndex || existing?.expressIndex || '')
     };
 }
