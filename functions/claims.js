@@ -169,6 +169,8 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
                         ownerCodeOverride: claim.ownerCodeOverride || '',
                         note: claim.note || '',
                         restructureMonths: claim.restructureMonths || 0,
+                        restructureStart: claim.restructureStart || '',
+                        events: Array.isArray(claim.events) ? claim.events.slice(-40) : [],
                         lastCourtCheck: claim.lastCourtCheck || null,
                         updatedAt: claim.updatedAt?.toDate?.()?.toISOString() || null
                     }
@@ -217,28 +219,42 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
         const apt = text(data.apt, 20);
         if (!apt) fail('invalid-argument', 'Вкажіть номер квартири');
 
+        const status = text(data.status || 'none', 40);
+        if (!core.CLAIM_STATUSES[status]) fail('invalid-argument', 'Невідомий стан справи');
+        const date = v => (/^\d{4}-\d{2}-\d{2}$/.test(text(v, 20)) ? text(v, 20) : '');
+        const restructureMonths = Math.round(Number(data.restructureMonths || 0));
+        if (!Number.isFinite(restructureMonths) || restructureMonths < 0 || restructureMonths > 36) fail('invalid-argument', 'Строк реструктуризації — від 1 до 36 місяців');
         const record = {
             apt,
-            stage: text(data.stage || 'pre_trial', 40),
-            status: text(data.status || 'none', 40),
+            // Етап виводимо зі статусу: два поля, що можуть суперечити одне одному, справі не потрібні.
+            stage: core.stageForStatus(status),
+            status,
             caseNumber: text(data.caseNumber, 80),
-            claimDate: text(data.claimDate, 20),
-            courtOrderDate: text(data.courtOrderDate, 20),
-            lawsuitDate: text(data.lawsuitDate, 20),
-            enforcementDate: text(data.enforcementDate, 20),
+            claimDate: date(data.claimDate),
+            courtOrderDate: date(data.courtOrderDate),
+            lawsuitDate: date(data.lawsuitDate),
+            enforcementDate: date(data.enforcementDate),
             periodFrom: text(data.periodFrom, 30),
             periodTo: text(data.periodTo, 30),
             ownerNameOverride: text(data.ownerNameOverride, 200),
             ownerCodeOverride: text(data.ownerCodeOverride, 120),
             note: text(data.note, 500),
-            restructureMonths: Number(data.restructureMonths || 0),
-            restructureStart: text(data.restructureStart, 20),
+            restructureMonths,
+            restructureStart: /^\d{4}-\d{2}$/.test(text(data.restructureStart, 20)) ? text(data.restructureStart, 20) : '',
             updatedBy: actor,
             updatedAt: FieldValue.serverTimestamp()
         };
 
+        // Хід справи: кожна зміна стану — запис у хронології (останні 40).
         const ref = db.doc(`claims/${apt}`);
-        await ref.set(record, { merge: true });
+        await db.runTransaction(async t => {
+            const old = (await t.get(ref)).data() || {};
+            const events = Array.isArray(old.events) ? old.events : [];
+            const next = (old.status || 'none') !== status
+                ? [...events, { status, at: new Date().toISOString(), by: actor, note: text(data.eventNote, 200) }].slice(-40)
+                : events;
+            t.set(ref, { ...record, events: next }, { merge: true });
+        });
 
         await audit(actor, role, 'claims.save', ref.path,
             `Претензійна робота кв. ${apt}: стан «${core.CLAIM_STATUSES[record.status] || record.status}»`,
