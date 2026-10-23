@@ -28,6 +28,7 @@ import { initReportsView, loadReportsView } from './buh-reports.js';
 import { initAssetsView, loadAssetsView } from './buh-assets.js';
 import { initAdvanceView, loadAdvanceView } from './buh-advance.js';
 import { initClaimsView, loadClaimsView } from './buh-claims.js';
+import { initVenomNav } from './venom-nav.js';
 
 const VIEWS = {
     today: { title: () => todayTitle().title, sub: () => todayTitle().sub, load: loadToday },
@@ -215,6 +216,7 @@ initAdvanceView();
 initJournalView();
 initClaimsView();
 initSettingsView();
+initVenomNav();
 
 document.addEventListener('click', e => {
     const mode = e.target.closest('[data-mode]');
