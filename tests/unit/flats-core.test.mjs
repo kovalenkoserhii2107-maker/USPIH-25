@@ -59,3 +59,24 @@ test('акт звірки: CSV з BOM, нараховано й сплачено 
     assert.equal(lines[3], '01.09.2026;Нараховано;100,00;;-100,00;');
     assert.equal(lines.at(-1), '12.11.2026;Оплата;;274,18;-548,36;Оплата');
 });
+
+test('будинок: глибина боргу, підсумки, відбори, підʼїзди, графік сальдо', async () => {
+    const { depthOf, depthBuckets, houseKpis, selectFlats, byEntrance, balanceSeries } = await import('../../js/flats-core.js');
+    const withMore = rows.map(r => ({ ...r, entrance: Number(r.apt) > 50 ? '2' : '1', ownersStatus: r.apt === '19' ? 'pending' : 'confirmed',
+        claimStep: r.apt === '156' ? 'pretrial' : 'start' }));
+    assert.deepEqual(withMore.map(depthOf), ['m6', 'ok', 'm3', 'over', 'm12']);
+    const b = depthBuckets(withMore);
+    assert.deepEqual([b.over.n, b.ok.n, b.m3.kop, b.m12.n], [1, 1, 54836, 1]);
+    const k = houseKpis(withMore);
+    assert.deepEqual([k.total, k.debtors, k.debtKop, k.long, k.over, k.overKop, k.claims, k.unverified], [5, 3, 124328 + 301200 + 54836, 2, 1, 31240, 1, 1]);
+    assert.deepEqual(selectFlats(withMore, { filter: 'claims' }).map(r => r.apt), ['156']);
+    assert.deepEqual(selectFlats(withMore, { filter: 'unverified' }).map(r => r.apt), ['19']);
+    assert.deepEqual(selectFlats(withMore, { filter: 'm6' }).map(r => r.apt), ['7']);
+    assert.deepEqual(selectFlats(withMore, { entrance: '2', sort: 'debt' }).map(r => r.apt), ['156', '112']);
+    assert.deepEqual(selectFlats(withMore, { query: '1000' }).map(r => r.apt), ['7']);
+    assert.deepEqual(byEntrance(withMore).map(([e, list]) => [e, list.length]), [['1', 3], ['2', 2]]);
+    const s = balanceSeries(ledgerRows(entries), 100, 50, 0);
+    assert.equal(s.points.length, 4);
+    assert.deepEqual([s.points[0].x, s.points.at(-1).x, s.max], [0, 100, 0]);
+    assert.equal(s.zeroY, 0);
+});
