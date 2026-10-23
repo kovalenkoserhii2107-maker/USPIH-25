@@ -2245,6 +2245,7 @@ body.buh-mode .buh-view { position: static; transform: none; }
 @media (max-width: 480px) {
     .ex-tab { flex: 1 1 0; justify-content: center; min-width: 0; padding: 0 8px; font-size: 13.5px; }
     .ex-tab small { display: none; }
+}
 /* ---------- Зарплата: що зробити зараз, хід місяця, вкладки ---------- */
 #viewPayroll .pr-kpis { margin-bottom: 14px; }
 .zp-next { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; padding: 18px 22px; border-radius: 28px; background: #fff; }
