@@ -71,3 +71,52 @@ test('регулярний платіж не пропонуємо тому, ко
     assert.equal(coveredByDocuments({ recipient: { iban: 'UA563052990000026007012345678' } }, set), false);
     assert.equal(paidByDocuments(null).size, 0);
 });
+
+test('підсумки розділу: затвердити, сплатити, на підписі, оплачено цього місяця', async () => {
+    const { docKpis } = await import('../../js/docs-core.js');
+    const list = [
+        { id: 'a', status: 'pending', amountKop: 1000 },
+        { id: 'b', status: 'approved', amountKop: 5000, paidKop: 1000 },
+        { id: 'c', status: 'approved', amountKop: 2000 },
+        { id: 'd', status: 'paid', amountKop: 3000, stornoKop: 500, date: '2026-10-05' },
+        { id: 'e', status: 'paid', amountKop: 9000, date: '2026-09-30' }
+    ];
+    const k = docKpis(list, { paying: new Set(['c']), today: '2026-10-23' });
+    assert.deepEqual(k.pending, { n: 1, kop: 1000 });
+    assert.deepEqual(k.toPay, { n: 1, kop: 4000 });
+    assert.deepEqual(k.signing, { n: 1, kop: 2000 });
+    assert.deepEqual(k.paidMonth, { n: 1, kop: 2500 });
+});
+
+test('стан і виконання договору', async () => {
+    const { contractState, contractUsage } = await import('../../js/docs-core.js');
+    const today = '2026-10-23';
+    const c = { id: 'k', status: 'approved', type: 'monthly', monthlyKop: 100000, validFrom: '2026-01-01', validTo: '2026-12-31' };
+    assert.equal(contractState(c, today), 'active');
+    assert.equal(contractState({ ...c, validTo: '2026-11-10' }, today), 'ending');
+    assert.equal(contractState({ ...c, validTo: '2026-10-01' }, today), 'ended');
+    assert.equal(contractState({ ...c, status: 'pending' }, today), 'pending');
+    assert.equal(contractState({ ...c, validFrom: '2026-11-01' }, today), 'future');
+    const docs = [
+        { contractId: 'k', status: 'paid', amountKop: 100000, period: '2026-08' },
+        { contractId: 'k', status: 'approved', amountKop: 100000, paidKop: 0, period: '2026-09' },
+        { contractId: 'k', status: 'canceled', amountKop: 100000, period: '2026-07' },
+        { contractId: 'k', status: 'linked', linkedTo: 'x', amountKop: 100000, period: '2026-09' }
+    ];
+    const u = contractUsage(c, docs, today);
+    assert.deepEqual([u.docs, u.spentKop, u.paidKop, u.expectedKop, u.lastPeriod], [3, 200000, 100000, 1000000, '2026-09']);
+    assert.ok(u.timePct > 75 && u.timePct < 85);
+});
+
+test('картка постачальника: витрати року, борг, договори й ризики', async () => {
+    const { supplierStats, supplierFlags } = await import('../../js/docs-core.js');
+    const s = { id: 's', iban: '', kind: 'fop', taxDebtTotal: 10 };
+    const st = supplierStats(s, [
+        { supplierId: 's', status: 'paid', amountKop: 1000, date: '2026-03-01' },
+        { supplierId: 's', status: 'approved', amountKop: 700, paidKop: 200, date: '2026-10-01' },
+        { supplierId: 's', status: 'paid', amountKop: 5000, date: '2025-12-01' },
+        { supplierId: 's', status: 'pending', amountKop: 300, date: '2026-10-20' }
+    ], [{ supplierId: 's', status: 'approved', validFrom: '2026-01-01' }], '2026-10-23');
+    assert.deepEqual([st.docs, st.pending, st.spentYearKop, st.debtKop, st.contracts, st.activeContracts, st.lastDate], [4, 1, 1700, 500, 1, 1, '2026-10-20']);
+    assert.deepEqual(supplierFlags(s).map(f => f.level), ['bad', 'bad', 'warn']);
+});
