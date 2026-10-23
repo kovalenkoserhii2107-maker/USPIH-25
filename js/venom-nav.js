@@ -1,13 +1,14 @@
 // ============================================================
-// «Venom»: чорна підсвітка активного розділу перетікає, як симбіот.
+// «Venom»: чорна підсвітка активного розділу перетікає, як рідина.
 //
 // Під пунктами меню (.buh-nav, .buh-tabbar — бухгалтерія й панель
 // правління) лежить шар із краплею. Коли інший пункт стає .active,
-// крапля витягується до нього: голова летить уперед із пружним
-// доскоком, хвіст тягнеться й рветься, між ними — тонке сухожилля й
-// бризки, а на місці — короткі шипи. SVG-фільтр «goo» зливає це в
-// одну рідку масу. Розмітку й логіку переходів не чіпаємо: шар
-// стежить за класом .active сам.
+// крапля тече до нього, як вода чи ртуть: передній край набухає,
+// крапля витягується сльозою, хвіст стікає в шийку, шийка тоншає й
+// відривається (як струмінь із крана) — дрібні намистини наздоганяють
+// краплю й вливаються в неї. На місці — згасаюче погойдування й легкі
+// брижі. SVG-фільтр «goo» зливає все в одну рідку масу. Розмітку й
+// логіку переходів не чіпаємо: шар стежить за класом .active сам.
 //
 // prefers-reduced-motion — без анімації, звичайна чорна пігулка.
 // ============================================================
@@ -26,8 +27,8 @@ function ensureFilter() {
     svg.style.position = 'absolute';
     // Розмиття + поріг прозорості: окремі краплі зливаються в одну рідку масу.
     svg.innerHTML = `<defs><filter id="vn-goo" x="-20%" y="-60%" width="140%" height="220%" color-interpolation-filters="sRGB">
-        <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b"/>
-        <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"/></filter></defs>`;
+        <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/>
+        <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8"/></filter></defs>`;
     document.body.appendChild(svg);
 }
 
@@ -47,7 +48,7 @@ function bezier(x1, y1, x2, y2) {
         return at(t, y1, y2);
     };
 }
-const EASE = { in: bezier(0.6, 0, 0.2, 1), fly: bezier(0.3, 0.9, 0.4, 1.2), io: bezier(0.42, 0, 0.58, 1) };
+const EASE = { io: bezier(0.45, 0, 0.55, 1), flow: bezier(0.4, 0.1, 0.25, 1) };
 const mix = (r1, r2, k) => ({ x: lerp(r1.x, r2.x, k), y: lerp(r1.y, r2.y, k), w: lerp(r1.w, r2.w, k), h: lerp(r1.h, r2.h, k) });
 
 function blob(layer, r, cls = '') {
@@ -66,6 +67,11 @@ class Venom {
         this.layer.className = 'vn-layer';
         this.layer.setAttribute('aria-hidden', 'true');
         host.prepend(this.layer);
+        // Брижі — окремо, поза фільтром: тонке кільце, що розходиться.
+        this.fx = document.createElement('span');
+        this.fx.className = 'vn-fx';
+        this.fx.setAttribute('aria-hidden', 'true');
+        this.layer.after(this.fx);
         host.classList.add('vn-on');
         this.head = null;
         this.gen = 0;
@@ -103,7 +109,7 @@ class Venom {
 
     sync(initial = false) {
         // Панель правління перебудовує пункти (replaceChildren) — шар повертаємо на місце.
-        if (this.layer.parentNode !== this.host) this.host.prepend(this.layer);
+        if (this.layer.parentNode !== this.host) { this.host.prepend(this.layer); this.layer.after(this.fx); }
         const el = this.active();
         if (el === this.current) return;
         const prev = this.current;
@@ -130,15 +136,30 @@ class Venom {
         else setTimeout(done, 1000);
     }
 
-    /** Перетікання від A до B: голова летить, хвіст лишається, між ними — сухожилля, що рвуться. */
+    /** Брижі навколо краплі, коли вона заспокоюється. */
+    ripple(B, delay) {
+        for (let i = 0; i < 2; i++) {
+            const ring = document.createElement('i');
+            ring.className = 'vn-ripple';
+            Object.assign(ring.style, box(B));
+            this.fx.appendChild(ring);
+            const a = ring.animate([
+                { transform: 'scale(1, 1)', opacity: 0.32 },
+                { transform: `scale(${1 + 18 / B.w}, ${1 + 18 / B.h})`, opacity: 0 }
+            ], { duration: 900, delay: delay + i * 170, easing: 'cubic-bezier(.2,.6,.3,1)' });
+            a.finished.then(() => ring.remove(), () => ring.remove());
+        }
+    }
+
+    /** Перетікання від A до B: крапля тече, шийка рветься на намистини, на місці — погойдування. */
     move(prevEl, el) {
-        // Новий клік у польоті — летимо далі з того місця, де крапля зараз, без стрибка назад.
+        // Новий клік, поки крапля тече, — тече далі з того місця, де вона зараз.
         const live = this.head?.getAnimations().length ? rectOf(this.head, this.host) : null;
         const A = live || rectOf(prevEl, this.host), B = rectOf(el, this.host);
         const cA = { x: A.x + A.w / 2, y: A.y + A.h / 2 };
         const cB = { x: B.x + B.w / 2, y: B.y + B.h / 2 };
         const dist = Math.abs(cB.x - cA.x);
-        const dur = Math.round(330 + Math.min(200, dist * 0.26));
+        const dur = Math.round(620 + Math.min(260, dist * 0.34));
         const d = cB.x >= cA.x ? 1 : -1;
         const H = Math.max(A.h, B.h);
         if (this.head) this.head.getAnimations().forEach(a => a.cancel());
@@ -147,90 +168,78 @@ class Venom {
         this.head = head;
         Object.assign(head.style, box(B));
 
-        // Голова: замах назад, ривок витягнутою краплею, удар-сплющення, пружне осідання.
+        // Голова: передній край набухає, крапля тече сльозою, м'яко входить у місце й погойдується.
         const at = (t, w, h, shift = 0) => {
             const cx = lerp(cA.x, cB.x, t) + shift, cy = lerp(cA.y, cB.y, t);
             return { x: cx - w / 2, y: cy - h / 2, w, h };
         };
-        const flight = Math.max(A.w, B.w) * 0.72 + Math.min(70, dist * 0.12);
+        const flow = Math.max(A.w, B.w) * 0.9 + Math.min(40, dist * 0.08);
         const path = [
             [0, A],
-            [0.12, at(0, A.w * 0.92, A.h * 1.04, -d * 6)],
-            [0.46, at(0.78, flight, H * 0.74)],
-            [0.62, { x: B.x + d * 6 - B.w * 0.05, y: B.y + B.h * 0.1, w: B.w * 1.1, h: B.h * 0.8 }],
-            [0.78, { x: B.x - d * 2 + B.w * 0.03, y: B.y - B.h * 0.05, w: B.w * 0.94, h: B.h * 1.1 }],
-            [0.9, { x: B.x + d, y: B.y + B.h * 0.02, w: B.w * 1.02, h: B.h * 0.97 }],
+            [0.2, at(0.06, A.w * 1.12, A.h * 0.96, d * A.w * 0.1)],
+            [0.62, at(0.92, flow, H * 0.84)],
+            [0.76, { x: B.x + d * 3 - B.w * 0.03, y: B.y + B.h * 0.04, w: B.w * 1.06, h: B.h * 0.92 }],
+            [0.86, { x: B.x - d * 1.5 + B.w * 0.02, y: B.y - B.h * 0.025, w: B.w * 0.96, h: B.h * 1.05 }],
+            [0.94, { x: B.x - B.w * 0.008, y: B.y + B.h * 0.01, w: B.w * 1.016, h: B.h * 0.98 }],
             [1, B]
         ];
-        // Траєкторію рахуємо самі (з тими ж кривими), щоб сухожилля трималися голови без розриву.
-        const ease = [EASE.in, EASE.in, EASE.fly, EASE.io, EASE.io, EASE.io];
+        // Траєкторію рахуємо самі (з тими ж кривими), щоб шийка трималася голови без розриву.
+        const ease = [EASE.io, EASE.flow, EASE.io, EASE.io, EASE.io, EASE.io];
         const headRect = o => {
             const i = Math.max(1, path.findIndex(([k]) => k >= o));
             const [o1, r1] = path[i - 1], [o2, r2] = path[i];
             return mix(r1, r2, ease[i - 1](Math.min(1, Math.max(0, (o - o1) / (o2 - o1)))));
         };
-        const STEPS = 28;
+        const STEPS = 36;
         head.animate(Array.from({ length: STEPS + 1 }, (_, i) => ({ ...box(headRect(i / STEPS)), offset: i / STEPS })), { duration: dur, easing: 'linear' });
         const headAt = o => { const r = headRect(o); return r.x + r.w / 2; };
 
-        // Хвіст: лишається на місці, тягнеться слідом і всихає в краплю.
+        // Хвіст: лишається, поки крапля відтікає, і стягується в шийку.
         const tail = blob(this.layer, A);
         tail.animate([
             box(A),
-            { ...box(at(0, A.w * 0.86, A.h * 0.92, d * 4)), offset: 0.3 },
-            { ...box(at(0.06, A.h * 0.62, A.h * 0.62, d * 6)), offset: 0.6 },
-            box(at(0.12, 0, 0, d * 8))
-        ], { duration: Math.round(dur * 0.85), easing: 'cubic-bezier(.45,0,.3,1)', fill: 'forwards' });
+            { ...box(at(0, A.w * 0.8, A.h * 0.9, d * A.w * 0.08)), offset: 0.3 },
+            { ...box(at(0.08, A.h * 0.56, A.h * 0.56, d * 4)), offset: 0.62 },
+            box(at(0.16, 0, 0))
+        ], { duration: Math.round(dur * 0.72), easing: 'cubic-bezier(.45,0,.35,1)', fill: 'forwards' });
 
-        // Сухожилля: кілька пасом із різною товщиною й висотою — напинаються й рвуться по черзі.
-        [[0, 0.5, 0.64], [H * 0.18, 0.2, 0.54], [-H * 0.2, 0.16, 0.58]].forEach(([dy, thick, snap]) => {
-            const th = H * thick, n = 16;
-            const frames = Array.from({ length: n + 1 }, (_, i) => {
-                const o = (i / n) * snap;
-                const hx = headAt(o);
-                const tx = cA.x + d * Math.min(o * 30, 10);
-                // Товщає на розгоні, тоншає в польоті, рветься в кінці.
-                const k = i === n ? 0 : Math.min(1, 0.3 + o * 6) * Math.max(0.12, 1 - (o / snap) ** 1.6);
-                return { ...box({ x: Math.min(tx, hx), y: cA.y + dy * Math.min(1, o * 3) - (th * k) / 2, w: Math.abs(hx - tx), h: th * k }), offset: i / n };
-            });
-            const strand = blob(this.layer, A, 'is-bridge');
-            strand.animate(frames, { duration: Math.round(dur * snap), easing: 'linear', fill: 'forwards' });
+        // Шийка: одна рідка перемичка — тоншає, як струмінь, і відривається.
+        const pinch = 0.5;
+        const n = 20, th = H * 0.46;
+        const neckFrames = Array.from({ length: n + 1 }, (_, i) => {
+            const o = (i / n) * pinch;
+            const hx = headAt(o);
+            const tx = lerp(cA.x, cA.x + d * A.w * 0.3, Math.min(1, o / pinch));
+            const k = i === n ? 0 : Math.min(1, 0.35 + o * 5) * (1 - (o / pinch) ** 1.4) * 0.92 + 0.04;
+            return { ...box({ x: Math.min(tx, hx), y: cA.y - (th * k) / 2, w: Math.abs(hx - tx), h: th * k }), offset: i / n };
         });
+        blob(this.layer, A, 'is-bridge').animate(neckFrames, { duration: Math.round(dur * pinch), easing: 'linear', fill: 'forwards' });
 
-        // Бризки в мить розриву: більші летять за головою, дрібні падають назад у хвіст.
-        const drops = dist > 260 ? 5 : 4;
-        for (let i = 0; i < drops; i++) {
-            const s = 6 + ((i * 7) % 9);
-            const mid = lerp(cA.x, cB.x, 0.45 + 0.08 * i);
-            const back = i % 3 === 2;
-            const dy = (i % 2 ? 1 : -1) * H * (0.14 + 0.06 * (i % 3));
-            const drop = blob(this.layer, { x: mid - s / 2, y: cA.y - s / 2, w: s, h: s }, 'is-drop');
-            const toX = (back ? cA.x : cB.x) - mid;
-            drop.animate([
-                { transform: 'translate(0,0) scale(.2)' },
-                { transform: `translate(${toX * 0.35}px, ${dy}px) scale(1)`, offset: 0.4 },
-                { transform: `translate(${toX * 0.8}px, ${dy * 0.35}px) scale(.7)`, offset: 0.75 },
-                { transform: `translate(${toX}px, 0) scale(0)` }
-            ], { duration: Math.round(dur * 0.55), delay: Math.round(dur * 0.32 + i * 16), easing: 'cubic-bezier(.3,0,.4,1)', fill: 'both' });
+        // Намистини з розірваної шийки: пливуть до краплі й вливаються в неї.
+        const beads = dist > 240 ? 4 : 3;
+        for (let i = 0; i < beads; i++) {
+            const t = (i + 1) / (beads + 1);
+            const size = H * (0.2 + 0.05 * ((i + 1) % 3));
+            const from = lerp(cA.x + d * A.w * 0.3, headAt(pinch), t);
+            const bead = blob(this.layer, { x: from - size / 2, y: cA.y - size / 2, w: size, h: size }, 'is-drop');
+            const wobble = (i % 2 ? 1 : -1) * H * 0.05;
+            const to = cB.x - from;
+            bead.animate([
+                { transform: 'translate(0,0) scale(.6)' },
+                { transform: `translate(${to * 0.35}px, ${wobble}px) scale(1)`, offset: 0.35 },
+                { transform: `translate(${to * 0.85}px, ${-wobble * 0.5}px) scale(.8)`, offset: 0.75 },
+                { transform: `translate(${to}px, 0) scale(.15)` }
+            ], { duration: Math.round(dur * (0.42 + 0.06 * i)), delay: Math.round(dur * pinch - 30 + i * 22), easing: 'cubic-bezier(.45,0,.4,1)', fill: 'both' });
         }
 
-        // Шипи симбіота при ударі: вистрілюють угору й униз і втягуються.
-        [[0.22, -1, 0.5], [0.5, 1, 0.42], [0.74, -1, 0.34], [0.86, 1, 0.26]].forEach(([fx, side, len], i) => {
-            const w = 5, h = B.h * len;
-            const spike = blob(this.layer, { x: B.x + B.w * fx - w / 2, y: side < 0 ? B.y - h * 0.45 : B.y + B.h - h * 0.55, w, h }, 'is-spike');
-            spike.style.transformOrigin = side < 0 ? '50% 100%' : '50% 0%';
-            spike.animate([
-                { transform: 'scaleY(0)' }, { transform: 'scaleY(1)', offset: 0.4 }, { transform: 'scaleY(0)' }
-            ], { duration: 300, delay: Math.round(dur * 0.6) + i * 28, easing: 'cubic-bezier(.3,1.5,.5,1)', fill: 'both' });
-        });
-
-        // Текст: новий пункт лишається чорним, доки голова не під ним; старий — білим, доки на ньому хвіст.
-        el.animate([{ color: '#000' }, { color: '#000', offset: 0.82 }, { color: '#fff' }], { duration: Math.round(dur * 0.62), easing: 'ease-out' });
-        prevEl.animate([{ color: '#fff' }, { color: '#fff', offset: 0.5 }, { color: '#000' }], { duration: Math.round(dur * 0.5), easing: 'ease-in' });
+        this.ripple(B, Math.round(dur * 0.72));
+        // Текст: новий пункт біліє, коли крапля вже під ним; старий лишається білим, доки на ньому хвіст.
+        el.animate([{ color: '#000' }, { color: '#000', offset: 0.78 }, { color: '#fff' }], { duration: Math.round(dur * 0.82), easing: 'ease-out' });
+        prevEl.animate([{ color: '#fff' }, { color: '#fff', offset: 0.45 }, { color: '#000' }], { duration: Math.round(dur * 0.55), easing: 'ease-in' });
         this.settle();
     }
 
-    /** Розділ без пункту в стрічці (лише в меню): крапля стікає й зникає. */
+    /** Розділ без пункту в стрічці (лише в меню): крапля стікає донизу й зникає. */
     vanish() {
         if (!this.head) return;
         const head = this.head;
@@ -239,23 +248,27 @@ class Venom {
         head.classList.remove('is-head');
         head.animate([
             box(r),
-            { ...box({ x: r.x + r.w * 0.2, y: r.y + r.h * 0.2, w: r.w * 0.6, h: r.h * 0.75 }), offset: 0.5 },
+            { ...box({ x: r.x + r.w * 0.12, y: r.y + r.h * 0.08, w: r.w * 0.76, h: r.h * 0.95 }), offset: 0.35 },
+            { ...box({ x: r.x + r.w * 0.34, y: r.y + r.h * 0.35, w: r.w * 0.32, h: r.h * 0.6 }), offset: 0.7 },
             box({ x: r.x + r.w / 2, y: r.y + r.h, w: 0, h: 0 })
-        ], { duration: 320, easing: 'cubic-bezier(.5,0,.75,0)', fill: 'forwards' });
+        ], { duration: 560, easing: 'cubic-bezier(.45,0,.55,1)', fill: 'forwards' });
         this.settle();
     }
 
-    /** Поява з нічого: крапля падає й розтікається. */
+    /** Поява з нічого: крапля падає, розтікається й погойдується. */
     drop(el) {
         const B = rectOf(el, this.host);
         if (this.head) this.head.remove();
         this.head = blob(this.layer, B, 'is-head');
-        const s = Math.min(B.w, B.h) * 0.5;
+        const s = Math.min(B.w, B.h) * 0.46;
         this.head.animate([
-            box({ x: B.x + B.w / 2 - s / 2, y: B.y - s * 0.6, w: s, h: s }),
-            { ...box({ x: B.x + B.w * 0.08, y: B.y + B.h * 0.1, w: B.w * 0.84, h: B.h * 0.9 }), offset: 0.6, easing: 'cubic-bezier(.2,.9,.3,1.3)' },
+            box({ x: B.x + B.w / 2 - s / 2, y: B.y - s * 0.4, w: s, h: s * 1.1 }),
+            { ...box({ x: B.x + B.w * 0.05, y: B.y + B.h * 0.08, w: B.w * 0.9, h: B.h * 0.86 }), offset: 0.45, easing: 'cubic-bezier(.3,.6,.3,1)' },
+            { ...box({ x: B.x - B.w * 0.02, y: B.y + B.h * 0.03, w: B.w * 1.04, h: B.h * 0.94 }), offset: 0.7 },
+            { ...box({ x: B.x + B.w * 0.01, y: B.y - B.h * 0.01, w: B.w * 0.98, h: B.h * 1.02 }), offset: 0.86 },
             box(B)
-        ], { duration: 360, easing: 'cubic-bezier(.4,0,.2,1)' });
+        ], { duration: 640, easing: 'cubic-bezier(.4,0,.3,1)' });
+        this.ripple(B, 300);
         this.settle();
     }
 }
