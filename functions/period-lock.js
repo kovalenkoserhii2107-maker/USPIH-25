@@ -21,7 +21,7 @@ module.exports = function periodLock(db) {
         if (!p) return;
         const locked = transaction ? ['closed', 'closing'].includes((await transaction.get(db.doc(`journal_periods/${p}`))).data()?.status) : (await closed()).includes(p);
         if (locked) {
-            throw new HttpsError('failed-precondition', `${what}: ${monthName(p)} закрито. Змінити можна, лише якщо голова відкриє місяць знову (розділ «Проводки»).`);
+            throw new HttpsError('failed-precondition', `${what}: ${monthName(p)} закрито. Змінити можна, лише якщо голова відкриє місяць знову (розділ «ОСВ»).`);
         }
     }
 
