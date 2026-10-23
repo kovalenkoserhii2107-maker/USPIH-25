@@ -23,6 +23,7 @@ import { registerServiceWorker } from './install.js';
 import { initPullToRefresh } from './pull-refresh.js';
 import { ROLE_LABELS, TAB_RIGHTS, hasRight } from './staff-core.js';
 import { buildShell, markActive, renderAccount, initSections, initShell } from './admin-shell.js';
+import { initVenomNav } from './venom-nav.js';
 import { loadProfile, loadResiliently, initAppShell, sessionExpired, rememberWorkMode } from './app-common.js';
 
 const toResident = () => location.replace('index.html');
@@ -127,6 +128,7 @@ function renderStaffHeader() {
     });
     buildShell(session.role);
     markActive(activeAdminTab);
+    initVenomNav();
 }
 
 onAuthStateChanged(auth, async (user) => {
