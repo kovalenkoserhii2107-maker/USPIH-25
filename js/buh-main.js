@@ -35,7 +35,7 @@ const VIEWS = {
     bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
     flats: { title: 'Квартири', sub: 'Борги й переплати, історія квартири, довідка й акт звірки', load: loadFlatsView },
-    charges: { title: 'Нарахування', sub: 'Внески співвласників: відомість за місяць, тарифи та приміщення', load: loadChargesView },
+    charges: { title: 'Нарахування', sub: 'Внески співвласників: розрахунок місяця, відомість і квитанції, тарифи, приміщення', load: loadChargesView },
     expenses: { title: 'Документи', sub: 'Рахунки й акти, договори, постачальники', load: loadExpensesView },
     payroll: { title: 'Зарплата', sub: 'Табель, утримання, ЄСВ і виплати — голова затверджує й підписує', load: loadPayrollView },
     reports: { title: 'Звіти', sub: 'Строки ДПС, файли для Електронного кабінету, квитанції', load: loadReportsView },

@@ -1,211 +1,239 @@
 // ============================================================
-// «Нарахування»: внески співвласників за місяць, розрахунки з
-// мешканцями, тарифи та приміщення.
-// Вхідні залишки на початок обліку винесено в «Налаштування → Стартові дані та база».
-// Тарифи й приміщення доступні як тут, так і в «Налаштування → Тарифи та довідники».
+// «Нарахування» — внески співвласників помісячно.
+// Вгорі: місяць, що зробити зараз і підсумки збору (нараховано, сплачено,
+// борг, переплати). Нижче вкладки:
+//   «Розрахунок»  — з чого складається внесок місяця, пропущені приміщення,
+//                   нараховані місяці;
+//   «Відомість»   — розрахунки з кожною квартирою, квитанції з QR, CSV;
+//   «Тарифи»      — матриця «складова × група» з історією й новим тарифом;
+//   «Приміщення»  — площа, проживаючі й група кожного приміщення.
+// Рядок приміщення відкриває його картку збоку.
 //
-// Система готує нарахування (площа × тариф) — бухгалтер підтверджує
-// одним Enter. Усі записи робить сервер (chargesAction): він же
-// перераховує баланси квартир і пише журнал дій.
+// Рахує й записує сервер (chargesAction): він же перераховує баланси
+// квартир і пише журнал дій. Вхідні залишки — у «Налаштування → Стартові дані».
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
-import { loadCharges, loadStatement, loadRequisites, chargeAct, dateOnly, loadStaffNames, authorLabel } from './buh-data.js';
-import {
-    periodName, periodStart, periodsBetween, fmtKop, statementCsv, receiptPurpose
-} from './charges-core.js';
+import { loadCharges, loadStatement, loadRequisites, chargeAct, chargesPeek, dateOnly, loadStaffNames, authorLabel } from './buh-data.js';
+import { periodName, periodStart, periodsBetween, shiftPeriod, fmtKop, statementCsv, receiptPurpose } from './charges-core.js';
+import { nextChargesAction, collectionStats, rowState, filterStatement, tariffCell } from './charges-view-core.js';
 import { paymentLinks } from './nbu-qr.js';
+import { openFlat } from './buh-flats.js';
+import { openClaimCase } from './buh-claims.js';
 
-const SEGMENTS = { month: 'Місяць', statement: 'Відомість', tariffs: 'Тарифи', premises: 'Приміщення' };
-let segment = 'month';
+const TABS = { calc: 'Розрахунок', statement: 'Відомість', tariffs: 'Тарифи', premises: 'Приміщення' };
+const LEGACY = { month: 'calc' };
+let tab = 'calc';
+let period = null;
 let ctx = null;
 let names = {};
-let stPeriod = null;
 let stFilter = 'all';
+let stQuery = '';
+let prFilter = 'all';
+let prQuery = '';
+let sheet = null;               // { kind: 'apt', apt } | { kind: 'tariff', group, component }
+const previews = new Map();     // розрахунок інших місяців: period → preview
 
 const groupName = id => ctx.groups.find(g => g.id === id)?.name || 'Квартири';
+const compName = id => (ctx.components || []).find(c => c.id === (id || 'main'))?.name || 'Утримання будинку';
 const rate = r4 => (r4 / 10000).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const area = v => String(v ?? '').replace('.', ',');
+const areaSum = centi => (centi / 100).toLocaleString('uk-UA', { maximumFractionDigits: 2 });
+/** «з жовтня 2026». */
+const since = p => periodStart(p).slice(3);
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-const kopCell = (kop, cls = '') => `<td class="t-sum${kop < 0 ? ' is-out' : ''}${cls}">${fmtKop(kop)}</td>`;
+const grn = kop => `${fmtKop(kop)} грн`;
+const unit = base => (base === 'fixed' ? 'грн з прим.' : base === 'residents' ? 'грн/прож.' : 'грн/м²');
+const chip = ([t, c]) => `<span class="sv-chip ${c}">${escapeHtml(t)}</span>`;
+const signed = kop => `<span class="cg-num${kop < 0 ? ' is-out' : kop > 0 ? ' is-in' : ''}">${fmtKop(kop)}</span>`;
+const val = id => document.getElementById(id)?.value?.trim() || '';
 
-/** Відкрити розділ одразу на потрібній вкладці (із «Вхідних» чи «Огляду»). */
-export function openCharges(seg = 'month') {
+/** Відкрити розділ одразу на потрібній вкладці (із «Вхідних», «Квартир», «Налаштувань»). */
+export function openCharges(seg = 'calc') {
     if (seg === 'opening') {
         try { sessionStorage.setItem('buh_settings_tab', 'startup'); } catch { /* ignore */ }
         location.hash = 'settings';
         return;
     }
-    segment = SEGMENTS[seg] ? seg : 'month';
+    tab = TABS[LEGACY[seg] || seg] ? LEGACY[seg] || seg : 'calc';
     if (location.hash !== '#charges') location.hash = 'charges';
     else loadChargesView();
 }
 
 // ------------------------------------------------------------
-// МІСЯЦЬ
+// ДАНІ МІСЯЦЯ
 // ------------------------------------------------------------
+async function previewFor(p) {
+    if (p === ctx.preview.period) return ctx.preview;
+    if (p > ctx.current) return null;
+    if (!previews.has(p)) previews.set(p, await chargesPeek({ action: 'preview', period: p }).catch(() => null));
+    return previews.get(p);
+}
+
 /** Розбивка нарахування: складова × група × тариф. */
 function groupsBreakdown(rows) {
     const by = new Map();
     for (const r of rows) {
         for (const p of r.parts?.length ? r.parts : [{ component: 'main', name: 'Утримання будинку', base: 'area', rate4: r.rate4, amountKop: r.amountKop }]) {
             const key = `${p.component}:${r.group}:${p.rate4}`;
-            const g = by.get(key) || { name: p.name, base: p.base, group: r.group, rate4: p.rate4, count: 0, area: 0, total: 0 };
-            g.count += 1; g.area += r.areaCenti || 0; g.total += p.amountKop;
+            const g = by.get(key) || { component: p.component, name: p.name, base: p.base, group: r.group, rate4: p.rate4, count: 0, area: 0, residents: 0, total: 0 };
+            g.count += 1; g.area += r.areaCenti || 0; g.residents += Number(r.residents) || 0; g.total += p.amountKop;
             by.set(key, g);
         }
     }
     return [...by.values()];
 }
-const unit = base => (base === 'fixed' ? 'грн з прим.' : base === 'residents' ? 'грн/прож.' : 'грн/м²');
-const compName = id => (ctx.components || []).find(c => c.id === (id || 'main'))?.name || 'Утримання будинку';
-
-function monthHtml() {
-    const p = ctx.preview;
-    const run = ctx.runs.find(r => r.period === p.period);
-    const lastRun = ctx.runs[0]?.period;
-    const others = ctx.due.filter(x => x !== p.period);
-    const setup = [];
-    if (!ctx.tariffs.length) setup.push('<button type="button" class="btn-ghost-small" data-seg="tariffs">Внести тарифи →</button>');
-    if (!ctx.opening?.set) setup.push('<button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="startup">Внести вхідні залишки у «Налаштуваннях» →</button>');
-
-    const head = run
-        ? `<div class="buh-card-head"><h2>${escapeHtml(cap(periodName(p.period)))}</h2><span class="buh-tag ${run.complete === false ? 'is-review' : 'is-payment'}">${run.complete === false ? 'нараховано частково' : 'нараховано'}</span></div>
-           <p class="ch-big">${fmtKop(run.totalKop)} <small>грн · ${run.count} прим.</small></p>
-           <p class="buh-note">${run.at ? `${escapeHtml(dateOnly(run.at))} · ` : ''}${escapeHtml(authorLabel(names, run.by))}${run.recalculated ? ` · перераховано ${run.recalculated} р.` : ''}</p>
-           <div class="inbox-actions">
-               <button type="button" class="btn-soft btn-compact" data-act="recalc" data-period="${p.period}">Перерахувати</button>
-               ${lastRun === p.period ? `<button type="button" class="btn-ghost-small" data-act="revert" data-period="${p.period}">Скасувати нарахування</button>` : ''}
-               <button type="button" class="btn-ghost-small" data-seg="statement">Відомість →</button>
-           </div>`
-        : `<div class="buh-card-head"><h2>Нарахувати за ${escapeHtml(periodName(p.period))}</h2><span class="buh-tag is-review">чекає підтвердження</span></div>
-           <p class="ch-big">${fmtKop(p.totalKop)} <small>грн · ${p.rows.length} прим.</small></p>
-           ${p.rows.length ? `<table class="buh-table is-compact ch-groups"><thead><tr><th>Складова</th><th>Група</th><th>Прим.</th><th>Площа, м²</th><th>Тариф</th><th class="t-sum">Сума, ₴</th></tr></thead>
-               <tbody>${groupsBreakdown(p.rows).map(g => `<tr><td>${escapeHtml(g.name)}</td><td>${escapeHtml(groupName(g.group))}</td><td>${g.count}</td><td>${g.base === 'fixed' ? '—' : area(g.area / 100)}</td><td>${rate(g.rate4)} ${unit(g.base)}</td>${kopCell(g.total)}</tr>`).join('')}</tbody></table>` : ''}
-           <div class="inbox-actions">
-               <button type="button" class="btn-primary inbox-yes" data-act="run" data-period="${p.period}"${p.rows.length ? '' : ' disabled'}>Нарахувати<kbd>Enter</kbd></button>
-               ${others.length ? `<span class="buh-note">Також не нараховано: ${others.map(periodName).map(escapeHtml).join(', ')}</span>` : ''}
-               ${!ctx.due.includes(p.period) ? `<span class="buh-note">Зазвичай нараховують в останній день місяця — «Вхідні» нагадають. Запис матиме дату кінця місяця.</span>` : ''}
-           </div>`;
-
-    return `<section class="buh-card ch-month">
-            ${head}
-            ${p.problems.length ? `<details class="ch-problems"${run ? '' : ' open'}><summary>Потребують виправлення: ${p.problems.length} прим.</summary>
-                <p>${p.problems.slice(0, 60).map(x => `<span class="buh-tag is-review">${escapeHtml(x.apt)}: ${escapeHtml(x.reason)}</span>`).join(' ')}</p>
-                <p class="buh-note">Площу вносить правління в довіднику квартир; тарифи й групи — на вкладках поруч або в «Налаштуваннях».</p></details>` : ''}
-            ${!ctx.opening?.set ? '<p class="buh-note ch-warn">Поки немає вхідних залишків, баланс у кабінеті мешканця не змінюється: нарахування лише записуються в історію.</p>' : ''}
-            ${setup.length ? `<div class="inbox-actions">${setup.join('')}</div>` : ''}
-        </section>
-        <section class="buh-card">
-            <div class="buh-card-head"><h2>Нараховані місяці</h2></div>
-            ${ctx.runs.length ? `<table class="buh-table"><thead><tr><th>Місяць</th><th>Прим.</th><th>Хто й коли</th><th class="t-sum">Сума, ₴</th><th></th></tr></thead>
-                <tbody>${ctx.runs.map(r => `<tr><td><b>${escapeHtml(periodName(r.period))}</b></td><td>${r.count}${r.problems.length ? ` <small class="t-muted">(${r.problems.length} потребують виправлення)</small>` : ''}</td>
-                    <td class="t-muted">${escapeHtml(authorLabel(names, r.by))}${r.at ? ` · ${escapeHtml(dateOnly(r.at))}` : ''}</td>${kopCell(r.totalKop)}
-                    <td class="t-act"><button type="button" class="btn-ghost-small" data-act="recalc" data-period="${r.period}">Перерахувати</button></td></tr>`).join('')}</tbody></table>`
-                : '<p class="list-empty">Ще нічого не нараховано</p>'}
-        </section>`;
-}
 
 // ------------------------------------------------------------
-// ВІДОМІСТЬ РОЗРАХУНКІВ З МЕШКАНЦЯМИ
+// ВЕРХ РОЗДІЛУ
 // ------------------------------------------------------------
-function statementRows(st) {
-    const q = (document.getElementById('stQuery')?.value || '').trim().toLowerCase().replace(/^кв\.?\s*/, '');
-    return st.rows.filter(r => (stFilter === 'debt' ? r.closing < 0 : stFilter === 'over' ? r.closing > 0 : true) && (!q || r.apt === q || r.apt.startsWith(q)));
-}
-
-function statementTable(st) {
-    const rows = statementRows(st);
-    const t = st.totals;
-    if (!rows.length) return '<p class="list-empty">Нічого не знайдено</p>';
-    return `<table class="buh-table ch-statement"><thead><tr><th>Кв.</th><th class="t-sum">На початок</th><th class="t-sum">Нараховано</th><th class="t-sum">Сплачено</th><th class="t-sum">На кінець</th></tr></thead>
-        <tbody>${rows.map(r => `<tr><td><b>${escapeHtml(r.apt)}</b></td>${kopCell(r.opening)}${kopCell(r.charged)}${kopCell(r.paid)}${kopCell(r.closing, ' t-strong')}</tr>`).join('')}</tbody>
-        <tfoot><tr><td>Разом</td>${kopCell(t.opening)}${kopCell(t.charged)}${kopCell(t.paid)}${kopCell(t.closing, ' t-strong')}</tr></tfoot></table>`;
-}
-
-/** Зведення за статтями: як «Надходження» й «Нарахування» по статтях у сервісі бухгалтера. */
-function componentsTable(st) {
-    const comps = (st.components || []).filter(c => st.byComponent?.[c.id]);
-    if (comps.length < 2) return '';
-    const b = st.byComponent;
-    return `<table class="buh-table is-compact ch-comps"><thead><tr><th>Стаття</th><th class="t-sum">На початок</th><th class="t-sum">Нараховано</th><th class="t-sum">Сплачено</th><th class="t-sum">На кінець</th></tr></thead>
-        <tbody>${comps.map(c => `<tr><td>${escapeHtml(c.name)}</td>${kopCell(b[c.id].opening)}${kopCell(b[c.id].charged)}${kopCell(b[c.id].paid)}${kopCell(b[c.id].closing, ' t-strong')}</tr>`).join('')}</tbody></table>`;
-}
-
-async function statementHtml() {
+function headHtml(run) {
     const periods = periodsBetween(ctx.startPeriod, ctx.current);
-    if (!stPeriod || !periods.includes(stPeriod)) stPeriod = ctx.runs[0]?.period || periods[0];
-    const st = await loadStatement(stPeriod);
-    const t = st.totals;
-    return `<div class="kpi-grid ch-kpi">
-            <div class="kpi"><span>Борг на кінець місяця</span><b class="is-out">${fmtKop(t.debt)}</b><small>${t.debtors} кв.</small></div>
-            <div class="kpi"><span>Нараховано</span><b>${fmtKop(t.charged)}</b><small>${escapeHtml(periodName(st.period))}</small></div>
-            <div class="kpi"><span>Сплачено</span><b class="is-in">${fmtKop(t.paid)}</b><small>${t.charged ? `${Math.round(t.paid / t.charged * 100)}% від нарахованого` : '—'}</small></div>
-        </div>
-        <section class="buh-card">
-            <div class="buh-toolbar">
-                <select id="stPeriod" class="field-input field-select ch-period" aria-label="Місяць">${periods.map(p => `<option value="${p}"${p === stPeriod ? ' selected' : ''}>${escapeHtml(periodName(p))}</option>`).join('')}</select>
-                <div class="buh-seg">${[['all', 'Усі'], ['debt', 'Борг'], ['over', 'Переплата']].map(([k, v]) =>
-                    `<button type="button" class="buh-seg-item${k === stFilter ? ' active' : ''}" data-stfilter="${k}">${v}</button>`).join('')}</div>
-                <input type="search" id="stQuery" class="field-input buh-search ch-search" placeholder="Квартира">
-                <span class="ch-tools">
-                    <button type="button" class="btn-ghost-small" data-act="csv">CSV для Excel</button>
-                    <button type="button" class="btn-soft btn-compact" data-act="receipts">Квитанції</button>
-                    <a class="btn-ghost-small" href="#claims">Претензії та суди →</a>
-                </span>
-            </div>
-            ${!st.opening ? '<p class="buh-note ch-warn">Вхідні залишки ще не внесено — колонка «на початок» неповна. <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="startup">Внести вхідні залишки у «Налаштуваннях» ›</button></p>' : ''}
-            ${componentsTable(st)}
-            <div id="stTable">${statementTable(st)}</div>
-            <p class="buh-note">Мінус — борг, плюс — переплата. Оплати з виписки банку потрапляють сюди одразу після рознесення.</p>
+    const idx = periods.indexOf(period);
+    const state = run ? (run.problems?.length ? ['нараховано частково', 'is-work'] : ['нараховано', 'is-done'])
+        : ctx.due.includes(period) ? ['не нараховано', 'is-bad'] : period === ctx.current ? ['місяць триває', ''] : ['не нараховано', 'is-work'];
+    return `<div class="cg-head">
+        <button type="button" class="cg-step" data-period-step="1" aria-label="Попередній місяць"${idx >= periods.length - 1 ? ' disabled' : ''}>‹</button>
+        <select id="cgPeriod" class="cg-period" aria-label="Місяць">${periods.map(p => `<option value="${p}"${p === period ? ' selected' : ''}>${escapeHtml(cap(periodName(p)))}</option>`).join('')}</select>
+        <button type="button" class="cg-step" data-period-step="-1" aria-label="Наступний місяць"${idx <= 0 ? ' disabled' : ''}>›</button>
+        ${chip(state)}
+        ${run ? `<span class="cg-run-meta">${escapeHtml([run.at ? dateOnly(run.at) : '', authorLabel(names, run.by), run.recalculated ? `перераховано ${run.recalculated} р.` : ''].filter(Boolean).join(' · '))}</span>` : ''}
+    </div>`;
+}
+
+function nextHtml(n) {
+    const btn = n.btn ? (n.act ? `<button type="button" class="sv-btn" data-act="${n.act}" data-period="${period}">${escapeHtml(n.btn)}${n.key ? '<kbd>Enter</kbd>' : ''}</button>`
+        : n.tab ? `<button type="button" class="sv-btn" data-tab="${n.tab}">${escapeHtml(n.btn)}</button>`
+        : n.go ? `<button type="button" class="sv-btn" data-go="${n.go}" data-settings-tab="startup">${escapeHtml(n.btn)}</button>` : '') : '';
+    return `<section class="cg-next is-${n.tone}">
+        <span class="cg-next-icon" aria-hidden="true">${{ todo: '→', wait: '…', done: '✓', bad: '!' }[n.tone]}</span>
+        <div class="cg-next-copy"><b>${escapeHtml(n.title)}</b><span>${escapeHtml(n.hint || '')}</span></div>
+        ${btn ? `<div class="cg-next-actions">${btn}</div>` : ''}
+    </section>`;
+}
+
+function kpisHtml(run, preview, s) {
+    const charged = run ? run.totalKop : preview?.totalKop || 0;
+    return `<div class="cg-kpis">
+        <button type="button" class="cg-kpi" data-tab="calc"><span>${run ? 'Нараховано' : 'Буде нараховано'}</span><b>${fmtKop(charged)} <small>грн</small></b>
+            <small>${run ? `${run.count} прим.` : `${preview?.rows?.length || 0} прим. за чинними тарифами`}</small></button>
+        <button type="button" class="cg-kpi" data-tab="statement" data-filter="all"><span>Сплачено за місяць</span><b>${fmtKop(s.paidKop)} <small>грн</small></b>
+            <small>${s.chargedKop ? `${s.pct}% нарахованого · ${s.paidCount} кв.` : 'ще нічого не нараховано'}</small>${s.chargedKop ? `<i class="cg-bar"><i style="width:${Math.min(100, s.pct)}%"></i></i>` : ''}</button>
+        <button type="button" class="cg-kpi${s.debtors ? ' is-bad' : ''}" data-tab="statement" data-filter="debt"><span>Борг на кінець місяця</span><b>${fmtKop(s.debtKop)} <small>грн</small></b>
+            <small>${s.debtors ? `${s.debtors} кв. · з них ${(ctx._deep || 0)} понад 3 внески` : 'боржників немає'}</small></button>
+        <button type="button" class="cg-kpi" data-tab="statement" data-filter="over"><span>Переплати</span><b>${fmtKop(s.overKop)} <small>грн</small></b>
+            <small>${s.overCount ? `${s.overCount} кв. — зарахуються в наступні місяці` : 'переплат немає'}</small></button>
+    </div>`;
+}
+
+function tabsHtml(st, preview) {
+    const problems = (preview?.problems || []).length;
+    const counts = { calc: '', statement: st?.rows?.length || '', tariffs: ctx.tariffs.length || '', premises: problems ? `!${problems}` : ctx.apartments.length };
+    return `<div class="cg-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) =>
+        `<button type="button" role="tab" class="cg-tab${k === tab ? ' is-active' : ''}" aria-selected="${k === tab}" data-tab="${k}">${v}${counts[k] !== '' ? `<small${String(counts[k]).startsWith('!') ? ' class="is-bad" title="Приміщення з помилками"' : ''}>${String(counts[k]).replace('!', '')}</small>` : ''}</button>`).join('')}
+        <button type="button" class="cg-tab-link" data-go="settings" data-settings-tab="startup">Вхідні залишки ›</button></div>`;
+}
+
+// ------------------------------------------------------------
+// РОЗРАХУНОК
+// ------------------------------------------------------------
+function calcPane(run, preview) {
+    const groups = groupsBreakdown(preview?.rows || []);
+    const byComp = new Map();
+    for (const g of groups) byComp.set(g.component, [...(byComp.get(g.component) || []), g]);
+    const compTotal = list => list.reduce((s, g) => s + g.total, 0);
+    const lastRun = ctx.runs[0]?.period;
+    const problems = preview?.problems || [];
+    return `<section class="py-card cg-card">
+            <div class="cg-card-head"><h2>З чого складається внесок</h2>
+                <span class="py-muted">${run ? 'за поточними тарифами й площами' : `за ${escapeHtml(periodName(period))}`}</span></div>
+            ${groups.length ? [...byComp.entries()].map(([comp, list]) => `<div class="cg-comp">
+                <div class="cg-comp-head"><b>${escapeHtml(list[0].name || compName(comp))}</b><b class="cg-num">${grn(compTotal(list))}</b></div>
+                ${list.map(g => `<div class="cg-comp-row"><span>${escapeHtml(groupName(g.group))} · ${g.count} прим.</span>
+                    <span class="py-muted">${g.base === 'fixed' ? `${g.count} × ${rate(g.rate4)} грн` : g.base === 'residents' ? `${g.residents} прож. × ${rate(g.rate4)} грн` : `${areaSum(g.area)} м² × ${rate(g.rate4)} грн`}</span>
+                    <span class="cg-num">${list.length > 1 ? grn(g.total) : ''}</span></div>`).join('')}
+            </div>`).join('') : '<p class="py-empty">Немає що нараховувати: внесіть тарифи й площі приміщень</p>'}
+            <div class="cg-total"><span>Разом за місяць</span><b>${grn(preview?.totalKop || 0)}</b></div>
+            ${run ? `<div class="cg-actions">
+                <button type="button" class="sv-btn is-soft" data-act="recalc" data-period="${period}">Перерахувати</button>
+                ${lastRun === period ? `<button type="button" class="sv-btn is-soft" data-act="revert" data-period="${period}">Скасувати нарахування</button>` : ''}
+                <button type="button" class="sv-btn is-soft" data-act="receipts">Квитанції за місяць</button></div>` : ''}
+        </section>
+        ${problems.length ? `<section class="py-card cg-card"><div class="cg-card-head"><h2>Не нараховується: ${problems.length} прим.</h2></div>
+            <div class="cg-problems">${problems.slice(0, 80).map(x => `<button type="button" class="cg-problem" data-apt="${escapeHtml(x.apt)}"><b>${escapeHtml(x.apt)}</b><span>${escapeHtml(x.reason)}</span></button>`).join('')}</div>
+            <p class="py-note">Площу вносить правління в довіднику квартир; групу, проживаючих і тарифи — тут, на вкладках поруч.</p></section>` : ''}
+        <section class="py-card cg-card"><div class="cg-card-head"><h2>Нараховані місяці</h2></div>
+            ${ctx.runs.length ? ctx.runs.map(r => `<button type="button" class="cg-run${r.period === period ? ' is-current' : ''}" data-goto="${r.period}">
+                <span><b>${escapeHtml(cap(periodName(r.period)))}</b><small>${escapeHtml([authorLabel(names, r.by), r.at ? dateOnly(r.at) : ''].filter(Boolean).join(' · '))}</small></span>
+                <span class="py-muted">${r.count} прим.${r.problems.length ? ` · ${r.problems.length} пропущено` : ''}</span>
+                <b class="cg-num">${grn(r.totalKop)}</b></button>`).join('') : '<p class="py-empty">Ще нічого не нараховано</p>'}
+            ${ctx.due.filter(p => p !== period).length ? `<p class="py-note">Ще не нараховано: ${ctx.due.filter(p => p !== period).map(p => `<button type="button" class="cg-link" data-goto="${p}">${escapeHtml(periodName(p))}</button>`).join(', ')}</p>` : ''}
         </section>`;
+}
+
+// ------------------------------------------------------------
+// ВІДОМІСТЬ
+// ------------------------------------------------------------
+function statementPane(st) {
+    if (!st) return '<section class="py-card"><p class="py-empty">Відомість за цей місяць ще не готова</p></section>';
+    const rows = filterStatement(st.rows, stFilter, stQuery);
+    const comps = (st.components || []).filter(c => st.byComponent?.[c.id]);
+    const n = f => filterStatement(st.rows, f).length;
+    const t = st.totals;
+    return `<div class="cg-bar-row">
+            <div class="cg-chips" role="group">${[['all', 'Усі', st.rows.length], ['debt', 'Борг', n('debt')], ['deep', 'Борг понад 3 внески', n('deep')], ['unpaid', 'Не платили цього місяця', n('unpaid')], ['over', 'Переплата', n('over')]].map(([k, v, c]) =>
+                `<button type="button" class="cg-chip${k === stFilter ? ' is-active' : ''}" data-filter="${k}">${v} <small>${c}</small></button>`).join('')}</div>
+            <label class="fl-search cg-search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="cgStQuery" placeholder="Номер квартири" value="${escapeHtml(stQuery)}" aria-label="Номер квартири"></label>
+            <span class="cg-tools"><button type="button" class="sv-btn is-soft" data-act="receipts">Квитанції${rows.length !== st.rows.length ? ` (${rows.length})` : ''}</button>
+                <button type="button" class="sv-btn is-soft" data-act="csv">CSV для Excel</button></span>
+        </div>
+        ${!st.opening ? '<p class="cg-warn">Вхідні залишки ще не внесено — колонка «на початок» неповна. <button type="button" class="cg-link" data-go="settings" data-settings-tab="startup">Внести в «Налаштуваннях» ›</button></p>' : ''}
+        ${comps.length > 1 ? `<details class="py-card cg-card cg-comps"><summary>За статтями внеску <small>${comps.length}</small></summary>
+            <div class="cg-st cg-st-comps"><div class="cg-st-head"><span>Стаття</span><span>На початок</span><span>Нараховано</span><span>Сплачено</span><span>На кінець</span></div>
+            ${comps.map(c => { const b = st.byComponent[c.id]; return `<div class="cg-st-row is-static"><span>${escapeHtml(c.name)}</span>${signed(b.opening)}<span class="cg-num">${fmtKop(b.charged)}</span><span class="cg-num is-in">${fmtKop(b.paid)}</span>${signed(b.closing)}</div>`; }).join('')}</div></details>` : ''}
+        <section class="py-card cg-card cg-st">
+            <div class="cg-st-head" aria-hidden="true"><span>Квартира</span><span>На початок</span><span>Нараховано</span><span>Сплачено</span><span>На кінець</span><span>Стан</span></div>
+            ${rows.length ? rows.map(r => `<button type="button" class="cg-st-row" data-apt="${escapeHtml(r.apt)}">
+                <span class="cg-apt"><b>${escapeHtml(r.apt)}</b></span>
+                <span data-l="На початок">${signed(r.opening)}</span><span data-l="Нараховано"><span class="cg-num">${fmtKop(r.charged)}</span></span>
+                <span data-l="Сплачено"><span class="cg-num${r.paid > 0 ? ' is-in' : ''}">${fmtKop(r.paid)}</span></span><span data-l="На кінець" class="is-strong">${signed(r.closing)}</span>
+                <span class="cg-state">${chip(rowState(r))}</span></button>`).join('') : '<p class="py-empty">Нічого не знайдено</p>'}
+            ${rows.length === st.rows.length ? `<div class="cg-st-foot"><span>Разом</span>${signed(t.opening)}<span class="cg-num">${fmtKop(t.charged)}</span><span class="cg-num is-in">${fmtKop(t.paid)}</span>${signed(t.closing)}<span></span></div>` : ''}
+        </section>
+        <p class="py-note cg-help">Мінус — борг, плюс — переплата. Оплати з виписки банку потрапляють сюди одразу після рознесення. Борг понад 3 місячні внески — підстава для претензії.</p>`;
 }
 
 // ------------------------------------------------------------
 // ТАРИФИ
 // ------------------------------------------------------------
-function tariffsHtml() {
+function tariffsPane() {
     const comps = ctx.components || [];
-    const now = (g, c) => ctx.tariffs.filter(x => x.group === g && (x.component || 'main') === c && x.from <= ctx.current).sort((a, b) => (a.from < b.from ? 1 : -1))[0];
-    // Чинні тарифи: рядок — складова, стовпчик — група приміщень.
-    const matrix = `<table class="buh-table ch-matrix"><thead><tr><th>Складова внеску</th>${ctx.groups.map(g => `<th class="t-sum">${escapeHtml(g.name)}</th>`).join('')}</tr></thead>
-        <tbody>${comps.map(c => `<tr><td><b>${escapeHtml(c.name)}</b><small class="t-muted"> ${escapeHtml(unit(c.base))}</small></td>${ctx.groups.map(g => {
-            const t = now(g.id, c.id);
-            return `<td class="t-sum">${t ? rate(t.rate4) : '<span class="t-muted">—</span>'}</td>`;
-        }).join('')}</tr>`).join('')}</tbody></table>`;
-    const sorted = [...ctx.tariffs].sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0));
-    return `<section class="buh-card">
-            <div class="buh-card-head"><h2>Чинні тарифи</h2><span>на ${escapeHtml(periodName(ctx.current))}, на місяць</span></div>
-            ${matrix}
-            <p class="buh-note">«—» — складова цій групі не нараховується (напр. ліфти нежитловим приміщенням). «Утримання будинку» — обовʼязкова. Тарифи також продубльовано в <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="directories">Налаштування → Тарифи та довідники ›</button>.</p>
+    return `<section class="py-card cg-card">
+            <div class="cg-card-head"><h2>Тарифи на ${escapeHtml(periodName(period))}</h2>
+                <button type="button" class="sv-btn" data-act="tariff-new">+ Тариф</button></div>
+            <div class="cg-matrix" style="--cols:${ctx.groups.length}">
+                <div class="cg-mx-head"><span>Складова внеску</span>${ctx.groups.map(g => `<span>${escapeHtml(g.name)}</span>`).join('')}</div>
+                ${comps.map(c => `<div class="cg-mx-row"><span class="cg-mx-name"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(unit(c.base))}</small></span>
+                    ${ctx.groups.map(g => { const cell = tariffCell(ctx.tariffs, g.id, c.id, period);
+                        return `<button type="button" class="cg-mx-cell${cell.current ? '' : ' is-empty'}" data-tariff="${escapeHtml(g.id)}" data-component="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${c.name}, ${g.name}`)}">
+                            ${cell.current ? `<b>${rate(cell.current.rate4)}</b><small>з ${escapeHtml(since(cell.current.from))}</small>` : '<b>—</b><small>не нараховується</small>'}
+                            ${cell.next ? `<span class="cg-mx-next">з ${escapeHtml(since(cell.next.from))}: ${rate(cell.next.rate4)}</span>` : ''}</button>`; }).join('')}</div>`).join('')}
+            </div>
+            <p class="py-note">Клітинка відкриває історію тарифу й форму нового. «—» — складова цій групі не нараховується (напр. ліфти нежитловим приміщенням). Новий тариф діє з указаного місяця, попередні нарахування не змінюються. Окремий тариф для нежитлових — лише за рішенням загальних зборів (статут, п. 4.4).</p>
         </section>
-        <section class="buh-card">
-            <div class="buh-card-head"><h2>Усі тарифи</h2></div>
-            ${sorted.length ? `<table class="buh-table"><thead><tr><th>Складова</th><th>Група</th><th>Тариф</th><th>Діє з</th><th>Рішення</th><th></th></tr></thead>
-                <tbody>${sorted.map(t => `<tr><td>${escapeHtml(compName(t.component))}</td><td>${escapeHtml(groupName(t.group))}</td><td><b>${rate(t.rate4)}</b> <small class="t-muted">${unit(t.base)}</small></td><td>${escapeHtml(periodName(t.from))}</td>
-                    <td class="t-muted">${escapeHtml(t.decision)}</td><td class="t-act"><button type="button" class="btn-ghost-small" data-act="tariff-remove" data-id="${escapeHtml(t.id)}">Прибрати</button></td></tr>`).join('')}</tbody></table>`
-                : '<p class="list-empty">Тарифів ще немає</p>'}
-            <h3 class="ch-sub">Новий тариф</h3>
-            <div class="buh-inline-form ch-form">
-                <select id="tfComp" class="field-input field-select" aria-label="Складова">${comps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select>
-                <select id="tfGroup" class="field-input field-select" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('')}</select>
-                <input id="tfRate" class="field-input ch-narrow" inputmode="decimal" placeholder="Тариф, грн" aria-label="Тариф">
-                <input id="tfFrom" class="field-input ch-narrow" type="month" value="${escapeHtml(ctx.current)}" aria-label="Діє з місяця">
-                <input id="tfDecision" class="field-input" maxlength="200" placeholder="Рішення: протокол зборів № …, дата" aria-label="Рішення">
-                <button type="button" class="btn-primary btn-compact" data-act="tariff-add">Додати</button>
-            </div>
-            <p class="buh-note">Новий тариф діє з указаного місяця, попередні нарахування не змінюються. Тариф, за яким уже нараховано, не прибрати — лише замінити новим з наступного місяця. Окремий тариф для нежитлових потребує рішення загальних зборів (статут, п. 4.4).</p>
-            <h3 class="ch-sub">Складові внеску</h3>
-            <p class="ch-chips">${comps.map(c => `<span class="buh-tag">${escapeHtml(c.name)} · ${escapeHtml(unit(c.base))}</span>`).join(' ')}</p>
-            <div class="buh-inline-form ch-form">
-                <input id="cpName" class="field-input" maxlength="60" placeholder="Нова складова, напр. «Освітлення МЗК», «Ліфти», «Вивезення ТПВ»" aria-label="Назва складової">
+        <section class="py-card cg-card"><div class="cg-card-head"><h2>Складові внеску</h2></div>
+            <div class="cg-tags">${comps.map(c => `<span class="cg-tag"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(unit(c.base))}</small></span>`).join('')}</div>
+            <div class="cg-form-row">
+                <input id="cpName" class="field-input" maxlength="60" placeholder="Нова складова, напр. «Освітлення МЗК», «Ліфти»" aria-label="Назва складової">
                 <select id="cpBase" class="field-input field-select" aria-label="Як рахувати"><option value="area">за м²</option><option value="fixed">з приміщення</option><option value="residents">з проживаючого</option></select>
-                <button type="button" class="btn-ghost-small" data-act="component-add">Додати складову</button>
+                <button type="button" class="sv-btn is-soft" data-act="component-add">Додати</button>
             </div>
-            <h3 class="ch-sub">Групи приміщень</h3>
-            <p class="ch-chips">${ctx.groups.map(g => `<span class="buh-tag">${escapeHtml(g.name)}</span>`).join(' ')}</p>
-            <div class="buh-inline-form ch-form">
+        </section>
+        <section class="py-card cg-card"><div class="cg-card-head"><h2>Групи приміщень</h2></div>
+            <div class="cg-tags">${ctx.groups.map(g => `<span class="cg-tag"><b>${escapeHtml(g.name)}</b><small>${ctx.apartments.filter(a => (ctx.premises[a.apt] || 'res') === g.id).length} прим.</small></span>`).join('')}</div>
+            <div class="cg-form-row">
                 <input id="grName" class="field-input" maxlength="60" placeholder="Нова група, напр. «Паркінг» або «Комори»" aria-label="Назва групи">
-                <button type="button" class="btn-ghost-small" data-act="group-add">Додати групу</button>
+                <button type="button" class="sv-btn is-soft" data-act="group-add">Додати</button>
             </div>
         </section>`;
 }
@@ -213,38 +241,152 @@ function tariffsHtml() {
 // ------------------------------------------------------------
 // ПРИМІЩЕННЯ
 // ------------------------------------------------------------
-function premisesRows() {
-    const q = (document.getElementById('prQuery')?.value || '').trim().toLowerCase();
-    const charge = new Map(ctx.preview.rows.map(r => [r.apt, r.amountKop]));
-    const problem = new Map(ctx.preview.problems.map(r => [r.apt, r.reason]));
-    const list = ctx.apartments.filter(a => !q || a.apt.startsWith(q))
-        .sort((a, b) => a.apt.localeCompare(b.apt, 'uk', { numeric: true }));
-    if (!list.length) return '<p class="list-empty">Нічого не знайдено</p>';
-    return `<table class="buh-table"><thead><tr><th>Прим.</th><th>Площа, м²</th><th>Проживає</th><th>Група</th><th class="t-sum">Внесок за ${escapeHtml(periodName(ctx.preview.period))}</th></tr></thead>
-        <tbody>${list.map(a => `<tr data-apt="${escapeHtml(a.apt)}"><td><b>${escapeHtml(a.apt)}</b>${a.personalAccount ? ` <small class="t-muted">о/р ${escapeHtml(a.personalAccount)}</small>` : ''}</td><td>${a.area ? escapeHtml(area(a.area)) : '<span class="buh-tag is-review">немає</span>'}</td>
-            <td><input class="field-input pr-res" inputmode="numeric" maxlength="2" value="${a.residents ?? ''}" placeholder="—" aria-label="Проживає"></td>
-            <td><select class="field-input field-select pr-group" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}"${(ctx.premises[a.apt] || 'res') === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></td>
-            ${charge.has(a.apt) ? kopCell(charge.get(a.apt)) : `<td class="t-sum t-muted">${escapeHtml(problem.get(a.apt) || '—')}</td>`}</tr>`).join('')}</tbody></table>`;
-}
-
-function premisesHtml() {
-    const counts = ctx.groups.map(g => `${escapeHtml(g.name)}: ${ctx.apartments.filter(a => (ctx.premises[a.apt] || 'res') === g.id).length}`).join(' · ');
-    return `<section class="buh-card">
-            <div class="buh-card-head"><h2>Приміщення</h2><span>${counts}</span></div>
-            <div class="buh-inline-form ch-form">
+function premisesPane(preview) {
+    const charge = new Map((preview?.rows || []).map(r => [r.apt, r.amountKop]));
+    const problem = new Map((preview?.problems || []).map(r => [r.apt, r.reason]));
+    const usesResidents = (ctx.components || []).some(c => c.base === 'residents');
+    const q = prQuery.trim().toLowerCase();
+    const keep = { all: () => true, problems: a => problem.has(a.apt), noarea: a => !a.area, nores: a => a.residents === undefined || a.residents === null || a.residents === '' };
+    const groupKeep = ctx.groups.some(g => g.id === prFilter) ? a => (ctx.premises[a.apt] || 'res') === prFilter : keep[prFilter] || keep.all;
+    const list = ctx.apartments.filter(a => groupKeep(a) && (!q || a.apt.startsWith(q)))
+        .sort((a, b) => Number(problem.has(b.apt)) - Number(problem.has(a.apt)) || a.apt.localeCompare(b.apt, 'uk', { numeric: true }));
+    const count = f => ctx.apartments.filter(keep[f]).length;
+    const chips = [['all', 'Усі', ctx.apartments.length], ['problems', 'З помилками', problem.size], ['noarea', 'Без площі', count('noarea')],
+        ...(usesResidents ? [['nores', 'Не вказано проживаючих', count('nores')]] : []),
+        ...ctx.groups.map(g => [g.id, g.name, ctx.apartments.filter(a => (ctx.premises[a.apt] || 'res') === g.id).length])];
+    return `<div class="cg-bar-row">
+            <div class="cg-chips" role="group">${chips.map(([k, v, c]) => `<button type="button" class="cg-chip${k === prFilter ? ' is-active' : ''}" data-prfilter="${escapeHtml(k)}">${escapeHtml(v)} <small>${c}</small></button>`).join('')}</div>
+            <label class="fl-search cg-search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="cgPrQuery" placeholder="Номер приміщення" value="${escapeHtml(prQuery)}" aria-label="Номер приміщення"></label>
+        </div>
+        <section class="py-card cg-card cg-prem">
+            <div class="cg-prem-head" aria-hidden="true"><span>Приміщення</span><span>Площа, м²</span><span>Проживає</span><span>Група</span><span>Внесок за ${escapeHtml(periodName(period))}</span></div>
+            ${list.length ? list.map(a => `<div class="cg-prem-row${problem.has(a.apt) ? ' is-bad' : ''}" data-apt="${escapeHtml(a.apt)}">
+                <button type="button" class="cg-apt cg-open" data-apt="${escapeHtml(a.apt)}"><b>${escapeHtml(a.apt)}</b>${a.personalAccount ? `<small>о/р ${escapeHtml(a.personalAccount)}</small>` : ''}</button>
+                <span data-l="Площа">${a.area ? escapeHtml(area(a.area)) : chip(['немає', 'is-bad'])}</span>
+                <span data-l="Проживає"><input class="field-input cg-res" inputmode="numeric" maxlength="2" value="${a.residents ?? ''}" placeholder="—" aria-label="Проживає в ${escapeHtml(a.apt)}"></span>
+                <span data-l="Група"><select class="field-input field-select cg-grp" aria-label="Група ${escapeHtml(a.apt)}">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}"${(ctx.premises[a.apt] || 'res') === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></span>
+                <span data-l="Внесок" class="cg-num">${charge.has(a.apt) ? fmtKop(charge.get(a.apt)) : `<small class="is-bad">${escapeHtml(problem.get(a.apt) || '—')}</small>`}</span>
+            </div>`).join('') : '<p class="py-empty">Нічого не знайдено</p>'}
+        </section>
+        <details class="py-card cg-card cg-bulk"><summary>Масові зміни</summary>
+            <div class="cg-form-row">
                 <input id="prBulk" class="field-input" placeholder="Кілька приміщень через кому: н1, н2, 101" aria-label="Приміщення">
                 <select id="prBulkGroup" class="field-input field-select" aria-label="Група">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('')}</select>
-                <button type="button" class="btn-soft btn-compact" data-act="premises-bulk">Призначити групу</button>
+                <button type="button" class="sv-btn is-soft" data-act="premises-bulk">Призначити групу</button>
             </div>
-            <div class="buh-inline-form ch-form">
-                <input id="resBulk" class="field-input" placeholder="Проживаючі списком: «298;2» або «298 2», кожна квартира з нового рядка чи через кому" aria-label="Проживаючі">
-                <button type="button" class="btn-soft btn-compact" data-act="residents-bulk">Внести проживаючих</button>
+            <div class="cg-form-row">
+                <textarea id="resBulk" class="field-input" rows="3" placeholder="Проживаючі: «298;2» або «298 2», кожна квартира з нового рядка чи через кому" aria-label="Проживаючі"></textarea>
+                <button type="button" class="sv-btn is-soft" data-act="residents-bulk">Внести проживаючих</button>
             </div>
-            <div class="buh-toolbar"><input type="search" id="prQuery" class="field-input buh-search" placeholder="Номер приміщення">
-                <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="directories">Масове внесення особових рахунків у «Налаштуваннях» ›</button></div>
-            <div id="prTable">${premisesRows()}</div>
-            <p class="buh-note">Площу веде правління в довіднику квартир (панель правління → «Квартири»). Без площі приміщенню не нараховується.</p>
-        </section>`;
+            <p class="py-note">Площу веде правління в довіднику квартир. Особові рахунки масово — у <button type="button" class="cg-link" data-go="settings" data-settings-tab="directories">«Налаштування → Тарифи та довідники»</button>.</p>
+        </details>`;
+}
+
+// ------------------------------------------------------------
+// БІЧНА КАРТКА: приміщення й тариф
+// ------------------------------------------------------------
+function sheetHost() {
+    let el = document.getElementById('cgSheet');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'cgSheet';
+        el.className = 'chs-wrap cg-sheet';
+        el.hidden = true;
+        document.body.appendChild(el);
+        el.addEventListener('click', onClick);
+        el.addEventListener('change', onChange);
+        document.addEventListener('keydown', e => { if (e.key === 'Escape' && !el.hidden && !document.querySelector('.confirm-overlay')) closeSheet(); });
+        window.addEventListener('hashchange', () => { if (location.hash !== '#charges') closeSheet(); });
+    }
+    return el;
+}
+function closeSheet() { sheet = null; renderSheet(); }
+
+function aptSheet(apt, st, preview) {
+    const a = ctx.apartments.find(x => x.apt === apt) || { apt };
+    const r = st?.rows.find(x => x.apt === apt);
+    const pr = preview?.rows.find(x => x.apt === apt);
+    const problem = preview?.problems.find(x => x.apt === apt);
+    const parts = r?.charge?.parts?.length ? r.charge.parts : pr?.parts || [];
+    const areaCenti = r?.charge?.areaCenti ?? pr?.areaCenti;
+    const comps = (st?.components || []).filter(c => r?.parts && [r.parts.opening, r.parts.charged, r.parts.paid].some(m => m?.[c.id]));
+    const debt = r && r.closing < 0;
+    return [`Приміщення ${apt}`, `<div class="chs-head">
+            <span class="py-muted">${escapeHtml([groupName(ctx.premises[apt] || 'res'), a.personalAccount ? `о/р ${a.personalAccount}` : ''].filter(Boolean).join(' · '))}</span>
+            <span class="chs-title">Приміщення ${escapeHtml(apt)}</span>
+            ${r ? chip(rowState(r)) : ''}
+        </div>
+        ${problem ? `<p class="cg-warn">Не нараховується: ${escapeHtml(problem.reason)}</p>` : ''}
+        ${r ? `<div class="chs-tiles">
+            <div><span>На ${escapeHtml(periodStart(period))}</span><b>${signed(r.opening)}</b></div>
+            <div><span>Нараховано за ${escapeHtml(periodName(period))}</span><b>${fmtKop(r.charged)}</b></div>
+            <div><span>Сплачено</span><b>${fmtKop(r.paid)}</b></div>
+            <div><span>${r.closing < 0 ? 'Борг на кінець' : r.closing > 0 ? 'Переплата на кінець' : 'На кінець'}</span><b>${signed(r.closing)}</b></div>
+        </div>` : ''}
+        <h3 class="chs-h">Розрахунок внеску</h3>
+        <section class="py-card cg-card">${parts.length ? parts.map(p => `<div class="cg-comp-row"><span>${escapeHtml(p.name || compName(p.component))}</span>
+            <span class="py-muted">${p.base === 'fixed' ? 'з приміщення' : p.base === 'residents' ? `${Number.isInteger(p.residents) ? p.residents : a.residents ?? '?'} прож. × ${rate(p.rate4)} грн` : `${area((areaCenti || 0) / 100)} м² × ${rate(p.rate4)} грн`}</span>
+            <span class="cg-num">${grn(p.amountKop)}</span></div>`).join('') : '<p class="py-empty">Цього місяця не нараховано</p>'}</section>
+        ${comps.length > 1 ? `<h3 class="chs-h">За статтями</h3><section class="py-card cg-card cg-st cg-st-comps">
+            <div class="cg-st-head"><span>Стаття</span><span>На початок</span><span>Нараховано</span><span>Сплачено</span><span>На кінець</span></div>
+            ${comps.map(c => `<div class="cg-st-row is-static"><span>${escapeHtml(c.name)}</span>${signed(r.parts.opening[c.id] || 0)}<span class="cg-num">${fmtKop(r.parts.charged[c.id] || 0)}</span><span class="cg-num is-in">${fmtKop(r.parts.paid[c.id] || 0)}</span>${signed(r.parts.closing[c.id] || 0)}</div>`).join('')}</section>` : ''}
+        <h3 class="chs-h">Дані для розрахунку</h3>
+        <section class="py-card cg-card cg-fields" data-apt="${escapeHtml(apt)}">
+            <div class="cg-field"><span>Площа</span><b>${a.area ? `${escapeHtml(area(a.area))} м²` : 'не внесено — веде правління в довіднику квартир'}</b></div>
+            <label class="cg-field"><span>Проживає</span><input class="field-input cg-res" inputmode="numeric" maxlength="2" value="${a.residents ?? ''}" placeholder="—"></label>
+            <label class="cg-field"><span>Група</span><select class="field-input field-select cg-grp">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}"${(ctx.premises[apt] || 'res') === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></label>
+            <p class="py-note">Зміни діють на наступне нарахування або перерахунок місяця.</p>
+        </section>
+        <div class="chs-actions cg-sticky">
+            ${r ? `<button type="button" class="sv-btn" data-act="receipt-one" data-apt="${escapeHtml(apt)}">Квитанція</button>` : ''}
+            <button type="button" class="sv-btn is-soft" data-act="open-flat" data-apt="${escapeHtml(apt)}">Картка квартири ›</button>
+            ${debt ? `<button type="button" class="sv-btn is-soft" data-act="open-claim" data-apt="${escapeHtml(apt)}">Претензія ›</button>` : ''}
+        </div>`];
+}
+
+function tariffSheet(group, component) {
+    const cell = tariffCell(ctx.tariffs, group, component, period);
+    const c = (ctx.components || []).find(x => x.id === component) || ctx.components[0];
+    return [`${compName(component)} · ${groupName(group)}`, `<div class="chs-head">
+            <span class="py-muted">${escapeHtml(groupName(group))} · ${escapeHtml(unit(c?.base))}</span>
+            <span class="chs-title">${escapeHtml(compName(component))}</span>
+            ${cell.current ? `<span class="cg-big">${rate(cell.current.rate4)} <small>${escapeHtml(unit(cell.current.base || c?.base))}</small></span>` : chip(['не нараховується', 'is-locked'])}
+        </div>
+        <h3 class="chs-h">Історія</h3>
+        <section class="py-card cg-card">${cell.history.length ? cell.history.map(t => `<div class="cg-hist${t === cell.current ? ' is-current' : ''}">
+            <span><b>${rate(t.rate4)} ${escapeHtml(unit(t.base || c?.base))}</b><small>з ${escapeHtml(since(t.from))}${t === cell.current ? ' · чинний' : t.from > period ? ' · наступний' : ''}</small><small>${escapeHtml(t.decision || '')}</small></span>
+            <button type="button" class="cg-x" data-act="tariff-remove" data-id="${escapeHtml(t.id)}" aria-label="Прибрати тариф">×</button></div>`).join('') : '<p class="py-empty">Тарифу ще немає</p>'}</section>
+        <h3 class="chs-h">Новий тариф</h3>
+        <section class="py-card cg-card cg-tariff-form">
+            <div class="cg-grid">
+                <label class="py-field"><span>Складова</span><select id="tfComp" class="field-input field-select">${(ctx.components || []).map(x => `<option value="${escapeHtml(x.id)}"${x.id === component ? ' selected' : ''}>${escapeHtml(x.name)}</option>`).join('')}</select></label>
+                <label class="py-field"><span>Група</span><select id="tfGroup" class="field-input field-select">${ctx.groups.map(g => `<option value="${escapeHtml(g.id)}"${g.id === group ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}</select></label>
+                <label class="py-field"><span>Тариф, грн</span><input id="tfRate" class="field-input" inputmode="decimal" placeholder="${cell.current ? rate(cell.current.rate4) : '0,00'}"></label>
+                <label class="py-field"><span>Діє з місяця</span><input id="tfFrom" class="field-input" type="month" value="${escapeHtml(shiftPeriod(ctx.current, 1))}"></label>
+            </div>
+            <label class="py-field"><span>Рішення загальних зборів</span><input id="tfDecision" class="field-input" maxlength="200" placeholder="Протокол загальних зборів № …, дата"></label>
+            <p class="py-note">Тариф, за яким уже нараховано, не прибрати — лише замінити новим з наступного місяця.</p>
+        </section>
+        <div class="chs-actions cg-sticky"><button type="button" class="sv-btn" data-act="tariff-add">Додати тариф</button>
+            <button type="button" class="sv-btn is-soft" data-act="sheet-close">Скасувати</button></div>`];
+}
+
+async function renderSheet() {
+    const el = sheetHost();
+    if (!sheet || !ctx) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('chs-open'); return; }
+    const [st, preview] = sheet.kind === 'apt' ? await Promise.all([loadStatement(period).catch(() => null), previewFor(period)]) : [null, null];
+    if (!sheet) return;
+    const [title, body] = sheet.kind === 'apt' ? aptSheet(sheet.apt, st, preview) : tariffSheet(sheet.group, sheet.component);
+    el.innerHTML = `<div class="chs-backdrop" data-act="sheet-close"></div>
+        <aside class="chs-sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" tabindex="-1">
+            <div class="chs-bar"><span></span><span class="chs-bar-title">${escapeHtml(title)}</span>
+                <button type="button" class="chs-icon" data-act="sheet-close" aria-label="Закрити">×</button></div>
+            <div class="chs-body">${body}</div>
+        </aside>`;
+    el.hidden = false;
+    document.body.classList.add('chs-open');
+    el.querySelector('.chs-sheet')?.focus({ preventScroll: true });
 }
 
 // ------------------------------------------------------------
@@ -266,9 +408,9 @@ function receiptPartsHtml(r, comps, charge) {
             <td>${fmtKop(Math.max(0, -(p.closing[c.id] || 0)))}</td></tr>`).join('')}</tbody></table>`;
 }
 
-async function receiptHtml(r, a, req, period, qrcode, comps = []) {
+function receiptHtml(r, a, req, receiptPeriod, qrcode, comps = []) {
     const due = Math.max(0, -r.closing);
-    const purpose = receiptPurpose(req.purposeTemplate, r.apt, a.personalAccount, period);
+    const purpose = receiptPurpose(req.purposeTemplate, r.apt, a.personalAccount, receiptPeriod);
     let qr = '';
     try {
         const links = paymentLinks({ name: req.payeeName, iban: req.iban, code: req.edrpou, amount: due ? due / 100 : null, purpose, reference: `KV${r.apt}` });
@@ -284,13 +426,13 @@ async function receiptHtml(r, a, req, period, qrcode, comps = []) {
         : part?.base === 'residents' && Number.isInteger(part.residents) ? `${part.residents} прож. × ${rate(part.rate4)}`
         : charge?.areaCenti && charge.rate4 ? `${area(charge.areaCenti / 100)} м² × ${rate(charge.rate4)}` : '';
     return `<article class="rc">
-        <header><b>${escapeHtml(req.payeeName || 'ОСББ')}</b><span>Рахунок-квитанція за ${escapeHtml(periodName(period))}</span></header>
+        <header><b>${escapeHtml(req.payeeName || 'ОСББ')}</b><span>Рахунок-квитанція за ${escapeHtml(periodName(receiptPeriod))}</span></header>
         <div class="rc-body">
             <div class="rc-main">
                 <p class="rc-apt">Кв. ${escapeHtml(r.apt)}${a.personalAccount ? ` · о/р ${escapeHtml(a.personalAccount)}` : ''}${receiptArea ? ` · ${escapeHtml(area(receiptArea))} м²` : ''}</p>
                 ${receiptPartsHtml(r, comps, charge)}
                 <table><tbody>
-                    <tr><td>${r.opening < 0 ? 'Борг' : r.opening > 0 ? 'Переплата' : 'Залишок'} на ${escapeHtml(periodStart(period))}</td><td>${fmtKop(Math.abs(r.opening))}</td></tr>
+                    <tr><td>${r.opening < 0 ? 'Борг' : r.opening > 0 ? 'Переплата' : 'Залишок'} на ${escapeHtml(periodStart(receiptPeriod))}</td><td>${fmtKop(Math.abs(r.opening))}</td></tr>
                     <tr><td>Нараховано${calculation && !(charge.parts?.length > 1) ? ` (${escapeHtml(calculation)})` : ''}</td><td>${fmtKop(r.charged)}</td></tr>
                     <tr><td>Сплачено за місяць</td><td>${fmtKop(r.paid)}</td></tr>
                     <tr class="rc-total"><td>${due ? 'До сплати' : r.closing > 0 ? 'Переплата' : 'Розраховано'}</td><td>${fmtKop(due || r.closing)} грн</td></tr>
@@ -302,15 +444,15 @@ async function receiptHtml(r, a, req, period, qrcode, comps = []) {
     </article>`;
 }
 
-async function showReceipts(btn) {
+/** Квитанції: усі квартири з поточного фільтра відомості, або одна квартира. */
+async function showReceipts(btn, onlyApt = null) {
     setBusy(btn, true, 'Готую…');
     try {
-        const [st, req, { default: qrcode }] = await Promise.all([loadStatement(stPeriod), loadRequisites(), import('./vendor/qrcode.js')]);
+        const [st, req, { default: qrcode }] = await Promise.all([loadStatement(period), loadRequisites(), import('./vendor/qrcode.js')]);
         const extra = new Map(ctx.apartments.map(a => [a.apt, a]));
-        const rows = statementRows(st);
+        const rows = onlyApt ? st.rows.filter(r => r.apt === onlyApt) : filterStatement(st.rows, tab === 'statement' ? stFilter : 'all', tab === 'statement' ? stQuery : '');
         if (!rows.length) { toast('Немає квартир для квитанцій', 'error'); return; }
-        const cards = [];
-        for (const r of rows) cards.push(await receiptHtml(r, extra.get(r.apt) || {}, req, st.period, qrcode, st.components || []));
+        const cards = rows.map(r => receiptHtml(r, extra.get(r.apt) || {}, req, st.period, qrcode, st.components || []));
         let host = document.getElementById('buhPrint');
         if (!host) { host = document.createElement('div'); host.id = 'buhPrint'; document.body.appendChild(host); }
         host.innerHTML = `<div class="rc-bar"><b>Квитанції за ${escapeHtml(periodName(st.period))}: ${rows.length}</b>
@@ -324,7 +466,7 @@ async function showReceipts(btn) {
     } catch (e) {
         console.error('Квитанції:', e);
         toast('Не вдалося підготувати квитанції', 'error');
-    } finally { setBusy(btn, false); }
+    } finally { if (btn.isConnected) setBusy(btn, false); }
 }
 
 function downloadCsv(st) {
@@ -339,26 +481,27 @@ function downloadCsv(st) {
 // ------------------------------------------------------------
 // РОЗДІЛ
 // ------------------------------------------------------------
+let current = null;  // що зараз на екрані: { run, preview, st, next } — для Enter
 export async function loadChargesView() {
     [ctx, names] = await Promise.all([loadCharges(), loadStaffNames()]);
-    const host = document.getElementById('viewCharges');
-    if (!SEGMENTS[segment]) segment = 'month';
-    const body = segment === 'month' ? monthHtml() : segment === 'statement' ? await statementHtml()
-        : segment === 'tariffs' ? tariffsHtml() : premisesHtml();
-    host.innerHTML = `<div class="buh-seg ch-segs" role="tablist">${Object.entries(SEGMENTS).map(([k, v]) =>
-            `<button type="button" class="buh-seg-item${k === segment ? ' active' : ''}" data-seg="${k}">${v}</button>`).join('')}
-            <button type="button" class="buh-seg-item" data-go="settings" data-settings-tab="startup" title="Вхідні залишки квартир та вхідна ОСВ">Вхідні залишки (у Налаштуваннях) ›</button></div>
-        ${unfinishedHtml()}${body}`;
+    previews.clear();
+    const periods = periodsBetween(ctx.startPeriod, ctx.current);
+    if (!period || !periods.includes(period)) period = ctx.preview.period;
+    if (!TABS[tab]) tab = 'calc';
+    const run = ctx.runs.find(r => r.period === period) || null;
+    const [preview, st] = await Promise.all([previewFor(period), loadStatement(period).catch(() => null)]);
+    const stats = collectionStats(st);
+    ctx._deep = st ? filterStatement(st.rows, 'deep').length : 0;
+    const next = nextChargesAction({ period, run, preview, due: ctx.due, current: ctx.current, tariffs: ctx.tariffs, opening: ctx.opening?.set, unfinished: ctx.unfinished, stats });
+    current = { run, preview, st, next };
+    const pane = tab === 'statement' ? statementPane(st) : tab === 'tariffs' ? tariffsPane() : tab === 'premises' ? premisesPane(preview) : calcPane(run, preview);
+    document.getElementById('viewCharges').innerHTML = `${headHtml(run)}
+        ${nextHtml(next)}
+        ${kpisHtml(run, preview, stats)}
+        ${tabsHtml(st, preview)}
+        <div class="cg-pane" id="cgPane">${pane}</div>`;
+    if (sheet) renderSheet();
     return ctx.due.length + (ctx.unfinished?.length || 0);
-}
-
-const UNFINISHED = { run: 'нарахування', revert: 'скасування нарахування', opening: 'внесення вхідних залишків' };
-/** Перервана масова операція: дописати решту тим самим планом. */
-function unfinishedHtml() {
-    if (!ctx.unfinished?.length) return '';
-    return `<section class="buh-card ch-unfinished"><div class="buh-card-head"><h2>Операцію перервано посередині</h2></div>
-        <p>${ctx.unfinished.map(u => `${UNFINISHED[u.kind]}${u.kind === 'opening' ? '' : ` за ${escapeHtml(periodName(u.period))}`}`).join(', ')} — частину записів зроблено, частину ні. Система збереже план і допише решту: повтор нічого не подвоїть. Доти місяць не закривається.</p>
-        <button type="button" class="btn-primary btn-compact" data-act="resume">Завершити операцію</button></section>`;
 }
 
 /** «Завершити операцію» — з розділу чи з «Вхідних». */
@@ -369,36 +512,44 @@ export async function resumeCharges() {
 }
 
 /** Нарахувати місяць: сума, яку бачила людина, звіряється на сервері. */
-export async function runCharges(period, expectTotalKop) {
-    const preview = await chargeAct({ action: 'preview', period });
+export async function runCharges(runPeriod, expectTotalKop) {
+    const preview = await chargeAct({ action: 'preview', period: runPeriod });
     if (preview.problems?.length && !await confirmDialog('Нарахування неповне',
         `${preview.problems.length} прим. мають помилки: ${preview.problems.slice(0, 8).map(p => `${p.apt}: ${p.reason}`).join('; ')}. Буде нараховано лише коректні рядки. Попередні нарахування проблемних приміщень збережуться. Місяць залишиться неповним до виправлення даних.`, 'Нарахувати частково')) return null;
-    const r = await chargeAct({ action: 'run', period, expectTotalKop: expectTotalKop ?? preview.totalKop, allowPartial: Boolean(preview.problems?.length) });
-    toast(`Нараховано за ${periodName(period)}: ${r.count} прим., ${fmtKop(r.totalKop)} грн`, 'success');
+    const r = await chargeAct({ action: 'run', period: runPeriod, expectTotalKop: expectTotalKop ?? preview.totalKop, allowPartial: Boolean(preview.problems?.length) });
+    toast(`Нараховано за ${periodName(runPeriod)}: ${r.count} прим., ${fmtKop(r.totalKop)} грн`, 'success');
     if (r.problems?.length) toast(`Неповне нарахування: ${r.problems.length} прим. потребують виправлення — див. «Нарахування»`, 'info');
     return r;
 }
 
 async function onAction(btn) {
     const a = btn.dataset.act;
-    const period = btn.dataset.period;
+    const p = btn.dataset.period || period;
     try {
+        if (a === 'sheet-close') { closeSheet(); return; }
+        if (a === 'open-flat') { closeSheet(); openFlat(btn.dataset.apt); return; }
+        if (a === 'open-claim') { closeSheet(); openClaimCase(btn.dataset.apt); return; }
+        if (a === 'receipt-one') { await showReceipts(btn, btn.dataset.apt); return; }
+        if (a === 'receipts') { await showReceipts(btn); return; }
+        if (a === 'csv') { downloadCsv(await loadStatement(period)); return; }
+        if (a === 'tariff-new') { sheet = { kind: 'tariff', group: ctx.groups[0]?.id, component: ctx.components?.[0]?.id || 'main' }; renderSheet(); return; }
         if (a === 'resume') {
             setBusy(btn, true, 'Дописую…');
             await resumeCharges();
         } else if (a === 'run') {
             setBusy(btn, true, 'Нараховую…');
-            await runCharges(period, ctx.preview.period === period ? ctx.preview.totalKop : undefined);
+            const r = await runCharges(p, current?.preview?.period === p ? current.preview.totalKop : undefined);
+            if (!r) return;
         } else if (a === 'recalc') {
-            if (!await confirmDialog(`Перерахувати ${periodName(period)}?`, 'Суми буде перераховано за поточними площами й тарифами. Записи в історії квартир оновляться, баланси теж.', 'Перерахувати')) return;
+            if (!await confirmDialog(`Перерахувати ${periodName(p)}?`, 'Суми буде перераховано за поточними площами й тарифами. Записи в історії квартир оновляться, баланси теж.', 'Перерахувати')) return;
             setBusy(btn, true, 'Рахую…');
-            const r = await runCharges(period);
+            const r = await runCharges(p);
             if (!r) return;
             toast(r.changed ? `Перераховано: змінилося ${r.changed} прим.` : 'Суми не змінилися', 'success');
         } else if (a === 'revert') {
-            if (!await confirmDialog(`Скасувати нарахування за ${periodName(period)}?`, 'Записи «Нарахування» за цей місяць буде прибрано з історії всіх квартир, баланси перераховано.', 'Скасувати нарахування')) return;
+            if (!await confirmDialog(`Скасувати нарахування за ${periodName(p)}?`, 'Записи «Нарахування» за цей місяць буде прибрано з історії всіх квартир, баланси перераховано.', 'Скасувати нарахування')) return;
             setBusy(btn, true);
-            await chargeAct({ action: 'revert', period });
+            await chargeAct({ action: 'revert', period: p });
             toast('Нарахування скасовано', 'success');
         } else if (a === 'residents-bulk') {
             const rows = val('resBulk').split(/[\n,]+/).map(x => x.trim()).filter(Boolean).map(x => {
@@ -416,6 +567,7 @@ async function onAction(btn) {
             setBusy(btn, true);
             await chargeAct({ action: 'addTariff', component: val('tfComp'), group: val('tfGroup'), rate: val('tfRate'), from: val('tfFrom'), decision: val('tfDecision') });
             toast('Тариф додано', 'success');
+            sheet = { kind: 'tariff', group: val('tfGroup'), component: val('tfComp') };
         } else if (a === 'tariff-remove') {
             if (!await confirmDialog('Прибрати тариф?', 'Це можливо, лише поки за ним нічого не нараховано.', 'Прибрати')) return;
             await chargeAct({ action: 'removeTariff', id: btn.dataset.id });
@@ -429,58 +581,75 @@ async function onAction(btn) {
             setBusy(btn, true);
             await chargeAct({ action: 'setPremises', apts, group: val('prBulkGroup') });
             toast(`Збережено: ${apts.length} прим.`, 'success');
-        } else if (a === 'csv') {
-            downloadCsv(await loadStatement(stPeriod));
-        } else if (a === 'receipts') {
-            await showReceipts(btn);
-        }
+        } else return;
+        await loadChargesView();
     } catch (e) {
         toast(e.message, 'error');
-    } finally { setBusy(btn, false); }
+    } finally { if (btn.isConnected) setBusy(btn, false); }
 }
 
-const val = id => document.getElementById(id)?.value?.trim() || '';
+function rerenderPane(focusId) {
+    const pos = document.getElementById(focusId)?.selectionStart;
+    loadChargesView().then(() => {
+        const el = document.getElementById(focusId);
+        if (el) { el.focus(); if (pos !== undefined) el.setSelectionRange(pos, pos); }
+    }).catch(err => toast(err.message, 'error'));
+}
+
+function onClick(e) {
+    const t = e.target;
+    const tabBtn = t.closest('[data-tab]');
+    if (tabBtn) {
+        tab = tabBtn.dataset.tab;
+        if (tabBtn.dataset.filter) stFilter = tabBtn.dataset.filter;
+        loadChargesView().then(() => { if (tabBtn.closest('.cg-next, .cg-kpis')) document.getElementById('cgPane')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+        return;
+    }
+    const step = t.closest('[data-period-step]');
+    if (step && !step.disabled) { period = shiftPeriod(period, -Number(step.dataset.periodStep)); loadChargesView(); return; }
+    const go = t.closest('[data-goto]');
+    if (go) { period = go.dataset.goto; loadChargesView().then(() => window.scrollTo({ top: 0, behavior: 'smooth' })); return; }
+    const f = t.closest('[data-filter]');
+    if (f) { stFilter = f.dataset.filter; loadChargesView(); return; }
+    const pf = t.closest('[data-prfilter]');
+    if (pf) { prFilter = pf.dataset.prfilter; loadChargesView(); return; }
+    const cell = t.closest('[data-tariff]');
+    if (cell) { sheet = { kind: 'tariff', group: cell.dataset.tariff, component: cell.dataset.component }; renderSheet(); return; }
+    const btn = t.closest('[data-act]');
+    if (btn && !btn.disabled) { onAction(btn); return; }
+    const aptBtn = t.closest('.cg-st-row[data-apt], .cg-problem[data-apt], .cg-open[data-apt]');
+    if (aptBtn) { sheet = { kind: 'apt', apt: aptBtn.dataset.apt }; renderSheet(); }
+}
+
+async function onChange(e) {
+    const t = e.target;
+    if (t.id === 'cgPeriod') { period = t.value; loadChargesView(); return; }
+    const apt = t.closest('[data-apt]')?.dataset.apt;
+    if (!apt) return;
+    try {
+        if (t.classList.contains('cg-res')) {
+            await chargeAct({ action: 'setResidents', rows: [{ apt, residents: t.value.trim() }] });
+            toast(`Приміщення ${apt}: проживає ${t.value.trim() || '—'}`, 'success');
+        } else if (t.classList.contains('cg-grp')) {
+            await chargeAct({ action: 'setPremises', apts: [apt], group: t.value });
+            toast(`Приміщення ${apt}: група «${groupName(t.value)}»`, 'success');
+        } else return;
+        await loadChargesView();
+    } catch (err) { toast(err.message, 'error'); }
+}
 
 export function initChargesView(isActive) {
     const host = document.getElementById('viewCharges');
-    host.addEventListener('click', e => {
-        const seg = e.target.closest('[data-seg]');
-        if (seg) { segment = seg.dataset.seg; loadChargesView().catch(err => toast(err.message, 'error')); return; }
-        const f = e.target.closest('[data-stfilter]');
-        if (f) {
-            stFilter = f.dataset.stfilter;
-            host.querySelectorAll('[data-stfilter]').forEach(b => b.classList.toggle('active', b === f));
-            loadStatement(stPeriod).then(st => { document.getElementById('stTable').innerHTML = statementTable(st); });
-            return;
-        }
-        const btn = e.target.closest('[data-act]');
-        if (btn && !btn.disabled) onAction(btn);
-    });
+    host.addEventListener('click', onClick);
+    host.addEventListener('change', onChange);
     host.addEventListener('input', e => {
-        if (e.target.id === 'prQuery') document.getElementById('prTable').innerHTML = premisesRows();
-        if (e.target.id === 'stQuery') loadStatement(stPeriod).then(st => { document.getElementById('stTable').innerHTML = statementTable(st); });
+        if (e.target.id === 'cgStQuery') { stQuery = e.target.value; rerenderPane('cgStQuery'); }
+        if (e.target.id === 'cgPrQuery') { prQuery = e.target.value; rerenderPane('cgPrQuery'); }
     });
-    host.addEventListener('change', async e => {
-        if (e.target.id === 'stPeriod') { stPeriod = e.target.value; loadChargesView().catch(err => toast(err.message, 'error')); return; }
-        const res = e.target.closest('.pr-res');
-        if (res) {
-            try {
-                await chargeAct({ action: 'setResidents', rows: [{ apt: res.closest('[data-apt]').dataset.apt, residents: res.value.trim() }] });
-                toast('Збережено', 'success');
-            } catch (err) { toast(err.message, 'error'); }
-            return;
-        }
-        const select = e.target.closest('.pr-group');
-        if (!select) return;
-        try {
-            await chargeAct({ action: 'setPremises', apts: [select.closest('[data-apt]').dataset.apt], group: select.value });
-            toast('Збережено', 'success');
-        } catch (err) { toast(err.message, 'error'); }
-    });
-    // Enter на вкладці «Місяць» — нарахувати (як у «Вхідних»).
+    // Enter — нарахувати місяць, коли це головна дія (як у «Вхідних»).
     document.addEventListener('keydown', e => {
-        if (!isActive() || segment !== 'month' || e.key !== 'Enter' || e.target.matches('input, textarea, select, button, a') || document.querySelector('.confirm-overlay')) return;
-        const btn = host.querySelector('[data-act="run"]:not([disabled])');
-        if (btn) { e.preventDefault(); onAction(btn); }
+        if (!isActive() || e.key !== 'Enter' || sheet || e.target.matches('input, textarea, select, button, a') || document.querySelector('.confirm-overlay')) return;
+        const btn = host.querySelector('.cg-next [data-act="run"]:not([disabled])');
+        if (btn && current?.next?.key) { e.preventDefault(); onAction(btn); }
     });
 }
