@@ -269,7 +269,7 @@ function render() {
             <p><b>${isMartialLaw ? 'Воєнний стан' : 'Мирний час'}.</b> ${isMartialLaw
                 ? 'Стягувати борг через суд можна; пеню й штрафи населенню не нараховуємо (постанова КМУ № 206 у ред. № 1405).'
                 : 'Можна вимагати пеню за статутом, 3 % річних та інфляційні втрати (ст. 625 ЦК).'}</p>
-            <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="policy">Змінити ›</button>
+            <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="rules">Змінити ›</button>
         </div>
 
         <div class="cl-summary">
@@ -451,7 +451,7 @@ function courtResultHtml(res, saved = false) {
 function registersTabHtml(d) {
     const last = d.claim.lastCourtCheck;
     return `<div class="cl-pane" data-pane="registers"${tab === 'registers' ? '' : ' hidden'}>
-        <p class="buh-note">Пошук за ПІБ і РНОКПП боржника (вкладка «Боржник») у судовому реєстрі, розкладі засідань і АСВП — через YouControl (YouScore). Ключ — у «Налаштуваннях → Банк та інтеграції».</p>
+        <p class="buh-note">Пошук за ПІБ і РНОКПП боржника (вкладка «Боржник») у судовому реєстрі, розкладі засідань і АСВП — через YouControl (YouScore). Ключ — у «Налаштуваннях → Банк і сервіси».</p>
         <div class="cl-inline-actions">
             <button type="button" class="btn-soft btn-compact" data-act="court">Перевірити суди й виконавчі провадження</button>
             <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="bank">Ключ YouScore ›</button>

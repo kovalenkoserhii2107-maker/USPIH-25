@@ -5,7 +5,7 @@
 // Факт рахує сервер (budgetAction): документи витрат за місяцем
 // послуги й списання без документа. Кошторис затверджують збори — у
 // системі це запис протоколу; зміни до затвердженого — лише з новим.
-// Налаштування публічності номерів квартир винесено в «Налаштування → Облік, податки та правила».
+// Налаштування публічності номерів квартир винесено в «Налаштування → Правила».
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
 import { loadBudget, budgetAct, loadStaffNames, authorLabel } from './buh-data.js';
@@ -197,7 +197,7 @@ export async function loadBudgetView() {
         <section class="buh-card bd-public">
             <div class="buh-toolbar" style="justify-content:space-between">
                 <span class="buh-note"><b>Публічність звіту для мешканців:</b> ${ctx.showApartments ? 'номери квартир показуються у надходженнях та списку боржників (без прізвищ)' : 'номери квартир приховані (показується «Співвласник»)'}.</span>
-                <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="policy">Налаштування публічності ›</button>
+                <button type="button" class="btn-soft btn-compact" data-go="settings" data-settings-tab="rules">Налаштування публічності ›</button>
             </div>
         </section>
         ${b?.revisions?.length ? `<section class="buh-card"><div class="buh-card-head"><h2>Редакції</h2></div>
