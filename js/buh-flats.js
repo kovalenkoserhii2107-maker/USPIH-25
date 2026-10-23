@@ -14,6 +14,7 @@ import { audit } from './audit.js';
 import { loadCharges, loadDirectory } from './buh-data.js';
 import { fmtKop } from './charges-core.js';
 import { openCharges } from './buh-charges.js';
+import { openClaimCase } from './buh-claims.js';
 import { FILTERS, flatRows, flatCounts, filterFlats, ledgerRows, lastPayment, reconciliationCsv } from './flats-core.js';
 
 const SHOWN = 60;
@@ -76,6 +77,7 @@ function cardHtml(r, entries) {
             <button type="button" class="sv-btn" data-act="certificate" data-apt="${escapeHtml(r.apt)}">Довідка про стан розрахунків</button>
             <button type="button" class="sv-btn is-soft" data-act="csv" data-apt="${escapeHtml(r.apt)}"${entries ? '' : ' disabled'}>Акт звірки (CSV)</button>
             <button type="button" class="sv-btn is-soft" data-act="charges">Нарахування за місяць</button>
+            ${debt ? `<button type="button" class="sv-btn is-soft" data-act="claim" data-apt="${escapeHtml(r.apt)}">Претензійна справа ›</button>` : ''}
         </div>`;
 }
 
@@ -207,6 +209,7 @@ export function initFlatsView() {
         else if (a === 'certificate') certificate(btn, btn.dataset.apt);
         else if (a === 'csv') csv(btn.dataset.apt);
         else if (a === 'charges') openCharges('statement');
+        else if (a === 'claim') openClaimCase(btn.dataset.apt);
     });
     host.addEventListener('input', e => {
         if (e.target.id !== 'flSearch') return;

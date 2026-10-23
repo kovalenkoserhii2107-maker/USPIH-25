@@ -147,3 +147,31 @@ test("генерація договору реструктуризації бо�
     assert.match(text, /2\s*000,00\s*грн/); // 12 000 / 6 = 2 000 грн/міс
     assert.match(text, /своєчасно і в повному обсязі сплачувати щомісячні поточні внески/);
 });
+
+test("етап справи визначається статусом: суд, виконання, домовленість", () => {
+    assert.equal(claims.stageForStatus("court_order_issued"), "court_order");
+    assert.equal(claims.stageForStatus("lawsuit_filed"), "lawsuit");
+    assert.equal(claims.stageForStatus("restructured"), "pre_trial");
+    assert.equal(claims.claimStep("enforcement"), "enforce");
+    assert.equal(claims.claimStep("невідомий"), "start");
+});
+
+test("наступна дія: претензія з 3-го місяця, суд — після строку претензії", () => {
+    assert.equal(claims.nextClaimAction({ status: "none", months: 1 }).urgent, false);
+    const first = claims.nextClaimAction({ status: "none", months: 4 });
+    assert.deepEqual([first.doc, first.mark.status, first.urgent], ["claim", "claim", true]);
+    const waiting = claims.nextClaimAction({ status: "claim", claimDate: "2026-10-10", today: "2026-10-20" });
+    assert.equal(waiting.urgent, false);
+    assert.equal(waiting.waitUntil, "2026-10-24");
+    const court = claims.nextClaimAction({ status: "claim", claimDate: "2026-10-10", today: "2026-10-24" });
+    assert.deepEqual([court.doc, court.mark.status, court.urgent], ["court_order", "court_order_filed", true]);
+    assert.equal(claims.nextClaimAction({ status: "court_order_canceled" }).doc, "lawsuit");
+    assert.equal(claims.nextClaimAction({ status: "court_order_filed", courtOrderDate: "2026-09-01", today: "2026-10-23" }).urgent, true);
+});
+
+test("графік реструктуризації: рівні платежі, копійки — в останньому, місяці по черзі", () => {
+    const rows = claims.restructureSchedule({ debtKop: 100001, months: 3, start: "2026-11" });
+    assert.deepEqual(rows.map(r => r.amountKop), [33333, 33333, 33335]);
+    assert.deepEqual(rows.map(r => r.period), ["2026-11", "2026-12", "2027-01"]);
+    assert.equal(rows.reduce((s, r) => s + r.amountKop, 0), 100001);
+});

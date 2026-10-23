@@ -563,7 +563,134 @@ ${tableLines}
 М.П.`;
 }
 
+// ============================================================
+// ХІД СПРАВИ: кроки, наступна дія, графік реструктуризації.
+// Одна логіка для сервера (етап із статусу) і кабінету (підказки).
+// ============================================================
+
+/** Кроки, якими правління бачить справу. Статус — точніший стан усередині кроку. */
+const CLAIM_STEPS = {
+    start: "Без дій",
+    pretrial: "Претензія",
+    court: "Суд",
+    enforce: "Виконання",
+    agreement: "Реструктуризація",
+    closed: "Закрито"
+};
+
+const STATUS_STEP = {
+    none: "start",
+    warning: "pretrial",
+    claim: "pretrial",
+    restructured: "agreement",
+    court_order_filed: "court",
+    court_order_issued: "court",
+    court_order_canceled: "court",
+    lawsuit_filed: "court",
+    lawsuit_satisfied: "court",
+    enforcement: "enforce",
+    settled: "closed"
+};
+
+const STATUS_STAGE = {
+    none: "pre_trial",
+    warning: "pre_trial",
+    claim: "pre_trial",
+    restructured: "pre_trial",
+    court_order_filed: "court_order",
+    court_order_issued: "court_order",
+    court_order_canceled: "court_order",
+    lawsuit_filed: "lawsuit",
+    lawsuit_satisfied: "lawsuit",
+    enforcement: "enforcement",
+    settled: "settled"
+};
+
+/** Скільки чекати оплату після претензії: 10 днів у тексті вимоги + доставка листа. */
+const PRETRIAL_WAIT_DAYS = 14;
+/** Через скільки днів після подання до суду варто перевірити, чи є рішення. */
+const COURT_CHECK_DAYS = 30;
+
+const claimStep = status => STATUS_STEP[status] || "start";
+const stageForStatus = status => STATUS_STAGE[status] || "pre_trial";
+
+function addDays(iso, days) {
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return "";
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + days));
+    return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Що робити далі зі справою. urgent — дія вже на часі (потрапляє в «Потребують дії»);
+ * doc — документ, який треба сформувати; mark — у який статус перевести справу
+ * після надсилання й яку дату записати; check — що перевірити в реєстрах.
+ */
+function nextClaimAction({ status = "none", months = 0, claimDate = "", courtOrderDate = "", lawsuitDate = "", today = new Date().toISOString().slice(0, 10) } = {}) {
+    const overdue = Number(months || 0) >= 3;
+    switch (status) {
+        case "none":
+            return overdue
+                ? { key: "claim", title: "Надіслати досудову претензію", hint: "Борг понад 3 місяці. Претензія — перший офіційний крок і доказ для суду.", doc: "claim", mark: { status: "claim", dateField: "claimDate" }, urgent: true }
+                : { key: "warning", title: "Нагадати про борг", hint: "Борг до 3 місяців — достатньо нагадування. Претензію готують з 3-го місяця прострочення.", mark: { status: "warning", dateField: "claimDate" }, urgent: false };
+        case "warning":
+            return overdue
+                ? { key: "claim", title: "Надіслати досудову претензію", hint: "Нагадування не допомогло, борг понад 3 місяці.", doc: "claim", mark: { status: "claim", dateField: "claimDate" }, urgent: true }
+                : { key: "wait", title: "Чекаємо оплату після нагадування", hint: "Якщо борг досягне 3 місяців — готуйте претензію.", urgent: false };
+        case "claim": {
+            const due = addDays(claimDate, PRETRIAL_WAIT_DAYS);
+            if (due && today < due) {
+                return { key: "wait", title: `Чекаємо оплату до ${due.split("-").reverse().join(".")}`, hint: "Строк добровільної сплати за претензією ще не минув.", waitUntil: due, urgent: false };
+            }
+            return { key: "court_order", title: "Подати заяву про судовий наказ", hint: "Строк претензії минув. До заяви додайте довідку-розрахунок боргу; судовий збір — 0,1 прожиткового мінімуму.", doc: "court_order", mark: { status: "court_order_filed", dateField: "courtOrderDate" }, urgent: true };
+        }
+        case "court_order_filed": {
+            const late = courtOrderDate && today >= addDays(courtOrderDate, COURT_CHECK_DAYS);
+            return { key: "court_wait", title: late ? "Перевірити, чи видано судовий наказ" : "Суд розглядає заяву", hint: "Наказ видають протягом 5 днів (ст. 167 ЦПК). Стан справи видно в судовому реєстрі.", check: "court", urgent: Boolean(late) };
+        }
+        case "court_order_issued":
+            return { key: "enforce", title: "Передати судовий наказ до виконавчої служби", hint: "Якщо боржник за 15 днів не подав заяву про скасування (ст. 170 ЦПК), наказ набирає сили — пред'явіть його до ДВС.", mark: { status: "enforcement", dateField: "enforcementDate" }, urgent: true };
+        case "court_order_canceled":
+            return { key: "lawsuit", title: "Подати позовну заяву", hint: "Наказ скасовано — стягнення продовжується в позовному провадженні (ст. 171 ЦПК).", doc: "lawsuit", mark: { status: "lawsuit_filed", dateField: "lawsuitDate" }, urgent: true };
+        case "lawsuit_filed": {
+            const late = lawsuitDate && today >= addDays(lawsuitDate, COURT_CHECK_DAYS * 2);
+            return { key: "court_wait", title: late ? "Перевірити хід розгляду позову" : "Суд розглядає позов", hint: "Дати засідань і рішення — у судовому реєстрі.", check: "court", urgent: Boolean(late) };
+        }
+        case "lawsuit_satisfied":
+            return { key: "enforce", title: "Передати рішення до виконавчої служби", hint: "Отримайте виконавчий лист і пред'явіть його до ДВС або приватного виконавця.", mark: { status: "enforcement", dateField: "enforcementDate" }, urgent: true };
+        case "enforcement":
+            return { key: "enforce_wait", title: "Контроль виконавчого провадження", hint: "Перевіряйте стан провадження в АСВП і надходження оплат.", check: "court", urgent: false };
+        case "restructured":
+            return { key: "schedule", title: "Контроль графіка погашення", hint: "Якщо платежі за графіком припиняться — повертайтеся до претензії або суду.", doc: "restructure", urgent: false };
+        case "settled":
+            return { key: "done", title: "Справу закрито", hint: "Борг погашено.", urgent: false };
+        default:
+            return { key: "none", title: "Оберіть стан справи", hint: "", urgent: false };
+    }
+}
+
+/** Графік реструктуризації: рівні щомісячні платежі, залишок копійок — в останньому. */
+function restructureSchedule({ debtKop = 0, months = 6, start = "" } = {}) {
+    const total = Math.abs(Math.round(Number(debtKop || 0)));
+    const n = Math.min(36, Math.max(1, Math.round(Number(months || 1))));
+    const base = Math.floor(total / n);
+    const m = String(start || "").match(/^(\d{4})-(\d{2})/);
+    const y0 = m ? +m[1] : new Date().getFullYear();
+    const mo0 = m ? +m[2] - 1 : new Date().getMonth();
+    return Array.from({ length: n }, (_, i) => {
+        const d = new Date(Date.UTC(y0, mo0 + i, 1));
+        return { n: i + 1, period: d.toISOString().slice(0, 7), amountKop: i === n - 1 ? total - base * (n - 1) : base };
+    });
+}
+
 module.exports = {
+    CLAIM_STEPS,
+    PRETRIAL_WAIT_DAYS,
+    COURT_CHECK_DAYS,
+    claimStep,
+    stageForStatus,
+    nextClaimAction,
+    restructureSchedule,
     COURT_DEFAULT_NAME,
     COURT_DEFAULT_ADDRESS,
     DEFAULT_HOUSE_ADDRESS,
