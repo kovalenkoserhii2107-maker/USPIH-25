@@ -1090,6 +1090,9 @@ body.buh-mode .field-input { border-radius: 14px; }
 }
 .ex-form-grid > .field, .ex-form-grid > .am-check { margin: 0; min-width: 0; }
 .ex-form-grid > .ex-full, .ex-form .pay-wide { grid-column: 1 / -1; }
+.ex-form .pay-span-2 { grid-column: span 2; }
+@media (max-width: 900px) { .ex-form .pay-span-2 { grid-column: auto; } }
+#sfCode { min-width: 185px; flex: 1 1 190px; font-variant-numeric: tabular-nums; letter-spacing: 0.03em; font-weight: 600; }
 .ex-form .field-input { width: 100%; box-sizing: border-box; min-height: 44px; }
 .sf-code-row {
     display: grid;

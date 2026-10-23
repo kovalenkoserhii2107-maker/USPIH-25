@@ -117,4 +117,67 @@ describe('YouScore API v1 integration module (Sandbox, Async Polling & Helpers)'
         assert.equal(res.objects[0].matchesHouse, true);
         assert.equal(res.objects[0].matchesApt, true);
     });
+
+    it('extracts director, KVEDs, and parent VAT code for branch (Filia Odeslift 38924328)', async () => {
+        const mockFetch = async (urlStr) => {
+            const u = new URL(urlStr);
+            if (u.pathname === '/v1/usr/38924328') {
+                return {
+                    status: 200,
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        name: {
+                            fullName: 'ФІЛІЯ "ОДЕСЛІФТ" ПРИВАТНОГО АКЦІОНЕРНОГО ТОВАРИСТВА "ВИРОБНИЧЕ ОБ\'ЄДНАННЯ "СТАЛЬКАНАТ-СІЛУР"',
+                            shortName: 'ФІЛІЯ "ОДЕСЛІФТ" ПРАТ "ВО "СТАЛЬКАНАТ-СІЛУР"'
+                        },
+                        code: '38924328',
+                        legalForm: 'ФІЛІЯ (ІНШИЙ ВІДОКРЕМЛЕНИЙ ПІДРОЗДІЛ)',
+                        status: 'Не перебуває в процесі припинення',
+                        address: 'Україна, 65003, Одеська обл., місто Одеса, ВУЛИЦЯ ОТАМАНА ЧЕПІГИ, будинок 34',
+                        contacts: { phone: '0487231171', additionalPhone: '0487231173' },
+                        signers: null,
+                        activityTypes: [
+                            { code: '28.22', description: 'Виробництво підіймального та вантажно-розвантажувального устатковання', isMain: false },
+                            { code: '43.21', description: 'Електромонтажні роботи', isMain: false }
+                        ]
+                    })
+                };
+            }
+            if (u.pathname === '/v1/vat/26209430') {
+                return {
+                    status: 200,
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        code: '262094315013',
+                        registrationDate: '2002-04-29T00:00:00+03:00',
+                        note: 'Зареєстровано'
+                    })
+                };
+            }
+            if (u.pathname === '/v1/usr/26209430') {
+                return {
+                    status: 200,
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        code: '26209430',
+                        branches: [
+                            {
+                                code: '38924328',
+                                name: 'ФІЛІЯ "ОДЕСЛІФТ"',
+                                manager: { name: 'Бондаренко Михайло Олексійович', role: 'Директор, керівник' }
+                            }
+                        ]
+                    })
+                };
+            }
+            return { status: 404, ok: false, text: async () => '' };
+        };
+
+        const card = await youscore.checkCounterpartyFull('real_prod_api_key_123456', '38924328', { fetchImpl: mockFetch });
+        assert.equal(card.found, true);
+        assert.equal(card.director, 'Бондаренко Михайло Олексійович');
+        assert.equal(card.vatCode, '262094315013');
+        assert.ok(card.taxSystem.includes('платник ПДВ'));
+        assert.ok(card.mainKved.startsWith('28.22'));
+    });
 });

@@ -573,25 +573,25 @@ function supplierFormHtml(s = {}) {
             <button type="button" class="btn-ghost-small" data-act="close">Закрити</button>
         </div>
         <div class="pay-grid">
-            <label class="field"><span class="field-label">ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)</span>
-                <div style="display:flex;gap:8px;align-items:center">
-                    <input id="sfCode" class="field-input" inputmode="numeric" maxlength="10" value="${escapeHtml(s.code || "")}" placeholder="8 або 10 цифр">
-                    <button type="button" class="sv-btn is-soft btn-compact" data-act="check-supplier" style="white-space:nowrap" title="Підтягнути повні дані з ЄДРПОУ, ПДВ, Єдиного податку, судів та виконавчих проваджень через YouScore API">🔍 Заповнити з ЄДР (YouControl)</button>
+            <label class="field pay-span-2"><span class="field-label">ЄДРПОУ (8 цифр) або РНОКПП (10 цифр)</span>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <input id="sfCode" class="field-input" inputmode="numeric" maxlength="10" style="min-width:185px;flex:1 1 190px;font-variant-numeric:tabular-nums;letter-spacing:0.03em;font-weight:600" value="${escapeHtml(s.code || "")}" placeholder="8 або 10 цифр">
+                    <button type="button" class="sv-btn is-soft btn-compact" data-act="check-supplier" style="white-space:nowrap;flex:0 0 auto" title="Підтягнути повні дані з ЄДРПОУ, ПДВ, Єдиного податку, судів та виконавчих проваджень через YouScore API">🔍 Заповнити з ЄДР (YouControl)</button>
                 </div>
             </label>
             <label class="field"><span class="field-label">Тип контрагента</span><select id="sfKind" class="field-input field-select">${options(ctx.kinds, s.kind || "company")}</select></label>
             <div id="sfEdrStatus" class="buh-note pay-wide"${s.edrStatusHtml ? "" : " hidden"}>${s.edrStatusHtml || ""}</div>
-            <label class="field"><span class="field-label">Скорочена робоча назва</span><input id="sfName" class="field-input" maxlength="200" value="${escapeHtml(s.name || "")}" placeholder="ТОВ «Ліфт-Сервіс» або ФОП Іваненко І. І."></label>
+            <label class="field pay-span-2"><span class="field-label">Скорочена робоча назва</span><input id="sfName" class="field-input" maxlength="200" value="${escapeHtml(s.name || "")}" placeholder="ТОВ «Ліфт-Сервіс» або ФОП Іваненко І. І."></label>
             <label class="field"><span class="field-label">Організаційно-правова форма</span><input id="sfLegalForm" class="field-input" maxlength="160" value="${escapeHtml(s.legalForm || "")}" placeholder="ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ"></label>
             <label class="field pay-wide"><span class="field-label">Повне офіційне найменування (з ЄДР)</span><input id="sfFullName" class="field-input" maxlength="300" value="${escapeHtml(s.fullName || "")}" placeholder="Підтягується автоматично з ЄДРПОУ"></label>
-            <label class="field"><span class="field-label">Керівник / підписант</span><input id="sfDirector" class="field-input" maxlength="200" value="${escapeHtml(s.director || "")}" placeholder="ПІБ керівника з ЄДР"></label>
+            <label class="field pay-span-2"><span class="field-label">Керівник / підписант</span><input id="sfDirector" class="field-input" maxlength="200" value="${escapeHtml(s.director || "")}" placeholder="ПІБ керівника з ЄДР"></label>
             <label class="field"><span class="field-label">Статус державної реєстрації</span><input id="sfRegStatus" class="field-input" maxlength="160" value="${escapeHtml(s.registrationStatus || "")}" placeholder="Не перебуває в процесі припинення"></label>
             <label class="field pay-wide"><span class="field-label">Юридична адреса (місцезнаходження)</span><input id="sfAddress" class="field-input" maxlength="300" value="${escapeHtml(s.address || "")}" placeholder="Україна, індекс, місто, вулиця, будинок"></label>
             <label class="field"><span class="field-label">Телефон (з ЄДР / контактний)</span><input id="sfPhone" class="field-input" maxlength="80" value="${escapeHtml(s.phone || "")}" placeholder="+380…"></label>
             <label class="field"><span class="field-label">Електронна пошта (Email)</span><input id="sfEmail" class="field-input" maxlength="120" value="${escapeHtml(s.email || "")}" placeholder="mail@company.ua"></label>
             <label class="field"><span class="field-label">Система оподаткування (ДПС)</span><input id="sfTaxSystem" class="field-input" maxlength="160" value="${escapeHtml(s.taxSystem || "")}" placeholder="Платник ПДВ / Єдиний податок 3 група (5%)"></label>
             <label class="field"><span class="field-label">ІПН платника ПДВ (якщо є)</span><input id="sfVatCode" class="field-input" maxlength="20" value="${escapeHtml(s.vatCode || "")}" placeholder="12-значний ІПН ПДВ"></label>
-            <label class="field pay-wide"><span class="field-label">Основний вид діяльності (КВЕД)</span><input id="sfMainKved" class="field-input" maxlength="240" value="${escapeHtml(s.mainKved || "")}" placeholder="43.21 Електромонтажні роботи"></label>
+            <label class="field pay-span-2"><span class="field-label">Основний вид діяльності (КВЕД)</span><input id="sfMainKved" class="field-input" maxlength="240" value="${escapeHtml(s.mainKved || "")}" placeholder="43.21 Електромонтажні роботи"></label>
             <label class="field pay-wide"><span class="field-label">IBAN для безготівкової оплати</span><input id="sfIban" class="field-input" maxlength="34" value="${escapeHtml(s.iban || "")}" placeholder="UA…"></label>
             <label class="am-check pay-wide" id="sfFopRow"${(s.kind || "company") === "fop" ? "" : " hidden"}><input type="checkbox" id="sfFop"${s.fopChecked ? " checked" : ""}><span>Витяг з ЄДР і КВЕД перевірено: послуга відповідає видам діяльності ФОП (п. 177.8 ПКУ)</span></label>
             <label class="field pay-wide"><span class="field-label">Примітка (перелік КВЕД, контакти, комплаєнс)</span><input id="sfNote" class="field-input" maxlength="300" value="${escapeHtml(s.note || "")}"></label>
@@ -1123,7 +1123,10 @@ async function checkSupplierEdr(btn) {
         }
         const setField = (id, v) => {
             const el = document.getElementById(id);
-            if (el && v) { el.value = v; flashField(id); }
+            if (!el) return;
+            const str = String(v ?? "").trim();
+            el.value = str;
+            if (str) flashField(id);
         };
         const phoneVal = d.phone || d.contacts?.phone || d.contacts?.additionalPhone || "";
         const emailVal = d.email || d.contacts?.email || "";
