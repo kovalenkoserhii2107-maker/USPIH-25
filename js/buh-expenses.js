@@ -580,7 +580,7 @@ function supplierFormHtml(s = {}) {
                 </div>
             </label>
             <label class="field"><span class="field-label">Тип контрагента</span><select id="sfKind" class="field-input field-select">${options(ctx.kinds, s.kind || "company")}</select></label>
-            <div id="sfEdrStatus" class="buh-note pay-wide" hidden></div>
+            <div id="sfEdrStatus" class="buh-note pay-wide"${s.edrStatusHtml ? "" : " hidden"}>${s.edrStatusHtml || ""}</div>
             <label class="field"><span class="field-label">Скорочена робоча назва</span><input id="sfName" class="field-input" maxlength="200" value="${escapeHtml(s.name || "")}" placeholder="ТОВ «Ліфт-Сервіс» або ФОП Іваненко І. І."></label>
             <label class="field"><span class="field-label">Організаційно-правова форма</span><input id="sfLegalForm" class="field-input" maxlength="160" value="${escapeHtml(s.legalForm || "")}" placeholder="ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ"></label>
             <label class="field pay-wide"><span class="field-label">Повне офіційне найменування (з ЄДР)</span><input id="sfFullName" class="field-input" maxlength="300" value="${escapeHtml(s.fullName || "")}" placeholder="Підтягується автоматично з ЄДРПОУ"></label>
@@ -1117,6 +1117,7 @@ async function checkSupplierEdr(btn) {
         const box = document.getElementById("sfEdrStatus");
         if (!d.found) {
             if (box) { box.hidden = false; box.textContent = d.needRetry ? "Запит в ЄДР ще обробляється (202 Update in progress) — натисніть кнопку ще раз за кілька секунд." : "У ЄДР запис за цим кодом не знайдено."; }
+            form = snapshotForm();
             toast("У ЄДР ще немає відповіді або код не знайдено", "info");
             return;
         }
@@ -1124,21 +1125,30 @@ async function checkSupplierEdr(btn) {
             const el = document.getElementById(id);
             if (el && v) { el.value = v; flashField(id); }
         };
+        const phoneVal = d.phone || d.contacts?.phone || d.contacts?.additionalPhone || "";
+        const emailVal = d.email || d.contacts?.email || "";
+        const taxSystemVal = d.taxSystem || d.taxSummary || "";
+        const vatCodeVal = d.vatCode || d.taxInfo?.vatCode || d.vat?.code || "";
+        const fmtKved = k => typeof k === "string" ? k.trim() : (k && (k.code || k.name) ? `${k.code || ""} ${k.name || ""}`.trim() : "");
+        const mainKv = fmtKved(d.mainKved) || fmtKved((d.kveds || [])[0]);
+        const capitalVal = Number(d.capital || d.foundingCapital || d.authorizedCapital || 0);
+        const enfTotal = d.enforcementTotal ?? d.totalEnforcements ?? d.totalPenalties;
+        const expressVal = d.expressIndex || d.expressScore || "";
+
         setField("sfName", d.shortName || d.name);
         setField("sfFullName", d.fullName || d.name);
         setField("sfLegalForm", d.legalForm || (code.length === 10 ? "ФІЗИЧНА ОСОБА — ПІДПРИЄМЕЦЬ" : ""));
         setField("sfDirector", d.director || "");
         setField("sfRegStatus", d.stateText || "");
         setField("sfAddress", d.address || "");
-        setField("sfPhone", d.phone || "");
-        setField("sfEmail", d.email || "");
-        setField("sfTaxSystem", d.taxSystem || "");
-        setField("sfVatCode", d.vatCode || "");
-        const mainKv = d.mainKved ? `${d.mainKved.code} ${d.mainKved.name}` : ((d.kveds || [])[0] ? `${d.kveds[0].code} ${d.kveds[0].name}` : "");
+        setField("sfPhone", phoneVal);
+        setField("sfEmail", emailVal);
+        setField("sfTaxSystem", taxSystemVal);
+        setField("sfVatCode", vatCodeVal);
         setField("sfMainKved", mainKv);
         if (document.getElementById("sfTaxDebt")) document.getElementById("sfTaxDebt").value = String(d.taxDebtTotal || 0);
         if (document.getElementById("sfOpenPenalties")) document.getElementById("sfOpenPenalties").value = String(d.openPenalties || 0);
-        if (document.getElementById("sfExpressIndex")) document.getElementById("sfExpressIndex").value = d.expressIndex || "";
+        if (document.getElementById("sfExpressIndex")) document.getElementById("sfExpressIndex").value = expressVal;
 
         const kindEl = document.getElementById("sfKind");
         if (kindEl) {
@@ -1146,35 +1156,39 @@ async function checkSupplierEdr(btn) {
             const fopRow = document.getElementById("sfFopRow");
             if (fopRow) fopRow.hidden = kindEl.value !== "fop";
         }
-        const kvedStr = (d.kveds || []).slice(0, 4).map(k => `${k.code} ${k.name}`).join("; ");
+        const kvedStr = (d.kveds || []).slice(0, 4).map(fmtKved).filter(Boolean).join("; ");
         const noteParts = [
             kvedStr ? `КВЕД: ${kvedStr}` : "",
-            d.taxSystem ? `Оподаткування: ${d.taxSystem}` : "",
-            d.capital ? `Статутний капітал: ${Number(d.capital).toLocaleString("uk-UA")} грн` : ""
+            taxSystemVal ? `Оподаткування: ${taxSystemVal}` : "",
+            capitalVal > 0 ? `Статутний капітал: ${capitalVal.toLocaleString("uk-UA")} грн` : ""
         ].filter(Boolean).join(" · ");
-        if (noteParts && !val("sfNote")) {
-            setField("sfNote", noteParts.slice(0, 300));
+        if ((noteParts || d.formattedNote) && !val("sfNote")) {
+            setField("sfNote", (noteParts || d.formattedNote).slice(0, 300));
         }
         if (code.length === 10 && d.isRegistered && (d.kveds || []).length && document.getElementById("sfFop")) {
             document.getElementById("sfFop").checked = true;
         }
         if (box) {
             box.hidden = false;
-            const srcBadge = d.source === "youscore_sandbox"
+            const isSandbox = d.sandbox || d.source === "youscore_sandbox" || d.provider === "youscore-sandbox";
+            const isYouscore = isSandbox || d.source === "youscore" || d.provider === "youscore";
+            const srcBadge = isSandbox
                 ? "<span class=\"doc-recog-badge\">YouScore Sandbox (тестові дані)</span>"
-                : d.source === "youscore"
+                : isYouscore
                     ? "<span class=\"doc-recog-badge\">✓ YouScore API (YouControl)</span>"
                     : "<span class=\"doc-recog-badge\">✓ Приват24 ЄДР</span>";
             const risks = (d.riskFlags || []).length
                 ? `<br><b style="color:#b42318">⚠️ Фактори ризику: ${escapeHtml(d.riskFlags.join("; "))}</b>`
                 : ` · <span style="color:#15803d">Ризиків ДПС, банкрутства чи ВП не виявлено</span>`;
             const extraStats = [
-                d.expressIndex ? `Індекс Експрес-аналізу: <b>${escapeHtml(d.expressIndex)}</b>` : "",
+                expressVal ? `Індекс Експрес-аналізу: <b>${escapeHtml(String(expressVal))}</b>` : "",
                 d.courtTotal !== undefined ? `Судових документів: <b>${d.courtTotal}</b>` : "",
-                d.enforcementTotal !== undefined ? `Виконавчих проваджень: <b>${d.enforcementTotal}</b> (відкритих: ${d.openPenalties || 0})` : ""
+                enfTotal !== undefined ? `Виконавчих проваджень: <b>${enfTotal}</b> (відкритих: ${d.openPenalties || 0})` : ""
             ].filter(Boolean).join(" · ");
             box.innerHTML = `${srcBadge} <b>${escapeHtml(d.fullName || d.name || d.edrpou)}</b> (${escapeHtml(d.stateText || "зареєстровано")})${extraStats ? `<br><span>${extraStats}</span>` : ""}${risks}`;
         }
+        // Зберігаємо заповнені реквізити у стан форми, щоб вони не стиралися при оновленні подання
+        form = snapshotForm();
         toast(d.isSafe ? "Картку контрагента заповнено з реєстрів YouControl" : "Дані підтягнуто — зверніть увагу на фактори ризику!", d.isSafe ? "success" : "info");
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(btn, false); }
@@ -1182,10 +1196,12 @@ async function checkSupplierEdr(btn) {
 
 async function saveYouscoreKey(btn) {
     const key = val("ycApiKeyInput") || "YOUSCORE_TEST_KEY_USPIH25_SANDBOX";
+    form = snapshotForm();
     setBusy(btn, true, "Перевіряю ключ…");
     try {
-        const r = await expAct({ action: "setYouscoreKey", apiKey: key });
-        toast(r.sandbox ? "Увімкнено тестовий Sandbox-режим YouScore" : `Ключ YouScore збережено (${r.masked})`, "success");
+        const isSandbox = key === "YOUSCORE_TEST_KEY_USPIH25_SANDBOX";
+        const r = await expAct({ action: "youscoreKey", apiKey: isSandbox ? "" : key, sandbox: isSandbox });
+        toast(r.sandbox ? "Увімкнено тестовий Sandbox-режим YouScore" : `Ключ YouScore збережено (${r.masked || "підключено"})`, "success");
         await loadExpensesView();
     } catch (e) { toast(e.message, "error"); }
     finally { if (btn.isConnected) setBusy(btn, false); }
@@ -1249,7 +1265,10 @@ function snapshotForm() {
         code: val("sfCode"),
         iban: val("sfIban"),
         fopChecked: document.getElementById("sfFop")?.checked === true,
-        note: val("sfNote")
+        note: val("sfNote"),
+        edrStatusHtml: document.getElementById("sfEdrStatus") && !document.getElementById("sfEdrStatus").hidden
+            ? document.getElementById("sfEdrStatus").innerHTML
+            : (form.data?.edrStatusHtml || "")
     } };
     if (form?.kind === "doc") return { ...form, data: { ...form.data, supplierId: val("dfSupplier"), contractId: val("dfContract"), docType: val("dfType"), number: val("dfNumber"), date: val("dfDate"),
         period: val("dfPeriod"), amountKop: toKop(val("dfAmount")) || null, vatKop: toKop(val("dfVat")) || 0, item: val("dfItem"), description: val("dfDesc"), linkedTo: val("dfLinked") || form.data.linkedTo || "",
@@ -1505,6 +1524,7 @@ export function initExpensesView() {
             else if (a === 'save-doc') await saveDoc(btn);
             else if (a === 'save-contract') await saveContract(btn);
             else if (a === 'check-supplier') await checkSupplierEdr(btn);
+            else if (a === 'save-youscore-key') await saveYouscoreKey(btn);
             else if (a === 'save-supplier') await saveSupplier(btn);
             else if (a === 'approve-doc') await decideExpense(doc, true);
             else if (a === 'reject-doc') await decideExpense(doc, false);

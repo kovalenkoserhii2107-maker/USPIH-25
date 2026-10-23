@@ -394,7 +394,7 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
 
     // Виконуємо паралельні запити до основних реєстрів YouScore (з параметром showCurrentData=true для миттєвої відповіді)
     const [usrRes, vatRes, singleTaxRes, nonProfitRes, taxDebtRes, enfRes, courtRes] = await Promise.all([
-        requestYouscore(apiKey, `/v1/usr/${clean}`, { query: { showCurrentData: true }, maxPolls: 2, fetchImpl }).catch(() => ({ status: 500, data: null })),
+        requestYouscore(apiKey, `/v1/usr/${clean}`, { query: { showCurrentData: true }, maxPolls: 4, fetchImpl }).catch(() => ({ status: 500, data: null })),
         requestYouscore(apiKey, `/v1/vat/${clean}`, { query: { showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })),
         requestYouscore(apiKey, `/v1/singleTax/${clean}`, { query: { showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })),
         !isFop ? requestYouscore(apiKey, `/v1/nonProfitCompanies/${clean}`, { query: { showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })) : Promise.resolve({ status: 404, data: null }),
@@ -540,7 +540,18 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
         founders,
         kveds,
         mainKved,
+        phone: contacts.phone || contacts.additionalPhone || '',
+        email: contacts.email || '',
+        webSite: contacts.webSite || '',
         contacts,
+        taxSystem: nonProfit
+            ? `Неприбуткова організація${nonProfit.nonProfitSign ? ` (ознака ${nonProfit.nonProfitSign})` : ''}`
+            : singleTax
+                ? `Єдиний податок ${singleTax.group || ''} група${singleTax.rate ? ` (${singleTax.rate})` : ''}${vat ? ', платник ПДВ' : ', без ПДВ'}`.replace(/\s+/g, ' ').trim()
+                : vat
+                    ? 'Загальна система, платник ПДВ'
+                    : 'Загальна система (без ПДВ)',
+        vatCode: vat?.code || '',
         taxInfo: {
             isVatPayer: Boolean(vat),
             vatCode: vat?.code || null,
@@ -648,12 +659,51 @@ function buildSandboxDebtorCourtData({ apt, ownerName, ownerCode }) {
     };
 }
 
-async function checkDebtorCourtAndEnforcement(apiKey, { apt, ownerName, ownerCode, birthday }, options = {}) {
-    const cleanCode = String(ownerCode || '').replace(/\s+/g, '').trim();
-    const parsedName = parseFullName(ownerName);
+function enrichCourtResponse(raw) {
+    const courtCases = (raw.courtCases || []).map(c => ({
+        ...c,
+        date: c.date || c.incomeDate || c.documents?.[0]?.registerInsertDate || '',
+        subject: c.subject || c.caseSubject || '',
+        category: c.category || c.caseCategory || ''
+    }));
+    const scheduledHearings = (raw.scheduledHearings || []).map(h => ({
+        ...h,
+        caseNumber: h.caseNumber || h.courtCaseNumber || ''
+    }));
+    const enforcements = (raw.enforcements || []).map(ep => ({
+        ...ep,
+        state: ep.state || ep.enforcementState || '',
+        creditor: ep.creditor || ep.creditorName || '',
+        executor: ep.executor || ep.executorName || '',
+        department: ep.department || ep.departmentName || ''
+    }));
+    const totalCases = courtCases.length;
+    const totalHearings = scheduledHearings.length;
+    const totalEnforcements = enforcements.length;
+    return {
+        ...raw,
+        isSandbox: Boolean(raw.sandbox || raw.isSandbox),
+        courtCases,
+        scheduledHearings,
+        enforcements,
+        totalCases,
+        totalHearings,
+        totalEnforcements,
+        summary: {
+            totalCases,
+            scheduledCount: totalHearings,
+            totalEnforcements
+        }
+    };
+}
+
+async function checkDebtorCourtAndEnforcement(apiKey, { apt, ownerName, fullName, ownerCode, code, birthday } = {}, options = {}) {
+    const effectiveName = ownerName || fullName || '';
+    const cleanCode = String(ownerCode || code || '').replace(/\s+/g, '').trim();
+    const parsedName = parseFullName(effectiveName);
 
     if (isSandboxKey(apiKey)) {
-        return buildSandboxDebtorCourtData({ apt, ownerName, ownerCode: cleanCode });
+        return enrichCourtResponse(buildSandboxDebtorCourtData({ apt, ownerName: effectiveName, ownerCode: cleanCode }));
     }
 
     const fetchImpl = options.fetchImpl;
@@ -717,10 +767,10 @@ async function checkDebtorCourtAndEnforcement(apiKey, { apt, ownerName, ownerCod
         }
 
         const enfResults = Array.isArray(enfRes.data?.results) ? enfRes.data.results : [];
-        return {
+        return enrichCourtResponse({
             source: 'youscore',
             sandbox: false,
-            searchedPerson: ownerName || cleanCode,
+            searchedPerson: effectiveName || cleanCode,
             searchedCode: cleanCode,
             courtCases,
             scheduledHearings: [],
@@ -731,12 +781,12 @@ async function checkDebtorCourtAndEnforcement(apiKey, { apt, ownerName, ownerCod
                 deductionType: e.deductionType || '',
                 creditorName: e.otherSideInformation?.name || '',
                 creditorCode: e.otherSideInformation?.code || '',
-                debtorName: ownerName || cleanCode,
+                debtorName: effectiveName || cleanCode,
                 departmentName: e.departmentName || '',
                 executorName: e.executor?.name || '',
                 executorPhone: e.executor?.phone || ''
             }))
-        };
+        });
     }
 
     // Якщо боржник — фізична особа (пошук за ПІБ + опціонально РНОКПП для виконавчих проваджень)
@@ -843,7 +893,7 @@ async function checkDebtorCourtAndEnforcement(apiKey, { apt, ownerName, ownerCod
         executorPhone: e.executor?.phone || ''
     }));
 
-    return {
+    return enrichCourtResponse({
         source: 'youscore',
         sandbox: false,
         searchedPerson: parsedName.fullName,
@@ -852,7 +902,7 @@ async function checkDebtorCourtAndEnforcement(apiKey, { apt, ownerName, ownerCod
         courtCases,
         scheduledHearings,
         enforcements
-    };
+    });
 }
 
 // ------------------------------------------------------------
@@ -909,7 +959,15 @@ async function checkRealEstateByCode(apiKey, { code, apt, ownerName, houseHint =
     }
 
     if (isSandboxKey(apiKey)) {
-        return buildSandboxRealEstate({ code: cleanCode, apt, ownerName });
+        const sb = buildSandboxRealEstate({ code: cleanCode, apt, ownerName });
+        const first = sb.objects[0] || null;
+        return {
+            ...sb,
+            isSandbox: true,
+            totalObjects: sb.objects.length,
+            matchedAptObject: first,
+            matchedObject: first ? { ...first, detailed: first.details } : null
+        };
     }
 
     const fetchImpl = options.fetchImpl;
@@ -987,7 +1045,11 @@ async function checkRealEstateByCode(apiKey, { code, apt, ownerName, houseHint =
     return {
         source: 'youscore',
         sandbox: false,
+        isSandbox: false,
         searchedCode: cleanCode,
+        totalObjects: objects.length,
+        matchedAptObject: targetObj || null,
+        matchedObject: targetObj ? { ...targetObj, detailed: targetObj.details } : null,
         objects
     };
 }
@@ -1018,8 +1080,10 @@ function normalizeRealEstateDetails(raw, fallbackCode = '', fallbackName = '') {
         return {
             name,
             code,
+            share: shareFrac,
             shareFrac,
             ownershipForm,
+            grounds: docCause,
             registrationDate,
             docInfo: [docCause, registrationDate ? `дата реєстрації: ${registrationDate}` : '', code ? `РНОКПП ${code}` : ''].filter(Boolean).join('; ')
         };
@@ -1038,9 +1102,11 @@ function normalizeRealEstateDetails(raw, fallbackCode = '', fallbackName = '') {
 
     return {
         objectRegNumber,
+        regNum: objectRegNumber,
         objectType: String(props.type || props.objectType || 'Нерухомість').trim(),
         totalArea,
         livingArea,
+        basisDocument: owners[0]?.docInfo || '',
         address,
         owners
     };

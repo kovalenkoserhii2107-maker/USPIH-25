@@ -269,7 +269,10 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
         let res;
         try {
             res = await youscoreApi.checkDebtorCourtAndEnforcement(apiKey, {
+                apt,
+                ownerName: fullName,
                 fullName,
+                ownerCode: code,
                 code,
                 region: text(data.region || 'Одес', 60),
                 birthday: text(data.birthday, 20)
@@ -305,18 +308,28 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
         let ownerName = text(data.ownerName, 200);
         let payerSource = null;
 
-        // Автоматичний пошук РНОКПП платника у вхідних банківських виписках квартири, якщо код не вказано
+        const discoveredPayers = [];
+        // Автоматичний пошук РНОКПП платників у вхідних банківських виписках квартири, якщо код не вказано
         if (!/^\d{8,10}$/.test(code) && apt) {
             const txSnap = await db.collection('bank_tx').where('apt', '==', apt).limit(25).get();
+            const seenCodes = new Set();
             for (const doc of txSnap.docs) {
                 const tx = doc.data() || {};
                 const cpCode = String(tx.counterparty?.code || '').trim();
-                if (/^\d{8,10}$/.test(cpCode) && !/^0+$/.test(cpCode)) {
-                    code = cpCode;
-                    if (!ownerName && tx.counterparty?.name) ownerName = String(tx.counterparty.name).trim();
-                    payerSource = { txId: doc.id, name: tx.counterparty?.name || '', code: cpCode, date: tx.date || '' };
-                    break;
+                const cpName = String(tx.counterparty?.name || '').trim();
+                if ((/^\d{8,10}$/.test(cpCode) && !/^0+$/.test(cpCode)) || cpName) {
+                    const key = `${cpCode}|${cpName}`;
+                    if (!seenCodes.has(key)) {
+                        seenCodes.add(key);
+                        discoveredPayers.push({ txId: doc.id, name: cpName || 'Платник за випискою', code: /^\d{8,10}$/.test(cpCode) && !/^0+$/.test(cpCode) ? cpCode : '', date: tx.date || '' });
+                    }
                 }
+            }
+            const firstWithCode = discoveredPayers.find(p => /^\d{8,10}$/.test(p.code));
+            if (firstWithCode && discoveredPayers.filter(p => /^\d{8,10}$/.test(p.code)).length === 1) {
+                code = firstWithCode.code;
+                if (!ownerName && firstWithCode.name) ownerName = firstWithCode.name;
+                payerSource = firstWithCode;
             }
         }
 
@@ -325,7 +338,8 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
                 ok: false,
                 needsCode: true,
                 apt,
-                message: 'API YouScore (/v1/realEstate) виконує пошук нерухомості виключно за кодом РНОКПП (10 цифр) або ЄДРПОУ (8 цифр). Введіть РНОКПП власника/платника або використайте офіційний запит до ДРРП за адресою.'
+                discoveredPayers,
+                message: 'API YouScore (/v1/realEstate) виконує пошук нерухомості за кодом РНОКПП (10 цифр) або ЄДРПОУ (8 цифр). Введіть РНОКПП власника у поле нижче або оберіть платника з банківської виписки.'
             };
         }
 
@@ -346,10 +360,10 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
             fail('unavailable', `Помилка запиту до реєстру нерухомості YouScore: ${String(err.message || err).slice(0, 200)}`);
         }
 
-        // Якщо знайдено підтверджений об'єкт та передано autoApply === true, оновлюємо довідник співвласників квартири
+        // Якщо знайдено підтверджений об'єкт та передано autoApply / updateDirectory === true, оновлюємо довідник співвласників квартири
         let syncedOwners = false;
-        if (data.autoApply === true && apt && res.matchedObject?.detailed) {
-            const det = res.matchedObject.detailed;
+        const det = res.matchedAptObject?.details || res.matchedObject?.detailed || res.objects?.[0]?.details;
+        if ((data.autoApply === true || data.updateDirectory === true) && apt && det) {
             const batch = db.batch();
             const aptRef = db.doc(`apartments/${apt}`);
             const updates = { ownersStatus: 'verified', ownersUpdatedAt: FieldValue.serverTimestamp(), ownersUpdatedBy: actor };

@@ -99,10 +99,12 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             updatedBy: actor,
             updatedAt: FieldValue.serverTimestamp()
         }, { merge: true });
+        const isSandboxMode = !cleanKey || Boolean(sandbox) || youscoreApi.isSandboxKey(cleanKey);
+        const masked = cleanKey && !isSandboxMode ? `…${cleanKey.slice(-4)}` : '';
         await audit(actor, role, 'expenses.youscore.key', 'bank_secrets/youscore',
-            cleanKey ? 'Збережено API-ключ YouScore (YouControl)' : 'Увімкнено тестовий режим (Sandbox) YouScore',
-            { configured: Boolean(cleanKey), sandbox: !cleanKey || Boolean(sandbox) });
-        return { ok: true, configured: Boolean(cleanKey), sandbox: !cleanKey || Boolean(sandbox) };
+            cleanKey && !isSandboxMode ? 'Збережено API-ключ YouScore (YouControl)' : 'Увімкнено тестовий режим (Sandbox) YouScore',
+            { configured: Boolean(cleanKey), sandbox: isSandboxMode });
+        return { ok: true, configured: Boolean(cleanKey), sandbox: isSandboxMode, masked };
     }
 
     async function checkYouscoreBalance(actor, role) {
@@ -143,11 +145,28 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             `Перевірка контрагента (${provider}) ${clean}: ${d.name || (d.found ? 'знайдено' : 'не знайдено')}`,
             { code: clean, provider, found: d.found, isSafe: d.isSafe });
 
+        const ti = d.taxInfo || {};
+        const computedTaxSystem = d.taxSystem || d.taxSummary || (
+            ti.isNonProfit
+                ? `Неприбуткова організація${ti.nonProfitCode ? ` (ознака ${ti.nonProfitCode})` : ''}`
+                : ti.isSingleTax
+                    ? `Єдиний податок${ti.singleTaxGroup ? ` ${ti.singleTaxGroup} група` : ''}${ti.singleTaxRate ? ` (${ti.singleTaxRate})` : ''}${ti.isVatPayer ? ', платник ПДВ' : ', без ПДВ'}`
+                    : ti.isVatPayer
+                        ? 'Загальна система, платник ПДВ'
+                        : d.found
+                            ? 'Загальна система (без ПДВ)'
+                            : ''
+        );
+        const computedVatCode = d.vatCode || ti.vatCode || d.vat?.code || '';
+        const computedCapital = Number(d.capital || d.foundingCapital || d.authorizedCapital || 0);
+        const computedEnfTotal = Number(d.enforcementTotal ?? d.totalEnforcements ?? d.totalPenalties ?? 0);
+
         return {
             found: Boolean(d.found),
             needRetry: Boolean(d.needRetry),
             provider,
-            sandbox: provider === 'youscore-sandbox',
+            source: provider === 'youscore-sandbox' ? 'youscore_sandbox' : (d.source || provider),
+            sandbox: provider === 'youscore-sandbox' || Boolean(d.sandbox),
             hasRealKey,
             edrpou: d.edrpou || clean,
             kind: d.kind || (clean.length === 10 ? 'fop' : 'company'),
@@ -159,34 +178,44 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
             director: d.director || '',
             signers: Array.isArray(d.signers) ? d.signers : [],
             founders: Array.isArray(d.founders) ? d.founders : [],
-            authorizedCapital: Number(d.authorizedCapital || 0),
+            capital: computedCapital,
+            foundingCapital: computedCapital,
+            authorizedCapital: computedCapital,
             registrationDate: d.registrationDate || '',
             address: d.address || '',
-            phone: d.phone || '',
-            email: d.email || '',
-            webSite: d.webSite || '',
+            phone: d.phone || d.contacts?.phone || d.contacts?.additionalPhone || '',
+            email: d.email || d.contacts?.email || '',
+            webSite: d.webSite || d.contacts?.webSite || '',
+            contacts: d.contacts || null,
             isRegistered: Boolean(d.isRegistered),
             stateText: d.stateText || '',
             mainKved: d.mainKved || null,
             kveds: Array.isArray(d.kveds) ? d.kveds : [],
+            taxInfo: d.taxInfo || null,
+            taxSystem: computedTaxSystem,
+            taxSummary: computedTaxSystem,
+            vatCode: computedVatCode,
             vat: d.vat || null,
             singleTax: d.singleTax || null,
             nonProfit: d.nonProfit || null,
-            taxSummary: d.taxSummary || '',
             taxDebtTotal: Number(d.taxDebtTotal || 0),
             wageDebtTotal: Number(d.wageDebtTotal || 0),
             openPenalties: Number(d.openPenalties || 0),
-            totalPenalties: Number(d.totalPenalties || 0),
-            enforcementRecords: Array.isArray(d.enforcementRecords) ? d.enforcementRecords : [],
+            totalPenalties: computedEnfTotal,
+            totalEnforcements: computedEnfTotal,
+            enforcementTotal: computedEnfTotal,
+            enforcementRecords: Array.isArray(d.enforcementRecords || d.recentEnforcements) ? (d.enforcementRecords || d.recentEnforcements) : [],
             courtTotal: Number(d.courtTotal || 0),
-            courtRecords: Array.isArray(d.courtRecords) ? d.courtRecords : [],
-            expressScore: d.expressScore || null,
+            courtRecords: Array.isArray(d.courtRecords || d.recentCourtDocs) ? (d.courtRecords || d.recentCourtDocs) : [],
+            expressScore: d.expressScore || d.expressIndex || null,
+            expressIndex: d.expressIndex || d.expressScore || '',
             bankruptcyCount: Number(d.bankruptcyCount || 0),
             singleTaxRisk: Boolean(d.singleTaxRisk),
             isAggressor: Boolean(d.isAggressor),
             hasSanctions: Boolean(d.hasSanctions),
             isSafe: Boolean(d.isSafe),
-            riskFlags: Array.isArray(d.riskFlags) ? d.riskFlags : []
+            riskFlags: Array.isArray(d.riskFlags) ? d.riskFlags : [],
+            formattedNote: d.formattedNote || ''
         };
     }
 
@@ -900,7 +929,8 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         switch (data.action) {
             case 'context': return context();
             case 'checkSupplier': return checkSupplier(actor, role, data);
-            case 'youscoreKey': return setYouscoreKey(actor, role, data);
+            case 'youscoreKey':
+            case 'setYouscoreKey': return setYouscoreKey(actor, role, data);
             case 'youscoreBalance': return checkYouscoreBalance(actor, role);
             case 'saveSupplier': return saveSupplier(actor, role, data);
             case 'saveContract': return saveContract(actor, role, data);

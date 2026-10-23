@@ -231,8 +231,17 @@ export const loadExpenses = () => once("expenses", () => {
 });
 
 /** Дія з витратами — на сервері, з журналом; голові — push, коли потрібне його рішення. */
+const QUIET_EXP_ACTIONS = new Set([
+    'recognizeDocument',
+    'aiKey',
+    'checkSupplier',
+    'youscoreKey',
+    'setYouscoreKey',
+    'youscoreBalance'
+]);
+
 export async function expAct(payload, timeoutMs = 60000) {
-    const quiet = payload?.action === 'recognizeDocument' || payload?.action === 'aiKey';
+    const quiet = QUIET_EXP_ACTIONS.has(payload?.action);
     try {
         return await callBackend('expenseAction', payload, timeoutMs);
     } finally {
@@ -340,10 +349,13 @@ export const advanceAct = payload => journalAct(payload);
 /** Претензійно-позовна робота з боржниками (суди, накази, претензії). */
 export const loadClaims = () => once('claims', () => callBackend('claimsAction', { action: 'context' }, 60000));
 export async function claimsAct(payload) {
+    const quiet = payload?.action === 'checkDebtorCourt' ||
+        (payload?.action === 'checkPropertyOwner' && !payload?.updateDirectory && !payload?.autoApply);
     try {
         return await callBackend('claimsAction', payload, 60000);
     } finally {
-        invalidate();
+        if (quiet) delete cache.claims;
+        else invalidate();
     }
 }
 
