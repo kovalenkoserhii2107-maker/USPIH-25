@@ -1077,6 +1077,23 @@ function renderBankTab(settings, ex) {
                 <td class="t-sum">${accountBalance(a)}</td></tr>`).join('')}</tbody></table>
         </section>` : ''}
 
+        <section class="buh-card" id="stYouscoreCard">
+            <div class="buh-card-head">
+                <h2>YouControl (YouScore API v1) — ЄДРПОУ, Суди, Виконавча служба та ДРРП</h2>
+                <span id="ycKeyBadge" class="buh-tag ${ex?.settings?.youscoreHasRealKey ? 'is-payment' : 'is-review'}">${ex?.settings?.youscoreHasRealKey ? `✓ Бойовий ключ підключено (${escapeHtml(ex?.settings?.youscoreKeyMasked || '')})` : 'Тестовий режим (Sandbox)'}</span>
+            </div>
+            <p class="buh-note">Використовується у трьох розділах: <b>1) «Документи → Постачальники»</b> (повне автозаповнення картки контрагента з ЄДР, ПДВ, Єдиного податку, податкового боргу); <b>2) «Претензійна робота → Справа боржника»</b> (перевірка судових справ, призначених засідань і виконавчих проваджень ДВС); <b>3) «Актуалізація власника (ДРРП)»</b> (перевірка прав власності на квартиру за РНОКПП). Поки ви очікуєте ключ від менеджера YouControl, система працює у вбудованій пісочниці без списання лімітів.</p>
+            <div class="buh-inline-form">
+                <input id="stYouscoreKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="${ex?.settings?.youscoreHasRealKey ? `Новий ключ YouScore, щоб замінити ${escapeHtml(ex?.settings?.youscoreKeyMasked || '')}` : 'Вставте API-ключ YouScore (header apiKey)'}">
+                <button type="button" class="btn-primary btn-compact" data-act="youscore-key-save">Зберегти ключ</button>
+                <button type="button" class="btn-soft btn-compact" data-act="youscore-key-balance">Перевірити ліміти (/v1/rateLimits)</button>
+                ${ex?.settings?.youscoreHasRealKey ? '<button type="button" class="btn-ghost-small" data-act="youscore-key-sandbox">Перемкнути в Sandbox</button>' : ''}
+            </div>
+            <p class="buh-note" id="stYouscoreStatusNote">${ex?.settings?.youscoreHasRealKey
+                ? `Бойовий API-ключ (${escapeHtml(ex?.settings?.youscoreKeyMasked || '')}) збережено на сервері у захищеній колекції bank_secrets/youscore.`
+                : 'Зараз активний вбудований тестовий режим (YOUSCORE_TEST_KEY_USPIH25_SANDBOX). Для роботи з ендпоінтами нерухомості (/v1/realEstate) на бойовому ключі також потрібна верифікація власника ключа на youscore.com.ua/identification.'}</p>
+        </section>
+
         <section class="buh-card">
             <div class="buh-card-head">
                 <h2>Розумне розпізнавання документів (AI OCR)</h2>
@@ -1659,6 +1676,29 @@ export function initSettingsView() {
                 const r = await expAct({ action: 'aiKey', key: '' });
                 updateAiKeyUi(r.aiKey);
                 toast('Ключ AI видалено', 'info');
+            } else if (a === 'youscore-key-save') {
+                const inputEl = document.getElementById('stYouscoreKeyInput');
+                const apiKey = inputEl?.value.trim() || '';
+                if (!apiKey) { toast('Вставте API-ключ YouScore у поле', 'error'); inputEl?.focus(); return; }
+                setBusy(btn, true, 'Зберігаю ключ…');
+                const isSandbox = apiKey === 'YOUSCORE_TEST_KEY_USPIH25_SANDBOX';
+                await expAct({ action: 'youscoreKey', apiKey, sandbox: isSandbox });
+                toast(isSandbox ? 'Увімкнено тестовий режим (Sandbox) YouScore' : 'Бойовий API-ключ YouScore збережено', 'success');
+                await loadSettingsView();
+            } else if (a === 'youscore-key-sandbox') {
+                setBusy(btn, true, 'Перемикаю…');
+                await expAct({ action: 'youscoreKey', apiKey: '', sandbox: true });
+                toast('Увімкнено тестовий режим (Sandbox) YouScore', 'info');
+                await loadSettingsView();
+            } else if (a === 'youscore-key-balance') {
+                setBusy(btn, true, 'Запитую YouScore…');
+                const r = await expAct({ action: 'youscoreBalance' });
+                const noteEl = document.getElementById('stYouscoreStatusNote');
+                const msg = r.sandbox
+                    ? `Режим Sandbox активний. Тестовий залишок транзакцій: ${r.remainingTransactions ?? 5000} (без списання коштів).`
+                    : `Залишок транзакцій YouScore: ${r.remainingTransactions ?? 'див. деталі'}${r.usedTransactions != null ? ` · використано: ${r.usedTransactions}` : ''}.`;
+                if (noteEl) noteEl.textContent = msg;
+                toast(msg, 'success');
             } else if (a === 'st-project-sync') {
                 setBusy(btn, true, 'Запитую банк…');
                 stProjectCtx = await payrollAct({ action: 'projectContext', groupId: val('stPayGroup') });

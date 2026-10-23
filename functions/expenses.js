@@ -639,7 +639,18 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         }));
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
         const policy=require('./accounting-policy').read((await db.doc('accounting_settings/main').get()).data());
-        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: { smallKop: settings.data()?.smallKop || 0, aiKey: aiKeyInfo(await readAiKey()) }, today,
+        return { ...list, existingAssetIds, assetCatalog, funds:policy.funds,mnhmaLimitKop:policy.mnhmaLimitKop,ownIncome:Object.values(policy.incomeAccounts).some(a=>['703','719','733'].includes(a)),defaultFund:policy.defaultFund,settings: await (async () => {
+            const ys = await loadYouscoreKey();
+            const tail = ys.hasRealKey ? ys.apiKey.slice(-4) : '';
+            return {
+                smallKop: settings.data()?.smallKop || 0,
+                aiKey: aiKeyInfo(await readAiKey()),
+                youscoreKeySet: ys.hasRealKey || ys.sandbox,
+                youscoreHasRealKey: ys.hasRealKey,
+                youscoreSandbox: ys.sandbox,
+                youscoreKeyMasked: tail ? `…${tail}` : ''
+            };
+        })(), today,
             missing: core.missingDocs(list.contracts, list.expenses, today), items: core.ITEMS, docTypes: core.DOC_TYPES, kinds: core.SUPPLIER_KINDS,
             limitKop: core.CONTRACT_LIMIT_KOP };
     }
