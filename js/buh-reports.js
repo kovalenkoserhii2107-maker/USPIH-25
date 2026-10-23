@@ -8,7 +8,7 @@
 // заповнену форму, підписує КЕП і подає. Квитанції № 1 і № 2
 // зберігаються тут (Storage reports/{ключ}/), позначки пише сервер
 // (reportsAction, functions/reports.js).
-// Реквізити для XML налаштовуються централізовано в «Налаштування → Організація та реквізити».
+// Реквізити для XML налаштовуються централізовано в «Налаштування → Організація».
 // ============================================================
 import { escapeHtml, toast, setBusy } from './ui.js';
 import { loadReports, loadPayrollReport, reportsAct, reportsQuery, uploadReportFiles, reportFileUrl } from './buh-data.js';
@@ -121,7 +121,7 @@ function xmlHtml() {
     if (xmlState.problems) {
         return `<div class="rp-xml"><h3 class="rp-h">Щоб сформувати XML, заповніть</h3>
             <ul class="rp-checks">${xmlState.problems.map(p => `<li class="is-warn">${escapeHtml(p)}</li>`).join('')}</ul>
-            <p class="buh-note">Реквізити для XML — у розділі <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="org">Налаштування → Організація та реквізити ›</button>. Стать, код професії й накази — у картці людини («Зарплата → Люди» або «Налаштування → Тарифи та довідники»).</p></div>`;
+            <p class="buh-note">Реквізити для XML — у розділі <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="org">Налаштування → Організація ›</button>. Стать, код професії й накази — у картці людини («Зарплата → Люди»).</p></div>`;
     }
     return `<div class="rp-xml"><h3 class="rp-h">Файли для Електронного кабінету${xmlState.version ? ` · версія ${xmlState.version}` : ''}</h3>
         <ul class="rp-files">${xmlState.files.map((f, i) => `<li><button type="button" class="btn-ghost-small" data-act="xml-file" data-i="${i}">${escapeHtml(f.name)}</button><small>${['розрахунок', 'Д1', '4ДФ', 'Д5'][i] || ''}</small></li>`).join('')}</ul>
@@ -156,7 +156,7 @@ async function buildXml(btn) {
 function otherHtml(t) {
     if (t.key.startsWith('esv-')) {
         const p = periodOfKey(t.key);
-        return `<p class="buh-note">ЄСВ за ${escapeHtml(monthName(p))} — 22 % нарахованих виплат, платіж за реквізитами з «Налаштування → Облік, податки та правила». Позначка «сплачено» ставиться сама, коли сума проведених платежів покриває все місячне нарахування.</p>
+        return `<p class="buh-note">ЄСВ за ${escapeHtml(monthName(p))} — 22 % нарахованих виплат, платіж за реквізитами з «Налаштування → Облік і податки». Позначка «сплачено» ставиться сама, коли сума проведених платежів покриває все місячне нарахування.</p>
             <button type="button" class="btn-soft btn-compact" data-go="payroll">Відкрити «Зарплату»</button>`;
     }
     if (t.key.startsWith('budget-')) {

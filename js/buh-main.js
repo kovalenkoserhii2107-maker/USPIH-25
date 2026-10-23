@@ -16,7 +16,8 @@ import { initInbox, loadInbox, setInboxFilter, restoreCachedBadges } from './buh
 import { loadToday, todayTitle } from './buh-today.js';
 import { initMonthView, loadMonthView } from './buh-month.js';
 import { initFlatsView, loadFlatsView } from './buh-flats.js';
-import { initBankView, loadBankView, initSettingsView, loadSettingsView, setSettingsTab, hasBankReturnState, renderBankReturnBanner } from './buh-bank.js';
+import { initBankView, loadBankView, hasBankReturnState, renderBankReturnBanner } from './buh-bank.js';
+import { initSettingsView, loadSettingsView, setSettingsTab } from './buh-settings.js';
 import { initPaymentsView, loadPaymentsView } from './buh-payments.js';
 import { initChargesView, loadChargesView } from './buh-charges.js';
 import { initExpensesView, loadExpensesView } from './buh-expenses.js';
@@ -44,7 +45,7 @@ const VIEWS = {
     advance: { title: 'Авансові звіти', sub: 'Розрахунки з підзвітними особами (рах. 372): чеки, компенсація в Приват24', load: loadAdvanceView },
     claims: { title: 'Претензійна робота', sub: 'Боржники й справи: претензія, суд, виконання, реструктуризація', load: loadClaimsView },
     journal: { title: 'ОСВ', sub: 'Оборотно-сальдова відомість, проводки й закриття місяця', load: loadJournalView },
-    settings: { title: 'Налаштування', sub: 'Організація й реквізити, банк та інтеграції, облік і податки, тарифи й довідники, стартові дані', load: loadSettingsView }
+    settings: { title: 'Налаштування', sub: 'Готовність кабінету, реквізити, банк і сервіси, облік, правила, перехід на облік', load: loadSettingsView }
 };
 // Старі посилання (#overview) ведуть на «Сьогодні».
 const ALIASES = { overview: 'today' };
@@ -167,7 +168,7 @@ function renderAccount(apartment) {
         </nav>
         <h5 class="mn-h">Налаштування й переходи</h5>
         <nav class="mn-group" aria-label="Налаштування й переходи">
-            ${row('data-view="settings"', 'settings', 'Налаштування', 'реквізити, банк, облік, довідники, стартові дані')}
+            ${row('data-view="settings"', 'settings', 'Налаштування', 'реквізити, банк, облік, правила, перехід на облік')}
             ${row('href="platform.html"', 'finance', 'Платформа ОСББ (Super-Admin)', 'усі ОСББ і бази, інспектор БД, тести, активність')}
             ${row('href="platform.html#bank"', 'finance', 'Симулятор Приват24 API', 'підпис КЕП платежів, вхідні операції, рахунки')}
             ${row('href="accounting-test.html"', 'check', 'Тестова бухгалтерія', 'окремий будинок, імітований банк, звірки')}

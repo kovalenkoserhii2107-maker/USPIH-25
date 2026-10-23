@@ -10,7 +10,7 @@
 // Рядок приміщення відкриває його картку збоку.
 //
 // Рахує й записує сервер (chargesAction): він же перераховує баланси
-// квартир і пише журнал дій. Вхідні залишки — у «Налаштування → Стартові дані».
+// квартир і пише журнал дій. Вхідні залишки — у «Налаштування → Перехід на облік».
 // ============================================================
 import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
 import { loadCharges, loadStatement, loadRequisites, chargeAct, chargesPeek, dateOnly, loadStaffNames, authorLabel } from './buh-data.js';
@@ -279,7 +279,11 @@ function premisesPane(preview) {
                 <textarea id="resBulk" class="field-input" rows="3" placeholder="Проживаючі: «298;2» або «298 2», кожна квартира з нового рядка чи через кому" aria-label="Проживаючі"></textarea>
                 <button type="button" class="sv-btn is-soft" data-act="residents-bulk">Внести проживаючих</button>
             </div>
-            <p class="py-note">Площу веде правління в довіднику квартир. Особові рахунки масово — у <button type="button" class="cg-link" data-go="settings" data-settings-tab="directories">«Налаштування → Тарифи та довідники»</button>.</p>
+            <div class="cg-form-row">
+                <textarea id="paBulk" class="field-input" rows="3" placeholder="Особові рахунки: «45;00045» або «101 250101», кожна квартира з нового рядка чи через кому" aria-label="Особові рахунки"></textarea>
+                <button type="button" class="sv-btn is-soft" data-act="personal-accounts-bulk">Зберегти особові рахунки</button>
+            </div>
+            <p class="py-note">Площу веде правління в довіднику квартир.</p>
         </details>`;
 }
 
@@ -560,6 +564,16 @@ async function onAction(btn) {
             setBusy(btn, true);
             const r = await chargeAct({ action: 'setResidents', rows });
             toast(`Збережено: ${r.count} кв.`, 'success');
+        } else if (a === 'personal-accounts-bulk') {
+            const rows = val('paBulk').split(/[\n,]+/).map(x => x.trim()).filter(Boolean).map(x => {
+                const [apt, pa] = x.split(/[;\t\s]+/);
+                return { apt: String(apt || '').trim(), personalAccount: String(pa || '').trim() };
+            }).filter(x => x.apt);
+            if (!rows.length) { toast('Вкажіть квартири та особові рахунки, напр. 45;00045', 'error'); return; }
+            setBusy(btn, true);
+            // Сервер сам знаходить справжній документ квартири (н1 / Н1) і пише журнал дій.
+            const r = await chargeAct({ action: 'setPersonalAccounts', rows });
+            toast(`Особові рахунки збережено: ${r.count} прим.`, 'success');
         } else if (a === 'component-add') {
             await chargeAct({ action: 'addComponent', name: val('cpName'), base: val('cpBase') });
             toast('Складову додано — внесіть для неї тарифи', 'success');

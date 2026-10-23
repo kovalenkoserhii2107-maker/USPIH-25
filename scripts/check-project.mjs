@@ -71,6 +71,19 @@ for (const name of jsFiles) {
 
 if (!sw.includes("'./js/backend.js'")) errors.push('backend.js не додано до оболонки Service Worker');
 
+// Незакрита дужка (найчастіше — після злиття) тихо вкладає всі наступні стилі в медіазапит.
+const cssFiles = (await readdir(root)).filter(name => /^style.*\.css$/.test(name));
+for (const name of cssFiles) {
+    const css = (await read(name)).replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, '')).replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '""');
+    let depth = 0, line = 1, open = [];
+    for (const ch of css) {
+        if (ch === '\n') line++;
+        else if (ch === '{') { depth++; open.push(line); }
+        else if (ch === '}') { depth--; open.pop(); if (depth < 0) { errors.push(`${name}:${line}: зайва «}»`); depth = 0; } }
+    }
+    if (depth > 0) errors.push(`${name}:${open.at(-1)}: незакрита «{»`);
+}
+
 if (errors.length) {
     console.error(errors.map(error => `- ${error}`).join('\n'));
     process.exit(1);
