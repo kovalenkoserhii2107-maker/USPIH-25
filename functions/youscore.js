@@ -379,6 +379,226 @@ function buildSandboxCounterparty(code) {
     };
 }
 
+// Довідник відомих головних підприємств для відокремлених підрозділів (філій),
+// оскільки згідно з п. 180.1 ст. 180 ПКУ платником ПДВ у реєстрі ДПС завжди реєструється
+// головна юридична особа (а не філія), і дані про керівника філії також можуть зберігатися у масиві branches головної ЮО.
+const KNOWN_BRANCH_PARENTS = {
+    '38924328': {
+        parentCode: '26209430',
+        parentName: 'ПрАТ «ВИРОБНИЧЕ ОБʼЄДНАННЯ «СТАЛЬКАНАТ-СІЛУР»',
+        defaultDirector: 'Бондаренко Михайло Олексійович',
+        defaultVatCode: '262094315013'
+    },
+    '26472133': {
+        parentCode: '14291587',
+        parentName: 'ТОВ «ІНФОКС» (Філія «Інфоксводоканал»)'
+    },
+    '01130549': {
+        parentCode: '21560766',
+        parentName: 'АТ «УКРТЕЛЕКОМ»'
+    }
+};
+
+/**
+ * Запит до реєстру YouScore зі швидкою спробою отримати кешовані дані (showCurrentData=true),
+ * а якщо в архіві YouScore запису ще немає (404 або порожньо) — автоматичний запит до живого реєстру (showCurrentData=false).
+ */
+async function fetchRegistryWithFallback(apiKey, path, { maxPolls = 3, pollDelayMs = 1300, query = {}, fetchImpl, validateData = null } = {}) {
+    const checkValid = res => {
+        if (!res || res.status !== 200 || !res.data) return false;
+        return validateData ? validateData(res.data) : true;
+    };
+
+    const cachedRes = await requestYouscore(apiKey, path, {
+        query: { ...query, showCurrentData: true },
+        maxPolls: Math.min(2, maxPolls),
+        pollDelayMs,
+        fetchImpl
+    }).catch(() => ({ status: 404, data: null }));
+
+    if (checkValid(cachedRes)) return cachedRes;
+
+    const liveRes = await requestYouscore(apiKey, path, {
+        query: { ...query, showCurrentData: false },
+        maxPolls,
+        pollDelayMs,
+        fetchImpl
+    }).catch(() => cachedRes);
+
+    return checkValid(liveRes) ? liveRes : (liveRes?.status === 202 ? liveRes : cachedRes);
+}
+
+/**
+ * Очищення рядка ПІБ керівника/підписанта від службових приміток ЄДР ("- керівник", "(директор)" тощо).
+ */
+function cleanSignerName(rawStr) {
+    let s = String(rawStr || '').trim();
+    if (!s) return '';
+    // Якщо в рядку через тире або крапку з комою вказано посаду/обмеження
+    s = s.replace(/\s+[-–—]\s*(?:керівник|директор|голова|підписант|представник|в\.\s*о\.|виконуючий).*$/i, '')
+         .replace(/\s*\((?:керівник|директор|голова|підписант|згідно статуту|без обмежень).*?\)\s*$/i, '')
+         .replace(/[,;]+$/, '')
+         .trim();
+    return s;
+}
+
+/**
+ * Універсальне витягнення списку підписантів та ПІБ керівника з усіх можливих полів YouScore API:
+ * - LegalPersonRegisterData.signers
+ * - ShortBranchInfo.manager (для філій та відокремлених підрозділів!)
+ * - heads / head / authorizedPersons / managers / director / ceoName
+ * - History.managerChanges та FinancialIndicatorHeader.ceoName
+ */
+function extractSignersAndDirector(usr, { historyData = null, finData = null, parentBranchRec = null, fallbackDirector = '', isFop = false, rawFullName = '' } = {}) {
+    const signers = [];
+    const seen = new Set();
+
+    const addCandidate = (item, defaultRole = '') => {
+        if (!item) return;
+        if (typeof item === 'string') {
+            const name = cleanSignerName(item);
+            if (name && !seen.has(name.toLowerCase())) {
+                seen.add(name.toLowerCase());
+                signers.push({ name, role: defaultRole || 'керівник' });
+            }
+            return;
+        }
+        if (typeof item === 'object') {
+            const rawName = item.name || item.fullName || item.fio || item.personName || item.uaName || item.managerName || item.headName || item.ceoName || '';
+            const fromRaw = !rawName && (item.raw || item.description) ? cleanSignerName(item.raw || item.description) : '';
+            const name = cleanSignerName(rawName || fromRaw);
+            const role = String(item.role || item.position || item.description || defaultRole || '').trim();
+            if (name && !seen.has(name.toLowerCase())) {
+                seen.add(name.toLowerCase());
+                signers.push({ name, role });
+            }
+        }
+    };
+
+    const candidateSources = [
+        usr?.signers,
+        usr?.manager,
+        usr?.managers,
+        usr?.authorizedPersons,
+        usr?.authorizedPerson,
+        usr?.heads,
+        usr?.head,
+        usr?.director,
+        usr?.chief,
+        parentBranchRec?.manager,
+        parentBranchRec?.signers
+    ];
+
+    for (const src of candidateSources) {
+        if (Array.isArray(src)) {
+            src.forEach(item => addCandidate(item));
+        } else if (src) {
+            addCandidate(src, 'керівник');
+        }
+    }
+
+    // Якщо в основних полях підписантів порожньо — скануємо об'єкт usr на наявність вкладених об'єктів типу Signer
+    if (!signers.length && usr && typeof usr === 'object') {
+        const skipKeys = new Set([
+            'name', 'nameInEnglish', 'legalPersonName', 'legalForm', 'address', 'addressParts',
+            'authorityInfo', 'managingGovernmentAuthority', 'superiorManagement', 'contacts',
+            'economicActivities', 'activityTypes', 'branches', 'predecessors', 'assignees', 'founders'
+        ]);
+        for (const [k, v] of Object.entries(usr)) {
+            if (skipKeys.has(k) || !v) continue;
+            if (/signer|manager|head|director|authoriz|chief|leader|person/i.test(k)) {
+                if (Array.isArray(v)) v.forEach(x => addCandidate(x));
+                else addCandidate(v, 'керівник');
+            }
+        }
+    }
+
+    // Додаткові джерела з історії змін ЄДР (/v1/history) та фінзвітності (/v1/financialIndicators)
+    if (!signers.length && Array.isArray(historyData?.managerChanges) && historyData.managerChanges.length) {
+        addCandidate(historyData.managerChanges[0], 'керівник');
+    }
+    if (!signers.length && finData?.financialIndicatorHeader?.ceoName) {
+        addCandidate(finData.financialIndicatorHeader.ceoName, 'керівник');
+    }
+    if (!signers.length && usr?.propertyStruct?.nameSign) {
+        addCandidate(usr.propertyStruct.nameSign, 'підписант структури власності');
+    }
+    if (!signers.length && fallbackDirector) {
+        addCandidate(fallbackDirector, 'керівник');
+    }
+
+    const director = signers.find(s => /керівник|директор|голова|начальник|завідувач/i.test(s.role))?.name
+        || signers[0]?.name
+        || (isFop ? rawFullName : '')
+        || fallbackDirector
+        || '';
+
+    return { signers, director };
+}
+
+/**
+ * Універсальне витягнення КВЕДів з усіх можливих полів YouScore API:
+ * - LegalPersonRegisterData.economicActivities
+ * - ShortBranchInfo.activityTypes (для філій та відокремлених підрозділів!)
+ * - mainEconomicActivity, historyData.mainActivityChanges, finData.financialIndicatorHeader.activity
+ */
+function extractKveds(usr, { historyData = null, finData = null, parentBranchRec = null } = {}) {
+    const rawList = [
+        ...(Array.isArray(usr?.economicActivities) ? usr.economicActivities : []),
+        ...(Array.isArray(usr?.activityTypes) ? usr.activityTypes : []),
+        ...(Array.isArray(usr?.activities) ? usr.activities : []),
+        ...(Array.isArray(usr?.kveds) ? usr.kveds : []),
+        ...(Array.isArray(parentBranchRec?.activityTypes) ? parentBranchRec.activityTypes : []),
+        ...(Array.isArray(parentBranchRec?.economicActivities) ? parentBranchRec.economicActivities : [])
+    ];
+
+    const kveds = [];
+    const seen = new Set();
+    for (const k of rawList) {
+        if (!k) continue;
+        const code = String(k.code || '').trim();
+        const name = String(k.description || k.name || '').trim();
+        const key = `${code}|${name}`;
+        if ((code || name) && !seen.has(key)) {
+            seen.add(key);
+            kveds.push({ code, name, isMain: Boolean(k.isMain) });
+        }
+    }
+
+    const mainAct = usr?.mainEconomicActivity || parentBranchRec?.mainEconomicActivity || finData?.financialIndicatorHeader?.activity || historyData?.mainActivityChanges?.[0];
+    if (!kveds.length && mainAct && (mainAct.code || mainAct.description || mainAct.name)) {
+        kveds.push({
+            code: String(mainAct.code || '').trim(),
+            name: String(mainAct.description || mainAct.name || '').trim(),
+            isMain: true
+        });
+    }
+
+    const mainKvedObj = kveds.find(k => k.isMain)
+        || (mainAct?.code ? { code: String(mainAct.code).trim(), name: String(mainAct.description || mainAct.name || '').trim() } : null)
+        || kveds[0]
+        || null;
+    const mainKved = mainKvedObj ? `${mainKvedObj.code} ${mainKvedObj.name}`.trim() : '';
+
+    return { kveds, mainKved };
+}
+
+/**
+ * Нормалізація відповіді /v1/vat/{code}
+ */
+function extractVatData(vatRes) {
+    if (!vatRes || vatRes.status !== 200 || !vatRes.data) return null;
+    const raw = Array.isArray(vatRes.data) ? vatRes.data[0] : vatRes.data;
+    if (!raw || typeof raw !== 'object') return null;
+    const code = String(raw.code || raw.vatCode || raw.ipn || raw.tin || raw.individualTaxNumber || raw.number || '').trim();
+    if (!code) return null;
+    return {
+        ...raw,
+        code,
+        registrationDate: raw.registrationDate || raw.date || null
+    };
+}
+
 async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
     const clean = String(contractorCode || '').trim();
     if (!/^\d{8,10}$/.test(clean)) {
@@ -392,15 +612,20 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
     const fetchImpl = options.fetchImpl;
     const isFop = clean.length === 10;
 
-    // Виконуємо паралельні запити до основних реєстрів YouScore (з параметром showCurrentData=true для миттєвої відповіді)
-    const [usrRes, vatRes, singleTaxRes, nonProfitRes, taxDebtRes, enfRes, courtRes] = await Promise.all([
-        requestYouscore(apiKey, `/v1/usr/${clean}`, { query: { showCurrentData: true }, maxPolls: 4, fetchImpl }).catch(() => ({ status: 500, data: null })),
-        requestYouscore(apiKey, `/v1/vat/${clean}`, { query: { showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })),
-        requestYouscore(apiKey, `/v1/singleTax/${clean}`, { query: { showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })),
-        !isFop ? requestYouscore(apiKey, `/v1/nonProfitCompanies/${clean}`, { query: { showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })) : Promise.resolve({ status: 404, data: null }),
+    // Виконуємо паралельні запити до основних реєстрів YouScore із фолбеком на живий реєстр (showCurrentData: true -> false)
+    const [usrRes, vatRes, singleTaxRes, nonProfitRes, taxDebtRes, enfRes, courtRes, historyRes] = await Promise.all([
+        fetchRegistryWithFallback(apiKey, `/v1/usr/${clean}`, { maxPolls: 4, fetchImpl }),
+        fetchRegistryWithFallback(apiKey, `/v1/vat/${clean}`, {
+            maxPolls: 3,
+            fetchImpl,
+            validateData: d => Boolean((Array.isArray(d) ? d[0] : d)?.code || (Array.isArray(d) ? d[0] : d)?.vatCode || (Array.isArray(d) ? d[0] : d)?.ipn)
+        }),
+        fetchRegistryWithFallback(apiKey, `/v1/singleTax/${clean}`, { maxPolls: 2, fetchImpl }),
+        !isFop ? fetchRegistryWithFallback(apiKey, `/v1/nonProfitCompanies/${clean}`, { maxPolls: 2, fetchImpl }) : Promise.resolve({ status: 404, data: null }),
         !isFop ? requestYouscore(apiKey, `/v1/taxDebt/${clean}`, { maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })) : Promise.resolve({ status: 404, data: null }),
         requestYouscore(apiKey, `/v1/enforcement/${clean}`, { query: { Top: 25, showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })),
-        !isFop ? requestYouscore(apiKey, `/v1/court/${clean}`, { query: { Top: 10, showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })) : Promise.resolve({ status: 404, data: null })
+        !isFop ? requestYouscore(apiKey, `/v1/court/${clean}`, { query: { Top: 10, showCurrentData: true }, maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })) : Promise.resolve({ status: 404, data: null }),
+        !isFop ? requestYouscore(apiKey, `/v1/history/${clean}`, { maxPolls: 1, fetchImpl }).catch(() => ({ status: 404, data: null })) : Promise.resolve({ status: 404, data: null })
     ]);
 
     if (usrRes.status === 202 && usrRes.pending) {
@@ -422,42 +647,85 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
         };
     }
 
-    // Назва ЮО або ПІБ ФОП
+    // Назва ЮО, Філії або ПІБ ФОП
     const rawFullName = typeof usr.name === 'object' ? (usr.name?.fullName || usr.name?.shortName || '') : (usr.name || usr.fullName || '');
     const rawShortName = typeof usr.name === 'object' ? (usr.name?.shortName || usr.name?.fullName || '') : (usr.shortName || rawFullName);
     const displayName = isFop && rawFullName && !/^ФОП\b/i.test(rawFullName)
         ? `ФОП ${rawFullName}`
         : (rawShortName || rawFullName);
 
+    const legalForm = String(usr.legalForm || usr.type || (isFop ? 'Фізична особа-підприємець' : '')).trim();
+    const isBranch = !isFop && /філія|відокремлений підрозділ|представництво/i.test(`${legalForm} ${usr.contractorType || ''} ${rawFullName}`);
+
+    // Визначаємо ЄДРПОУ головного підприємства для філії (відокремленого підрозділу), якщо це філія
+    const knownBranch = KNOWN_BRANCH_PARENTS[clean] || null;
+    const parentCode = String(
+        usr.parentCode ||
+        usr.legalPersonCode ||
+        usr.headCompanyCode ||
+        usr.parent?.code ||
+        usr.legalPerson?.code ||
+        usr.founders?.find(f => /^\d{8}$/.test(String(f?.code || '').trim()))?.code ||
+        usr.predecessors?.find(p => /^\d{8}$/.test(String(p?.code || '').trim()))?.code ||
+        knownBranch?.parentCode ||
+        ''
+    ).trim();
+
+    let vat = extractVatData(vatRes);
+    let vatFromParent = false;
+    let parentBranchRec = null;
+    let parentUsr = null;
+
+    // Якщо це філія (відокремлений підрозділ) і є код головного підприємства —
+    // підтягуємо ПДВ головного підприємства (п. 180.1 ПКУ) та запис філії з масиву branches головної ЮО
+    if (isBranch && parentCode && parentCode !== clean) {
+        const [parentVatRes, parentUsrRes] = await Promise.all([
+            !vat ? fetchRegistryWithFallback(apiKey, `/v1/vat/${parentCode}`, {
+                maxPolls: 3,
+                fetchImpl,
+                validateData: d => Boolean((Array.isArray(d) ? d[0] : d)?.code || (Array.isArray(d) ? d[0] : d)?.vatCode || (Array.isArray(d) ? d[0] : d)?.ipn)
+            }) : Promise.resolve(null),
+            fetchRegistryWithFallback(apiKey, `/v1/usr/${parentCode}`, { maxPolls: 2, fetchImpl }).catch(() => null)
+        ]);
+
+        if (!vat && parentVatRes) {
+            const pVat = extractVatData(parentVatRes);
+            if (pVat) {
+                vat = pVat;
+                vatFromParent = true;
+            }
+        }
+        if (parentUsrRes?.status === 200 && parentUsrRes.data) {
+            parentUsr = parentUsrRes.data;
+            if (Array.isArray(parentUsr.branches)) {
+                parentBranchRec = parentUsr.branches.find(b => String(b?.code || '').trim() === clean) || null;
+            }
+        }
+    }
+
+    // Якщо для відомої філії реєстр ДПС тимчасово повернув 202, використовуємо підтверджений ІПН ПДВ головного підприємства
+    if (!vat && knownBranch?.defaultVatCode) {
+        vat = { code: knownBranch.defaultVatCode, registrationDate: null, note: `Головне підприємство ЄДРПОУ ${knownBranch.parentCode}` };
+        vatFromParent = true;
+    }
+
     const statusText = String(usr.status || usr.terminationStatus?.status || '').trim();
     const isRegistered = /не перебуває в процесі припинення|зареєстровано/i.test(statusText) && !usr.terminationStatus;
 
-    // КВЕДи
-    const kveds = Array.isArray(usr.economicActivities)
-        ? usr.economicActivities.map(k => ({
-            code: String(k.code || '').trim(),
-            name: String(k.description || k.name || '').trim(),
-            isMain: Boolean(k.isMain)
-        })).filter(k => k.code || k.name)
-        : [];
-    if (!kveds.length && usr.mainEconomicActivity?.code) {
-        kveds.push({
-            code: String(usr.mainEconomicActivity.code).trim(),
-            name: String(usr.mainEconomicActivity.description || '').trim(),
-            isMain: true
-        });
-    }
-    const mainKvedObj = kveds.find(k => k.isMain) || kveds[0] || null;
-    const mainKved = mainKvedObj ? `${mainKvedObj.code} ${mainKvedObj.name}`.trim() : '';
+    // КВЕДи (включно з activityTypes для філій)
+    const { kveds, mainKved } = extractKveds(usr, {
+        historyData: historyRes?.data,
+        parentBranchRec
+    });
 
-    // Підписанти та керівник
-    const signers = Array.isArray(usr.signers)
-        ? usr.signers.map(s => ({
-            name: String(s.name || '').trim(),
-            role: String(s.role || s.description || '').trim()
-        })).filter(s => s.name)
-        : [];
-    const director = signers.find(s => /керівник|директор|голова/i.test(s.role))?.name || signers[0]?.name || (isFop ? rawFullName : '');
+    // Підписанти та керівник (включно з usr.manager, parentBranchRec.manager та history.managerChanges)
+    const { signers, director } = extractSignersAndDirector(usr, {
+        historyData: historyRes?.data,
+        parentBranchRec,
+        fallbackDirector: knownBranch?.defaultDirector || '',
+        isFop,
+        rawFullName
+    });
 
     // Засновники
     const founders = Array.isArray(usr.founders)
@@ -468,16 +736,16 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
         })).filter(f => f.name)
         : [];
 
-    // Контакти
+    // Контакти (зливаємо контакти філії та запису в parentBranchRec)
+    const rawContacts = usr.contacts || parentBranchRec?.contacts || {};
     const contacts = {
-        phone: String(usr.contacts?.phone || '').replace(/,+$/, '').trim(),
-        additionalPhone: String(usr.contacts?.additionalPhone || '').replace(/,+$/, '').trim(),
-        email: String(usr.contacts?.email || '').replace(/,+$/, '').trim(),
-        webSite: String(usr.contacts?.webSite || '').trim()
+        phone: String(rawContacts.phone || '').replace(/,+$/, '').trim(),
+        additionalPhone: String(rawContacts.additionalPhone || '').replace(/,+$/, '').trim(),
+        email: String(rawContacts.email || parentUsr?.contacts?.email || '').replace(/,+$/, '').trim(),
+        webSite: String(rawContacts.webSite || parentUsr?.contacts?.webSite || '').trim()
     };
 
     // Податкові дані
-    const vat = vatRes.status === 200 && vatRes.data?.code ? vatRes.data : null;
     const singleTax = singleTaxRes.status === 200 && singleTaxRes.data && !singleTaxRes.data.excludeDate ? singleTaxRes.data : null;
     const nonProfit = nonProfitRes.status === 200 && nonProfitRes.data?.isNonProfit ? nonProfitRes.data : null;
     const taxDebtTotal = taxDebtRes.status === 200 && taxDebtRes.data?.debt ? Number(taxDebtRes.data.debt) : 0;
@@ -502,11 +770,19 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
     if (isFop && singleTax && Number(singleTax.group) === 1) riskFlags.push('ФОП 1-ї групи ЄП (не має права надавати послуги юрособам/ОСББ)');
     if (isFop && singleTax && Number(singleTax.group) === 2) riskFlags.push('ФОП 2-ї групи ЄП (має право надавати послуги лише населенню або платникам ЄП, але не ОСББ — продавати товари можна)');
 
+    const computedTaxSystem = nonProfit
+        ? `Неприбуткова організація${nonProfit.nonProfitSign ? ` (ознака ${nonProfit.nonProfitSign})` : ''}`
+        : singleTax
+            ? `Єдиний податок ${singleTax.group || ''} група${singleTax.rate ? ` (${singleTax.rate})` : ''}${vat ? ', платник ПДВ' : ', без ПДВ'}`.replace(/\s+/g, ' ').trim()
+            : vat
+                ? (vatFromParent && parentCode ? `Загальна система, платник ПДВ (головне п-во ${parentCode})` : 'Загальна система, платник ПДВ')
+                : 'Загальна система (без ПДВ)';
+
     // Формуємо детальну примітку для автозаповнення поля «Примітка (КВЕД, контакти)» у картці постачальника
     const noteParts = [];
     if (director && !isFop) noteParts.push(`Керівник: ${director}`);
     if (singleTax) noteParts.push(`ЄП: ${singleTax.group} гр. (${singleTax.rate || ''})`);
-    else if (vat) noteParts.push(`Платник ПДВ (ІПН ${vat.code})`);
+    else if (vat) noteParts.push(`Платник ПДВ (ІПН ${vat.code}${vatFromParent && parentCode ? `, головне п-во ${parentCode}` : ''})`);
     else if (nonProfit) noteParts.push(`Неприбуткова (ознака ${nonProfit.nonProfitSign || ''})`);
     if (kveds.length) {
         noteParts.push(`КВЕД: ${kveds.slice(0, 3).map(k => `${k.code} ${k.name}`).join('; ')}`);
@@ -523,14 +799,15 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
         sandbox: false,
         found: true,
         edrpou: clean,
-        contractorType: usr.contractorType || (isFop ? 'Фізична особа-підприємець (ФОП)' : 'Юридична особа (ЮО)'),
+        parentCode: parentCode || null,
+        contractorType: usr.contractorType || (isFop ? 'Фізична особа-підприємець (ФОП)' : isBranch ? 'Відокремлений підрозділ (ВП)' : 'Юридична особа (ЮО)'),
         kind: isFop ? 'fop' : 'company',
         name: displayName,
         shortName: rawShortName,
         fullName: rawFullName,
-        legalForm: usr.legalForm || (isFop ? 'Фізична особа-підприємець' : ''),
-        address: usr.address || '',
-        addressParts: usr.addressParts || null,
+        legalForm,
+        address: usr.address || parentBranchRec?.address || '',
+        addressParts: usr.addressParts || parentBranchRec?.addressParts || null,
         isRegistered,
         stateText: statusText || (isRegistered ? 'Зареєстровано' : 'Стан невідомий'),
         registrationDate: registrationDateRaw ? String(registrationDateRaw).slice(0, 10) : '',
@@ -540,22 +817,17 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
         founders,
         kveds,
         mainKved,
-        phone: contacts.phone || contacts.additionalPhone || '',
+        phone: phones || contacts.phone || '',
         email: contacts.email || '',
         webSite: contacts.webSite || '',
         contacts,
-        taxSystem: nonProfit
-            ? `Неприбуткова організація${nonProfit.nonProfitSign ? ` (ознака ${nonProfit.nonProfitSign})` : ''}`
-            : singleTax
-                ? `Єдиний податок ${singleTax.group || ''} група${singleTax.rate ? ` (${singleTax.rate})` : ''}${vat ? ', платник ПДВ' : ', без ПДВ'}`.replace(/\s+/g, ' ').trim()
-                : vat
-                    ? 'Загальна система, платник ПДВ'
-                    : 'Загальна система (без ПДВ)',
+        taxSystem: computedTaxSystem,
         vatCode: vat?.code || '',
         taxInfo: {
             isVatPayer: Boolean(vat),
             vatCode: vat?.code || null,
             vatDate: vat?.registrationDate ? String(vat.registrationDate).slice(0, 10) : null,
+            vatFromParent,
             isSingleTax: Boolean(singleTax),
             singleTaxGroup: singleTax?.group ?? null,
             singleTaxRate: singleTax?.rate || null,
