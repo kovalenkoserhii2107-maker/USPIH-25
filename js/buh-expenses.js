@@ -940,21 +940,227 @@ function contractsHtml() {
         </section>`;
 }
 
+function compactSupplierName(name) {
+    return String(name || "")
+        .replace(/ПРИВАТНОГО АКЦІОНЕРНОГО ТОВАРИСТВА/gi, "ПрАТ")
+        .replace(/ПРИВАТНЕ АКЦІОНЕРНЕ ТОВАРИСТВО/gi, "ПрАТ")
+        .replace(/ПУБЛІЧНОГО АКЦІОНЕРНОГО ТОВАРИСТВА/gi, "ПАТ")
+        .replace(/ПУБЛІЧНЕ АКЦІОНЕРНЕ ТОВАРИСТВО/gi, "ПАТ")
+        .replace(/АКЦІОНЕРНОГО ТОВАРИСТВА/gi, "АТ")
+        .replace(/АКЦІОНЕРНЕ ТОВАРИСТВО/gi, "АТ")
+        .replace(/ТОВАРИСТВА З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ/gi, "ТОВ")
+        .replace(/ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ/gi, "ТОВ")
+        .replace(/КОМУНАЛЬНОГО ПІДПРИЄМСТВА/gi, "КП")
+        .replace(/КОМУНАЛЬНЕ ПІДПРИЄМСТВО/gi, "КП")
+        .replace(/ПРИВАТНОГО ПІДПРИЄМСТВА/gi, "ПП")
+        .replace(/ПРИВАТНЕ ПІДПРИЄМСТВО/gi, "ПП")
+        .replace(/ДОЧІРНЬОГО ПІДПРИЄМСТВА/gi, "ДП")
+        .replace(/ДОЧІРНЄ ПІДПРИЄМСТВО/gi, "ДП")
+        .replace(/ВИРОБНИЧОГО ОБ['ʼ’"]ЄДНАННЯ/gi, "ВО")
+        .replace(/ВИРОБНИЧЕ ОБ['ʼ’"]ЄДНАННЯ/gi, "ВО")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function shortLegalForm(s) {
+    const combined = `${s.legalForm || ""} ${s.name || ""}`;
+    if (/філія|відокремлений підрозділ|представництво/i.test(combined)) return "Філія / ВП";
+    if (s.kind === "fop") return "ФОП";
+    if (s.kind === "person") return "Фізособа (ЦПД)";
+    return ctx.kinds[s.kind] || "Юрособа";
+}
+
+function shortTaxBadge(s) {
+    const ts = String(s.taxSystem || "").trim();
+    if (/неприбутков/i.test(ts)) return `<span class="buh-tag is-soft">Неприбуткова</span>`;
+    if (/єдиний податок|\bєп\b/i.test(ts)) {
+        const g = ts.match(/(\d)\s*груп/i)?.[1];
+        const hasVat = Boolean(s.vatCode) || (/платник пдв/i.test(ts) && !/без пдв/i.test(ts));
+        return `<span class="buh-tag is-soft">ЄП${g ? ` ${g} гр.` : ""}${hasVat ? " + ПДВ" : ""}</span>`;
+    }
+    if (s.vatCode || (/платник пдв/i.test(ts) && !/без пдв/i.test(ts))) {
+        return `<span class="buh-tag is-payment" title="${escapeHtml(ts || (s.vatCode ? `ІПН ПДВ: ${s.vatCode}` : "Платник ПДВ"))}">Платник ПДВ</span>`;
+    }
+    if (/без пдв|загальна/i.test(ts)) {
+        return `<span class="buh-tag is-soft">Без ПДВ</span>`;
+    }
+    return "";
+}
+
+function shortComplianceBadge(s) {
+    const badges = [];
+    if (Number(s.taxDebtTotal || 0) > 0) {
+        badges.push(`<span class="buh-tag is-error" title="Податковий борг: ${escapeHtml(String(s.taxDebtTotal))} грн">Борг ДПС</span>`);
+    }
+    if (Number(s.openPenalties || 0) > 0) {
+        badges.push(`<span class="buh-tag is-review" title="Відкритих виконавчих проваджень: ${escapeHtml(String(s.openPenalties))}">ВП: ${escapeHtml(String(s.openPenalties))}</span>`);
+    }
+    if (s.kind === "person") {
+        badges.push(`<span class="buh-tag is-error">Лише ЦПД</span>`);
+    } else if (s.kind === "fop") {
+        badges.push(s.fopChecked
+            ? `<span class="buh-tag is-payment">✓ ФОП</span>`
+            : `<span class="buh-tag is-review">Перевірте ЄДР</span>`);
+    } else if (!badges.length && (s.fullName || s.director || s.taxSystem || s.registrationStatus)) {
+        badges.push(`<span class="buh-tag is-payment" title="Дані перевірено в ЄДР / YouControl">✓ ЄДР</span>`);
+    }
+    return badges.join(" ");
+}
+
 function suppliersHtml() {
     const totals = new Map();
     ctx.expenses.filter(e => ["approved", "paid"].includes(e.status)).forEach(e => totals.set(e.supplierId, (totals.get(e.supplierId) || 0) + e.amountKop));
-    return `<section class="buh-card">
-            <div class="buh-toolbar"><span class="buh-note">Картка контрагента автоматично заповнюється з ЄДРПОУ, реєстрів платників ПДВ / Єдиного податку, судового реєстру та АСВП через YouControl (YouScore API).</span>
+    const matchedSup = findFocusedSupplier();
+    const supContracts = getSupplierContracts(matchedSup, activeFocus?.name || "", activeFocus?.contract || null);
+    const supDocs = matchedSup ? ctx.expenses.filter(e => e.supplierId === matchedSup.id && e.status !== "canceled") : [];
+
+    const focusBanner = activeFocus?.kind === "supplier" ? (matchedSup
+        ? `<div class="buh-card buh-focus-card" id="exFocusedTarget">
+            <div class="buh-card-head">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <span class="buh-tag is-payment">Картка контрагента</span>
+                        <span class="buh-tag is-soft">${escapeHtml(shortLegalForm(matchedSup))}</span>
+                        ${matchedSup.registrationStatus ? `<span class="buh-tag ${/припинен|банкрут/i.test(matchedSup.registrationStatus) && !/не перебуває/i.test(matchedSup.registrationStatus) ? "is-error" : "is-payment"}">${escapeHtml(matchedSup.registrationStatus)}</span>` : ""}
+                        ${matchedSup.expressIndex ? `<span class="buh-tag is-soft">YouScore: ${escapeHtml(matchedSup.expressIndex)}</span>` : ""}
+                    </div>
+                    <h2 style="margin-top:8px">${escapeHtml(compactSupplierName(matchedSup.name))}</h2>
+                    ${(matchedSup.fullName && matchedSup.fullName !== compactSupplierName(matchedSup.name)) || matchedSup.name !== compactSupplierName(matchedSup.name)
+                        ? `<p class="buh-note" style="margin:4px 0 0;color:#0F172A;font-weight:600">${escapeHtml(matchedSup.fullName || matchedSup.name)}</p>`
+                        : ""}
+                </div>
+                <button type="button" class="btn-ghost-small" data-act="clear-focus">Сховати ✕</button>
+            </div>
+            <div class="sup-info-grid">
+                <div class="sup-info-cell">
+                    <span>Код ЄДРПОУ / РНОКПП</span>
+                    <b>${escapeHtml(matchedSup.code || "—")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Організаційно-правова форма</span>
+                    <b>${escapeHtml(matchedSup.legalForm || ctx.kinds[matchedSup.kind] || "Юрособа")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Керівник / підписант</span>
+                    <b>${escapeHtml(matchedSup.director || "—")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Проведено документів</span>
+                    <b>${supDocs.length} док. · ${fmtKop(totals.get(matchedSup.id) || 0)} грн</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Система оподаткування (ДПС)</span>
+                    <b>${escapeHtml(matchedSup.taxSystem || "—")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>ІПН платника ПДВ</span>
+                    <b>${escapeHtml(matchedSup.vatCode || "—")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Телефон</span>
+                    <b>${escapeHtml(matchedSup.phone || "—")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Електронна пошта (Email)</span>
+                    <b>${escapeHtml(matchedSup.email || "—")}</b>
+                </div>
+                <div class="sup-info-cell is-span-2">
+                    <span>Рахунок IBAN для безготівкової оплати</span>
+                    <code class="sup-iban-code">${escapeHtml(matchedSup.iban || "не вказано")}</code>
+                </div>
+                <div class="sup-info-cell is-span-2">
+                    <span>Комплаєнс ДПС / АСВП (YouControl)</span>
+                    <b>${Number(matchedSup.taxDebtTotal || 0) > 0 ? `⚠️ Податковий борг: ${matchedSup.taxDebtTotal} грн` : "✓ Податковий борг відсутній"} · ${Number(matchedSup.openPenalties || 0) > 0 ? `⚠️ Відкритих ВП: ${matchedSup.openPenalties}` : "Відкритих ВП немає"}</b>
+                </div>
+                ${matchedSup.address ? `<div class="sup-info-cell is-span-2">
+                    <span>Юридична адреса (місцезнаходження з ЄДР)</span>
+                    <b>${escapeHtml(matchedSup.address)}</b>
+                </div>` : ""}
+                ${matchedSup.mainKved ? `<div class="sup-info-cell is-span-2">
+                    <span>Основний вид діяльності (КВЕД)</span>
+                    <b>${escapeHtml(matchedSup.mainKved)}</b>
+                </div>` : ""}
+                ${matchedSup.note ? `<div class="sup-info-cell is-full">
+                    <span>Примітка / додаткові КВЕДи</span>
+                    <b>${escapeHtml(matchedSup.note)}</b>
+                </div>` : ""}
+            </div>
+            ${renderClickableContractsBlock(supContracts, { supplierId: matchedSup.id, supplierName: matchedSup.name, code: matchedSup.code })}
+            <div class="buh-focus-actions">
+                <button type="button" class="sv-btn btn-compact" data-act="focus-edit-supplier" data-id="${escapeHtml(matchedSup.id)}">Редагувати реквізити</button>
+                <button type="button" class="sv-btn is-soft btn-compact" data-act="new-doc-for-supplier" data-supplier-id="${escapeHtml(matchedSup.id)}">+ Внести документ</button>
+                <button type="button" class="sv-btn is-soft btn-compact" data-act="new-contract-for-supplier" data-supplier-id="${escapeHtml(matchedSup.id)}" data-supplier-name="${escapeHtml(matchedSup.name)}">+ Новий договір</button>
+            </div>
+        </div>`
+        : `<div class="buh-card buh-focus-card" id="exFocusedTarget">
+            <div class="buh-card-head">
+                <div>
+                    <span class="buh-tag is-review">Контрагент із банківської виписки</span>
+                    <h2 style="margin-top:6px">${escapeHtml(activeFocus.name || "Контрагент")}</h2>
+                </div>
+                <button type="button" class="btn-ghost-small" data-act="clear-focus">Сховати ✕</button>
+            </div>
+            <div class="sup-info-grid">
+                <div class="sup-info-cell">
+                    <span>Назва у виписці</span>
+                    <b>${escapeHtml(activeFocus.name || "—")}</b>
+                </div>
+                <div class="sup-info-cell">
+                    <span>Код ЄДРПОУ / РНОКПП</span>
+                    <b>${escapeHtml(activeFocus.code || "—")}</b>
+                </div>
+                <div class="sup-info-cell is-span-2">
+                    <span>Рахунок IBAN</span>
+                    <code class="sup-iban-code">${escapeHtml(activeFocus.iban || "—")}</code>
+                </div>
+            </div>
+            ${renderClickableContractsBlock(supContracts, { supplierId: "", supplierName: activeFocus.name || "", code: activeFocus.code || "" })}
+            <div class="buh-focus-actions">
+                <button type="button" class="sv-btn btn-compact" data-act="register-focused-supplier">+ Додати контрагента в довідник</button>
+            </div>
+        </div>`) : "";
+
+    return `${focusBanner}<section class="buh-card ex-suppliers-card">
+            <div class="buh-toolbar"><span class="buh-note">Натисніть на контрагента в таблиці, щоб відкрити повну картку з даними ЄДРПОУ, ПДВ, КВЕД, адресою та договорами.</span>
                 <button type="button" class="btn-primary btn-compact" data-act="new-supplier">+ Постачальник</button></div>
-            ${ctx.suppliers.length ? `<table class="buh-table ex-table"><thead><tr><th>Назва та керівник</th><th>Код / ОПФ</th><th>Податковий статус і КВЕД</th><th>IBAN та контакти</th><th>Комплаєнс ЄДР / YouScore</th><th class="t-sum">Витрати, ₴</th><th></th></tr></thead>
-                <tbody>${ctx.suppliers.map(s => `<tr data-id="${escapeHtml(s.id)}">
-                    <td class="t-main"><b>${escapeHtml(s.name)}</b>${s.director ? `<small>Керівник: ${escapeHtml(s.director)}</small>` : `<small>${escapeHtml(ctx.kinds[s.kind] || "")}</small>`}${s.address ? `<small class="t-muted">${escapeHtml(s.address)}</small>` : ""}</td>
-                    <td><b>${escapeHtml(s.code)}</b><br><small class="t-muted">${escapeHtml(s.legalForm || ctx.kinds[s.kind] || "")}</small></td>
-                    <td>${s.taxSystem ? `<span class="buh-tag is-soft">${escapeHtml(s.taxSystem)}</span><br>` : ""}${s.mainKved ? `<small class="t-muted">${escapeHtml(s.mainKved)}</small>` : "—"}</td>
-                    <td class="t-muted">${escapeHtml(maskIban(s.iban || "")) || "—"}${s.phone ? `<br><small>${escapeHtml(s.phone)}</small>` : ""}${s.email ? `<br><small>${escapeHtml(s.email)}</small>` : ""}</td>
-                    <td>${s.kind === "fop" ? (s.fopChecked ? "<span class=\"buh-tag is-payment\">КВЕД ФОП перевірено</span> " : "<span class=\"buh-tag is-review\">перевірте витяг ЄДР</span> ") : s.kind === "person" ? "<span class=\"buh-tag is-error\">лише через ЦПД</span> " : ""}${s.taxDebtTotal > 0 ? `<span class="buh-tag is-error">Податковий борг ${escapeHtml(String(s.taxDebtTotal))} ₴</span> ` : ""}${s.openPenalties > 0 ? `<span class="buh-tag is-review">ВП: ${escapeHtml(String(s.openPenalties))}</span> ` : ""}${s.expressIndex ? `<span class="buh-tag is-soft">YouScore: ${escapeHtml(s.expressIndex)}</span>` : ""}</td>
+            ${ctx.suppliers.length ? `<div class="ex-table-wrap"><table class="buh-table ex-table ex-suppliers-table"><thead><tr><th>Контрагент</th><th>Код / Оподаткування</th><th>IBAN / Телефон</th><th>Договори / Статус</th><th class="t-sum">Витрати, ₴</th><th class="t-act">Дії</th></tr></thead>
+                <tbody>${ctx.suppliers.map(s => {
+                    const rowContracts = getSupplierContracts(s);
+                    const isFocused = matchedSup?.id === s.id;
+                    const shortName = compactSupplierName(s.name);
+                    const firstPhone = String(s.phone || "").split(/[,;]/)[0].trim();
+                    const taxBadge = shortTaxBadge(s);
+                    const compBadge = shortComplianceBadge(s);
+                    return `<tr class="sup-row${isFocused ? " buh-nav-target-highlight" : ""}" data-id="${escapeHtml(s.id)}" data-act="focus-supplier" title="Натисніть, щоб переглянути повну картку контрагента">
+                    <td class="t-main ex-sup-main">
+                        <button type="button" class="ex-sup-link" data-act="focus-supplier" data-id="${escapeHtml(s.id)}">
+                            <b>${escapeHtml(shortName)}</b>
+                        </button>
+                        <small>${escapeHtml(shortLegalForm(s))}${s.director ? ` · ${escapeHtml(s.director)}` : ""}</small>
+                    </td>
+                    <td class="ex-sup-code">
+                        <b>${escapeHtml(s.code || "—")}</b>
+                        ${taxBadge ? `<div class="ex-sup-subtag">${taxBadge}</div>` : ""}
+                    </td>
+                    <td class="t-muted ex-sup-iban">
+                        <span class="ex-iban-short">${escapeHtml(maskIban(s.iban || "")) || "—"}</span>
+                        ${firstPhone ? `<small class="t-muted">${escapeHtml(firstPhone)}</small>` : ""}
+                    </td>
+                    <td class="ex-sup-contracts-cell">
+                        <div class="sup-table-pills">
+                            ${rowContracts.map(c => `<button type="button" class="sup-contract-pill" data-act="jump-to-contract" data-id="${escapeHtml(c.id)}" title="${escapeHtml(c.subject || "")}">📑 № ${escapeHtml(c.number)}</button>`).join("")}
+                            ${compBadge}
+                            ${!rowContracts.length && !compBadge ? `<span class="t-muted">—</span>` : ""}
+                        </div>
+                    </td>
                     <td class="t-sum">${fmtKop(totals.get(s.id) || 0)}</td>
-                    <td class="t-act"><button type="button" class="btn-ghost-small" data-act="edit-supplier">Змінити</button></td></tr>`).join("")}</tbody></table>`
+                    <td class="t-act">
+                        <div class="ex-act-group">
+                            <button type="button" class="btn-ghost-small" data-act="focus-supplier" data-id="${escapeHtml(s.id)}">${isFocused ? "Сховати" : "Картка"}</button>
+                            <button type="button" class="btn-ghost-small" data-act="edit-supplier">Змінити</button>
+                        </div>
+                    </td></tr>`;
+                }).join("")}</tbody></table></div>`
                 : "<p class=\"list-empty\">Постачальників ще немає. Їх можна додати й прямо з форми документа.</p>"}
         </section>`;
 }
@@ -989,10 +1195,10 @@ export async function loadExpensesView() {
     if (shouldScrollFocus) {
         shouldScrollFocus = false;
         setTimeout(() => {
-            const hlRow = host.querySelector('tr.buh-nav-target-highlight');
             const focusCard = document.getElementById('exFocusedTarget') || document.getElementById('dcCard');
-            if (hlRow) hlRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            else if (focusCard) focusCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const hlRow = host.querySelector('tr.buh-nav-target-highlight');
+            if (focusCard) focusCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            else if (hlRow) hlRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 60);
     }
     return ctx.expenses.filter(e => e.status === 'pending').length;
@@ -1240,6 +1446,10 @@ async function saveSupplier(btn) {
         });
         (r.warnings || []).forEach(w => toast(w, "info"));
         toast("Картку постачальника збережено", "success");
+        if (!back && r?.id) {
+            activeFocus = { kind: "supplier", id: r.id, name: val("sfName"), code: val("sfCode"), iban: val("sfIban") };
+            shouldScrollFocus = true;
+        }
         form = back ? { ...back, data: { ...back.data, supplierId: r.id } } : null;
         if (back) segment = back.kind === "doc" ? "work" : "contracts";
     } catch (e) { toast(e.message, "error"); }
@@ -1418,10 +1628,27 @@ export function initExpensesView() {
             else if (a === 'focus-supplier') {
                 const targetSup = ctx.suppliers.find(s => s.id === (btn.dataset.id || rowId));
                 if (targetSup) {
-                    activeFocus = { kind: 'supplier', id: targetSup.id, name: targetSup.name, code: targetSup.code, iban: targetSup.iban };
-                    shouldScrollFocus = true;
+                    if (activeFocus?.kind === 'supplier' && activeFocus.id === targetSup.id) {
+                        activeFocus = null;
+                    } else {
+                        activeFocus = { kind: 'supplier', id: targetSup.id, name: targetSup.name, code: targetSup.code, iban: targetSup.iban };
+                        shouldScrollFocus = true;
+                    }
                     loadExpensesView();
                 }
+            }
+            else if (a === 'new-doc-for-supplier') {
+                const sid = btn.dataset.supplierId || findFocusedSupplier()?.id || '';
+                const activeCon = ctx.contracts.find(c => c.supplierId === sid && c.status === 'approved');
+                openExpenses('docs', {
+                    kind: 'doc',
+                    data: {
+                        supplierId: sid,
+                        contractId: activeCon?.id || '',
+                        item: activeCon?.item || 'other',
+                        amountKop: activeCon?.monthlyKop || null
+                    }
+                });
             }
             else if (a === 'focus-contract') {
                 const targetCon = ctx.contracts.find(c => c.id === (btn.dataset.id || rowId));
