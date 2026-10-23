@@ -2614,6 +2614,7 @@ body.buh-mode .buh-view { position: static; transform: none; }
     .ft-h-date { grid-column: 1 / -1; }
     .ft-sticky { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
     .ft-sticky .sv-btn { min-height: 46px; padding: 0 6px; font-size: 13.5px; line-height: 1.15; white-space: normal; }
+}
 /* ---------- Нарахування: місяць, що зробити зараз, збір внесків, вкладки ---------- */
 #viewCharges { display: flex; flex-direction: column; gap: 14px; }
 .cg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
