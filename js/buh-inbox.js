@@ -19,7 +19,7 @@ import { openBudget, publishFinance } from './buh-budget.js';
 import { openJournal } from './buh-journal.js';
 import { openAssets, runMonthlyDepreciation } from './buh-assets.js';
 import { openAdvance } from './buh-advance.js';
-import { openPayroll, payPayrollStage } from './buh-payroll.js';
+import { openPayroll, payPayrollStage, payrollNeedsProject } from './buh-payroll.js';
 import { openReports, reportTasks } from './buh-reports.js';
 import { receiptOverdue } from './reports-view-core.js';
 import { openTxSheet } from './buh-chain.js';
@@ -767,6 +767,14 @@ const confirmProposal = item => {
     if (item.proposal.type === 'setup' && item.proposal.budgetYear) { openBudget(item.proposal.budgetYear); return; }
     if (item.proposal.type === 'setup' && item.proposal.payrollAction) {
         const { payrollPeriod: period, payrollAction: what } = item.proposal;
+        // Зарплатний проект: відомість у банку готується в розділі «Зарплата» (кроки й стан банку там).
+        if (what !== 'approve') {
+            payrollNeedsProject(period, what).then(yes => yes ? openPayroll(period) : runTask(item, async () => {
+                const r = await payPayrollStage(period, what);
+                toast(`Платежів у Приват24: ${r.created}. Голова підписує пачку`, 'success');
+            })).catch(e => toast(e.message, 'error'));
+            return;
+        }
         runTask(item, async () => {
             if (what === 'approve') { await payrollAct({ action: 'approve', period }); toast('Відомість затверджено', 'success'); return; }
             const r = await payPayrollStage(period, what);
