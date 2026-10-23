@@ -193,6 +193,8 @@ export async function payAct(payload) {
 // ------------------------------------------------------------
 /** Тарифи, приміщення, вхідні залишки, нараховані місяці й готове нарахування — із сервера. */
 export const loadCharges = () => once('charges', () => callBackend('chargesAction', { action: 'context' }));
+/** Лише читання (розрахунок іншого місяця): кеш не скидаємо. */
+export const chargesPeek = payload => callBackend('chargesAction', payload, 60000);
 
 /** Відомість розрахунків з мешканцями за місяць. */
 export const loadStatement = period => once(`statement:${period}`, () => callBackend('chargesAction', { action: 'statement', period }));
