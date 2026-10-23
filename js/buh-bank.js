@@ -401,7 +401,7 @@ function txModalHtml(tx, topOffsetPx = 88) {
             </div>` : ''}
 
             ${entry ? `<div class="bk-modal-section">
-                <span class="bk-modal-label">Проводка в обліку (ОСВ) — попередній вигляд, точна — у «Проводках»</span>
+                <span class="bk-modal-label">Проводка в обліку (ОСВ) — попередній вигляд, точна — в «ОСВ»</span>
                 <button type="button" class="bk-interactive-card is-journal" data-bank-nav="journal" data-tx-id="${escapeHtml(tx.id)}">
                     <div class="bk-ic-main">
                         <div class="bk-ic-title-row">
