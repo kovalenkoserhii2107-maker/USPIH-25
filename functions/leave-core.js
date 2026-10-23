@@ -179,4 +179,63 @@ function pspFor({ person, period, grossKop, rate }) {
     return { pspKop: Math.round(rate.subsistenceKop / 2 * kind.pct / 100) * children, code: kind.code, limitKop };
 }
 
-module.exports = { TYPES, SICK_EMPLOYER_DAYS, PSP_KINDS, sickPercent, absenceDates, checkAbsences, averageDaily, leaveFor, pspFor, daysInMonth, shift };
+// ------------------------------------------------------------
+// ГРАФІК ВІДПУСТОК І ЛІКАРНЯНИХ ПРАЦІВНИКА
+// ------------------------------------------------------------
+// payroll_people/{id}.leaves: [{ id, type, from, to, avgDailyKop?, note? }] — увесь
+// випадок одним записом, навіть якщо він на два місяці. У відомість кожного
+// місяця потрапляє лише його частина; для продовження — з датою початку
+// випадку (caseStart), щоб середньоденна й 5 днів за рахунок ОСББ рахувались
+// від початку, а не від 1-го числа.
+
+/** Перевірка запису графіка: null — гаразд, інакше текст. */
+function checkLeave(l) {
+    if (!TYPES[l?.type]) return 'Оберіть відпустку чи лікарняний';
+    if (!validDate(l.from) || !validDate(l.to) || l.to < l.from) return 'Вкажіть правильні дати з … по …';
+    if ((parse(l.to) - parse(l.from)) / DAY > 183) return 'Один запис — не довше пів року. Довшу відсутність розбийте на кілька';
+    if (l.avgDailyKop !== undefined && l.avgDailyKop !== null && (!Number.isSafeInteger(l.avgDailyKop) || l.avgDailyKop <= 0 || l.avgDailyKop > 10000000)) return 'Середньоденна — сума в копійках';
+    return null;
+}
+
+/** Частина випадку, що припадає на місяць; null — якщо не припадає. */
+function leavePortion(l, period) {
+    const first = `${period}-01`, last = `${period}-${pad(daysInMonth(period))}`;
+    if (l.to < first || l.from > last) return null;
+    const from = l.from > first ? l.from : first, to = l.to < last ? l.to : last;
+    return { type: l.type, from, to, ...(l.from < from ? { caseStart: l.from } : {}), ...(l.avgDailyKop ? { avgDailyKop: l.avgDailyKop } : {}) };
+}
+
+const overlaps = (a, b) => a.from <= b.to && b.from <= a.to;
+
+/**
+ * Додає до відсутностей місяця частини випадків з графіка, яких там ще немає
+ * (за перетином дат). Повертає { absences, added }.
+ */
+function mergeLeaves(absences = [], leaves = [], period) {
+    const out = [...absences];
+    let added = 0;
+    for (const l of leaves) {
+        const part = leavePortion(l, period);
+        if (!part || out.some(a => overlaps(a, part))) continue;
+        out.push(part);
+        added++;
+    }
+    out.sort((a, b) => a.from.localeCompare(b.from));
+    return { absences: out, added };
+}
+
+/** Прибирає з відсутностей місяця частину цього випадку (та сама дата початку й кінця частини). */
+function dropLeave(absences = [], l, period) {
+    const part = leavePortion(l, period);
+    return part ? absences.filter(a => !(a.type === part.type && a.from === part.from && a.to === part.to)) : absences;
+}
+
+/** Місяці, на які припадає випадок: ['2026-10', '2026-11']. */
+function leaveMonths(l) {
+    const out = [];
+    for (let p = l.from.slice(0, 7); p <= l.to.slice(0, 7) && out.length < 8; p = shift(p, 1)) out.push(p);
+    return out;
+}
+
+module.exports = { TYPES, SICK_EMPLOYER_DAYS, PSP_KINDS, sickPercent, absenceDates, checkAbsences, averageDaily, leaveFor, pspFor, daysInMonth, shift,
+    checkLeave, leavePortion, mergeLeaves, dropLeave, leaveMonths };

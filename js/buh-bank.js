@@ -35,7 +35,7 @@ import { openCharges } from './buh-charges.js';
 import { openFlat } from './buh-flats.js';
 import { openJournal } from './buh-journal.js';
 import { openAdvance } from './buh-advance.js';
-import { openPayroll, openPayrollPerson, getPayMethod, setPayMethod, DEFAULT_TAXES, withDefaultTaxes } from './buh-payroll.js';
+import { openPayroll, openPayrollPerson, openPayrollBank, DEFAULT_TAXES, withDefaultTaxes } from './buh-payroll.js';
 import { loadOpening, openingAction, openingInput } from './buh-opening.js';
 import { loadAccountingSettings } from './buh-accounting-settings.js';
 import { mountMigration } from './buh-migration.js';
@@ -889,7 +889,6 @@ let stOpeningSign = 'overpaid';
 let stAnnualYear = String(new Date().getFullYear());
 let stChargesCtx = null;
 let stPayrollCtx = null;
-let stProjectCtx = null;
 let stExpensesCtx = null;
 let stXmlCtx = null;
 let stBudgetCtx = null;
@@ -1039,13 +1038,7 @@ function renderBankTab(settings, ex) {
     const lastSync = settings.lastSync;
     const accounts = Object.entries(settings.accounts || {});
     const aiKey = ex?.settings?.aiKey || { set: false, tail: '' };
-    const payMethod = getPayMethod();
-    const pCtx = stPayrollCtx || { people: [], settings: {} };
-    const pr = pCtx.settings?.project || {};
-    const groups = stProjectCtx?.groups || pr.groups || [];
-    const curGroup = groups.find(g => g.id === (pr.groupId || groups[0]?.id));
-    const receivers = stProjectCtx?.receivers || [];
-    const activeEmployees = (pCtx.people || []).filter(p => p.active !== false && p.kind === 'employee');
+    const payMethod = stPayrollCtx?.settings?.payMethod === 'project' ? 'project' : 'iban';
 
     return `
         <section class="buh-card">
@@ -1111,35 +1104,11 @@ function renderBankTab(settings, ex) {
 
         <section class="buh-card">
             <div class="buh-card-head">
-                <h2>Зарплатний проект ПриватБанку та спосіб виплати зарплати</h2>
-                <span class="buh-tag ${payMethod === 'project' ? 'is-payment' : 'is-soft'}">${payMethod === 'project' ? 'Зарплатний проект' : 'По IBAN (окремі платіжки)'}</span>
+                <h2>Зарплатний проект ПриватБанку</h2>
+                <span class="buh-tag ${payMethod === 'project' ? 'is-payment' : 'is-soft'}">${payMethod === 'project' ? 'Зарплата через проект' : 'Зарплата по IBAN'}</span>
             </div>
-            <p class="buh-note">Оберіть основний спосіб перерахування зарплати у вкладці «Зарплата». Виплати за договорами ЦПД завжди відправляються окремими платіжками за IBAN.</p>
-            <div class="pay-grid">
-                <label class="field"><span class="field-label">Спосіб виплати зарплати за замовчуванням</span>
-                    <select id="stPayMethod" class="field-input field-select">
-                        <option value="iban"${payMethod === 'iban' ? ' selected' : ''}>По IBAN (окремі платіжки на картки)</option>
-                        <option value="project"${payMethod === 'project' ? ' selected' : ''}>Зарплатний проект ПриватБанку (однією відомістю)</option>
-                    </select>
-                </label>
-                <label class="field"><span class="field-label">Зарплатний проект у Приват24</span>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <select id="stPayGroup" class="field-input field-select" style="flex:1">${groups.length ? groups.map(g => `<option value="${escapeHtml(g.id)}"${g.id === curGroup?.id ? ' selected' : ''}>${escapeHtml(g.name)} (${escapeHtml(g.id)})</option>`).join('') : '<option value="">Не завантажено</option>'}</select>
-                        <button type="button" class="btn-soft btn-compact" data-act="st-project-sync">Оновити з банку</button>
-                    </div>
-                </label>
-            </div>
-            ${activeEmployees.length ? `<table class="buh-table is-compact" style="margin-top:10px">
-                <thead><tr><th>Штатний працівник</th><th>Отримувач у зарплатному проекті Приват24</th></tr></thead>
-                <tbody>${activeEmployees.map(p => {
-                    const chosen = p.salaryProject || '';
-                    const opts = receivers.map(x => `<option value='${escapeHtml(JSON.stringify(x))}'${chosen.receiverId === x.receiverId && chosen.account === x.account ? ' selected' : ''}>${escapeHtml(x.name)} · ${escapeHtml(x.account)}</option>`).join('');
-                    return `<tr><td><b>${escapeHtml(p.name)}</b><small class="t-muted"> ${escapeHtml(p.position || '')}</small></td>
-                        <td><select class="field-input field-select st-pay-receiver" data-person="${escapeHtml(p.id)}">
-                            <option value="">${chosen.account ? `Обрано: ${escapeHtml(chosen.name)} · ${escapeHtml(chosen.account)}` : 'Оберіть отримувача з проекту…'}</option>${opts}
-                        </select></td></tr>`;
-                }).join('')}</tbody>
-            </table>` : '<p class="buh-note" style="margin-top:8px">Штатних працівників ще не додано в довідник.</p>'}
+            <p class="buh-note">Спосіб виплати, працівники в проекті й відомості банку — у «Зарплата → Приват24». Там же працівника додають у проект за номером картки.</p>
+            <div class="buh-inline-form"><button type="button" class="btn-soft btn-compact" data-act="st-payroll-bank">Відкрити «Зарплата → Приват24» ›</button></div>
         </section>
     `;
 }
@@ -1699,11 +1668,8 @@ export function initSettingsView() {
                     : `Залишок транзакцій YouScore: ${r.remainingTransactions ?? 'див. деталі'}${r.usedTransactions != null ? ` · використано: ${r.usedTransactions}` : ''}.`;
                 if (noteEl) noteEl.textContent = msg;
                 toast(msg, 'success');
-            } else if (a === 'st-project-sync') {
-                setBusy(btn, true, 'Запитую банк…');
-                stProjectCtx = await payrollAct({ action: 'projectContext', groupId: val('stPayGroup') });
-                toast(`Проектів: ${stProjectCtx.groups.length}, отримувачів: ${stProjectCtx.receivers.length}`, 'success');
-                await loadSettingsView();
+            } else if (a === 'st-payroll-bank') {
+                openPayrollBank();
             } else if (a === 'st-fill-odesa-taxes') {
                 for (const [k, def] of Object.entries(DEFAULT_TAXES)) {
                     for (const f of ['name', 'code', 'iban']) {
@@ -1880,21 +1846,6 @@ export function initSettingsView() {
         if (e.target.id === 'stReqIbanPick' && e.target.value) {
             const input = document.getElementById('stReqIban');
             if (input) input.value = e.target.value;
-            return;
-        }
-        if (e.target.id === 'stPayMethod') {
-            setPayMethod(e.target.value);
-            toast(e.target.value === 'project' ? 'Обрано виплату через Зарплатний проект' : 'Обрано виплату окремими платіжками за IBAN', 'success');
-            await loadSettingsView();
-            return;
-        }
-        if (e.target.classList.contains('st-pay-receiver')) {
-            const receiver = e.target.value ? JSON.parse(e.target.value) : null;
-            if (!receiver) return;
-            try {
-                await payrollAct({ action: 'projectReceiver', groupId: val('stPayGroup'), id: e.target.dataset.person, receiver });
-                toast('Отримувача зарплатного проекту збережено', 'success');
-            } catch (err) { toast(err.message, 'error'); }
             return;
         }
         if (e.target.dataset?.act === 'st-visibility') {

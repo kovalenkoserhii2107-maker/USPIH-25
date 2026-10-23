@@ -233,7 +233,8 @@ function buildRun({ people, inputs = {}, period, rates = DEFAULT_RATES, advanceP
         const input = inputs[p.id] || {};
         const { leaveProblems, ...r } = calcRow(p, input, period, rate, { advancePct, history: history.get(p.id) || [] });
         const problems = [...leaveProblems];
-        if (!p.iban) problems.push('немає IBAN для виплати');
+        // Працівнику в зарплатному проекті IBAN не потрібен: гроші йдуть на картку проекту.
+        if (!p.iban && !(p.kind === 'employee' && p.salaryProject?.receiverId)) problems.push('немає IBAN для виплати');
         if (!p.rnokpp) problems.push('немає РНОКПП (потрібен для звіту ДПС)');
         if (p.kind === 'employee' && !p.taxNotified) problems.push('не позначено повідомлення ДПС про прийняття працівника');
         return { personId: p.id, name: p.name, kind: p.kind, position: p.position || '', fte: p.fte || null, salaryKop: p.salaryKop || 0,

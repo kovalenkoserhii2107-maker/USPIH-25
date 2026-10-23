@@ -97,3 +97,26 @@ test('ПСП: зменшує базу ПДФО, межа доходу, піль�
     assert.match(payroll.checkPerson(emp({ psp: { kind: '169.1.2', children: 1, from: '2026-01-10' } })), /двох дітей/);
     assert.match(payroll.checkPerson(emp({ mainJob: false, psp: { kind: '169.1.1', from: '2026-01-10' } })), /основним/);
 });
+
+test('графік: відпустка на два місяці розкладається на частини з датою початку випадку', () => {
+    const l = { type: 'vacation', from: '2026-10-26', to: '2026-11-08' };
+    assert.equal(leave.checkLeave(l), null);
+    assert.deepEqual(leave.leaveMonths(l), ['2026-10', '2026-11']);
+    assert.deepEqual(leave.leavePortion(l, '2026-10'), { type: 'vacation', from: '2026-10-26', to: '2026-10-31' });
+    assert.deepEqual(leave.leavePortion(l, '2026-11'), { type: 'vacation', from: '2026-11-01', to: '2026-11-08', caseStart: '2026-10-26' });
+    assert.equal(leave.leavePortion(l, '2026-12'), null);
+    assert.equal(leave.checkAbsences([leave.leavePortion(l, '2026-11')], '2026-11'), null);
+    assert.match(leave.checkLeave({ type: 'vacation', from: '2026-11-08', to: '2026-10-26' }), /дати/);
+    assert.match(leave.checkLeave({ type: 'x', from: '2026-10-01', to: '2026-10-02' }), /Оберіть/);
+});
+
+test('графік: у місяць додається лише те, чого ще немає; прибирається лише своя частина', () => {
+    const l = { type: 'vacation', from: '2026-10-26', to: '2026-11-08' };
+    const own = [{ type: 'sick', from: '2026-10-05', to: '2026-10-07' }];
+    const merged = leave.mergeLeaves(own, [l], '2026-10');
+    assert.equal(merged.added, 1);
+    assert.deepEqual(merged.absences.map(a => a.from), ['2026-10-05', '2026-10-26']);
+    // Уже внесене вручну на ті самі дні не дублюється.
+    assert.equal(leave.mergeLeaves([{ type: 'vacation', from: '2026-10-27', to: '2026-10-31' }], [l], '2026-10').added, 0);
+    assert.deepEqual(leave.dropLeave(merged.absences, l, '2026-10'), own);
+});
