@@ -34,7 +34,7 @@ const { normIban, fromKop, safeId } = require('./bank-core');
 const REGION = 'europe-central2';
 const FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
 
-module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget, lock, bankApi = require('./privat') }) {
+module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staffRole, notify, payments, budget, lock, bankApi = require('./privat'), youscoreApi = require('./youscore') }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const settingsRef = db.doc('expense_settings/main');
 
@@ -70,32 +70,117 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     // --------------------------------------------------------
     // ПОСТАЧАЛЬНИКИ
     // --------------------------------------------------------
-    async function checkSupplier(actor, role, { code }) {
+    async function loadYouscoreKey() {
+        const [secSnap, expSnap] = await Promise.all([
+            db.doc('bank_secrets/youscore').get(),
+            settingsRef.get()
+        ]);
+        const token = (secSnap.exists && secSnap.data()?.apiKey) || (expSnap.exists && expSnap.data()?.youscoreApiKey) || process.env.YOUSCORE_API_KEY || '';
+        const sandbox = secSnap.exists ? secSnap.data()?.sandbox !== false : true;
+        return {
+            apiKey: token ? String(token).trim() : (sandbox ? youscoreApi.SANDBOX_KEY : ''),
+            hasRealKey: Boolean(token && !youscoreApi.isSandboxKey(token)),
+            sandbox: !token || youscoreApi.isSandboxKey(token)
+        };
+    }
+
+    async function setYouscoreKey(actor, role, { apiKey, sandbox }) {
+        if (role !== 'chair' && role !== 'accountant') fail('permission-denied', 'Налаштування API доступне голові або бухгалтеру');
+        const cleanKey = String(apiKey || '').trim();
+        await db.doc('bank_secrets/youscore').set({
+            apiKey: cleanKey,
+            sandbox: !cleanKey || Boolean(sandbox),
+            updatedBy: actor,
+            updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+        await settingsRef.set({
+            youscoreConfigured: Boolean(cleanKey),
+            youscoreSandbox: !cleanKey || Boolean(sandbox),
+            updatedBy: actor,
+            updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+        await audit(actor, role, 'expenses.youscore.key', 'bank_secrets/youscore',
+            cleanKey ? 'Збережено API-ключ YouScore (YouControl)' : 'Увімкнено тестовий режим (Sandbox) YouScore',
+            { configured: Boolean(cleanKey), sandbox: !cleanKey || Boolean(sandbox) });
+        return { ok: true, configured: Boolean(cleanKey), sandbox: !cleanKey || Boolean(sandbox) };
+    }
+
+    async function checkYouscoreBalance(actor, role) {
+        const { apiKey, sandbox, hasRealKey } = await loadYouscoreKey();
+        const limits = await youscoreApi.checkRateLimits(apiKey);
+        return { ok: true, sandbox, hasRealKey, ...limits };
+    }
+
+    async function checkSupplier(actor, role, { code, source }) {
         const clean = String(code || '').trim();
         if (!/^\d{8,10}$/.test(clean)) fail('invalid-argument', 'Код ЄДРПОУ або РНОКПП має містити 8 або 10 цифр');
-        const secret = await db.doc('bank_secrets/privat').get();
-        const token = secret.exists ? secret.data()?.token : null;
-        if (!token) fail('failed-precondition', 'Банк не підключено: вставте токен Автоклієнта у «Налаштуваннях»');
-        let d;
-        try {
-            d = await bankApi.checkCounterparty(token, clean);
-        } catch (e) {
-            fail('unavailable', `Не вдалося перевірити контрагента в ЄДР/УБКІ: ${String(e.message || e).slice(0, 200)}`);
+        const { apiKey, sandbox, hasRealKey } = await loadYouscoreKey();
+        let d = null;
+        let provider = 'youscore';
+
+        if (source !== 'privat' && apiKey) {
+            try {
+                d = await youscoreApi.checkCounterpartyFull(apiKey, clean, { showCurrentData: false });
+                provider = sandbox ? 'youscore-sandbox' : 'youscore';
+            } catch (err) {
+                logger.warn('YouScore checkCounterpartyFull fallback to Privat24:', err.message);
+            }
         }
-        await audit(actor, role, 'expenses.supplier.check', `suppliers/${clean}`, `Перевірка ЄДР/УБКІ ${clean}: ${d.name || (d.found ? 'знайдено' : 'не знайдено')}`, { code: clean, found: d.found, isSafe: d.isSafe });
+
+        if (!d) {
+            const secret = await db.doc('bank_secrets/privat').get();
+            const token = secret.exists ? secret.data()?.token : null;
+            if (!token) fail('failed-precondition', 'Ключ YouScore ще не задано, а банк не підключено: увімкніть Sandbox YouScore або вставте токен у «Налаштуваннях»');
+            try {
+                d = await bankApi.checkCounterparty(token, clean);
+                provider = 'privat24';
+            } catch (e) {
+                fail('unavailable', `Не вдалося перевірити контрагента в ЄДР: ${String(e.message || e).slice(0, 200)}`);
+            }
+        }
+
+        await audit(actor, role, 'expenses.supplier.check', `suppliers/${clean}`,
+            `Перевірка контрагента (${provider}) ${clean}: ${d.name || (d.found ? 'знайдено' : 'не знайдено')}`,
+            { code: clean, provider, found: d.found, isSafe: d.isSafe });
+
         return {
             found: Boolean(d.found),
             needRetry: Boolean(d.needRetry),
+            provider,
+            sandbox: provider === 'youscore-sandbox',
+            hasRealKey,
             edrpou: d.edrpou || clean,
+            kind: d.kind || (clean.length === 10 ? 'fop' : 'company'),
             name: d.name || '',
-            fullName: d.fullName || '',
+            fullName: d.fullName || d.name || '',
+            shortName: d.shortName || d.name || '',
+            legalForm: d.legalForm || '',
+            contractorType: d.contractorType || '',
+            director: d.director || '',
+            signers: Array.isArray(d.signers) ? d.signers : [],
+            founders: Array.isArray(d.founders) ? d.founders : [],
+            authorizedCapital: Number(d.authorizedCapital || 0),
+            registrationDate: d.registrationDate || '',
             address: d.address || '',
+            phone: d.phone || '',
+            email: d.email || '',
+            webSite: d.webSite || '',
             isRegistered: Boolean(d.isRegistered),
             stateText: d.stateText || '',
+            mainKved: d.mainKved || null,
             kveds: Array.isArray(d.kveds) ? d.kveds : [],
+            vat: d.vat || null,
+            singleTax: d.singleTax || null,
+            nonProfit: d.nonProfit || null,
+            taxSummary: d.taxSummary || '',
             taxDebtTotal: Number(d.taxDebtTotal || 0),
             wageDebtTotal: Number(d.wageDebtTotal || 0),
             openPenalties: Number(d.openPenalties || 0),
+            totalPenalties: Number(d.totalPenalties || 0),
+            enforcementRecords: Array.isArray(d.enforcementRecords) ? d.enforcementRecords : [],
+            courtTotal: Number(d.courtTotal || 0),
+            courtRecords: Array.isArray(d.courtRecords) ? d.courtRecords : [],
+            expressScore: d.expressScore || null,
             bankruptcyCount: Number(d.bankruptcyCount || 0),
             singleTaxRisk: Boolean(d.singleTaxRisk),
             isAggressor: Boolean(d.isAggressor),
@@ -107,8 +192,25 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
 
     async function saveSupplier(actor, role, data) {
         const s = {
-            name: text(data.name, 200), kind: String(data.kind || ''), code: text(data.code, 10),
-            iban: normIban(data.iban), fopChecked: data.kind === 'fop' && data.fopChecked === true, note: text(data.note, 300)
+            name: text(data.name, 200),
+            fullName: text(data.fullName || data.name, 250),
+            legalForm: text(data.legalForm, 120),
+            kind: String(data.kind || ''),
+            code: text(data.code, 10),
+            iban: normIban(data.iban),
+            director: text(data.director, 160),
+            address: text(data.address, 250),
+            phone: text(data.phone, 80),
+            email: text(data.email, 120),
+            mainKved: text(data.mainKved, 160),
+            taxSystem: text(data.taxSystem, 160),
+            vatCode: text(data.vatCode, 20),
+            registrationStatus: text(data.registrationStatus, 120),
+            taxDebtTotal: Number(data.taxDebtTotal || 0),
+            openPenalties: Number(data.openPenalties || 0),
+            expressIndex: text(data.expressIndex, 10),
+            fopChecked: data.kind === 'fop' && data.fopChecked === true,
+            note: text(data.note, 300)
         };
         const error = core.checkSupplier(s);
         if (error) fail('invalid-argument', error);
@@ -787,6 +889,8 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
         switch (data.action) {
             case 'context': return context();
             case 'checkSupplier': return checkSupplier(actor, role, data);
+            case 'youscoreKey': return setYouscoreKey(actor, role, data);
+            case 'youscoreBalance': return checkYouscoreBalance(actor, role);
             case 'saveSupplier': return saveSupplier(actor, role, data);
             case 'saveContract': return saveContract(actor, role, data);
             case 'decideContract': return decideContract(actor, role, data);
@@ -806,5 +910,5 @@ module.exports = function expenseFunctions({ db, FieldValue, requireAdmin, staff
     }));
 
     return { expenseAction, linkUpdate, release, openForMatching,
-        actions: { checkSupplier, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, setAiKey, recognizeDocument, context } };
+        actions: { checkSupplier, setYouscoreKey, checkYouscoreBalance, saveSupplier, saveContract, decideContract, endContract, saveExpense, decideExpense, cancelExpense, linkExisting, storno, pay, linkTx, setSettings, setAiKey, recognizeDocument, context } };
 };
