@@ -19,7 +19,7 @@ const { cleanApt } = require('./bank-core');
 
 const REGION = 'europe-central2';
 
-module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffRole }) {
+module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffRole, youscoreApi = require('./youscore') }) {
     const fail = (code, message) => { throw new HttpsError(code, message); };
     const text = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     const parseArea = v => {
@@ -169,6 +169,7 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
                         ownerCodeOverride: claim.ownerCodeOverride || '',
                         note: claim.note || '',
                         restructureMonths: claim.restructureMonths || 0,
+                        lastCourtCheck: claim.lastCourtCheck || null,
                         updatedAt: claim.updatedAt?.toDate?.()?.toISOString() || null
                     }
                 });
@@ -246,6 +247,139 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
         return { ok: true, apt, status: record.status };
     }
 
+    async function loadYouscoreKey() {
+        const [secSnap, expSnap] = await Promise.all([
+            db.doc('bank_secrets/youscore').get(),
+            db.doc('expense_settings/main').get()
+        ]);
+        const key = String(secSnap.data()?.apiKey || expSnap.data()?.youscoreApiKey || process.env.YOUSCORE_API_KEY || '').trim();
+        const useSandbox = expSnap.data()?.youscoreSandbox === true || !key;
+        return { apiKey: key || (useSandbox ? youscoreApi.SANDBOX_KEY : ''), isSandbox: !key || youscoreApi.isSandboxKey(key) };
+    }
+
+    async function checkDebtorCourt(actor, role, data) {
+        const apt = text(data.apt, 20);
+        const fullName = text(data.fullName || data.ownerName, 200);
+        const code = text(data.code || data.ownerCode, 20);
+        if (!fullName && !code) fail('invalid-argument', 'Вкажіть ПІБ співвласника або код РНОКПП/ЄДРПОУ для пошуку у судовому реєстрі');
+
+        const { apiKey, isSandbox } = await loadYouscoreKey();
+        if (!apiKey) fail('failed-precondition', 'API-ключ YouScore не налаштовано');
+
+        let res;
+        try {
+            res = await youscoreApi.checkDebtorCourtAndEnforcement(apiKey, {
+                fullName,
+                code,
+                region: text(data.region || 'Одес', 60),
+                birthday: text(data.birthday, 20)
+            });
+        } catch (err) {
+            fail('unavailable', `Помилка запиту до судового реєстру YouScore: ${String(err.message || err).slice(0, 200)}`);
+        }
+
+        if (apt) {
+            await db.doc(`claims/${apt}`).set({
+                lastCourtCheck: {
+                    at: new Date().toISOString(),
+                    by: actor,
+                    isSandbox,
+                    summary: res.summary,
+                    cases: (res.courtCases || []).slice(0, 15),
+                    hearings: (res.scheduledHearings || []).slice(0, 10),
+                    enforcements: (res.enforcements || []).slice(0, 15)
+                }
+            }, { merge: true });
+        }
+
+        await audit(actor, role, 'claims.court.check', apt ? `claims/${apt}` : 'claims',
+            `Перевірка судових справ та ВП YouScore (кв. ${apt || '—'}, ${fullName || code}): справ ${res.summary?.totalCases || 0}, засідань ${res.summary?.scheduledCount || 0}, ВП ${res.summary?.totalEnforcements || 0}`,
+            { apt, fullName, code, isSandbox, summary: res.summary });
+
+        return { ok: true, ...res };
+    }
+
+    async function checkPropertyOwner(actor, role, data) {
+        const apt = text(data.apt, 20);
+        let code = text(data.code || data.ownerCode, 20).replace(/\s+/g, '');
+        let ownerName = text(data.ownerName, 200);
+        let payerSource = null;
+
+        // Автоматичний пошук РНОКПП платника у вхідних банківських виписках квартири, якщо код не вказано
+        if (!/^\d{8,10}$/.test(code) && apt) {
+            const txSnap = await db.collection('bank_tx').where('apt', '==', apt).limit(25).get();
+            for (const doc of txSnap.docs) {
+                const tx = doc.data() || {};
+                const cpCode = String(tx.counterparty?.code || '').trim();
+                if (/^\d{8,10}$/.test(cpCode) && !/^0+$/.test(cpCode)) {
+                    code = cpCode;
+                    if (!ownerName && tx.counterparty?.name) ownerName = String(tx.counterparty.name).trim();
+                    payerSource = { txId: doc.id, name: tx.counterparty?.name || '', code: cpCode, date: tx.date || '' };
+                    break;
+                }
+            }
+        }
+
+        if (!/^\d{8,10}$/.test(code)) {
+            return {
+                ok: false,
+                needsCode: true,
+                apt,
+                message: 'API YouScore (/v1/realEstate) виконує пошук нерухомості виключно за кодом РНОКПП (10 цифр) або ЄДРПОУ (8 цифр). Введіть РНОКПП власника/платника або використайте офіційний запит до ДРРП за адресою.'
+            };
+        }
+
+        const { apiKey, isSandbox } = await loadYouscoreKey();
+        if (!apiKey) fail('failed-precondition', 'API-ключ YouScore не налаштовано');
+
+        let res;
+        try {
+            res = await youscoreApi.checkRealEstateByCode(apiKey, {
+                code,
+                apt,
+                ownerName,
+                houseHint: text(data.houseHint || 'Інглезі', 60),
+                fetchDetails: data.fetchDetails !== false,
+                landId: text(data.landId, 80)
+            });
+        } catch (err) {
+            fail('unavailable', `Помилка запиту до реєстру нерухомості YouScore: ${String(err.message || err).slice(0, 200)}`);
+        }
+
+        // Якщо знайдено підтверджений об'єкт та передано autoApply === true, оновлюємо довідник співвласників квартири
+        let syncedOwners = false;
+        if (data.autoApply === true && apt && res.matchedObject?.detailed) {
+            const det = res.matchedObject.detailed;
+            const batch = db.batch();
+            const aptRef = db.doc(`apartments/${apt}`);
+            const updates = { ownersStatus: 'verified', ownersUpdatedAt: FieldValue.serverTimestamp(), ownersUpdatedBy: actor };
+            if (det.totalArea > 0) updates.area = det.totalArea;
+            batch.set(aptRef, updates, { merge: true });
+
+            for (const ow of (det.owners || [])) {
+                const owId = ow.code ? `yc_${ow.code}` : `yc_${Buffer.from(ow.name || 'owner').toString('hex').slice(0, 12)}`;
+                const owRef = db.doc(`apartments/${apt}/owners/${owId}`);
+                batch.set(owRef, {
+                    name: ow.name || ownerName,
+                    rnokpp: ow.code || code,
+                    shareFrac: ow.share || '1/1',
+                    docInfo: [ow.ownershipForm, ow.grounds, det.regNum ? `реєстр. № ${det.regNum}` : ''].filter(Boolean).join(', '),
+                    source: isSandbox ? 'youscore_sandbox' : 'youscore_drrp',
+                    updatedAt: FieldValue.serverTimestamp(),
+                    updatedBy: actor
+                }, { merge: true });
+            }
+            await batch.commit();
+            syncedOwners = true;
+        }
+
+        await audit(actor, role, 'claims.realestate.check', apt ? `apartments/${apt}` : 'apartments',
+            `Перевірка ДРРП YouScore (кв. ${apt || '—'}, код ${code}): знайдено обʼєктів ${res.totalObjects || 0}${syncedOwners ? ', синхронізовано з карткою квартири' : ''}`,
+            { apt, code, isSandbox, totalObjects: res.totalObjects, syncedOwners });
+
+        return { ok: true, ...res, payerSource, syncedOwners };
+    }
+
     const claimsAction = onCall({ region: REGION, maxInstances: 4 }, callGuard('claimsAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant', 'board']);
         const role = await staffRole(actor);
@@ -253,9 +387,11 @@ module.exports = function claimsFunctions({ db, FieldValue, requireAdmin, staffR
         switch (data.action) {
             case 'context': return context();
             case 'saveClaim': return saveClaim(actor, role, data);
+            case 'checkDebtorCourt': return checkDebtorCourt(actor, role, data);
+            case 'checkPropertyOwner': return checkPropertyOwner(actor, role, data);
             default: fail('invalid-argument', 'Невідома дія');
         }
     }));
 
-    return { claimsAction, actions: { context, saveClaim } };
+    return { claimsAction, actions: { context, saveClaim, checkDebtorCourt, checkPropertyOwner } };
 };

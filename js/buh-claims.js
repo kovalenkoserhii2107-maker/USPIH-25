@@ -516,7 +516,14 @@ async function openCaseModal(apt) {
             </div>
 
             <form id="claimStatusForm" style="margin-top:12px;">
-                <h3 class="rp-h">Реквізити боржника, період та статус судової справи</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                    <h3 class="rp-h" style="margin:0;">Реквізити боржника, період та статус судової справи</h3>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button type="button" class="sv-btn is-soft btn-compact" id="checkCourtYouScoreBtn" title="Перевірити судові справи, засідання та виконавчі провадження через YouScore API">⚖️ Судовий реєстр та ДВС (YouScore)</button>
+                        <button type="button" class="sv-btn is-soft btn-compact" id="checkRealEstateYouScoreBtn" title="Перевірити право власності в ДРРП за РНОКПП або випискою банку">🏠 Актуалізувати власника (ДРРП)</button>
+                    </div>
+                </div>
+                <div id="youscoreClaimsPanel" style="display:none; margin-bottom:12px; padding:12px; border-radius:10px; background:#F1F5F9; border:1px solid #CBD5E1; font-size:13px; line-height:1.45;"></div>
                 <div class="py-pair">
                     <label class="py-field">
                         <span>ПІБ боржника (співвласника) для документів</span>
@@ -624,6 +631,147 @@ async function openCaseModal(apt) {
     if (backdrop) {
         backdrop.onclick = e => {
             if (e.target === backdrop) closeModal();
+        };
+    }
+
+    const ysPanel = document.getElementById('youscoreClaimsPanel');
+    const courtBtn = document.getElementById('checkCourtYouScoreBtn');
+    if (courtBtn) {
+        courtBtn.onclick = async () => {
+            const fullName = document.getElementById('docOwnerName')?.value?.trim() || d.ownerName;
+            const code = document.getElementById('docOwnerCode')?.value?.trim() || d.ownerCode;
+            if (!fullName && !code) {
+                toast('Вкажіть ПІБ або РНОКПП боржника для пошуку в судовому реєстрі', 'error');
+                return;
+            }
+            setBusy(courtBtn, true, 'Пошук у судах та АСВП…');
+            try {
+                const res = await claimsAct({ action: 'checkDebtorCourt', apt, fullName, code });
+                if (ysPanel) {
+                    ysPanel.style.display = 'block';
+                    const casesHtml = (res.courtCases || []).map(c =>
+                        `<div style="padding:6px 8px; background:#fff; border-radius:6px; margin-top:6px; border:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <div>
+                                <b>Справа № ${escapeHtml(c.caseNumber)}</b> · ${escapeHtml(c.courtName || '')}<br>
+                                <small>${escapeHtml(c.form || '')} · ${escapeHtml(c.subject || c.category || '')} · Роль: ${escapeHtml(c.role || '')}</small>
+                            </div>
+                            <button type="button" class="sv-btn is-soft btn-compact" data-apply-case="${escapeHtml(c.caseNumber)}" data-apply-date="${escapeHtml((c.date || '').slice(0, 10))}">Підставити у справу</button>
+                        </div>`
+                    ).join('');
+                    const hearingsHtml = (res.scheduledHearings || []).map(h =>
+                        `<div style="padding:6px 8px; background:#fffbeb; border-radius:6px; margin-top:6px; border:1px solid #fde68a;">
+                            <b>📅 Призначено засідання: ${escapeHtml((h.hearingDate || '').slice(0, 16).replace('T', ' '))}</b> · Справа № ${escapeHtml(h.caseNumber)}<br>
+                            <small>${escapeHtml(h.courtName || '')} · ${escapeHtml(h.description || '')}</small>
+                        </div>`
+                    ).join('');
+                    const enfHtml = (res.enforcements || []).map(ep =>
+                        `<div style="padding:6px 8px; background:#fef2f2; border-radius:6px; margin-top:6px; border:1px solid #fecaca;">
+                            <b>🚨 ВП № ${escapeHtml(String(ep.orderNumber || ''))} (${escapeHtml(ep.state || '')})</b> · Відкрито: ${escapeHtml((ep.dateBegin || '').slice(0, 10))}<br>
+                            <small>Стягувач: ${escapeHtml(ep.creditor || '—')} · Виконавець: ${escapeHtml(ep.executor || ep.department || '—')}</small>
+                        </div>`
+                    ).join('');
+                    ysPanel.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <b>⚖️ Результати YouScore (ЄДРСР / Судова влада / АСВП)${res.isSandbox ? ' · Тестовий режим' : ''}</b>
+                            <span class="buh-tag">Справ: ${res.totalCases || 0} · Засідань: ${res.totalHearings || 0} · ВП: ${res.totalEnforcements || 0}</span>
+                        </div>
+                        ${casesHtml || '<p class="buh-note" style="margin:6px 0 0;">Судових справ за цим ПІБ не знайдено.</p>'}
+                        ${hearingsHtml}
+                        ${enfHtml}
+                    `;
+                    ysPanel.querySelectorAll('[data-apply-case]').forEach(b => {
+                        b.onclick = () => {
+                            const form = document.getElementById('claimStatusForm');
+                            if (!form) return;
+                            form.elements.caseNumber.value = b.dataset.applyCase || '';
+                            if (b.dataset.applyDate) form.elements.courtOrderDate.value = b.dataset.applyDate;
+                            if (form.elements.stage.value === 'pre_trial') form.elements.stage.value = 'court_order';
+                            if (form.elements.status.value === 'none' || form.elements.status.value === 'claim') form.elements.status.value = 'court_order_filed';
+                            toast(`Номер справи ${b.dataset.applyCase} підставлено у форму`, 'success');
+                        };
+                    });
+                }
+                toast('Дані з судового реєстру та АСВП отримано', 'success');
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                setBusy(courtBtn, false);
+            }
+        };
+    }
+
+    const realEstateBtn = document.getElementById('checkRealEstateYouScoreBtn');
+    if (realEstateBtn) {
+        realEstateBtn.onclick = async () => {
+            const code = document.getElementById('docOwnerCode')?.value?.trim() || d.ownerCode;
+            setBusy(realEstateBtn, true, 'Перевірка ДРРП та платежів…');
+            try {
+                const res = await claimsAct({ action: 'checkPropertyOwner', apt, code, fetchDetails: true, updateDirectory: false });
+                if (ysPanel) {
+                    ysPanel.style.display = 'block';
+                    if (!res.ok && res.needsCode) {
+                        const payersHtml = (res.discoveredPayers || []).map(p =>
+                            `<button type="button" class="sv-btn is-soft btn-compact" data-use-payer-code="${escapeHtml(p.code)}" data-use-payer-name="${escapeHtml(p.name)}">
+                                Платіж: ${escapeHtml(p.name)} (${escapeHtml(p.code || 'без РНОКПП')})
+                            </button>`
+                        ).join(' ');
+                        ysPanel.innerHTML = `
+                            <b>🏠 Як актуалізувати власника квартири № ${escapeHtml(apt)}:</b>
+                            <p class="buh-note" style="margin:6px 0;">${escapeHtml(res.message)}</p>
+                            ${payersHtml ? `<div style="margin-top:6px;"><b>Знайдені платники у виписці банку по кв. ${escapeHtml(apt)}:</b><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">${payersHtml}</div></div>` : ''}
+                        `;
+                        ysPanel.querySelectorAll('[data-use-payer-code]').forEach(b => {
+                            b.onclick = () => {
+                                if (b.dataset.usePayerName && document.getElementById('docOwnerName')) document.getElementById('docOwnerName').value = b.dataset.usePayerName;
+                                if (b.dataset.usePayerCode && document.getElementById('docOwnerCode')) document.getElementById('docOwnerCode').value = b.dataset.usePayerCode;
+                                toast('Дані платника підставлено — натисніть «Актуалізувати власника» ще раз', 'info');
+                            };
+                        });
+                        return;
+                    }
+                    const objsHtml = (res.objects || []).map(o => {
+                        const dtl = o.details || {};
+                        const ownersStr = (dtl.owners || []).map(ow => `${escapeHtml(ow.name || '')}${ow.code ? ` (${escapeHtml(ow.code)})` : ''} — частка ${escapeHtml(ow.share || '1/1')}`).join('; ');
+                        return `<div style="padding:8px; background:#fff; border-radius:6px; margin-top:6px; border:1px solid #cbd5e1;">
+                            <b>📍 ${escapeHtml(o.address || 'Обʼєкт нерухомості')}</b> ${o.matchesHouse ? '<span class="buh-tag is-payment">Наш будинок</span>' : ''}<br>
+                            ${dtl.totalArea ? `<small>Площа: загальна ${escapeHtml(String(dtl.totalArea))} м², житлова ${escapeHtml(String(dtl.livingArea || '—'))} м² · Підстава: ${escapeHtml(dtl.basisDocument || '—')}</small><br>` : ''}
+                            ${ownersStr ? `<small><b>Власник у ДРРП:</b> ${ownersStr}</small>` : ''}
+                        </div>`;
+                    }).join('');
+                    ysPanel.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <b>🏠 Дані Державного реєстру речових прав (ДРРП) за кодом ${escapeHtml(res.searchedCode || '')}${res.isSandbox ? ' · Тестовий режим' : ''}</b>
+                            <button type="button" class="sv-btn btn-compact" id="applyRealEstateSyncBtn">Записати у картку квартири № ${escapeHtml(apt)}</button>
+                        </div>
+                        ${objsHtml || '<p class="buh-note" style="margin:6px 0 0;">Обʼєктів нерухомості за цим кодом не знайдено.</p>'}
+                    `;
+                    const syncBtn = document.getElementById('applyRealEstateSyncBtn');
+                    if (syncBtn) {
+                        syncBtn.onclick = async () => {
+                            setBusy(syncBtn, true, 'Оновлюю довідник…');
+                            try {
+                                const syncRes = await claimsAct({ action: 'checkPropertyOwner', apt, code: res.searchedCode, fetchDetails: true, updateDirectory: true });
+                                if (syncRes.matchedAptObject?.details?.owners?.[0]) {
+                                    const firstOw = syncRes.matchedAptObject.details.owners[0];
+                                    if (document.getElementById('docOwnerName')) document.getElementById('docOwnerName').value = firstOw.name || '';
+                                    if (document.getElementById('docOwnerCode')) document.getElementById('docOwnerCode').value = firstOw.code || res.searchedCode || '';
+                                }
+                                toast('Дані власника та площі синхронізовано з карткою квартири', 'success');
+                                ctx = await loadSynchronizedClaims();
+                            } catch (e) {
+                                toast(e.message, 'error');
+                            } finally {
+                                setBusy(syncBtn, false);
+                            }
+                        };
+                    }
+                }
+                toast('Дані з реєстру нерухомості (ДРРП) отримано', 'success');
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                setBusy(realEstateBtn, false);
+            }
         };
     }
 
