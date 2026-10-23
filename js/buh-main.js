@@ -204,7 +204,7 @@ initMonthView();
 initFlatsView();
 initBankView();
 initPaymentsView();
-initChargesView();
+initChargesView(() => view === 'charges');
 initExpensesView();
 initBudgetView();
 initPayrollView();

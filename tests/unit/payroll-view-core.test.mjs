@@ -48,3 +48,26 @@ test('a canceled final payment does not make a paid advance look like fully paid
     assert.equal(personState({status:'approved',payments},'p1')[0],'аванс виплачено');
     assert.equal(payrollTotals({run:{rows:[],totals:{}},payments}).netPaidKop,332909);
 });
+
+test('хід місяця й головна підказка: від табеля до виплати', async () => {
+    const { flowSteps, nextPayrollAction, bankStep, stageState } = await import('../../js/payroll-view-core.js');
+    const people = [{ id: 'p1' }];
+    const totals = { grossKop: 864700, netKop: 665819, esvKop: 190234, advance: { netKop: 332909 }, final: { netKop: 332910 } };
+    const base = { people, run: { totals, rows: [{ personId: 'p1', name: 'Працівник Тестовий', netKop: 665819, problems: [] }] }, stages: {}, payments: [], settings: { payMethod: 'iban' } };
+    assert.equal(nextPayrollAction({ ...base, people: [] }, 'accountant').act, 'person-new');
+    assert.equal(nextPayrollAction({ ...base, status: 'none' }, 'accountant').act, 'save');
+    assert.equal(nextPayrollAction({ ...base, status: 'draft' }, 'chair').act, 'approve');
+    assert.equal(nextPayrollAction({ ...base, status: 'draft' }, 'accountant').tone, 'wait');
+    const approved = { ...base, status: 'approved' };
+    assert.equal(nextPayrollAction(approved, 'accountant').act, 'pay-advance');
+    assert.deepEqual(flowSteps(approved).map(s => s.state), ['done', 'done', 'current', 'todo']);
+    const advSent = { ...approved, stages: { advance: { complete: true } }, payments: [{ stage: 'advance', key: 'p1', status: 'sent', amountKop: 1 }] };
+    assert.equal(stageState(advSent, 'advance'), 'signing');
+    assert.equal(nextPayrollAction(advSent, 'accountant').act, 'pay-final');
+    const building = { ...approved, stages: { advance: { complete: false, project: { status: 'building' } } } };
+    assert.equal(nextPayrollAction(building, 'accountant').btn, 'Продовжити');
+    const broken = { ...base, status: 'draft', run: { totals, rows: [{ name: 'Працівник Тестовий', netKop: 1, problems: ['немає IBAN для виплати'] }] } };
+    assert.equal(nextPayrollAction(broken, 'chair').tab, 'people');
+    assert.equal(nextPayrollAction({ ...base, status: 'approved', pendingLeaves: 1 }, 'accountant').act, 'save');
+    assert.deepEqual([bankStep('W').step, bankStep('S', 'S$').done, bankStep('F', 'R').bad, bankStep('R').bad], [2, true, true, true]);
+});
