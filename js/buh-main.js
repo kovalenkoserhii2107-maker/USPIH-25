@@ -33,7 +33,7 @@ const VIEWS = {
     today: { title: () => todayTitle().title, sub: () => todayTitle().sub, load: loadToday },
     month: { title: 'Місяць', sub: 'Закриття крок за кроком: нарахування, банк, документи, зарплата, перевірка', load: loadMonthView },
     inbox: { title: 'Рішення', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
-    bank: { title: 'Банк', sub: 'Рахунки й операції ПриватБанку', load: loadBankView },
+    bank: { title: 'Банк', sub: 'Залишки, рух коштів, операції й контрагенти з перевіркою YouControl', load: loadBankView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
     flats: { title: 'Квартири', sub: 'Борги й переплати, історія квартири, довідка й акт звірки', load: loadFlatsView },
     charges: { title: 'Нарахування', sub: 'Внески співвласників: розрахунок місяця, відомість і квитанції, тарифи, приміщення', load: loadChargesView },
