@@ -90,3 +90,99 @@ export function reconciliationCsv(apt, rows) {
     }
     return `﻿${lines.map(l => l.map(cell).join(';')).join('\r\n')}`;
 }
+
+// ------------------------------------------------------------
+// Будинок цілком: глибина боргу, підсумки, «шахматка», графік сальдо
+// ------------------------------------------------------------
+
+/** Глибина боргу в місячних внесках — для кольору плитки й діаграми. */
+export const DEPTHS = {
+    over: ['Переплата', 'is-over'], ok: ['Без боргу', 'is-ok'], m1: ['До 1 внеску', 'is-m1'], m3: ['1–3 внески', 'is-m3'],
+    m6: ['3–6 внесків', 'is-m6'], m12: ['6–12 внесків', 'is-m12'], m12p: ['Понад рік', 'is-m12p']
+};
+
+export function depthOf(r) {
+    if (r.balanceKop > 0) return 'over';
+    if (!r.debtKop) return 'ok';
+    // Ті самі округлені місяці, що й у списку («≈ 12 міс.»).
+    const m = r.months || 0;
+    if (m <= 1) return 'm1';
+    if (m <= 3) return 'm3';
+    if (m <= 6) return 'm6';
+    if (m <= 12) return 'm12';
+    return 'm12p';
+}
+
+/** Розподіл квартир за глибиною боргу: { ключ: { n, kop } }. */
+export function depthBuckets(rows) {
+    const out = Object.fromEntries(Object.keys(DEPTHS).map(k => [k, { n: 0, kop: 0 }]));
+    for (const r of rows) {
+        const b = out[depthOf(r)];
+        b.n += 1;
+        b.kop += r.balanceKop > 0 ? r.balanceKop : r.debtKop;
+    }
+    return out;
+}
+
+/** Підсумки будинку для карток угорі. */
+export function houseKpis(rows) {
+    const debtors = rows.filter(r => r.debtKop > 0);
+    const long = rows.filter(r => r.months > 3);
+    const over = rows.filter(r => r.balanceKop > 0);
+    const monthly = rows.reduce((s, r) => s + r.monthlyKop, 0);
+    return {
+        total: rows.length, debtors: debtors.length, debtKop: debtors.reduce((s, r) => s + r.debtKop, 0),
+        long: long.length, longKop: long.reduce((s, r) => s + r.debtKop, 0),
+        over: over.length, overKop: over.reduce((s, r) => s + r.balanceKop, 0),
+        monthlyKop: monthly, debtMonths: monthly ? Math.round(debtors.reduce((s, r) => s + r.debtKop, 0) / monthly * 10) / 10 : 0,
+        claims: rows.filter(r => r.claimStep && !['start', 'closed'].includes(r.claimStep)).length,
+        unverified: rows.filter(r => r.ownersStatus && r.ownersStatus !== 'confirmed').length
+    };
+}
+
+/** Додаткові відбори: претензія в роботі, власників не звірено, глибина боргу, підʼїзд. */
+export const MORE_FILTERS = { claims: 'Претензія в роботі', unverified: 'Власників не звірено' };
+
+/**
+ * Відбір для нового екрана: відбір (FILTERS, MORE_FILTERS або ключ DEPTHS),
+ * підʼїзд, пошук і сортування ('apt' | 'debt' | 'months' | 'balance').
+ */
+export function selectFlats(rows, { filter = 'all', entrance = '', query = '', sort = 'apt' } = {}) {
+    const q = String(query).trim().toLowerCase();
+    const keep = DEPTHS[filter] ? r => depthOf(r) === filter
+        : filter === 'claims' ? r => r.claimStep && !['start', 'closed'].includes(r.claimStep)
+        : filter === 'unverified' ? r => r.ownersStatus && r.ownersStatus !== 'confirmed'
+        : matches(FILTERS[filter] ? filter : 'all');
+    let list = rows.filter(r => keep(r) && (!entrance || String(r.entrance) === String(entrance)));
+    if (q) list = list.filter(r => (/^\d/.test(q) ? r.apt.toLowerCase().startsWith(q) || String(r.personalAccount).startsWith(q) : r.owner.toLowerCase().includes(q)));
+    const by = { debt: (a, b) => b.debtKop - a.debtKop, months: (a, b) => b.months - a.months || b.debtKop - a.debtKop, balance: (a, b) => b.balanceKop - a.balanceKop }[sort];
+    return [...list].sort((a, b) => (by ? by(a, b) : 0) || byApt(a, b));
+}
+
+/** Квартири за підʼїздами — для «шахматки» будинку. */
+export function byEntrance(rows) {
+    const map = new Map();
+    for (const r of [...rows].sort(byApt)) {
+        const key = String(r.entrance || '—');
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(r);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'uk', { numeric: true }));
+}
+
+/**
+ * Точки графіка сальдо (від старого до нового) для SVG-лінії:
+ * { points: [{ x, y, balanceKop, at }], min, max }. width/height — розмір полотна.
+ */
+export function balanceSeries(history, width = 520, height = 120, pad = 8) {
+    const asc = [...history].reverse();
+    if (asc.length < 2) return { points: [], min: 0, max: 0 };
+    const vals = asc.map(h => h.balanceKop);
+    const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
+    const span = max - min || 1;
+    const t0 = asc[0].at.getTime(), t1 = asc.at(-1).at.getTime(), dt = t1 - t0 || 1;
+    const points = asc.map(h => ({ at: h.at, balanceKop: h.balanceKop,
+        x: Math.round((pad + (h.at.getTime() - t0) / dt * (width - pad * 2)) * 10) / 10,
+        y: Math.round((pad + (max - h.balanceKop) / span * (height - pad * 2)) * 10) / 10 }));
+    return { points, min, max, zeroY: Math.round((pad + max / span * (height - pad * 2)) * 10) / 10 };
+}
