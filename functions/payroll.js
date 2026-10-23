@@ -8,7 +8,11 @@
 // payroll_runs/{місяць}: { status: draft|approved, inputs: { [id]: { workedDays,
 //   bonusKop, actKop } }, run (розрахунок), paidAdvance: { [id]: аванс },
 //   stages: { advance|final: { at, by, payments: [id] } }, approvedBy, … }
-// payroll_settings/main: { advancePct, taxes: { pdfo|vz|esv: { name, iban, code } } }
+// payroll_settings/main: { advancePct, taxes: { pdfo|vz|esv: { name, iban, code } },
+//   payMethod: iban|project, projectGroup: SALARY|STUDENT }
+// payroll_people/{id}.leaves — графік відпусток і лікарняних (leave-core.js);
+//   частина випадку потрапляє у відомість кожного місяця сама.
+// payroll_people/{id}.salaryProject — звʼязок із зарплатним проектом (payroll-project.js).
 //
 // Бухгалтер готує відомість → голова затверджує → бухгалтер створює
 // платежі (аванс, потім остаточний розрахунок з ЄСВ) → голова підписує
@@ -43,7 +47,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
     }
     async function loadSettings() {
         const s = (await settingsRef.get()).data() || {};
-        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: s.taxes || {}, rates:s.rates?.length?s.rates:core.DEFAULT_RATES };
+        return { advancePct: Number.isFinite(s.advancePct) ? s.advancePct : 50, taxes: s.taxes || {}, rates:s.rates?.length?s.rates:core.DEFAULT_RATES,
+            payMethod: s.payMethod === 'project' ? 'project' : 'iban', projectGroup: s.projectGroup || null };
     }
 
     /** Розрахунок місяця з урахуванням уже виплаченого авансу (його суми не змінюються). */
@@ -98,17 +103,28 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             db.collection('payments').where('payroll.period', '==', p).get()
         ]);
         const stored = runSnap.exists ? runSnap.data() : null;
-        const run = stored?.run || (core.rateFor(p,settings.rates) ? compute(people, stored, p, settings, await loadHistory(p)) : {
+        const closed = lock ? await lock.closed() : [];
+        // Графік відпусток: частини випадків цього місяця, яких ще немає у відомості.
+        const editable = !closed.includes(p) && !stored?.stages?.final && stored?.stages?.advance?.complete !== false;
+        const inputs = JSON.parse(JSON.stringify(stored?.inputs || {}));
+        let pendingLeaves = 0;
+        if (editable) for (const person of people) {
+            if (person.kind !== 'employee' || !person.leaves?.length) continue;
+            const merged = leave.mergeLeaves(inputs[person.id]?.absences || [], person.leaves, p);
+            if (!merged.added) continue;
+            pendingLeaves += merged.added;
+            inputs[person.id] = { ...inputs[person.id], absences: merged.absences };
+        }
+        const run = stored?.run || (core.rateFor(p,settings.rates) ? compute(people, { ...stored, inputs }, p, settings, await loadHistory(p)) : {
             period:p,rate:settings.rates[0],rows:[],totals:{grossKop:0,pdfoKop:0,vzKop:0,netKop:0,esvKop:0,costKop:0,advance:{netKop:0},final:{netKop:0}},
             rateError:`Немає підтверджених параметрів для ${p}. Внесіть ставки й межі з датами дії; значення попереднього року автоматично не застосовуються` });
         const paymentsList = sent.docs.map(d => ({ id: d.id, stage: d.data().payroll?.stage, key: d.data().payroll?.key, status: d.data().status,
-            kind: d.data().kind, recipientType: paymentIdentity.recipientType(d.data()), canceling: Boolean(d.data().canceling),
+            kind: d.data().kind, recipientType: paymentIdentity.recipientType(d.data()), canceling: Boolean(d.data().canceling), source: d.data().source || null,
             amountKop: d.data().amountKop, recipient: d.data().recipient?.name || '', error: d.data().error || null,
             returnedKop: d.data().returnedKop || 0, repaid: Boolean(d.data().repaidBy?.length), retry: d.data().payroll?.retry || 0 }));
-        const closed = lock ? await lock.closed() : [];
         return {
             period: p, today: now, kinds: core.KINDS, pspKinds: Object.fromEntries(Object.entries(leave.PSP_KINDS).map(([k, v]) => [k, v.label])), people, settings, run,
-            inputs: stored?.inputs || {},
+            inputs, pendingLeaves: stored?.run ? pendingLeaves : 0,
             status: stored?.status || 'none', savedAt: stored?.savedAt?.toDate?.()?.toISOString() || null,
             approvedBy: stored?.approvedBy || null, approvedAt: stored?.approvedAt?.toDate?.()?.toISOString() || null,
             stages: stored?.stages || {}, paidAdvance: Boolean(stored?.paidAdvance), payments: paymentsList,
@@ -201,7 +217,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             // Відпустки й лікарняні — лише працівникам, у межах місяця.
             const absences = (Array.isArray(v?.absences) ? v.absences : []).filter(a => a?.from || a?.to).map(a => ({
                 type: a.type === 'sick' ? 'sick' : a.type === 'vacation' ? 'vacation' : '', from: String(a.from || ''), to: String(a.to || ''),
-                ...(a.type === 'sick' && a.caseStart ? { caseStart: String(a.caseStart) } : {}),
+                // Дата початку випадку: продовження відпустки чи лікарняного з минулого місяця.
+                ...(a.caseStart && a.caseStart < String(a.from || '') ? { caseStart: String(a.caseStart) } : {}),
                 ...(a.avgDailyKop !== undefined && a.avgDailyKop !== null && a.avgDailyKop !== '' ? { avgDailyKop: Number(a.avgDailyKop) } : {})
             }));
             if (absences.length && person.kind !== 'employee') fail('invalid-argument', 'Відпустки й лікарняні — лише для працівників за трудовим договором');
@@ -299,7 +316,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         if (!payable(Object.fromEntries(accounts)[stored.stages?.[stage]?.account || account])) fail('failed-precondition', 'Рахунок цього етапу недоступний або має іншу валюту. Перевірте гривневий рахунок ОСББ');
         const list = stored.stages?.[stage]?.plan || core.stagePayments(run, stage, { code, taxes: settings.taxes, people: new Map(people.map(p => [p.id, p])) });
         if (!list.length) fail('failed-precondition', 'Немає що виплачувати');
-        const problems = core.paymentProblems(list, stored.stages?.[stage]?.account || account);
+        const done = stored.stages?.[stage]?.completed || {};
+        const problems = core.paymentProblems(list.filter(p => !done[p.key]), stored.stages?.[stage]?.account || account);
         if (problems.length) fail('failed-precondition', problems.join('; '));
         const attempt = randomUUID();
         await db.runTransaction(async t => {
@@ -333,7 +351,8 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             }
         }
         const complete = list.every(p => completed[p.key]);
-        const update = { [`stages.${stage}`]: { at: new Date().toISOString(), by: actor, payments: created, errors, completed, complete, plan: list,
+        // Зберігаємо решту етапу (відомість зарплатного проекту), а не лише платежі.
+        const update = { [`stages.${stage}`]: { ...(stored.stages?.[stage] || {}), at: new Date().toISOString(), by: actor, payments: created, errors, completed, complete, plan: list,
             account: stored.stages?.[stage]?.account || account }, sending: FieldValue.delete() };
         await ref.update(update);
         await audit(actor, role, 'payroll.pay', `payroll_runs/${period}`, `${stage === 'advance' ? 'Аванс' : 'Зарплата'} за ${core.monthName(period)}: ${created.length} платеж(ів) у Приват24 на підпис`,
@@ -409,6 +428,90 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         return { id: r.id };
     }
 
+    /** Спосіб виплати зарплати працівникам і зарплатний проект — спільні для всіх (не в браузері). */
+    async function savePayMethod(actor, role, { payMethod, group }) {
+        const method = payMethod === 'project' ? 'project' : 'iban';
+        if (group && !['SALARY', 'STUDENT'].includes(group)) fail('invalid-argument', 'Невідомий зарплатний проект');
+        await settingsRef.set({ payMethod: method, ...(group ? { projectGroup: group } : {}), updatedBy: actor, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await audit(actor, role, 'payroll.payMethod', 'payroll_settings/main', method === 'project' ? 'Зарплата працівникам — через зарплатний проект ПриватБанку' : 'Зарплата працівникам — платежами по IBAN', { method, group: group || null });
+        return { ok: true, payMethod: method };
+    }
+
+    /** Чи можна ще змінювати відомість місяця (для перерахунку після зміни графіка). */
+    async function runEditable(period) {
+        if (lock && (await lock.closed()).includes(period)) return false;
+        const s = (await db.doc(`payroll_runs/${period}`).get()).data();
+        return !s?.stages?.final && s?.stages?.advance?.complete !== false && !s?.sending;
+    }
+
+    /**
+     * Графік відпусток і лікарняних працівника: додати чи прибрати випадок.
+     * Відомість місяця period (якщо її ще можна змінювати) одразу перераховується.
+     */
+    async function saveLeave(actor, role, { personId, op, leave: data, leaveId, period }) {
+        const ref = db.doc(`payroll_people/${String(personId || '').replace(/[^\w-]/g, '')}`);
+        const person = (await ref.get()).data();
+        if (person?.kind !== 'employee') fail('failed-precondition', 'Відпустки й лікарняні — лише для працівників за трудовим договором');
+        const list = [...(person.leaves || [])];
+        let changedLeave;
+        if (op === 'remove') {
+            changedLeave = list.find(l => l.id === leaveId);
+            if (!changedLeave) fail('not-found', 'Запис графіка не знайдено');
+            list.splice(list.indexOf(changedLeave), 1);
+        } else {
+            const avg = data?.avgDailyKop === undefined || data.avgDailyKop === null || data.avgDailyKop === '' ? null : Number(data.avgDailyKop);
+            changedLeave = { id: randomUUID().slice(0, 8), type: data?.type, from: String(data?.from || ''), to: String(data?.to || ''),
+                ...(avg ? { avgDailyKop: avg } : {}), ...(text(data?.note, 120) ? { note: text(data.note, 120) } : {}) };
+            const error = leave.checkLeave(changedLeave);
+            if (error) fail('invalid-argument', error);
+            if (list.some(l => changedLeave.from <= l.to && l.from <= changedLeave.to)) fail('failed-precondition', 'На ці дати вже є відпустка чи лікарняний у графіку');
+            if (list.length >= 60) list.shift();
+            list.push(changedLeave);
+            list.sort((a, b) => a.from.localeCompare(b.from));
+        }
+        await ref.update({ leaves: list, updatedAt: FieldValue.serverTimestamp() });
+        await audit(actor, role, 'payroll.leave', ref.path, `${op === 'remove' ? 'Прибрано' : 'Додано'}: ${leave.TYPES[changedLeave.type]} ${changedLeave.from} — ${changedLeave.to}`, { type: changedLeave.type });
+        // Перерахунок відомості місяця, у якому працює бухгалтер.
+        let recalculated = false;
+        if (validPeriod(period) && leave.leavePortion(changedLeave, period) && await runEditable(period)) {
+            const stored = (await db.doc(`payroll_runs/${period}`).get()).data();
+            const inputs = JSON.parse(JSON.stringify(stored?.inputs || {}));
+            const mine = inputs[personId]?.absences || [];
+            const absences = op === 'remove' ? leave.dropLeave(mine, changedLeave, period) : leave.mergeLeaves(mine, [changedLeave], period).absences;
+            inputs[personId] = { ...inputs[personId], absences };
+            if (!absences.length) delete inputs[personId].absences;
+            await saveRun(actor, role, { period, inputs });
+            recalculated = true;
+        }
+        return { ok: true, id: changedLeave.id, recalculated, months: leave.leaveMonths(changedLeave) };
+    }
+
+    /** Попередній розрахунок відпускних / лікарняних до збереження: середньоденна й сума за дні місяця. */
+    async function leavePreview({ personId, leave: data }) {
+        const l = { type: data?.type, from: String(data?.from || ''), to: String(data?.to || ''), ...(Number(data?.avgDailyKop) > 0 ? { avgDailyKop: Math.round(Number(data.avgDailyKop)) } : {}) };
+        const error = leave.checkLeave(l);
+        if (error) fail('invalid-argument', error);
+        const person = (await db.doc(`payroll_people/${String(personId || '').replace(/[^\w-]/g, '')}`).get()).data();
+        if (person?.kind !== 'employee') fail('failed-precondition', 'Оберіть працівника за трудовим договором');
+        const settings = await loadSettings();
+        const months = [];
+        // Середньоденна фіксується на початок випадку: для наступних місяців беремо її з першого.
+        let fixed = null;
+        for (const period of leave.leaveMonths(l)) {
+            const rate = core.rateFor(period, settings.rates);
+            if (!rate) { months.push({ period, error: 'немає ставок на цей місяць' }); continue; }
+            const history = (await loadHistory(period)).get(personId) || [];
+            const portion = leave.leavePortion(l, period);
+            if (fixed && portion.caseStart) history.push({ period: leave.shift(period, -1), absences: [{ type: l.type, caseStart: l.from, from: l.from, avgKop: fixed.avgKop, percent: fixed.percent }] });
+            const lv = leave.leaveFor({ person, absences: [portion], period, rate, history });
+            if (!fixed && lv.items[0]?.avgKop) fixed = { avgKop: lv.items[0].avgKop, percent: lv.items[0].percent };
+            const item = lv.items[0] || {};
+            months.push({ period, days: item.days || 0, avgKop: item.avgKop || 0, kop: item.kop || 0, employerDays: item.employerDays, fundDays: item.fundDays, fundKop: item.fundKop || 0,
+                percent: item.percent, problems: lv.problems, workdays: l.type === 'vacation' ? lv.vacationWorkdays : lv.sickWorkdays });
+        }
+        return { type: l.type, months, days: Math.round((Date.parse(`${l.to}T00:00:00Z`) - Date.parse(`${l.from}T00:00:00Z`)) / 86400000) + 1 };
+    }
+
     /**
      * Для викликів із веб-застосунку (onCall): якщо реквізити податків (ПДФО, ВЗ, ЄСВ)
      * ще не заповнені або були стерті демо-прогоном, автоматично підставляємо бюджетні
@@ -461,8 +564,15 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
             case 'refreshRecipients':
                 await ensureDefaultTaxesForCall(actor, role, data);
                 return refreshRecipients(actor, role, data);
+            case 'payMethod': return savePayMethod(actor, role, data);
+            case 'leave': return saveLeave(actor, role, data);
+            case 'leavePreview': return leavePreview(data);
             case 'projectContext': return project.context(data);
             case 'projectReceiver': return project.linkReceiver(actor, role, data);
+            case 'projectAutoLink': return project.autoLink(actor, role, data);
+            case 'projectEnroll': return project.enroll(actor, role, data);
+            case 'projectPackets': return project.packets();
+            case 'projectSandboxStep': return project.sandboxStep(actor, role, data);
             case 'projectPrepare':
                 await ensureDefaultTaxesForCall(actor, role, data);
                 return project.prepare(actor, role, data);
@@ -473,5 +583,5 @@ module.exports = function payrollFunctions({ db, FieldValue, requireAdmin, staff
         }
     }));
 
-    return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay, repay, refreshRecipients, saveRates } };
+    return { payrollAction, actions: { context, savePerson, saveSettings, saveRun, approve, pay, repay, refreshRecipients, saveRates, savePayMethod, saveLeave, leavePreview } };
 };

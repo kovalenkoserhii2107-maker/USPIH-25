@@ -287,6 +287,9 @@ export async function budgetAct(payload, timeoutMs = 60000) {
 /** Відомість місяця, люди, налаштування й платежі (null — поточний місяць). */
 export const loadPayroll = period => once(`payroll:${period || ''}`, () => callBackend('payrollAction', { action: 'context', period: period || null }, 60000));
 
+/** Лише читання (попередній розрахунок відпускних, дані банку): кеш не скидаємо. */
+export const payrollPeek = payload => callBackend('payrollAction', payload, 120000);
+
 export async function payrollAct(payload) {
     try {
         return await callBackend('payrollAction', payload, payload.action === 'projectPrepare' ? 540000 : 120000);

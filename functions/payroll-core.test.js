@@ -116,3 +116,11 @@ test('withDefaultTaxes не змішує свій IBAN із типовими н�
     assert.equal(taxes.pdfo.code, '');
     assert.deepEqual(taxes.vz, p.DEFAULT_TAXES.vz);
 });
+
+test('працівнику в зарплатному проекті IBAN не потрібен; виконавцю ЦПД — потрібен', () => {
+    const linked = emp({ iban: '', salaryProject: { group: 'SALARY', receiverId: 'R1', tabn: '7' } });
+    const gph = { id: 'g1', name: 'Виконавець Тестовий', kind: 'gph', iban: '', rnokpp: '3124567809', salaryProject: { receiverId: 'R2' } };
+    const run = p.buildRun({ people: [linked, gph], inputs: { g1: { actKop: 100000 } }, period: '2026-10' });
+    assert.ok(!run.rows.find(r => r.personId === 'e1').problems.some(t => /IBAN/.test(t)));
+    assert.ok(run.rows.find(r => r.personId === 'g1').problems.some(t => /IBAN/.test(t)));
+});
