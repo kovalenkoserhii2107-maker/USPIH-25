@@ -648,8 +648,28 @@ async function checkCounterpartyFull(apiKey, contractorCode, options = {}) {
     }
 
     // Назва ЮО, Філії або ПІБ ФОП
+    const compactOrgName = s => String(s || '')
+        .replace(/ПРИВАТНОГО АКЦІОНЕРНОГО ТОВАРИСТВА/gi, "ПрАТ")
+        .replace(/ПРИВАТНЕ АКЦІОНЕРНЕ ТОВАРИСТВО/gi, "ПрАТ")
+        .replace(/ПУБЛІЧНОГО АКЦІОНЕРНОГО ТОВАРИСТВА/gi, "ПАТ")
+        .replace(/ПУБЛІЧНЕ АКЦІОНЕРНЕ ТОВАРИСТВО/gi, "ПАТ")
+        .replace(/АКЦІОНЕРНОГО ТОВАРИСТВА/gi, "АТ")
+        .replace(/АКЦІОНЕРНЕ ТОВАРИСТВО/gi, "АТ")
+        .replace(/ТОВАРИСТВА З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ/gi, "ТОВ")
+        .replace(/ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ/gi, "ТОВ")
+        .replace(/КОМУНАЛЬНОГО ПІДПРИЄМСТВА/gi, "КП")
+        .replace(/КОМУНАЛЬНЕ ПІДПРИЄМСТВО/gi, "КП")
+        .replace(/ПРИВАТНОГО ПІДПРИЄМСТВА/gi, "ПП")
+        .replace(/ПРИВАТНЕ ПІДПРИЄМСТВО/gi, "ПП")
+        .replace(/ДОЧІРНЬОГО ПІДПРИЄМСТВА/gi, "ДП")
+        .replace(/ДОЧІРНЄ ПІДПРИЄМСТВО/gi, "ДП")
+        .replace(/ВИРОБНИЧОГО ОБ['ʼ’"]ЄДНАННЯ/gi, "ВО")
+        .replace(/ВИРОБНИЧЕ ОБ['ʼ’"]ЄДНАННЯ/gi, "ВО")
+        .replace(/\s+/g, " ")
+        .trim();
     const rawFullName = typeof usr.name === 'object' ? (usr.name?.fullName || usr.name?.shortName || '') : (usr.name || usr.fullName || '');
-    const rawShortName = typeof usr.name === 'object' ? (usr.name?.shortName || usr.name?.fullName || '') : (usr.shortName || rawFullName);
+    const explicitShort = typeof usr.name === 'object' ? (usr.name?.shortName || '') : (usr.shortName || '');
+    const rawShortName = explicitShort || (rawFullName.length > 55 ? compactOrgName(rawFullName) : rawFullName);
     const displayName = isFop && rawFullName && !/^ФОП\b/i.test(rawFullName)
         ? `ФОП ${rawFullName}`
         : (rawShortName || rawFullName);
