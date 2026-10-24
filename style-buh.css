@@ -826,19 +826,13 @@ body.buh-mode .field-input { border-radius: 14px; }
     .dc-hint .sv-btn { width: 100%; }
 }
 
-/* ---------- Платежі: що на підписі, що варто створити, форма ---------- */
-.py-top { display: flex; justify-content: flex-end; margin: -8px 0 16px; }
-.py-new { width: auto; }
-.py-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(340px, 1fr); gap: 18px; align-items: start; }
-.py-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+/* ---------- Спільні картки й поля (Платежі, Зарплата, Рішення…) ---------- */
 .py-card { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: clamp(18px, 2.4vw, 28px); border-radius: 28px; background: #fff; }
 .py-card.is-wait { box-shadow: inset 0 0 0 2px var(--sv-yellow); }
 .py-card.is-alert { background: var(--sv-red-bg); }
 .py-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; margin-bottom: 6px; }
 .py-card-head h2 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.01em; }
 .py-card-head > span { color: var(--sv-muted); font-size: 14px; font-weight: 600; }
-.py-total { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.py-total.is-muted { color: var(--sv-muted); font-size: 18px; }
 .py-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--sv-line); }
 .py-card-head + .py-row { border-top: 0; }
 .py-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -853,10 +847,6 @@ body.buh-mode .field-input { border-radius: 14px; }
 .py-card > .sv-btn.is-wide { margin-top: 8px; }
 .py-empty { margin: 0; padding: 10px 0; color: var(--sv-muted); font-size: 15px; font-weight: 600; }
 .py-note { margin: 4px 0; color: var(--sv-muted); font-size: 14px; font-weight: 600; }
-.py-form { position: sticky; top: var(--sv-sticky, 104px); gap: 14px; }
-/* На компʼютері форма завжди поруч — окрема кнопка «+ Новий платіж» зайва. */
-@media (min-width: 1101px) { .py-top { display: none; } }
-.py-close { display: none; }
 .py-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .py-field > span { color: var(--sv-muted); font-size: 13.5px; font-weight: 700; }
 .py-field input, .py-field select, .py-field textarea {
@@ -867,15 +857,7 @@ body.buh-mode .field-input { border-radius: 14px; }
 .py-field input:focus, .py-field select:focus, .py-field textarea:focus { box-shadow: 0 0 0 2px #000; }
 .py-amount input { min-height: 60px; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .py-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-@media (max-width: 1100px) {
-    .py-grid { grid-template-columns: minmax(0, 1fr); }
-    .py-form { position: static; order: -1; }
-    .py-form.is-closed { display: none; }
-    .py-close { display: inline-flex; width: auto; }
-}
 @media (max-width: 900px) {
-    .py-top { margin-top: 0; }
-    .py-new { width: 100%; }
     .py-card { border-radius: 24px; }
     .py-card-head h2 { font-size: 19px; }
     .py-pair { grid-template-columns: minmax(0, 1fr); }
@@ -3216,4 +3198,125 @@ body.buh-mode .buh-view { position: static; transform: none; }
     .bn-who .sv-btn { width: 100%; }
     .bn-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
     .bn-chip-btn { flex: 0 0 auto; }
+}
+
+/* ---------- Платежі: шлях грошей, до оплати, на підписі, історія, форма ---------- */
+#viewPayments { display: flex; flex-direction: column; gap: 14px; }
+.pm-top { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+.pm-hero { display: flex; flex-direction: column; gap: 12px; padding: clamp(20px, 2.6vw, 28px); border-radius: 28px; background: #0B0F17; color: #fff; }
+.pm-hero-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.pm-hero-label { color: rgba(255, 255, 255, .7); font-size: 14px; font-weight: 700; }
+.pm-bal { padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, .1); color: #fff; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pm-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; counter-reset: pm-step; }
+.pm-step { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 14px 14px 12px; border: 0; border-radius: 18px; background: rgba(255, 255, 255, .08); color: #fff; font: inherit; text-align: left; cursor: pointer; transition: background .15s ease, transform .15s ease; }
+.pm-step:hover { background: rgba(255, 255, 255, .14); transform: translateY(-1px); }
+.pm-step.is-active { box-shadow: inset 0 0 0 2px #fff; }
+.pm-step span { color: rgba(255, 255, 255, .7); font-size: 12.5px; font-weight: 700; }
+.pm-step b { overflow: hidden; font-size: clamp(15px, 1.15vw, 19px); font-weight: 800; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pm-step small { overflow: hidden; color: rgba(255, 255, 255, .6); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pm-step.is-zero b { color: rgba(255, 255, 255, .45); }
+/* Стрілка між кроками шляху */
+.pm-step + .pm-step::before { content: ''; position: absolute; top: 50%; left: -8px; width: 8px; height: 2px; background: rgba(255, 255, 255, .25); }
+.pm-funds { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 14px; border-radius: 16px; background: rgba(255, 255, 255, .06); color: rgba(255, 255, 255, .75); font-size: 13.5px; font-weight: 600; }
+.pm-funds b { color: #fff; white-space: nowrap; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pm-funds.is-short { background: rgba(244, 63, 94, .18); }
+.pm-funds.is-short span:last-child b { color: #FCA5A5; }
+
+.pm-next { display: flex; flex-direction: column; gap: 6px; padding: clamp(18px, 2.4vw, 24px); border-radius: 28px; background: #fff; }
+.pm-next-label { color: var(--sv-muted); font-size: 13px; font-weight: 800; }
+.pm-next > b { font-size: 19px; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; }
+.pm-next p { margin: 0; color: #374151; font-size: 14px; font-weight: 600; line-height: 1.45; }
+.pm-next-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
+.pm-next-actions .sv-btn { width: auto; }
+.pm-next.is-todo { box-shadow: inset 0 0 0 2px #000; }
+.pm-next.is-bad { background: var(--sv-red-bg); }
+.pm-next.is-bad .pm-next-label, .pm-next.is-bad > b { color: var(--sv-red); }
+.pm-next.is-wait { background: var(--sv-yellow); }
+.pm-next.is-wait .pm-next-label, .pm-next.is-wait p { color: var(--sv-yellow-ink); }
+.pm-next.is-done { background: var(--sv-green-bg); }
+.pm-next.is-done .pm-next-label, .pm-next.is-done > b { color: #145C29; }
+
+.pm-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; scroll-margin-top: var(--sv-sticky, 104px); }
+.pm-new { width: auto; }
+.pm-pane, .pm-problems { gap: 2px; }
+.pm-problems { box-shadow: inset 0 0 0 2px #F0A49B; }
+.pm-group { display: flex; flex-direction: column; margin-top: 10px; }
+.pm-group h3 { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin: 0; padding: 10px 2px 6px; font-size: 15px; font-weight: 800; }
+.pm-group h3 span { color: var(--sv-muted); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.pm-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding: 12px 10px; border-top: 1px solid var(--sv-line); color: #000; }
+.pm-row[data-pay] { cursor: pointer; }
+.pm-row[data-pay]:hover { border-radius: 16px; background: var(--sv-soft-2); }
+.pm-row[data-pay]:hover + .pm-row { border-top-color: transparent; }
+.pm-row:focus-visible { outline: 3px solid #000; outline-offset: -3px; border-radius: 16px; }
+.py-card-head + .pm-row, .pm-group h3 + .pm-row, .pm-month-head + .pm-row { border-top: 0; }
+.pm-row.is-bad { border-radius: 16px; background: var(--sv-red-bg); }
+.pm-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pm-main > b { overflow: hidden; font-size: 15.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.pm-main > small { overflow: hidden; color: #333; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pm-main > small.pm-sub, .pm-sub { color: var(--sv-muted); font-size: 12.5px; font-weight: 600; white-space: normal; }
+.pm-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pm-sum { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-actions { display: flex; flex-wrap: wrap; grid-column: 2 / -1; gap: 8px; }
+.pm-actions .sv-btn { width: auto; min-height: 40px; padding: 0 16px; font-size: 14px; }
+.pm-hint { margin: 6px 0 0; color: var(--sv-muted); font-size: 13.5px; font-weight: 600; line-height: 1.45; }
+.pm-hint.is-warn, .pm-hint.is-bad { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: 16px; font-weight: 700; }
+.pm-hint.is-warn { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
+.pm-hint.is-bad { background: var(--sv-red-bg); color: var(--sv-red); }
+.pm-hint .sv-btn { width: auto; min-height: 36px; }
+.pm-loading { margin: 8px 0 0; color: var(--sv-muted); font-size: 13.5px; font-weight: 600; }
+.pm-wide { margin-top: 10px; }
+
+.pm-tools { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; }
+.pm-search { min-height: 52px; background: var(--sv-soft-2); }
+.pm-month { display: flex; flex-direction: column; }
+.pm-month-head { display: flex; justify-content: space-between; gap: 10px; padding: 14px 2px 6px; font-size: 14px; }
+.pm-month-head b { font-weight: 800; text-transform: capitalize; }
+.pm-month-head span { color: var(--sv-muted); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Форма нового платежу — бічна картка */
+.pm-sheet .chs-sheet { width: min(560px, 100%); }
+.pm-form { gap: 14px; }
+.pm-warns { display: flex; flex-direction: column; gap: 8px; }
+.pm-warns:empty { display: none; }
+.pm-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: 16px; font-size: 14px; font-weight: 700; line-height: 1.4; }
+.pm-warn span { flex: 1 1 220px; }
+.pm-warn .sv-btn { width: auto; min-height: 36px; padding: 0 14px; font-size: 13.5px; }
+.pm-warn.is-info { background: #E4EEFF; color: #1D4ED8; }
+.pm-warn.is-warn { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
+.pm-warn.is-bad { background: var(--sv-red-bg); color: var(--sv-red); }
+.pm-yc { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 16px; background: var(--sv-soft-2); color: #000; font: inherit; font-size: 14px; font-weight: 700; text-align: left; }
+.pm-yc.is-ask { cursor: pointer; }
+.pm-yc.is-ask:hover { background: var(--sv-soft); }
+.pm-yc.is-ok { background: var(--sv-green-bg); }
+.pm-yc.is-warn, .pm-yc.is-wait { background: var(--sv-yellow); }
+.pm-yc.is-bad { background: var(--sv-red-bg); }
+.pm-yc-main { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.pm-yc-main b { font-size: 14.5px; font-weight: 800; }
+.pm-yc.is-ok .pm-yc-main b { color: #145C29; }
+.pm-yc.is-warn .pm-yc-main b, .pm-yc.is-wait .pm-yc-main b { color: var(--sv-yellow-ink); }
+.pm-yc.is-bad .pm-yc-main b { color: var(--sv-red); }
+.pm-yc-main small { color: var(--sv-muted); font-size: 12.5px; font-weight: 600; }
+.pm-yc .bn-yc-logo { width: 34px; height: 34px; border-radius: 10px; font-size: 12px; }
+
+@media (max-width: 1100px) {
+    .pm-top { grid-template-columns: minmax(0, 1fr); }
+    .pm-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pm-step + .pm-step::before { display: none; }
+}
+@media (max-width: 700px) {
+    #viewPayments { gap: 10px; }
+    .pm-hero, .pm-next { border-radius: 24px; }
+    .pm-step { padding: 12px; border-radius: 16px; }
+    .pm-step b { font-size: 16px; }
+    .pm-bar { flex-direction: column; align-items: stretch; }
+    .pm-new { width: 100%; }
+    .pm-bar .bn-tab { flex: 1 0 auto; justify-content: center; padding: 0 14px; }
+    .pm-row { grid-template-columns: 40px minmax(0, 1fr); padding: 12px 4px; }
+    .pm-row .bn-ico { width: 40px; height: 40px; border-radius: 12px; }
+    .pm-right { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; }
+    .pm-actions { grid-column: 1 / -1; }
+    .pm-actions .sv-btn { flex: 1 1 auto; }
+    .pm-tools .bn-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .pm-tools .bn-chip-btn { flex: 0 0 auto; }
 }
