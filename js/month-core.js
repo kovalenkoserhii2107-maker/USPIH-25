@@ -119,7 +119,7 @@ function payrollStep(payroll) {
         if (payroll.run?.rows && expected.every(([k, amount]) => (paid.get(k) || 0) === amount)) return { ...base, state: 'done', short: 'затверджено й виплачено', facts, action: 'Відкрити відомість' };
         const broken = (payroll.payments || []).some(p => p.status === 'failed' || (p.status === 'paid' && p.returnedKop > 0 && !p.repaid));
         if (broken) return { ...base, state: 'work', short: 'банк повернув чи не прийняв частину виплат', facts, action: 'Повторити виплату' };
-        return { ...base, state: 'wait', who: 'chair', short: 'платежі надіслано — чекають підпису й виписки', facts, action: 'Перевірити платежі' };
+        return { ...base, state: 'wait', who: 'chair', short: 'платежі надіслано — чекають підпису голови й проведення банком', facts, action: 'Перевірити платежі' };
     }
     return { ...base, state: 'work', short: 'затверджено, виплату не завершено', facts, action: 'Відкрити відомість' };
 }
