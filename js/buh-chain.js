@@ -15,6 +15,9 @@ import { paymentSteps, paymentLinks, docPayments, contractSummary, docLeft } fro
 import { openExpenses } from './buh-expenses.js';
 import { openPayroll } from './buh-payroll.js';
 import { openFlat } from './buh-flats.js';
+import { openAdvance } from './buh-advance.js';
+import { openForm as openPaymentForm } from './buh-payments.js';
+import { supplierFor, riskOf } from './payments-view-core.js';
 
 let stack = [];                 // [{ kind: 'payment'|'tx'|'contract', id }]
 const CHECK = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M7.5 12.5l3 3 6-6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -107,12 +110,17 @@ async function paymentBody(id) {
     const [p, ex] = await Promise.all([loadPayment(id), loadExpenses().catch(() => null)]);
     if (!p) throw new Error('Платіж не знайдено');
     const { expense, contract } = paymentLinks(p, ex);
+    const supplier = supplierFor(p, ex);
+    const risk = riskOf(supplier);
     const tx = p.txId ? await loadTx(p.txId).catch(() => null) : null;
     const others = expense ? docPayments(expense, await loadPayments().catch(() => [])).filter(x => x.id !== p.id) : [];
     const links = [
         expense ? docRow(expense, ex) : '',
         contract ? contractRow(contract) : '',
+        supplier ? linkRow(`data-ch="supplier" data-id="${escapeHtml(supplier.id)}"`, 'Постачальник', supplier.name || '', [supplier.code, risk ? risk.text : 'ризиків у картці немає'].filter(Boolean).join(' · '),
+            risk ? chip([risk.level === 'bad' ? 'ризик' : 'увага', 'is-bad']) : '') : '',
         tx ? txRow(tx, 'Списання у виписці') : '',
+        p.advanceReportId ? linkRow(`data-ch="advance" data-id="${escapeHtml(p.advanceReportId)}"`, 'Авансовий звіт', 'Відшкодування перевитрати', 'звіт підзвітної особи, затверджений головою') : '',
         p.payroll?.period ? linkRow(`data-ch="payroll" data-period="${escapeHtml(p.payroll.period)}"`, 'Зарплата', `Відомість за ${periodName(p.payroll.period)}`, p.payroll.stage === 'advance' ? 'аванс' : 'остаточний розрахунок') : '',
         ...others.map(x => payRow(x, 'Інший платіж за документом'))
     ].filter(Boolean);
@@ -127,6 +135,7 @@ async function paymentBody(id) {
             ['Повернено банком', p.returnedKop ? grn(p.returnedKop) : '']])}
         <h3 class="chs-h">Повʼязано</h3>
         ${links.length ? `<div class="chs-links">${links.join('')}</div>` : '<p class="py-note">Платіж створено вручну — без документа витрат. Щоб звʼязати оплату з документом, створюйте платіж із картки документа.</p>'}
+        ${p.status === 'failed' && !p.payroll ? `<div class="chs-actions"><button type="button" class="sv-btn" data-ch="retry" data-id="${escapeHtml(p.id)}">Виправити й повторити</button></div>` : ''}
         ${['sent', 'unknown'].includes(p.status) ? `<div class="chs-actions">
             ${p.paymentRef || p.bankRef ? `<button type="button" class="sv-btn is-soft" data-ch="check-sign" data-id="${escapeHtml(p.id)}">Перевірити підпис у Приват24</button>` : ''}
             ${p.status === 'sent' ? `<button type="button" class="sv-btn is-soft" data-ch="cancel" data-id="${escapeHtml(p.id)}">Скасувати платіж</button>` : ''}
@@ -200,6 +209,15 @@ async function onClick(e) {
     if (a === 'payment' || a === 'tx' || a === 'contract') { push({ kind: a, id: t.dataset.id }); return; }
     if (a === 'doc') { close(); openExpenses('docs', null, t.dataset.id); return; }
     if (a === 'payroll') { close(); openPayroll(t.dataset.period); return; }
+    if (a === 'advance') { close(); openAdvance('all', t.dataset.id); return; }
+    if (a === 'supplier') {
+        const ex = await loadExpenses().catch(() => null);
+        const s = ex?.suppliers?.find(x => x.id === t.dataset.id);
+        close();
+        openExpenses('suppliers', null, null, { kind: 'supplier', id: t.dataset.id, name: s?.name || '', code: s?.code || '', iban: s?.iban || '' });
+        return;
+    }
+    if (a === 'retry') { const p = await loadPayment(t.dataset.id).catch(() => null); close(); if (p) openPaymentForm(p); return; }
     if (a === 'flat') { close(); location.hash = 'flats'; setTimeout(() => openFlat(t.dataset.apt), 0); return; }
     if (a === 'inbox') { close(); location.hash = 'inbox'; return; }
     if (a === 'match-payment') {
