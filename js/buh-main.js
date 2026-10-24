@@ -83,6 +83,8 @@ async function show(name, { push = true, refresh = false } = {}) {
     const restoringBank = name === 'bank' && hasBankReturnState();
     if (!refresh && !restoringBank) window.scrollTo({ top: 0 });
     renderBankReturnBanner(name);
+    // Перехід у розділ (не фонове оновлення) — «Сьогодні» показує вхідну анімацію.
+    document.body.dataset.enter = refresh ? '' : name;
     try {
         await loadResiliently(VIEWS[name].load);
         renderBankReturnBanner(name);
