@@ -157,7 +157,8 @@ test('полный месяц: начисления → банк → все пр
         pctx = await payroll.actions.context({ period: PERIOD });
         if (stage === 'final') {
             const step = monthSteps({ period: PERIOD, payroll: pctx }).find(s => s.key === 'payroll');
-            assert.equal(step.state, 'work');
+            // Надіслані на підпис виплати закриттю не заважають: їх закриє виписка.
+            assert.equal(step.state, 'wait');
             assert.match(step.short, /банком/);
         }
         for (const p of await readRows('payments')) if (p.payroll?.stage === stage && p.status === 'sent') await settle(p.id);

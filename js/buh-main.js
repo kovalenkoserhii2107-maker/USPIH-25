@@ -32,7 +32,7 @@ import { initVenomNav } from './venom-nav.js';
 
 const VIEWS = {
     today: { title: () => todayTitle().title, sub: () => todayTitle().sub, load: loadToday },
-    month: { title: 'Місяць', sub: 'Закриття крок за кроком: нарахування, банк, документи, зарплата, перевірка', load: loadMonthView },
+    month: { title: 'Місяць', sub: 'Закриття крок за кроком: доходи, банк, витрати, зарплата й звіти, облік', load: loadMonthView },
     inbox: { title: 'Рішення', sub: 'Система пропонує — ви підтверджуєте', load: loadInbox },
     bank: { title: 'Банк', sub: 'Залишки, рух коштів, операції й контрагенти з перевіркою YouControl', load: loadBankView },
     payments: { title: 'Платежі', sub: 'Система готує — ви підтверджуєте, голова підписує в Приват24', load: loadPaymentsView },
