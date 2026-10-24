@@ -127,17 +127,24 @@ export async function loadPaymentsView() {
     render();
 }
 
-function compute() {
-    const { payments, ex, proposals } = data;
-    const docs = docsToPay(ex, payments);
+/** Шлях грошей з усіх джерел — одне правило для «Платежів» і «Сьогодні». */
+function summarize({ payments, ex, proposals, extra: more, accounts }) {
     const items = toPayList({
-        docs, proposals, docTypes: ex?.docTypes || {}, contracts: ex?.contracts || [], suppliers: ex?.suppliers || [],
-        payroll: extra?.payroll || [], advance: advanceToPay({ reports: extra?.advance || [] }, payments)
+        docs: docsToPay(ex, payments), proposals, docTypes: ex?.docTypes || {}, contracts: ex?.contracts || [], suppliers: ex?.suppliers || [],
+        payroll: more?.payroll || [], advance: advanceToPay({ reports: more?.advance || [] }, payments)
     });
     const pendingDocs = (ex?.expenses || []).filter(e => e.status === 'pending');
-    const f = flow({ payments, toPay: items, approval: { docs: pendingDocs, payroll: extra?.approvalPayroll, advance: extra?.advancePending || 0 } });
+    const f = flow({ payments, toPay: items, approval: { docs: pendingDocs, payroll: more?.approvalPayroll, advance: more?.advancePending || 0 } });
     const problems = payments.filter(p => problemOf(p));
-    return { items, f, problems, money: funds(data.ctx.accounts, f.signing.kop, f.todo.kop) };
+    return { items, f, problems, money: funds(accounts || [], f.signing.kop, f.todo.kop) };
+}
+
+const compute = () => summarize({ ...data, extra, accounts: data.ctx.accounts });
+
+/** Для «Сьогодні»: той самий підсумок платежів, з відомістю зарплати й авансовими звітами. */
+export async function paymentsOverview() {
+    const [{ context, list }, payments, ex, more] = await Promise.all([activeProposals(), loadPayments(), loadExpenses().catch(() => null), loadExtra().catch(() => null)]);
+    return summarize({ payments, ex, proposals: list, extra: more, accounts: context.accounts });
 }
 
 // ------------------------------------------------------------

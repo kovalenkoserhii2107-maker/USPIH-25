@@ -1,386 +1,304 @@
 // ============================================================
-// «Сьогодні»: з чого почати. Справи — з тієї самої черги, що й
-// «Рішення» (collectInbox), згруповані за видом; поруч — закриття
-// місяця, найближчий строк, гроші на рахунку й борги мешканців.
+// «Сьогодні»: перший екран кабінету.
+//
+// Угорі — одна головна дія за роллю (бухгалтер чи голова) і пульс:
+// рішення, підпис, до оплати, найближчий строк. Поруч — гроші на
+// рахунках і що з ними станеться після підписаних платежів. Нижче —
+// справи з черги «Рішень», строки, рух коштів по днях місяця, збір
+// внесків і боржники, шлях платежів, закриття місяця, кошторис і
+// останні операції банку. Кожен блок веде у свій розділ.
+//
+// Рух: при вході картки зʼявляються по черзі, числа «докручуються»,
+// стовпчики й кільця заповнюються. Лише при переході в розділ (не при
+// фоновому оновленні) і не за «зменшити рух» у системі.
+// Розрахунки — today-core.js.
 // ============================================================
+import { session } from './firebase.js';
 import { escapeHtml } from './ui.js';
-import { loadSettings, loadSince, loadPayments, money, when } from './buh-data.js';
+import { loadSettings, loadSince, loadPayments, money, when, dateOnly, signed, ACCOUNT_PURPOSES } from './buh-data.js';
 import { collectInbox } from './buh-inbox.js';
 import { loadMonthData } from './buh-month.js';
 import { monthProgress } from './month-core.js';
 import { fmtKop, periodName } from './charges-core.js';
-import { humanDate, daysLeft } from './tax-calendar.js';
-import { reportTasks, nextDeadline, periodOfKey } from './reports-view-core.js';
-import { payrollTotals } from './payroll-view-core.js';
+import { humanDate } from './tax-calendar.js';
+import { reportTasks, nextDeadline } from './reports-view-core.js';
+import { BANK_CATEGORY_OPTIONS } from './bank-view-core.js';
+import { paymentsOverview } from './buh-payments.js';
+import { openTxSheet } from './buh-chain.js';
+import { openFlat } from './buh-flats.js';
+import { tasks, focusOf, cashByDay, collection, upcoming, leftText, computeUpcomingPayments, budgetPace, recentOps, plural } from './today-core.js';
 
-const BANK_TYPES = new Set(['link', 'assign', 'split', 'choose', 'income', 'expense', 'bank-conflict', 'payment-link']);
-const DOC_TYPES = new Set(['approve-con', 'approve-exp', 'pay-exp', 'missing-doc']);
-const META_GROUP = {
-    'помилки платежів': 'failed_pay',
-    'зарплата': 'payroll',
-    'звітність': 'reports',
-    'проводки': 'journal',
-    'кошторис': 'budget',
-    'авансові звіти': 'advance',
-    'компенсація підзвіт': 'advance',
-    'майно та тмц': 'assets',
-    'амортизація оз/мнма': 'assets'
-};
-
-/** Групи справ: що робити, скільки й короткий приклад. */
-const GROUPS = {
-    failed_pay: { title: 'Виправити відхилені платежі', icon: '!', go: 'payments' },
-    bank: { title: 'Розподілити операції банку', icon: '₴' },
-    charges: { title: 'Нарахування внесків', icon: '%' },
-    docs: { title: 'Документи й договори', icon: '§' },
-    pay: { title: 'Створити платежі', icon: '↗' },
-    advance: { title: 'Авансові звіти', icon: '₴' },
-    assets: { title: 'Майно та ТМЦ', icon: '□' },
-    payroll: { title: 'Зарплата', icon: '₴' },
-    reports: { title: 'Звіти до податкової', icon: '✓' },
-    journal: { title: 'Проводки й закриття', icon: '=' },
-    budget: { title: 'Кошторис', icon: '≡' }
-};
-
-export function groupOf(item) {
-    const p = item.proposal;
-    if (BANK_TYPES.has(p.type)) return 'bank';
-    if (DOC_TYPES.has(p.type)) return 'docs';
-    if (p.type === 'pay') return 'pay';
-    if (p.type === 'charge') return 'charges';
-    if (p.paymentsAction === 'open-failed') return 'failed_pay';
-    return META_GROUP[p.meta] || 'charges';
-}
-
-function noteOf(item) {
-    const p = item.proposal;
-    if (p.paymentsAction === 'open-failed') {
-        const firstSentence = String(p.text || '').split('. ')[0];
-        return firstSentence ? `Банк не прийняв: ${firstSentence}` : (p.title || 'Банк не прийняв платіж');
-    }
-    if (BANK_TYPES.has(p.type)) return [item.tx.counterparty?.name, item.tx.purpose].filter(Boolean).join(' · ') || 'Операція з виписки';
-    if (p.type === 'pay') return `${p.payment.recipient?.name || 'Платіж'} · ${fmtKop(p.payment.amountKop)} грн`;
-    if (p.expense) return `${p.expense.supplierName || 'Документ'} · ${fmtKop(p.expense.amountKop)} грн`;
-    if (p.contract) return `Договір: ${p.contract.subject || p.contract.number || 'на затвердження'}`;
-    if (p.type === 'charge') return 'Внески за місяць готові до нарахування';
-    return p.title || '';
-}
-
-export function tasks(items) {
-    const out = new Map();
-    for (const item of items) {
-        const g = groupOf(item);
-        const t = out.get(g) || { key: g, ...GROUPS[g], count: 0, sumKop: 0, note: noteOf(item) };
-        if (g === 'failed_pay') {
-            t.count += item.proposal.failedPaymentsCount || 1;
-            t.sumKop += item.proposal.failedPaymentsSumKop || 0;
-        } else {
-            t.count += 1;
-            if (BANK_TYPES.has(item.proposal.type)) t.sumKop += item.tx.amountKop || 0;
-        }
-        out.set(g, t);
-    }
-    return [...out.values()];
-}
-
-const greeting = now => (now.getHours() < 12 ? 'Доброго ранку' : now.getHours() < 18 ? 'Добрий день' : 'Добрий вечір');
+const greeting = now => (now.getHours() < 5 ? 'Доброї ночі' : now.getHours() < 12 ? 'Доброго ранку' : now.getHours() < 18 ? 'Добрий день' : 'Добрий вечір');
 
 export function todayTitle() {
     const now = new Date();
     return { title: greeting(now), sub: now.toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' }) };
 }
 
-const ACCOUNT_PURPOSE_LABELS = {
-    current: 'Поточний рахунок',
-    reserve: 'Резервний фонд',
-    repair: 'Ремонтний фонд',
-    special: 'Спецрахунок',
-    deposit: 'Депозит',
-    grant: 'Грантовий рахунок'
+const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const MONTHS_SHORT = ['січ', 'лют', 'бер', 'квіт', 'трав', 'черв', 'лип', 'серп', 'вер', 'жовт', 'лист', 'груд'];
+const MONTHS_LOC = ['січні', 'лютому', 'березні', 'квітні', 'травні', 'червні', 'липні', 'серпні', 'вересні', 'жовтні', 'листопаді', 'грудні'];
+
+const ICONS = {
+    alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
+    bank: '<path d="M3 10h18L12 4z"/><path d="M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18"/>',
+    doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
+    send: '<path d="M4 12 20 4l-6 16-3-7z"/><path d="m11 13 9-9"/>',
+    charges: '<path d="M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"/>',
+    people: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+    receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    report: '<path d="M5 3h14v18H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+    journal: '<path d="M4 5h16M4 12h16M4 19h10"/>',
+    budget: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',
+    box: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+    in: '<path d="M17 7 7 17"/><path d="M15 17H7V9"/>',
+    out: '<path d="M7 17 17 7"/><path d="M9 7h8v8"/>'
 };
-/** 1, 2, 21 рішення; 5, 11, 12 рішень. */
-const decisionsWord = n => ([1, 2, 3, 4].includes(n % 10) && ![11, 12, 13, 14].includes(n % 100) ? 'рішення' : 'рішень');
+const icon = (k, cls = '') => `<span class="tz-ico ${cls}" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[k] || ICONS.doc}</svg></span>`;
 
-/**
- * Розрахунок очікуваних платежів за поточний місяць, які ще не проведено
- * і ще не передано на підпис у Приват24:
- *   1) Договори (щомісячні та разові за цей місяць, за якими ще не виставлено рахунок/акт)
- *      + неоплачені документи витрат + перевитрата за авансовими звітами;
- *   2) Зарплата та виплати за ЦПД «на руки» (за мінусом уже виплачених і тих, що на підписі);
- *   3) Податки із зарплати та ЦПД — ЄСВ, ПДФО, військовий збір (за мінусом сплачених і тих, що на підписі).
- */
-export function computeUpcomingPayments({ expenses, payroll, journal, payments = [], period }) {
-    const activePeriod = period || payroll?.period || journal?.period || new Date().toISOString().slice(0, 7);
-    const monthStartIso = `${activePeriod}-01`;
-    const monthEndIso = `${activePeriod}-31`;
-
-    const activeExpensePayIds = new Set(
-        (payments || [])
-            .filter(p => ['sending', 'unknown', 'sent'].includes(p.status) && p.expenseId)
-            .map(p => p.expenseId)
-    );
-
-    const exList = expenses?.expenses || [];
-    const conList = expenses?.contracts || [];
-
-    // 1a. Неоплачені документи постачальників (затверджені або на розгляді), які ще не на підписі в Приват24
-    const unpaidDocs = exList.filter(e =>
-        ['approved', 'pending'].includes(e.status) &&
-        !e.linkedTo &&
-        !activeExpensePayIds.has(e.id) &&
-        (!e.period || e.period <= activePeriod) &&
-        ((e.amountKop || 0) - (e.stornoKop || 0) - (e.paidKop || 0)) > 0
-    );
-    const unpaidDocsKop = unpaidDocs.reduce(
-        (s, e) => s + Math.max(0, (e.amountKop || 0) - (e.stornoKop || 0) - (e.paidKop || 0)),
-        0
-    );
-
-    // 1b. Чинні затверджені договори цього місяця, за якими ще не внесено документ витрат
-    let expectedContractsKop = 0;
-    let expectedContractsCount = 0;
-    for (const c of conList) {
-        if (c.status !== 'approved') continue;
-        const isActive = (!c.validFrom || c.validFrom <= monthEndIso) && (!c.validTo || c.validTo >= monthStartIso);
-        if (!isActive) continue;
-
-        if (c.type === 'monthly' && (c.monthlyKop || 0) > 0) {
-            const documentedKop = exList
-                .filter(e => e.contractId === c.id && e.period === activePeriod && !['rejected', 'canceled', 'linked'].includes(e.status))
-                .reduce((s, e) => s + Math.max(0, (e.amountKop || 0) - (e.stornoKop || 0)), 0);
-            const left = Math.max(0, (c.monthlyKop || 0) - documentedKop);
-            if (left > 0) {
-                expectedContractsKop += left;
-                expectedContractsCount += 1;
-            }
-        } else if (c.type === 'fixed' && (c.amountKop || 0) > 0 && (c.validFrom?.startsWith(activePeriod) || c.date?.startsWith(activePeriod))) {
-            const documentedKop = exList
-                .filter(e => e.contractId === c.id && !['rejected', 'canceled', 'linked'].includes(e.status))
-                .reduce((s, e) => s + Math.max(0, (e.amountKop || 0) - (e.stornoKop || 0)), 0);
-            const left = Math.max(0, (c.amountKop || 0) - documentedKop);
-            if (left > 0) {
-                expectedContractsKop += left;
-                expectedContractsCount += 1;
-            }
-        }
-    }
-
-    // 1c. Авансові звіти до відшкодування (які ще не відправлено в Приват24)
-    let unpaidAdvanceKop = journal?.advanceSummary?.toReimburseKop || 0;
-    if (journal?.advanceSummary?.inBankCount === undefined && unpaidAdvanceKop > 0) {
-        const activeAdvPaysKop = (payments || [])
-            .filter(p => ['sending', 'unknown', 'sent'].includes(p.status) && (p.advanceReportId || p.kind === 'advance' || (typeof p.proposalKey === 'string' && p.proposalKey.startsWith('adv-'))))
-            .reduce((s, p) => s + (p.amountKop || 0), 0);
-        unpaidAdvanceKop = Math.max(0, unpaidAdvanceKop - activeAdvPaysKop);
-    }
-
-    const contractsAndDocsKop = expectedContractsKop + unpaidDocsKop + unpaidAdvanceKop;
-
-    // 2 & 3. Зарплата «на руки» та податки (ЄСВ, ПДФО, ВЗ), які ще не сплачено й не на підписі
-    const pt = payroll?.run ? payrollTotals(payroll) : { netKop: 0, netPaidKop: 0, netSigningKop: 0, taxKop: 0, taxPaidKop: 0, taxSigningKop: 0 };
-    const salaryLeftKop = Math.max(0, (pt.netKop || 0) - (pt.netPaidKop || 0) - (pt.netSigningKop || 0));
-    const taxesLeftKop = Math.max(0, (pt.taxKop || 0) - (pt.taxPaidKop || 0) - (pt.taxSigningKop || 0));
-
-    const totalKop = contractsAndDocsKop + salaryLeftKop + taxesLeftKop;
-    const goTarget = contractsAndDocsKop > 0 ? 'expenses' : (salaryLeftKop > 0 || taxesLeftKop > 0) ? 'payroll' : 'payments';
-
-    return {
-        period: activePeriod,
-        totalKop,
-        contractsAndDocsKop,
-        expectedContractsKop,
-        expectedContractsCount,
-        unpaidDocsKop,
-        unpaidDocsCount: unpaidDocs.length,
-        unpaidAdvanceKop,
-        salaryLeftKop,
-        taxesLeftKop,
-        goTarget
-    };
+/** Число, що «докручується» при вході: data-count — значення, data-fmt — money | pct | int. */
+const num = (value, fmt = 'money') => `<span class="tz-num" data-count="${Math.round(value)}" data-fmt="${fmt}">${fmtValue(value, fmt)}</span>`;
+function fmtValue(v, fmt) {
+    if (fmt === 'pct') return `${Math.round(v)}%`;
+    if (fmt === 'int') return String(Math.round(v));
+    return money(Math.round(v));
 }
 
-/**
- * Формує зрозумілий опис найближчого податкового / звітного строку
- * без зайвого тексту: обʼєднує події на одну дату (напр. ЄСВ + звіт J0500111 до 20 числа).
- */
-export function describeDeadline(soon, allTasks = []) {
-    if (!soon) return null;
-    const openOnSameDate = (allTasks || []).filter(t => !t.done && !t.waiting && t.iso === soon.iso);
-    const hasEsv = openOnSameDate.some(t => t.key.startsWith('esv-'));
-    const hasJ05 = openOnSameDate.some(t => t.key.startsWith('j0500111-'));
-    const repPeriod = periodOfKey(soon.key);
-    const monthLabel = repPeriod ? periodName(repPeriod) : '';
-
-    const categoryLabel = soon.left < 0
-        ? 'Прострочено · Податковий календар'
-        : soon.kind === 'decision'
-            ? 'Календар ОСББ · Загальні збори'
-            : 'Податковий календар · ДПС';
-
-    const leftText = (d => (d < 0 ? `прострочено ${-d} дн.` : d === 0 ? 'сьогодні' : d === 1 ? 'завтра' : `через ${d} дн.`))(soon.left);
-    const dateHeadline = `до ${humanDate(soon.date)}`;
-
-    let whatText = '';
-    if (hasEsv && hasJ05 && monthLabel) {
-        whatText = `Сплатити ЄСВ (22%) та подати Податковий розрахунок за ${monthLabel} ›`;
-    } else if (openOnSameDate.length > 1) {
-        whatText = `${openOnSameDate.map(t => t.title).join(' · ')} ›`;
-    } else {
-        whatText = `${soon.title}${soon.detail ? ` (${soon.detail})` : ''} ›`;
-    }
-
-    return {
-        categoryLabel,
-        leftText,
-        dateHeadline,
-        whatText,
-        isOverdue: soon.left < 0
-    };
+/** Кільце прогресу (0…1) — стрічка «намальовується» при вході. */
+function ring(share, label, sub = '', cls = '') {
+    const r = 42, len = +(2 * Math.PI * r).toFixed(1), off = +(len * (1 - Math.max(0, Math.min(1, share)))).toFixed(1);
+    return `<div class="tz-ring ${cls}" style="--len:${len};--off:${off}">
+        <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="tz-ring-track" cx="50" cy="50" r="${r}"/><circle class="tz-ring-bar" cx="50" cy="50" r="${r}" stroke-dasharray="${len}" stroke-dashoffset="${off}"/></svg>
+        <span class="tz-ring-label"><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span></div>`;
 }
 
-export async function loadToday() {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const [inbox, settings, month, outgoing, monthData] = await Promise.all([collectInbox(), loadSettings().catch(() => ({})),
-        loadSince(monthStart).catch(() => []), loadPayments().catch(() => []), loadMonthData(null).catch(() => null)]);
-    const { items, charges, expenses, payroll, journal } = inbox;
-    const list = tasks(items);
-    const signing = outgoing.filter(p => p.status === 'sent');
-    const failedCount = outgoing.filter(p => p.status === 'failed').length;
-    const accounts = Object.entries(settings.accounts || {}).map(([iban, a]) => ({ iban, ...a }));
-    const uahAccounts = accounts.filter(a => a.currency === 'UAH' || !a.currency);
-    const total = uahAccounts.reduce((s, a) => s + (a.balanceKop || 0), 0);
-    const allApartments = charges?.apartments || [];
-    const debtors = allApartments.filter(a => Number(a.balance) < 0);
-    const debt = debtors.reduce((s, a) => s + Math.round(Number(a.balance) * 100), 0);
-    const currentChargePeriod = charges?.current || now.toISOString().slice(0, 7);
-    const run = charges?.runs?.find(r => r.period === currentChargePeriod);
+const goAttr = (go, group) => `data-go="${escapeHtml(go)}"${group ? ` data-inbox-group="${escapeHtml(group)}"` : ''}`;
 
-    // Оплати мешканців за поточний місяць: сума та кількість унікальних квартир, що сплатили
-    const paidTxs = month.filter(t => t.kind === 'payment' && t.status === 'done');
-    const paid = paidTxs.reduce((s, t) => s + (t.amountKop || 0), 0);
-    const paidAptsSet = new Set(
-        paidTxs.flatMap(t => (t.allocations || []).map(a => String(a?.apt || '').trim())).filter(Boolean)
-    );
-    const paidAptsCount = paidAptsSet.size || (paid > 0 ? paidTxs.length : 0);
-    const totalAptsCount = run?.count || allApartments.length || 0;
-    const share = run?.totalKop ? Math.min(100, Math.round(paid / run.totalKop * 100)) : null;
-
-    // Очікувані виплати цього місяця (договори, документи, зарплата, податки)
-    const upcoming = computeUpcomingPayments({
-        expenses,
-        payroll,
-        journal,
-        payments: outgoing,
-        period: currentChargePeriod
-    });
-
-    // Наступний строк — лише те, що ще треба зробити: сплачений ЄСВ чи поданий звіт не нагадуємо.
-    const allReportTasks = reportTasks(inbox.reports);
-    const soon = nextDeadline(allReportTasks);
-    const deadlineInfo = describeDeadline(soon, allReportTasks);
-    const progress = monthData ? monthProgress(monthData.steps) : null;
-    const last = settings.lastSync;
-
-    const totalTaskCount = list.reduce((s, t) => s + t.count, 0);
-    const tasksCountLabel = totalTaskCount
-        ? `${totalTaskCount} ${decisionsWord(totalTaskCount)}`
-        : '';
-
-    const primaryGo = list.length === 1 && list[0].go ? list[0].go : 'inbox';
-    const primaryGroupAttr = primaryGo === 'inbox' ? ' data-inbox-group="all"' : '';
-
-    document.getElementById('viewToday').innerHTML = `
-        <div class="td-grid">
-            <div class="td-main">
-                <section class="sv-card td-tasks" aria-label="Що зробити">
-                    <div class="sv-card-head"><h2>Що зробити</h2><span>${tasksCountLabel}</span></div>
-                    ${list.length ? `<ul class="td-list">${list.map(t => {
-                        const goTarget = t.go || 'inbox';
-                        const groupAttr = t.go ? '' : ` data-inbox-group="${escapeHtml(t.key)}"`;
-                        const badgeCls = t.key === 'failed_pay' ? ' is-bad' : (t.key === 'bank' || t.key === 'docs' ? ' is-hot' : '');
-                        return `<li>
-                        <button type="button" class="td-task" data-go="${escapeHtml(goTarget)}"${groupAttr}>
-                            <span class="td-count${badgeCls}">${t.count}</span>
-                            <span class="td-copy"><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.note)}</small></span>
-                            <span class="td-sum">${t.sumKop ? escapeHtml(money(t.sumKop)) : ''}</span>
-                            <span class="td-chev" aria-hidden="true">›</span>
-                        </button></li>`;
-                    }).join('')}</ul>
-                    <button type="button" class="sv-btn is-wide" data-go="${escapeHtml(primaryGo)}"${primaryGroupAttr}>Почати з першого</button>`
-                    : `<div class="td-clear">
-                        <b>Усе вирішено</b>
-                        <span>Нових рішень немає. Система підготує наступні, щойно прийде виписка чи документ.</span>
-                        <div class="td-quick">
-                            <button type="button" class="td-quick-btn" data-go="expenses">+ Документ</button>
-                            <button type="button" class="td-quick-btn" data-go="payments">Платежі</button>
-                            <button type="button" class="td-quick-btn" data-go="advance">Авансові звіти</button>
-                            <button type="button" class="td-quick-btn" data-go="flats">Квартири</button>
-                        </div>
-                    </div>`}
-                </section>
-                ${progress ? `<button type="button" class="sv-card td-month" data-go="month">
-                    <div class="td-month-head">
-                        <span class="td-label">Закриття: ${escapeHtml(periodName(monthData.journal.period))} · <b>${progress.done} з ${progress.total}</b></span>
-                        <span class="td-month-chip ${progress.done === progress.total ? 'is-done' : 'is-work'}">${progress.done === progress.total ? 'Закрито' : 'У роботі'}</span>
-                    </div>
-                    <span class="td-bars" aria-hidden="true">${monthData.steps.map(s => `<i class="is-${s.state}"></i>`).join('')}</span>
-                    <div class="td-steps-pills" aria-hidden="true">
-                        ${monthData.steps.map(s => `<span class="td-step-pill is-${s.state}"><i>${s.state === 'done' ? '✓' : s.state === 'work' ? '•' : '○'}</i>${escapeHtml(s.title)}</span>`).join('')}
-                    </div>
-                    <span class="td-small">${progress.done === progress.total ? 'Місяць закрито ›' : `Далі: ${escapeHtml(progress.next.title.toLowerCase())} — ${escapeHtml(progress.next.short)} ›`}</span>
-                </button>` : ''}
-                <div class="td-row">
-                    <button type="button" class="sv-card" data-go="charges">
-                        <span class="td-label">Нараховано за місяць</span>
-                        <b class="td-mid">${run ? escapeHtml(money(run.totalKop)) : '—'}</b>
-                        <span class="td-small">${run ? `${run.count} квартир · ${escapeHtml(periodName(run.period))}` : 'ще не нараховано'}</span>
-                    </button>
-                    <button type="button" class="sv-card" data-go="flats">
-                        <span class="td-label">Мешканці сплатили</span>
-                        <b class="td-mid">${share === null ? escapeHtml(money(paid)) : `${share}%`}</b>
-                        ${share === null ? '' : `<span class="sv-meter" aria-hidden="true"><i style="width:${share}%"></i></span>`}
-                        <span class="td-small">${escapeHtml(money(paid))}${totalAptsCount ? ` · ${paidAptsCount} з ${totalAptsCount} кв.` : paidAptsCount ? ` · ${paidAptsCount} кв.` : ''} ›</span>
-                    </button>
-                    <button type="button" class="sv-card" data-go="flats">
-                        <span class="td-label">Борг мешканців</span>
-                        <b class="td-mid">${charges ? escapeHtml(money(Math.abs(debt))) : '—'}</b>
-                        <span class="td-small${debtors.length ? ' is-bad' : ''}">${charges ? `${debtors.length}${totalAptsCount ? ` з ${totalAptsCount}` : ''} квартир ›` : ''}</span>
-                    </button>
-                </div>
-            </div>
-            <div class="td-side">
-                <button type="button" class="sv-card td-balance" data-go="bank">
-                    <span class="td-label">На рахунку</span>
-                    <b class="td-big">${accounts.length ? escapeHtml(money(total)) : '—'}</b>
-                    ${uahAccounts.length > 1 ? `<div class="td-acc-list">${uahAccounts.slice(0, 3).map(a => `<span class="td-acc-row"><span>${escapeHtml(ACCOUNT_PURPOSE_LABELS[a.purpose] || a.name || `…${String(a.iban || '').slice(-4)}`)}</span><b>${escapeHtml(money(a.balanceKop || 0))}</b></span>`).join('')}${uahAccounts.length > 3 ? `<span class="td-acc-row is-muted"><span>Ще ${uahAccounts.length - 3} — у «Банку»</span></span>` : ''}</div>` : ''}
-                    <span class="td-small${last?.ok === false ? ' is-bad' : last ? ' is-good' : ' is-muted'}">${!accounts.length ? 'Банк не підключено' : last?.ok === false ? 'Помилка оновлення виписки' : last ? `Виписка о ${escapeHtml(when(last.at))}` : 'Виписку ще не отримано'}</span>
-                </button>
-                ${signing.length ? `<button type="button" class="sv-card td-signing" data-go="payments">
-                    <span class="td-label">На підписі голови · КЕП у Приват24</span>
-                    <b class="td-big">${escapeHtml(money(signing.reduce((s, p) => s + p.amountKop, 0)))}</b>
-                    <span class="td-small">${signing.length} ${signing.length === 1 ? 'платіж чекає' : signing.length < 5 ? 'платежі чекають' : 'платежів чекають'}${failedCount ? ` · ${failedCount} відхилено банком` : ''} ›</span>
-                </button>` : ''}
-                <button type="button" class="sv-card td-upcoming" data-go="${escapeHtml(upcoming.goTarget)}">
-                    <span class="td-label">Очікувані виплати · ${escapeHtml(periodName(upcoming.period))}</span>
-                    <b class="td-big">${escapeHtml(money(upcoming.totalKop))}</b>
-                    <div class="td-acc-list">
-                        <span class="td-acc-row"><span>Договори та рахунки</span><b>${escapeHtml(money(upcoming.contractsAndDocsKop))}</b></span>
-                        ${upcoming.salaryLeftKop > 0 ? `<span class="td-acc-row"><span>Зарплата та ЦПД</span><b>${escapeHtml(money(upcoming.salaryLeftKop))}</b></span>` : ''}
-                        <span class="td-acc-row"><span>Податки (ЄСВ, ПДФО, ВЗ)</span><b>${escapeHtml(money(upcoming.taxesLeftKop))}</b></span>
-                    </div>
-                    <span class="td-small is-muted">${upcoming.totalKop > 0 ? 'Ще до відправки в банк цього місяця ›' : 'Усі планові виплати місяця вже сформовано ›'}</span>
-                </button>
-                ${deadlineInfo ? `<button type="button" class="sv-card td-deadline" data-go="reports">
-                    <div class="td-deadline-head">
-                        <span class="td-label">${escapeHtml(deadlineInfo.categoryLabel)}</span>
-                        <span class="td-deadline-badge${deadlineInfo.isOverdue ? ' is-bad' : ''}">${escapeHtml(deadlineInfo.leftText)}</span>
-                    </div>
-                    <b class="td-big">${escapeHtml(deadlineInfo.dateHeadline)}</b>
-                    <span class="td-small">${escapeHtml(deadlineInfo.whatText)}</span>
-                </button>` : ''}
+// ------------------------------------------------------------
+// БЛОКИ
+// ------------------------------------------------------------
+function heroHtml(focus, s) {
+    const stat = (label, value, sub, attrs, cls = '') => `<button type="button" class="tz-stat ${cls}" ${attrs}><span>${label}</span><b>${value}</b><small>${sub}</small></button>`;
+    const dl = s.deadline;
+    return `<section class="tz-card tz-hero is-${focus.tone}" style="--i:0" aria-label="Головне зараз">
+        <div class="tz-hero-main">
+            <span class="tz-eyebrow"><i class="tz-dot"></i>${escapeHtml(focus.eyebrow)}</span>
+            <h2>${escapeHtml(focus.title)}</h2>
+            ${focus.hint ? `<p>${escapeHtml(focus.hint)}</p>` : ''}
+            <div class="tz-hero-actions">
+                <button type="button" class="sv-btn is-white" ${goAttr(focus.go, focus.group)}>${escapeHtml(focus.btn)} <span aria-hidden="true">→</span></button>
+                ${s.decisions && focus.go !== 'inbox' ? `<button type="button" class="tz-link" data-go="inbox" data-inbox-group="all">Усі рішення · ${s.decisions}</button>` : ''}
             </div>
         </div>
-        <p class="buh-note">Система пропонує — рішення за вами. Платежі підписує голова КЕП у Приват24.</p>`;
+        <div class="tz-pulse" role="list">
+            ${stat('Рішення', num(s.decisions, 'int'), s.decisions ? 'чекають у черзі' : 'усе вирішено', 'data-go="inbox" data-inbox-group="all" role="listitem"', s.decisions ? 'is-hot' : '')}
+            ${stat('На підписі голови', s.pay ? num(s.pay.f.signing.kop) : '—', s.pay ? (s.pay.f.signing.count ? `${s.pay.f.signing.count} ${plural(s.pay.f.signing.count, 'платіж', 'платежі', 'платежів')} у Приват24` : 'нічого не чекає КЕП') : '', 'data-go="payments" role="listitem"')}
+            ${stat('До оплати', s.pay ? num(s.pay.f.todo.kop) : '—', s.pay ? (s.pay.f.todo.count ? `${s.pay.f.todo.count} ще не створено` : 'усе створено') : '', 'data-go="payments" role="listitem"')}
+            ${stat('Найближчий строк', dl ? escapeHtml(humanDate(dl.date)) : '—', dl ? escapeHtml(`${leftText(dl.left)} · ${dl.title}`) : 'строків немає', 'data-go="reports" role="listitem"', dl && dl.left < 0 ? 'is-bad' : dl && dl.left <= 3 ? 'is-hot' : '')}
+        </div>
+    </section>`;
+}
+
+function moneyHtml(s) {
+    const { accounts, sync, pay, forecast } = s;
+    const total = accounts.reduce((sum, a) => sum + (a.balanceKop || 0), 0);
+    const live = sync && sync.ok !== false;
+    const m = pay?.money;
+    return `<section class="tz-card tz-money" style="--i:1">
+        <button type="button" class="tz-head" data-go="bank"><h2>Гроші</h2><span class="tz-sync${sync?.ok === false ? ' is-bad' : live ? ' is-live' : ''}"><i></i>${!accounts.length ? 'банк не підключено' : sync?.ok === false ? 'виписка не оновилась' : sync ? `виписка ${escapeHtml(when(sync.at))}` : 'виписки ще немає'}</span></button>
+        <button type="button" class="tz-balance" data-go="bank"><span>На рахунках ОСББ</span><b>${accounts.length ? num(total) : '—'}</b></button>
+        ${accounts.length > 1 ? `<div class="tz-accs">${accounts.slice(0, 4).map(a => {
+            const share = total > 0 ? Math.max(2, Math.round((a.balanceKop || 0) / total * 100)) : 0;
+            return `<div class="tz-acc"><span>${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')}</span><b>${escapeHtml(money(a.balanceKop || 0))}</b><i style="--w:${share}%"></i></div>`;
+        }).join('')}</div>` : ''}
+        <dl class="tz-facts">
+            ${m?.known && pay.f.signing.count ? `<div><dt>Після підписаних</dt><dd>${escapeHtml(money(m.afterSigningKop))}</dd></div>` : ''}
+            ${m?.known && pay.f.todo.count ? `<div class="${m.shortKop ? 'is-bad' : ''}"><dt>${m.shortKop ? 'Бракує на все до оплати' : 'Після всього до оплати'}</dt><dd>${escapeHtml(money(m.shortKop || m.afterAllKop))}</dd></div>` : ''}
+            ${forecast.totalKop ? `<div><dt>Ще виплатити за ${escapeHtml(periodName(forecast.period).split(' ')[0].toLowerCase())}</dt><dd>${escapeHtml(money(forecast.totalKop))}</dd></div>` : ''}
+        </dl>
+    </section>`;
+}
+
+function tasksHtml(list) {
+    const total = list.reduce((s, t) => s + t.count, 0);
+    const max = Math.max(1, ...list.map(t => t.count));
+    return `<section class="tz-card tz-tasks" style="--i:2" aria-label="Що зробити">
+        <div class="tz-head"><h2>Що зробити</h2><span>${total ? `${total} ${plural(total, 'рішення', 'рішення', 'рішень')}` : 'черга порожня'}</span></div>
+        ${list.length ? `<ul class="tz-list">${list.map((t, i) => `<li style="--j:${i}">
+            <button type="button" class="tz-task${t.key === 'failed_pay' ? ' is-bad' : ''}" ${goAttr(t.go || 'inbox', t.go ? '' : t.key)}>
+                ${icon(t.icon, t.key === 'failed_pay' ? 'is-bad' : t.key === 'bank' ? 'is-hot' : '')}
+                <span class="tz-task-main"><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.note)}</small><i class="tz-share" style="--w:${Math.round(t.count / max * 100)}%"></i></span>
+                <span class="tz-task-right"><b>${t.count}</b>${t.sumKop ? `<small>${escapeHtml(money(t.sumKop))}</small>` : ''}</span>
+            </button></li>`).join('')}</ul>
+            <button type="button" class="tz-more" data-go="inbox" data-inbox-group="all">Відкрити «Рішення» — по одному, з підказкою системи <span aria-hidden="true">→</span></button>`
+        : `<div class="tz-clear"><b>Усе вирішено</b><span>Нові справи зʼявляться, щойно прийде виписка чи документ.</span>
+            <div class="tz-quick">${[['expenses', '+ Документ'], ['payments', 'Платежі'], ['advance', 'Авансові звіти'], ['flats', 'Квартири']].map(([g, t]) => `<button type="button" class="tz-chip" data-go="${g}">${t}</button>`).join('')}</div></div>`}
+    </section>`;
+}
+
+function datesHtml(list) {
+    return `<section class="tz-card tz-dates" style="--i:3" aria-label="Строки">
+        <button type="button" class="tz-head" data-go="reports"><h2>Строки</h2><span>податковий календар ›</span></button>
+        ${list.length ? `<ol class="tz-timeline">${list.map((d, i) => `<li class="${d.left < 0 ? 'is-bad' : d.left <= 3 ? 'is-hot' : ''}" style="--j:${i}">
+            <button type="button" data-go="reports">
+                <span class="tz-date"><b>${new Date(d.date).getUTCDate()}</b><small>${MONTHS_SHORT[new Date(d.date).getUTCMonth()]}</small></span>
+                <span class="tz-date-main">${d.items.map(x => `<b>${escapeHtml(x.title)}</b>${x.detail ? `<small>${escapeHtml(x.detail)}</small>` : ''}`).join('')}</span>
+                <span class="tz-left">${escapeHtml(leftText(d.left))}</span>
+            </button></li>`).join('')}</ol>`
+        : '<p class="tz-empty">Найближчими тижнями строків немає — усе подано й сплачено.</p>'}
+    </section>`;
+}
+
+function flowHtml(c, now) {
+    const monthWord = MONTHS_LOC[now.getMonth()];
+    const h = kop => Math.round(kop / c.maxKop * 100);
+    return `<section class="tz-card tz-flow" style="--i:4" aria-label="Рух коштів">
+        <button type="button" class="tz-head" data-go="bank"><h2>Рух коштів у ${monthWord}</h2><span>за випискою ›</span></button>
+        <div class="tz-flow-tiles">
+            <div><span>Надійшло</span><b class="is-in">+${num(c.inKop)}</b><small>з них внески ${escapeHtml(money(c.residentsKop))}</small></div>
+            <div><span>Списано</span><b>−${num(c.outKop)}</b><small>${c.outTop.length ? escapeHtml(c.outTop.map(x => x.label).slice(0, 2).join(', ').toLowerCase()) : 'списань не було'}</small></div>
+            <div><span>Різниця</span><b class="${c.netKop < 0 ? 'is-out' : 'is-in'}">${c.netKop < 0 ? '−' : '+'}${num(Math.abs(c.netKop))}</b><small>надійшло мінус списано</small></div>
+        </div>
+        <div class="tz-chart" role="img" aria-label="Надходження й списання по днях">
+            ${c.days.map((d, i) => `<span class="tz-day${d.future ? ' is-future' : ''}${d.today ? ' is-today' : ''}" style="--k:${i}" title="${d.day}: +${fmtKop(d.inKop)} / −${fmtKop(d.outKop)} грн">
+                <i class="is-in" style="--h:${h(d.inKop)}%"></i><i class="is-out" style="--h:${h(d.outKop)}%"></i></span>`).join('')}
+        </div>
+        <div class="tz-chart-axis"><span>1</span><span>${Math.ceil(c.days.length / 2)}</span><span>${c.days.length}</span></div>
+        <div class="tz-legend"><span><i class="is-in"></i>надходження</span><span><i class="is-out"></i>списання</span><span><i class="is-today"></i>сьогодні</span></div>
+    </section>`;
+}
+
+function duesHtml(c) {
+    if (!c.known) return '';
+    return `<section class="tz-card tz-dues" style="--i:5" aria-label="Внески мешканців">
+        <button type="button" class="tz-head" data-go="charges"><h2>Внески за ${escapeHtml(periodName(c.period).split(' ')[0].toLowerCase())}</h2><span>нарахування ›</span></button>
+        <div class="tz-dues-top">
+            ${ring(c.share === null ? 0 : c.share / 100, c.share === null ? '—' : num(c.share, 'pct'), 'сплачено')}
+            <dl class="tz-facts is-plain">
+                <div><dt>Нараховано</dt><dd>${c.chargedKop ? escapeHtml(money(c.chargedKop)) : 'ще ні'}</dd></div>
+                <div><dt>Сплатили</dt><dd>${escapeHtml(money(c.paidKop))}</dd></div>
+                <div><dt>Квартир сплатило</dt><dd>${c.paidApts}${c.totalApts ? ` з ${c.totalApts}` : ''}</dd></div>
+            </dl>
+        </div>
+        <button type="button" class="tz-debt" data-go="flats"><span>Борг мешканців</span><b>${num(c.debtKop)}</b><small>${c.debtors} ${plural(c.debtors, 'квартира', 'квартири', 'квартир')}</small></button>
+        ${c.top.length ? `<div class="tz-debtors">${c.top.map((a, i) => `<button type="button" class="tz-debtor" data-apt="${escapeHtml(a.apt)}" style="--j:${i}">
+            <span>кв. ${escapeHtml(a.apt)}</span><i style="--w:${Math.max(4, Math.round(a.kop / c.top[0].kop * 100))}%"></i><b>${escapeHtml(money(a.kop))}</b></button>`).join('')}</div>` : ''}
+    </section>`;
+}
+
+function payHtml(pay) {
+    if (!pay) return '';
+    const f = pay.f;
+    const steps = [['Погодження', f.approval.count, f.approval.kop, 'inbox'], ['До оплати', f.todo.count, f.todo.kop, 'payments'],
+        ['На підписі', f.signing.count, f.signing.kop, 'payments'], ['Проведено', f.paid.count, f.paid.kop, 'payments']];
+    return `<section class="tz-card tz-pay" style="--i:6" aria-label="Платежі">
+        <button type="button" class="tz-head" data-go="payments"><h2>Платежі</h2><span>${pay.problems.length ? `<em class="tz-bad">${pay.problems.length} з проблемою</em>` : 'шлях грошей ›'}</span></button>
+        <ol class="tz-steps">${steps.map(([t, n, kop, go], i) => `<li class="${n ? 'is-on' : ''}" style="--j:${i}"><button type="button" data-go="${go}"${go === 'inbox' ? ' data-inbox-group="all"' : ''}>
+            <i></i><span>${t}</span><b>${n ? escapeHtml(money(kop)) : '—'}</b><small>${n ? `${n} ${i === 3 ? 'за місяць' : ''}`.trim() : ''}</small></button></li>`).join('')}</ol>
+    </section>`;
+}
+
+function monthHtml(md) {
+    if (!md) return '';
+    const p = monthProgress(md.steps);
+    const closed = p.done === p.total;
+    return `<section class="tz-card tz-month" style="--i:7" aria-label="Закриття місяця">
+        <button type="button" class="tz-head" data-go="month"><h2>Закриття · ${escapeHtml(periodName(md.journal.period).split(' ')[0].toLowerCase())}</h2><span>місяць ›</span></button>
+        <div class="tz-month-top">
+            ${ring(p.done / p.total, `${num(p.done, 'int')}<em>/${p.total}</em>`, closed ? 'закрито' : 'кроків', closed ? 'is-done' : '')}
+            <ul class="tz-msteps">${md.steps.map((s, i) => `<li class="is-${s.state}" style="--j:${i}"><i></i>${escapeHtml(s.title)}</li>`).join('')}</ul>
+        </div>
+        <button type="button" class="tz-next" data-go="month">${closed ? 'Місяць закрито' : `Далі: ${escapeHtml(p.next.title.toLowerCase())}${p.next.short ? ` — ${escapeHtml(p.next.short)}` : ''}`} ›</button>
+    </section>`;
+}
+
+function budgetHtml(b) {
+    if (!b) return '';
+    const bar = (label, fact, plan, pct, cls) => `<div class="tz-bbar ${cls}"><div><span>${label}</span><b>${pct}%</b></div>
+        <span class="tz-track"><i style="--w:${Math.min(100, pct)}%"></i>${pct > 100 ? '<em></em>' : ''}</span><small>${escapeHtml(money(fact))} з ${escapeHtml(money(plan))} на сьогодні</small></div>`;
+    return `<section class="tz-card tz-budget" style="--i:8" aria-label="Кошторис">
+        <button type="button" class="tz-head" data-go="budget"><h2>Кошторис ${escapeHtml(b.year)}</h2><span>${b.approved ? 'затверджено' : 'чернетка'} ›</span></button>
+        ${bar('Витрати', b.factKop, b.toDateKop, b.pct, b.pct > 105 ? 'is-bad' : '')}
+        ${b.incomePlanKop ? bar('Надходження', b.incomeFactKop, b.incomeToDateKop, b.incomePct, b.incomePct < 85 ? 'is-warn' : 'is-good') : ''}
+        ${b.over.length ? `<ul class="tz-over">${b.over.map(o => `<li><span>${escapeHtml(o.title)}</span><b>+${escapeHtml(money(o.overKop))}</b></li>`).join('')}</ul>` : '<p class="tz-empty">Перевитрат за статтями немає</p>'}
+    </section>`;
+}
+
+function opsHtml(list) {
+    if (!list.length) return '';
+    return `<section class="tz-card tz-ops" style="--i:9" aria-label="Останні операції">
+        <button type="button" class="tz-head" data-go="bank"><h2>Останні операції</h2><span>усі в «Банку» ›</span></button>
+        <div class="tz-ops-list">${list.map((t, i) => `<button type="button" class="tz-op" data-tx="${escapeHtml(t.id)}" style="--j:${i}">
+            ${icon(t.direction === 'out' ? 'out' : 'in', t.direction === 'out' ? '' : 'is-in')}
+            <span class="tz-op-main"><b>${escapeHtml(t.counterparty?.name || (t.direction === 'out' ? 'Списання' : 'Надходження'))}</b><small>${escapeHtml(t.purpose || '')}</small></span>
+            <span class="tz-op-right"><b class="${t.direction === 'out' ? '' : 'is-in'}">${escapeHtml(signed(t))} грн</b><small>${escapeHtml(dateOnly(t.at))}${t.status === 'review' ? ' · чекає рішення' : ''}</small></span>
+        </button>`).join('')}</div>
+    </section>`;
+}
+
+// ------------------------------------------------------------
+// РУХ
+// ------------------------------------------------------------
+function countUp(root) {
+    const els = [...root.querySelectorAll('[data-count]')];
+    const start = performance.now(), dur = 950;
+    const ease = k => 1 - Math.pow(1 - k, 4);
+    els.forEach(el => { el.textContent = fmtValue(0, el.dataset.fmt); });
+    const step = t => {
+        const k = Math.min(1, (t - start) / dur);
+        els.forEach(el => { el.textContent = fmtValue(Number(el.dataset.count) * ease(k), el.dataset.fmt); });
+        if (k < 1 && root.isConnected) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+}
+
+// ------------------------------------------------------------
+// ЗАВАНТАЖЕННЯ
+// ------------------------------------------------------------
+export async function loadToday() {
+    const now = new Date();
+    const host = document.getElementById('viewToday');
+    // Анімація входу — лише коли людина перейшла в розділ, не при фоновому оновленні.
+    const enter = document.body.dataset.enter === 'today' || !host.querySelector('.tz');
+    delete document.body.dataset.enter;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const [inbox, settings, monthTx, outgoing, monthData, pay] = await Promise.all([
+        collectInbox(), loadSettings().catch(() => ({})), loadSince(monthStart).catch(() => []), loadPayments().catch(() => []),
+        loadMonthData(null).catch(() => null), paymentsOverview().catch(() => null)]);
+    const { items, charges, expenses, payroll, journal, budget } = inbox;
+    const list = tasks(items);
+    const allDeadlines = reportTasks(inbox.reports);
+    const deadline = nextDeadline(allDeadlines);
+    const progress = monthData ? monthProgress(monthData.steps) : null;
+    const accounts = Object.entries(settings.accounts || {}).map(([iban, a]) => ({ iban, ...a })).filter(a => !a.currency || a.currency === 'UAH')
+        .sort((a, b) => ((a.purpose || 'current') === 'current' ? -1 : 0) - ((b.purpose || 'current') === 'current' ? -1 : 0));
+    const focus = focusOf({ role: session.role, list, pay: pay?.f || null, deadline, month: progress });
+    const forecast = computeUpcomingPayments({ expenses, payroll, journal, payments: outgoing, period: charges?.current || now.toISOString().slice(0, 7) });
+    const labels = Object.fromEntries(Object.entries(BANK_CATEGORY_OPTIONS).map(([k, v]) => [k, v.replace(/\s*\(.*\)$/, '')]));
+    const s = { decisions: list.reduce((a, t) => a + t.count, 0), pay, deadline, accounts, sync: settings.lastSync, forecast };
+
+    host.innerHTML = `<div class="tz${enter && !reduceMotion() ? ' tz-enter' : ''}">
+        ${heroHtml(focus, s)}
+        ${moneyHtml(s)}
+        ${tasksHtml(list)}
+        ${datesHtml(upcoming(allDeadlines))}
+        ${flowHtml(cashByDay(monthTx, now, labels), now)}
+        ${duesHtml(collection(charges, monthTx, now))}
+        ${payHtml(pay)}
+        ${monthHtml(monthData)}
+        ${budgetHtml(budgetPace(budget))}
+        ${opsHtml(recentOps(monthTx, 6))}
+    </div>
+    <p class="buh-note">Система пропонує — рішення за вами. Платежі підписує голова КЕП у Приват24.</p>`;
+    if (enter && !reduceMotion()) countUp(host);
+    if (!host.dataset.bound) {
+        host.dataset.bound = '1';
+        host.addEventListener('click', e => {
+            const tx = e.target.closest('[data-tx]');
+            if (tx) { openTxSheet(tx.dataset.tx); return; }
+            const apt = e.target.closest('[data-apt]');
+            if (apt) { location.hash = 'flats'; setTimeout(() => openFlat(apt.dataset.apt), 0); }
+        });
+    }
     return items.length;
 }
