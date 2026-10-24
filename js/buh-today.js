@@ -18,7 +18,7 @@ import { escapeHtml } from './ui.js';
 import { loadSettings, loadSince, loadPayments, money, when, dateOnly, signed, ACCOUNT_PURPOSES } from './buh-data.js';
 import { collectInbox } from './buh-inbox.js';
 import { loadMonthData } from './buh-month.js';
-import { monthProgress } from './month-core.js';
+import { monthProgress, monthPhases } from './month-core.js';
 import { fmtKop, periodName } from './charges-core.js';
 import { humanDate } from './tax-calendar.js';
 import { reportTasks, nextDeadline } from './reports-view-core.js';
@@ -206,7 +206,7 @@ function monthHtml(md) {
         <button type="button" class="tz-head" data-go="month"><h2>Закриття · ${escapeHtml(periodName(md.journal.period).split(' ')[0].toLowerCase())}</h2><span>місяць ›</span></button>
         <div class="tz-month-top">
             ${ring(p.done / p.total, `${num(p.done, 'int')}<em>/${p.total}</em>`, closed ? 'закрито' : 'кроків', closed ? 'is-done' : '')}
-            <ul class="tz-msteps">${md.steps.map((s, i) => `<li class="is-${s.state}" style="--j:${i}"><i></i>${escapeHtml(s.title)}</li>`).join('')}</ul>
+            <ul class="tz-msteps">${monthPhases(md.steps).map((ph, i) => `<li class="is-${ph.state === 'wait' ? 'done' : ph.state}" style="--j:${i}"><i></i>${escapeHtml(ph.title)}<small>${ph.done}/${ph.steps.length}</small></li>`).join('')}</ul>
         </div>
         <button type="button" class="tz-next" data-go="month">${closed ? 'Місяць закрито' : `Далі: ${escapeHtml(p.next.title.toLowerCase())}${p.next.short ? ` — ${escapeHtml(p.next.short)}` : ''}`} ›</button>
     </section>`;
