@@ -58,14 +58,17 @@ test('до оплати: документи без платежу в банку,
     assert.deepEqual(docsToPay(ex, payments).map(e => e.id), ['e1']);
     assert.deepEqual(docsToPay(ex, []).map(e => e.id), ['e1', 'e2']);
 
-    const run = { rows: [{}], totals: { netKop: 1000000, pdfoKop: 200000, vzKop: 50000, esvKop: 250000, advance: { netKop: 400000 }, final: { netKop: 600000 } } };
+    const run = { rows: [{}], totals: { netKop: 1000000, pdfoKop: 200000, vzKop: 50000, esvKop: 250000,
+        advance: { netKop: 400000, pdfoKop: 80000, vzKop: 20000, esvKop: 100000 }, final: { netKop: 600000, pdfoKop: 120000, vzKop: 30000, esvKop: 150000 } } };
     assert.equal(payrollDue({ status: 'draft', run }), null, 'не затверджено — платити ще не можна');
     assert.deepEqual(payrollDue({ period: '2026-10', status: 'approved', run, stages: {} }),
-        { period: '2026-10', stage: 'advance', amountKop: 400000, taxKop: 0, state: 'todo', note: 'за першу половину місяця' });
+        { period: '2026-10', stage: 'advance', amountKop: 400000, taxKop: 200000, state: 'todo', note: 'за першу половину місяця' }, 'податки з авансу — разом з авансом');
     const fin = payrollDue({ period: '2026-10', status: 'approved', run, stages: { advance: { plan: [] } }, payments: [{ stage: 'advance', status: 'paid' }] });
     assert.equal(fin.stage, 'final');
     assert.equal(fin.amountKop, 600000);
-    assert.equal(fin.taxKop, 500000);
+    assert.equal(fin.taxKop, 300000, 'після авансу — лише решта податків');
+    const noAdvance = payrollDue({ period: '2026-10', status: 'approved', run: { ...run, totals: { ...run.totals, advance: { netKop: 0 } } }, stages: {} });
+    assert.deepEqual([noAdvance.stage, noAdvance.amountKop, noAdvance.taxKop], ['final', 1000000, 500000], 'без авансу — уся зарплата й усі податки');
     assert.equal(payrollDue({ status: 'approved', run, stages: { advance: {}, final: {} }, payments: [{ stage: 'advance', status: 'paid' }, { stage: 'final', status: 'sent' }] }), null);
     assert.equal(payrollDue({ status: 'approved', run, stages: { advance: { complete: false } } }).state, 'bad');
 

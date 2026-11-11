@@ -41,6 +41,9 @@ const INCOME_SOURCES = {
     grant: 'Гранти, співфінансування', refund: 'Повернення коштів', other: 'Інші надходження'
 };
 
+/** Транзит, а не надходження ОСББ: кошти ПФУ на лікарняні й повернений залишок підзвітних коштів. */
+const NOT_INCOME = t => t.category === 'sick_fund' || t.category === 'advance_return' || Boolean(t.advanceReportId);
+
 /** Списання без документа → стаття (категорії банку, bank.js). */
 const BANK_ITEM = { bank_fee: 'bank', salary: 'salary', taxes: 'salary', esv: 'esv', supplier: 'other', other: 'other' };
 
@@ -94,20 +97,25 @@ function effectiveBudget(budgets, year) {
 // ВИКОНАННЯ
 // ------------------------------------------------------------
 const inYear = (period, year) => String(period || '').slice(0, 4) === String(year);
+// Кошти підзвітній особі (аванс чи відшкодування) — не витрата: витрату дає авансовий звіт за своїми статтями.
 const directExpense = (t, payments) => t.direction === 'out' && t.kind === 'expense' && t.status === 'done' && !t.expenseId
-    && !['supplier', 'resident_refund'].includes(t.category) && !payments.has(t.paymentId);
+    && !['supplier', 'resident_refund', 'advance'].includes(t.category) && !t.advanceReportId && !payments.has(t.paymentId);
+/** Авансові звіти року, що дають факт: затверджені й розраховані. */
+const liveReports = (reports, year) => reports.filter(r => ['approved', 'settled'].includes(r.status) && inYear(r.period, year));
+const lineItem = l => (ITEMS[l.item] ? l.item : 'office');
 
 /**
  * Факт витрат за статтями за рік: документи (затверджені й оплачені)
- * за місяцем послуги + списання без документа за місяцем списання.
- * Повертає Map<item, kop>.
+ * за місяцем послуги + авансові звіти за своїми статтями + списання без
+ * документа за місяцем списання. Повертає Map<item, kop>.
  */
-function factByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPayments = new Map(), year }) {
+function factByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPayments = new Map(), advanceReports = [], year }) {
     const fact = new Map();
     const add = (item, kop) => fact.set(item, (fact.get(item) || 0) + kop);
     for (const e of expenses) {
         if (['approved', 'paid', 'storno'].includes(e.status) && inYear(e.period, year)) add(e.item, e.amountKop);
     }
+    for (const r of liveReports(advanceReports, year)) for (const l of r.lines || []) add(lineItem(l), l.amountKop || 0);
     const byId = new Map(bankOut.filter(t => t.id).map(t => [t.id, t]));
     for (const t of bankOut) {
         if (!inYear(t.period, year)) continue;
@@ -159,7 +167,7 @@ const kyivDate = v => {
  * виконавець за договором ЦПД) і не показуємо призначення платежу, лише
  * опис документа. Юрособи й ФОП — назвою (п. 5.1.1 статуту).
  */
-function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPayments = new Map(), year, suppliers = new Map(), docTypes = {}, publicView = false, limit = Infinity }) {
+function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payrollPayments = new Map(), advanceReports = [], year, suppliers = new Map(), docTypes = {}, publicView = false, limit = Infinity }) {
     const out = {};
     const add = (item, op) => (out[item] ||= []).push(op);
     const hide = (item, kind) => publicView && kind === 'person' ? (['salary', 'esv'].includes(item) ? 'Працівник ОСББ' : 'Фізична особа') : null;
@@ -169,6 +177,13 @@ function operationsByItem({ expenses = [], bankOut = [], payrollRuns = [], payro
         add(e.item, { date: e.date || '', who: hide(e.item, kind) || e.supplierName || '', kind, amountKop: e.amountKop,
             what: e.description || '', doc: `${docTypes[e.docType] || 'Документ'} № ${e.number}`, paid: e.status === 'paid',
             ...((e.files || []).length ? { files: e.files.map(f => ({ name: f.name, url: f.url })) } : {}) });
+    }
+    // Авансовий звіт: продавця з чека називаємо, підзвітну особу мешканцям — ні.
+    for (const r of liveReports(advanceReports, year)) for (const l of r.lines || []) {
+        if (!l.amountKop) continue;
+        const shop = String(l.supplier || '').trim();
+        add(lineItem(l), { date: l.date || r.date || '', who: shop || (publicView ? 'Підзвітна особа' : r.personName || 'Підзвітна особа'), kind: shop ? 'company' : 'person',
+            amountKop: l.amountKop, what: l.desc || r.purpose || '', doc: `Авансовий звіт № ${r.number || r.id || ''}`.trim(), paid: r.status === 'settled' });
     }
     const byId = new Map(bankOut.filter(t => t.id).map(t => [t.id, t]));
     for (const t of bankOut) {
@@ -216,7 +231,7 @@ function aptLabel(apt, { entrance, nonres } = {}, show = false) {
 function incomeOpsBySource({ bankIn = [], year, label = () => 'Співвласник', publicView = false, limit = Infinity }) {
     const out = {};
     for (const t of bankIn) {
-        if (t.direction !== 'in' || t.status !== 'done' || t.kind !== 'income' || t.category === 'sick_fund' || !inYear(t.period, year)) continue;
+        if (t.direction !== 'in' || t.status !== 'done' || t.kind !== 'income' || NOT_INCOME(t) || !inYear(t.period, year)) continue;
         const source = INCOME_SOURCES[t.category] ? t.category : 'other';
         const cp = t.counterparty || {};
         const kind = t.relatedApt ? 'apt' : payeeKind(cp.name, cp.code);
@@ -239,9 +254,9 @@ function incomeFact({ bankIn = [], year }) {
         // Повернена співвласнику переплата зменшує надходження внесків.
         if (t.direction === 'out' && t.category === 'resident_refund') { fact.set('contributions', (fact.get('contributions') || 0) - t.amountKop); continue; }
         if (t.direction !== 'in') continue;
-        // Кошти ПФУ на лікарняні — транзит працівнику, не надходження ОСББ.
+        // Кошти ПФУ на лікарняні й повернений підзвітний залишок — транзит, не надходження ОСББ.
         const source = t.kind === 'payment' || (t.kind === 'refund' && byId.get(t.refundOf)?.category === 'resident_refund') ? 'contributions'
-            : t.kind === 'income' && t.category !== 'sick_fund' ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
+            : t.kind === 'income' && !NOT_INCOME(t) ? (INCOME_SOURCES[t.category] ? t.category : 'other') : null;
         if (source) fact.set(source, (fact.get(source) || 0) + t.amountKop);
     }
     return fact;

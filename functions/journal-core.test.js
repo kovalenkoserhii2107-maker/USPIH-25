@@ -146,3 +146,69 @@ test('зарплата: нараховано 92/661, утримано 661/641, �
     // Чернетка відомості в проводки не йде.
     assert.equal(j.journal(input, '2026-11').filter(e => e.period === '2026-11' && e.src === 'payroll').length, 0);
 });
+
+test('закриття: перевитрата фонду 48 і витрата за рахунком без акта — попередження, не блокування', () => {
+    const input = {
+        start: '2026-10', startDate: '2026-10-01', opening: { status: 'approved', lines: [] },
+        policy: { defaultFund: 'main', funds: [{ id: 'main', name: 'Основний' }, { id: 'repair', name: 'Ремонтний фонд' }], componentFunds: { main: 'main', repair: 'repair' } },
+        ledgers: new Map([['1', [{ kind: 'charge', period: '2026-10', amountKop: 300000, parts: [{ component: 'main', amountKop: 200000 }, { component: 'repair', amountKop: 100000 }] }]]]),
+        expenses: [
+            { id: 'e1', status: 'approved', period: '2026-10', date: '2026-10-12', docType: 'act', number: '7', amountKop: 500000, item: 'capital', fundId: 'repair', supplierName: 'Підрядник (демо)' },
+            { id: 'e2', status: 'paid', period: '2026-10', date: '2026-10-14', docType: 'invoice', number: 'Р-1', amountKop: 10000, item: 'office', supplierName: 'Канцтовари (демо)' },
+            { id: 'e3', status: 'paid', period: '2026-10', date: '2026-10-15', docType: 'invoice', number: 'Р-2', amountKop: 20000, item: 'office', supplierName: 'Канцтовари (демо)' },
+            { id: 'e4', status: 'linked', linkedTo: 'e3', period: '2026-10', date: '2026-10-16', docType: 'waybill', number: 'ВН-2', amountKop: 20000, supplierName: 'Канцтовари (демо)' }
+        ]
+    };
+    const tb = j.trialBalance(j.journal(input, '2026-10'), '2026-10');
+    assert.deepEqual(tb.rows.find(r => r.acc === '48').byA.map(a => [a.a, a.closeDr, a.closeCr]), [['main', 0, 170000], ['repair', 400000, 0]]);
+    const fundNames = { main: 'Основний', repair: 'Ремонтний фонд' };
+    const checks = j.closeChecks({ period: '2026-10', today: '2026-11-02', expenses: input.expenses, chargedPeriods: new Set(['2026-10']), tb, openingStatus: 'approved', fundNames });
+    const warns = checks.filter(c => c.level === 'warn').map(c => c.text);
+    assert.equal(warns.length, 2);
+    assert.match(warns[0], /дебетовий залишок 48\): Ремонтний фонд — 4000\.00 грн/);
+    assert.match(warns[1], /за рахунком без акта чи накладної: 1 \(№ Р-1\)/);
+    assert.ok(!checks.some(c => c.level === 'block'));
+    // Вхідний залишок 48 без коду фонду належить основному фонду: витрати основного ним покриті — попередження немає.
+    const main = { ...input, ledgers: new Map(), opening: { status: 'approved', lines: [{ acc: '311', a: 'UA213052990000026007054321001', side: 'dr', kop: 900000 }, { acc: '48', a: '', side: 'cr', kop: 900000 }] },
+        expenses: [{ id: 'm1', status: 'approved', period: '2026-10', date: '2026-10-12', docType: 'act', number: '9', amountKop: 500000, item: 'lift', supplierName: 'Ліфт (демо)' }] };
+    const tbMain = j.trialBalance(j.journal(main, '2026-10'), '2026-10');
+    assert.deepEqual(tbMain.rows.find(r => r.acc === '48').byA.map(a => [a.a, a.closeDr, a.closeCr]), [['', 0, 900000], ['main', 500000, 0]]);
+    const calm = j.closeChecks({ period: '2026-10', today: '2026-11-02', expenses: main.expenses, chargedPeriods: new Set(['2026-10']), tb: tbMain, openingStatus: 'approved', fundNames });
+    assert.ok(!calm.some(c => c.level === 'warn'), JSON.stringify(calm));
+});
+
+test('підзвітні кошти: 372 закривається за імʼям зі звіту, хоч би як банк назвав отримувача', () => {
+    const at = d => new Date(`${d}T10:00:00Z`);
+    const input = {
+        start: '2026-10', startDate: '2026-10-01', opening: { status: 'approved', lines: [] },
+        advanceReports: [{ id: 'a1', number: 'АЗ-1', status: 'approved', period: '2026-10', date: '2026-10-15', personName: 'Підзвітний Тестовий',
+            lines: [{ postingAcc: '92', item: 'systems', amountKop: 120000 }, { postingAcc: '20', assetId: 'ТМЦ-001', amountKop: 30000 }] }],
+        bankTx: [{ id: 't1', period: '2026-10', at: at('2026-10-20'), direction: 'out', kind: 'expense', status: 'done', category: 'advance', advanceReportId: 'a1',
+            amountKop: 150000, account: 'UA1', counterparty: { name: 'ПІДЗВІТНИЙ Т. І.' } }]
+    };
+    const tb = j.trialBalance(j.journal(input, '2026-10'), '2026-10');
+    const r372 = tb.rows.find(r => r.acc === '372');
+    assert.deepEqual(r372.byA.map(a => [a.a, a.dr, a.cr, a.closeDr, a.closeCr]), [['Підзвітний Тестовий', 150000, 150000, 0, 0]]);
+    assert.equal(tb.rows.find(r => r.acc === '20').closeDr, 30000, 'запаси оприбутковано, витрати — лише 92');
+    assert.equal(tb.balanced, true);
+});
+
+test('закриття: зарплата з виписки прямо на витрати при чинній відомості — попередження про подвоєння', () => {
+    const at = new Date('2026-10-30T10:00:00Z');
+    const payrollRuns = [{ period: '2026-10', status: 'approved', run: { rows: [{ personId: 'e1', name: 'Працівник Тестовий', kind: 'employee', grossKop: 864700, pdfoKop: 155646, vzKop: 43235, esvKop: 190234 }] } }];
+    const bankTx = [
+        { id: 'direct', period: '2026-10', at, direction: 'out', kind: 'expense', status: 'done', category: 'salary', amountKop: 665819, account: 'UA1' },
+        { id: 'linked', period: '2026-10', at, direction: 'out', kind: 'expense', status: 'done', category: 'esv', paymentId: 'pay-esv', amountKop: 190234, account: 'UA1' }
+    ];
+    const payrollPayments = new Map([['pay-esv', { period: '2026-10', key: 'esv', kind: 'tax' }]]);
+    const input = { start: '2026-10', startDate: '2026-10-01', opening: { status: 'approved', lines: [] }, bankTx, payrollRuns, payrollPayments };
+    const tb = j.trialBalance(j.journal(input, '2026-10'), '2026-10');
+    // Подвоєння видно й у відомості: 661 лишається кредитовим на суму «на руки».
+    assert.equal(tb.rows.find(r => r.acc === '661').closeCr, 665819);
+    const args = { period: '2026-10', today: '2026-11-02', bankTx, chargedPeriods: new Set(['2026-10']), tb, openingStatus: 'approved' };
+    const direct = list => list.filter(c => c.level === 'warn' && /прямо на витрати/.test(c.text));
+    const warn = direct(j.closeChecks({ ...args, payrollRuns, payrollPayments }));
+    assert.equal(warn.length, 1);
+    assert.match(warn[0].text, /: 1 на 6658\.19 грн/);
+    assert.equal(direct(j.closeChecks({ ...args, payrollRuns: [], payrollPayments })).length, 0, 'без відомості пряма витрата — звичайний облік');
+});

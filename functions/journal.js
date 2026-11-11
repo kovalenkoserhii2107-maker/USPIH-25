@@ -242,7 +242,9 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             ? [stored.key === liveKey
                 ? { level: 'ok', text: 'Місяць закрито; операції відтоді не змінювались' }
                 : { level: 'warn', text: 'Після закриття змінились операції цього місяця (наприклад, пізня виписка банку). Голова може відкрити місяць, щоб розібратися' }]
-            : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb, openingStatus: data.opening?.status || 'none', start: data.input.start });
+            : core.closeChecks({ period: p, today: now, bankTx: data.input.bankTx, expenses: data.input.expenses, chargedPeriods: data.charged, closed: data.closed, tb, openingStatus: data.opening?.status || 'none', start: data.input.start,
+                fundNames: Object.fromEntries((data.policy.funds || []).map(f => [f.id, f.name])), defaultFund: data.policy.defaultFund,
+                payrollRuns: data.input.payrollRuns, payrollPayments: data.input.payrollPayments });
         if (!isClosed && data.policy.status !== 'approved') checks.push({ level:'block', text:'Параметри обліку ще не погоджені головою: дата початку, фонди та схема доходів («Налаштування»)' });
         if(!isClosed && data.bankAccounts.some(a=>a.purpose==='deposit' && policyCore.bankAccount(a.iban,data.policy)==='311'))checks.push({level:'block',text:'Для депозитного рахунку оберіть субрахунок за його договором у налаштуваннях обліку'});
         if (isClosed && stored.archiveVersion === 1 && !data.input.closedSnapshots.has(p)) checks.push({level:'block',text:'Архів проводок цього періоду неповний; відновіть його перед подальшим обліком'});

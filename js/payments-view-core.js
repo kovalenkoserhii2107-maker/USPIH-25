@@ -92,11 +92,15 @@ export function payrollDue(ctx) {
     if (!ctx || ctx.closed || ctx.status !== 'approved' || !(ctx.run?.rows || []).length) return null;
     const t = ctx.run?.totals || {};
     const adv = stageState(ctx, 'advance'), fin = stageState(ctx, 'final');
-    const tax = (t.pdfoKop || 0) + (t.vzKop || 0) + (t.esvKop || 0);
+    // ПДФО, ВЗ і ЄСВ сплачують разом з кожною виплатою: з авансом — його частку, з остаточним розрахунком — решту
+    // (усе, якщо авансу не було).
+    const taxOf = part => (part?.pdfoKop || 0) + (part?.vzKop || 0) + (part?.esvKop || 0);
+    const advTax = taxOf(t.advance);
+    const tax = ctx.stages?.advance ? taxOf(t.final) : taxOf(t);
     const base = { period: ctx.period };
-    if (['building', 'partial'].includes(adv)) return { ...base, stage: 'advance', amountKop: t.advance?.netKop || 0, taxKop: 0, state: 'bad', note: adv === 'building' ? 'відомість у банку не завершено' : 'частину платежів не створено' };
+    if (['building', 'partial'].includes(adv)) return { ...base, stage: 'advance', amountKop: t.advance?.netKop || 0, taxKop: advTax, state: 'bad', note: adv === 'building' ? 'відомість у банку не завершено' : 'частину платежів не створено' };
     if (['building', 'partial'].includes(fin)) return { ...base, stage: 'final', amountKop: ctx.stages?.advance ? t.final?.netKop || 0 : t.netKop || 0, taxKop: tax, state: 'bad', note: fin === 'building' ? 'відомість у банку не завершено' : 'частину платежів не створено' };
-    if (adv === 'none' && fin === 'none' && t.advance?.netKop > 0) return { ...base, stage: 'advance', amountKop: t.advance.netKop, taxKop: 0, state: 'todo', note: 'за першу половину місяця' };
+    if (adv === 'none' && fin === 'none' && t.advance?.netKop > 0) return { ...base, stage: 'advance', amountKop: t.advance.netKop, taxKop: advTax, state: 'todo', note: 'за першу половину місяця' };
     if (fin === 'none') return { ...base, stage: 'final', amountKop: ctx.stages?.advance ? t.final?.netKop || 0 : t.netKop || 0, taxKop: tax, state: 'todo', note: 'остаточний розрахунок — до 7-го числа наступного місяця' };
     return null;
 }

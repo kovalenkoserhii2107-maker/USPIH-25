@@ -36,6 +36,21 @@ test('ЄСВ з мінімальної бази й попередження пр
     // Менше відпрацьованих днів за повний місяць трудових відносин: мінімальна база не зменшується.
     const part = p.calcRow(emp(), { workedDays: 11 }, '2026-10', rate);
     assert.deepEqual([part.grossKop, part.esvBaseKop], [432350, 864700]);
+    // Довідкові приклади 2026 року: зарплата 6 500 грн — доплата ЄСВ 472,34 грн; 200 000 грн — ЄСВ лише з 172 940 грн.
+    const below = p.calcRow(emp({ salaryKop: 650000 }), {}, '2026-01', rate);
+    assert.deepEqual([below.esvKop, below.esvKop - Math.round(650000 * 0.22)], [190234, 47234]);
+    const high = p.calcRow(emp({ salaryKop: 20000000 }), {}, '2026-01', rate);
+    assert.deepEqual([high.esvBaseKop, high.esvKop], [17294000, 3804680]);
+    assert.equal(p.calcRow({ kind: 'gph' }, { actKop: 20000000 }, '2026-01', rate).esvKop, 3804680, 'максимальна база діє й для ЦПД');
+    // Листопад 2026: 1-ше — неділя. Прийнятий з першого робочого дня (02.11) відпрацював місяць повністю — мінімальна база діє.
+    const firstWorkday = p.calcRow(emp({ salaryKop: 432350, fte: 0.5, from: '2026-11-02' }), {}, '2026-11', rate);
+    assert.deepEqual([firstWorkday.calendarDays, firstWorkday.fullMonth, firstWorkday.esvBaseKop, firstWorkday.esvKop], [29, true, 864700, 190234]);
+    // Прийнятий з 03.11 — не з першого робочого дня: ЄСВ з фактично нарахованого.
+    const later = p.calcRow(emp({ salaryKop: 432350, fte: 0.5, from: '2026-11-03' }), {}, '2026-11', rate);
+    assert.deepEqual([later.fullMonth, later.esvBaseKop], [false, later.grossKop]);
+    // Жовтень 2026: 31-ше — субота. Звільнений в останній робочий день (30.10) — місяць повний.
+    const lastWorkday = p.calcRow(emp({ salaryKop: 432350, fte: 0.5, to: '2026-10-30' }), {}, '2026-10', rate);
+    assert.deepEqual([lastWorkday.fullMonth, lastWorkday.esvBaseKop], [true, 864700]);
 });
 
 test('договір ЦПД: сума акта, ПДФО, ВЗ і ЄСВ без мінімальної бази, без авансу', () => {
