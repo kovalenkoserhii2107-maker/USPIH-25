@@ -95,6 +95,13 @@ function employmentDays(person, period) {
     return dates.filter(d => (!person.from || d >= person.from) && (!person.to || d <= person.to)).length;
 }
 
+/**
+ * Чи тривали трудові відносини весь місяць — від першого до останнього робочого дня.
+ * Від цього залежить мінімальна база ЄСВ: прийнятий не з першого робочого дня або
+ * звільнений не в останній — ЄСВ з фактично нарахованого.
+ */
+const fullMonth = (person, period) => employmentDays(person, period) === workingDays(period);
+
 /** Календарні дні трудових/цивільних відносин для Д1, включно з вихідними. */
 function calendarDays(person, period) {
     const [year, month] = period.split('-').map(Number);
@@ -165,9 +172,10 @@ function calcRow(person, input, period, rate, { advancePct = 50, history = [] } 
         if (person.salaryKop < Math.round(rate.minWageKop * fte)) {
             warnings.push(`оклад менший за мінімальну зарплату${fte < 1 ? ` для ставки ${fte}` : ''} (${uah(rate.minWageKop * fte)} грн) — потрібна доплата до МЗП`);
         }
-        if (person.mainJob !== false && grossKop > 0 && calendarDays(person, period) === leave.daysInMonth(period)) {
-            // ЄСВ з усього місячного доходу, включно з лікарняними, не нижче МЗП
-            // за повний календарний місяць трудових відносин. МЗП не зменшуємо на дні хвороби.
+        if (person.mainJob !== false && grossKop > 0 && fullMonth(person, period)) {
+            // ЄСВ з усього місячного доходу, включно з лікарняними, не нижче МЗП за повний місяць
+            // трудових відносин: від першого до останнього РОБОЧОГО дня (прийнятий у понеділок 2-го,
+            // коли 1-ше — неділя, відпрацював місяць повністю). МЗП не зменшуємо на дні хвороби.
             if (grossKop < rate.minWageKop) {
                 esvBaseKop = rate.minWageKop;
                 warnings.push('ЄСВ — з мінімальної бази (основне місце роботи): різницю сплачує ОСББ');
@@ -202,7 +210,7 @@ function calcRow(person, input, period, rate, { advancePct = 50, history = [] } 
     final.netKop = final.grossKop - final.pdfoKop - final.vzKop;
     final.esvKop = esvKop - advance.esvKop;
     return { grossKop, pdfoKop, vzKop, netKop: grossKop - pdfoKop - vzKop, esvBaseKop, esvKop, esvParts: contributionParts, advance, final, normDays: norm, warnings, leaveProblems: problems,
-        regularKop, calendarDays: calendarDays(person, period), ...(workedDays !== null ? { workedDays } : {}),
+        regularKop, calendarDays: calendarDays(person, period), fullMonth: person.kind === 'employee' && fullMonth(person, period), ...(workedDays !== null ? { workedDays } : {}),
         vacationKop: vacation, vacationDays: lv?.vacationDays || 0, sickKop: lv?.sickKop || 0, sickDays: lv?.sickDays || 0,
         sickEmployerDays: lv?.sickEmployerDays || 0, fundDays: lv?.fundDays || 0, fundExpectKop: lv?.fundExpectKop || 0, fundSickKop,
         absences: lv?.items || [], pspKop: psp.pspKop, pspCode: psp.pspKop ? psp.code : '',
@@ -286,7 +294,7 @@ function consolidateEsv(rows, rate, period) {
             row.esvParts.push({ ...part, baseKop, esvKop: pct(baseKop, rate.esv) });
         }
         const income = group.reduce((s, r) => s + Math.max(0, r.grossKop), 0);
-        const main = employees.find(r => r.relationship.mainJob && r.calendarDays === leave.daysInMonth(period));
+        const main = employees.find(r => r.relationship.mainJob && (r.fullMonth ?? r.calendarDays === leave.daysInMonth(period)));
         if (main && income > 0 && income < rate.minWageKop) {
             const baseKop = rate.minWageKop - income;
             main.esvParts.push({ kind: 'topup', grossKop: 0, baseKop, esvKop: pct(baseKop, rate.esv) });
@@ -363,5 +371,5 @@ function paymentProblems(payments, account) {
 
 module.exports = {
     DEFAULT_RATES, DEFAULT_TAXES, withDefaultTaxes, KINDS, rateFor, workingDays, validRnokpp, validIban, checkPerson, calcRow, activeIn, buildRun,
-    stagePayments, paymentProblems, paymentRun, consolidateEsv, monthName, employmentDays, calendarDays
+    stagePayments, paymentProblems, paymentRun, consolidateEsv, monthName, employmentDays, calendarDays, fullMonth
 };

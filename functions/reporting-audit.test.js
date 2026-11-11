@@ -57,10 +57,14 @@ test('дати відсутності й початку випадку — сп�
     assert.match(leave.checkAbsences([{ type: 'sick', from: '2026-10-01', to: '2026-10-03', caseStart: '2026-09-31' }], '2026-10'), /дат|початок/);
 });
 
-test('мінімальна база ЄСВ: повний календарний місяць, а не збіг робочих днів; лікарняні не зменшують місячну МЗП', () => {
+test('мінімальна база ЄСВ: місяць від першого до останнього робочого дня; лікарняні не зменшують місячну МЗП', () => {
     const rate = payroll.rateFor('2026-11');
+    // 1 листопада — неділя: прийнятий з першого робочого дня (02.11) відпрацював місяць повністю — доплата до МЗП.
     const hired = payroll.calcRow(person({ from: '2026-11-02' }), {}, '2026-11', rate);
-    assert.equal(hired.esvBaseKop, 432350); // 1 листопада — неділя; трудові відносини не весь місяць.
+    assert.equal(hired.esvBaseKop, 864700);
+    // Прийнятий з 03.11 — не з першого робочого дня: ЄСВ з фактично нарахованого.
+    const later = payroll.calcRow(person({ from: '2026-11-03' }), {}, '2026-11', rate);
+    assert.equal(later.esvBaseKop, later.grossKop);
     const sick = payroll.calcRow(person({ insuranceYears: 10 }), { absences: [{ type: 'sick', from: '2026-10-05', to: '2026-10-07', avgDailyKop: 10000 }] }, '2026-10', rate);
     assert.equal(sick.esvBaseKop, 864700);
 });
