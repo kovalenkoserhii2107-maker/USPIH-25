@@ -78,10 +78,12 @@ function annual({year,input,closed=[],history=null,previousIncome=null,policy,op
     const receivables=['361','371','372','377','378'].map(acc=>({acc,name:journal.ACCOUNTS[acc],kop:osv.find(r=>r.acc===acc)?.closeDr||0}));
     const liabilities=['631','641','651','661','685','48'].map(acc=>({acc,name:journal.ACCOUNTS[acc],kop:osv.find(r=>r.acc===acc)?.closeCr||0}));
     const cashAccounts=['301','311','313','351','143'].map(acc=>({acc,name:journal.ACCOUNTS[acc],kop:(osv.find(r=>r.acc===acc)?.closeDr||0)-(osv.find(r=>r.acc===acc)?.closeCr||0)}));
+    // Залишок 48 без коду фонду (вхідна ОСВ, перенесені обороти) належить основному фонду.
+    const fundIds=new Set(policy.funds.map(f=>f.id)),fundOf=a=>fundIds.has(a)?a:policy.defaultFund;
     const funds=policy.funds.map(f=>{
-        const openingBalance=before.filter(e=>e.cr==='48'&&e.cA===f.id).reduce((s,e)=>s+e.kop,0)-before.filter(e=>e.dr==='48'&&e.dA===f.id).reduce((s,e)=>s+e.kop,0);
-        const received=inYear.filter(e=>e.cr==='48'&&e.cA===f.id).reduce((s,e)=>s+e.kop,0);
-        const used=inYear.filter(e=>e.dr==='48'&&e.dA===f.id).reduce((s,e)=>s+e.kop,0);
+        const openingBalance=before.filter(e=>e.cr==='48'&&fundOf(e.cA)===f.id).reduce((s,e)=>s+e.kop,0)-before.filter(e=>e.dr==='48'&&fundOf(e.dA)===f.id).reduce((s,e)=>s+e.kop,0);
+        const received=inYear.filter(e=>e.cr==='48'&&fundOf(e.cA)===f.id).reduce((s,e)=>s+e.kop,0);
+        const used=inYear.filter(e=>e.dr==='48'&&fundOf(e.dA)===f.id).reduce((s,e)=>s+e.kop,0);
         return {...f,openKop:openingBalance,receivedKop:received,usedKop:used,closeKop:openingBalance+received-used};
     });
     const movements=inYear.filter(e=>['bank','migration'].includes(e.src)&&['311','313','351','143'].some(a=>e.dr===a||e.cr===a));

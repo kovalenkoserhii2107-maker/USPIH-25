@@ -174,3 +174,32 @@ test('розшифровка статті: повернення комісії �
     for (const [key, kop] of fact) assert.equal(ops[key].reduce((s, o) => s + o.amountKop, 0), kop);
     assert.ok(ops[item].some(o => o.refund && o.amountKop === -2000));
 });
+
+test('авансові звіти: факт — за статтями звіту, а не «Інше» за датою відшкодування; повернутий залишок — не дохід', () => {
+    const advanceReports = [
+        { id: 'a1', number: 'АЗ-2026-10/01', status: 'approved', period: '2026-10', date: '2026-10-15', personName: 'Підзвітний Тестовий', purpose: 'Паливо й замки',
+            lines: [{ item: 'systems', amountKop: 120000, date: '2026-10-12', supplier: 'АЗС (демо)', desc: 'Бензин для генератора' }, { item: 'нема', amountKop: 30000, date: '2026-10-13', desc: 'Папір' }] },
+        { id: 'a2', status: 'pending', period: '2026-10', lines: [{ item: 'systems', amountKop: 999 }] },
+        { id: 'a3', status: 'settled', period: '2025-12', lines: [{ item: 'systems', amountKop: 777 }] }
+    ];
+    const bankOut = [
+        // Відшкодування за звітом і виданий аванс — рух підзвітних коштів, не витрата.
+        { id: 'r1', direction: 'out', kind: 'expense', status: 'done', category: 'advance', advanceReportId: 'a1', period: '2026-11', amountKop: 150000 },
+        { id: 'r2', direction: 'out', kind: 'expense', status: 'done', category: 'advance', period: '2026-10', amountKop: 50000 },
+        { id: 'f1', direction: 'out', kind: 'expense', status: 'done', category: 'bank_fee', period: '2026-10', amountKop: 500 }
+    ];
+    const fact = b.factByItem({ year: '2026', advanceReports, bankOut });
+    assert.deepEqual([...fact].sort(), [['bank', 500], ['office', 30000], ['systems', 120000]]);
+    const ops = b.operationsByItem({ year: '2026', advanceReports, bankOut, publicView: true });
+    assert.deepEqual(ops.systems.map(o => [o.date, o.who, o.kind, o.amountKop, o.doc]), [['2026-10-12', 'АЗС (демо)', 'company', 120000, 'Авансовий звіт № АЗ-2026-10/01']]);
+    assert.equal(ops.office[0].who, 'Підзвітна особа', 'мешканцям імʼя підзвітної особи не показуємо');
+    assert.equal(b.operationsByItem({ year: '2026', advanceReports, bankOut }).office[0].who, 'Підзвітний Тестовий');
+    assert.equal(ops.other, undefined);
+    for (const item of Object.keys(ops)) assert.equal(ops[item].reduce((s, o) => s + o.amountKop, 0), fact.get(item), `сума розшифровки = факт (${item})`);
+    const bankIn = [
+        { id: 'i1', direction: 'in', kind: 'income', status: 'done', category: 'advance_return', period: '2026-10', amountKop: 20000 },
+        { id: 'i2', direction: 'in', kind: 'income', status: 'done', category: 'rent', period: '2026-10', amountKop: 70000 }
+    ];
+    assert.deepEqual([...b.incomeFact({ bankIn, year: '2026' })], [['rent', 70000]]);
+    assert.deepEqual(Object.keys(b.incomeOpsBySource({ bankIn, year: '2026' })), ['rent']);
+});

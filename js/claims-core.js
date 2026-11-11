@@ -23,14 +23,30 @@ const COURT_DEFAULT_NAME = "Київський районний суд м. Од�
 const COURT_DEFAULT_ADDRESS = "65080, м. Одеса, вул. Варненська, 3-Б";
 const DEFAULT_HOUSE_ADDRESS = "вул. Інглезі, 3/3, м. Одеса";
 
-// Судовий збір за заяву про видачу судового наказу:
-// 0,1 розміру прожиткового мінімуму для працездатних осіб (ст. 4 ЗУ «Про судовий збір»)
-// 3028 грн * 0,1 = 302,80 грн = 30280 коп.
-const COURT_FEE_ORDER_KOP = 30280;
+// Судовий збір рахується від прожиткового мінімуму для працездатних осіб, установленого
+// на 1 січня року, в якому подають заяву (ст. 4 ЗУ «Про судовий збір»):
+//   • заява про видачу судового наказу — 0,1 прожиткового мінімуму;
+//   • позов майнового характеру — 1,5 % ціни позову, але не менше 1 прожиткового мінімуму.
+// Нове значення додають сюди щороку разом зі ставками зарплати.
+const SUBSISTENCE_KOP = { 2025: 302800, 2026: 332800 };
 
-// Судовий збір за позовну заяву майнового характеру:
-// 1,5 % ціни позову, але не менше 1 розміру прожиткового мінімуму (3028,00 грн = 302800 коп)
-const COURT_FEE_MIN_LAWSUIT_KOP = 302800;
+/** Прожитковий мінімум року; для ще не внесеного року — останній відомий. */
+function subsistenceKopFor(year) {
+    const y = Number(year);
+    if (SUBSISTENCE_KOP[y]) return SUBSISTENCE_KOP[y];
+    const known = Object.keys(SUBSISTENCE_KOP).map(Number).sort((a, b) => a - b);
+    return SUBSISTENCE_KOP[y < known[0] ? known[0] : known.at(-1)];
+}
+
+/** Судовий збір на дату подання: { orderKop, minLawsuitKop, subsistenceKop, year }. */
+function courtFees(date = new Date().toISOString().slice(0, 10)) {
+    const year = Number(String(date).slice(0, 4)) || new Date().getFullYear();
+    const subsistenceKop = subsistenceKopFor(year);
+    return { year, subsistenceKop, orderKop: Math.round(subsistenceKop / 10), minLawsuitKop: subsistenceKop };
+}
+
+const COURT_FEE_ORDER_KOP = courtFees().orderKop;
+const COURT_FEE_MIN_LAWSUIT_KOP = courtFees().minLawsuitKop;
 
 const CLAIM_STAGES = {
     pre_trial: "Досудове врегулювання",
@@ -78,7 +94,8 @@ function calculateClaimTotals({
     includeInflation = false,
     inflationRate = 0,
     penaltyPerDayKop = 0,
-    daysOverdue = 0
+    daysOverdue = 0,
+    date
 }) {
     const principalKop = Math.abs(Math.round(Number(debtKop || 0)));
     const days = Math.max(0, Number(daysOverdue || 0));
@@ -97,8 +114,9 @@ function calculateClaimTotals({
         ? Math.round(principalKop * Math.max(0, Number(inflationRate || 0)))
         : 0;
 
-    const courtFeeOrderKop = COURT_FEE_ORDER_KOP;
-    const courtFeeLawsuitKop = Math.max(COURT_FEE_MIN_LAWSUIT_KOP, Math.round((principalKop + penaltyKop + threePercentKop + inflationKop) * 0.015));
+    const fees = courtFees(date);
+    const courtFeeOrderKop = fees.orderKop;
+    const courtFeeLawsuitKop = Math.max(fees.minLawsuitKop, Math.round((principalKop + penaltyKop + threePercentKop + inflationKop) * 0.015));
 
     const totalClaimKop = principalKop + penaltyKop + threePercentKop + inflationKop;
 
@@ -176,7 +194,7 @@ IBAN: ${bankIban}
 Призначення платежу: ${purpose}
 
 Попереджаємо, що у разі непогашення заборгованості у встановлений строк, ${orgName} буде вимушене звернутися до суду із заявою про видачу судового наказу про примусове стягнення заборгованості (статті 161–163 ЦПК України).
-У такому випадку на Вас додатково буде покладено відшкодування судового збору (${fmtKop(COURT_FEE_ORDER_KOP)} грн) та витрат на професійну правничу допомогу.
+У такому випадку на Вас додатково буде покладено відшкодування судового збору (${fmtKop(courtFees(claimDate).orderKop)} грн) та витрат на професійну правничу допомогу.
 
 Якщо Ви перебуваєте у складних життєвих обставинах, правління ОСББ готове укласти договір реструктуризації заборгованості з графіком помісячного погашення. Для цього зверніться до правління ОСББ.
 
@@ -201,7 +219,7 @@ function generateCourtOrderApp({
     courtName = COURT_DEFAULT_NAME,
     courtAddress = COURT_DEFAULT_ADDRESS,
     appDate = new Date().toISOString().slice(0, 10),
-    courtFeeKop = COURT_FEE_ORDER_KOP
+    courtFeeKop = courtFees(appDate).orderKop
 }) {
     const principalKop = Math.abs(Math.round(Number(debtKop || 0)));
     const orgName = org?.name || "ОСББ «Успіх-25»";
@@ -299,7 +317,7 @@ function generateLawsuitApp({
     const extra3Kop = (!isMartialLaw || include3Percent) ? Math.round(Number(threePercentKop || 0)) : 0;
     const extraInfKop = (!isMartialLaw || includeInflation) ? Math.round(Number(inflationKop || 0)) : 0;
     const totalClaimKop = principalKop + extraPenKop + extra3Kop + extraInfKop;
-    const feeKop = courtFeeKop !== undefined ? Number(courtFeeKop) : Math.max(COURT_FEE_MIN_LAWSUIT_KOP, Math.round(totalClaimKop * 0.015));
+    const feeKop = courtFeeKop !== undefined ? Number(courtFeeKop) : Math.max(courtFees(appDate).minLawsuitKop, Math.round(totalClaimKop * 0.015));
 
     const orgName = org?.name || "ОСББ «Успіх-25»";
     const edrpou = org?.edrpou || "40562894";
@@ -696,6 +714,7 @@ export {
     DEFAULT_HOUSE_ADDRESS,
     COURT_FEE_ORDER_KOP,
     COURT_FEE_MIN_LAWSUIT_KOP,
+    courtFees,
     CLAIM_STAGES,
     CLAIM_STATUSES,
     grnToKop,

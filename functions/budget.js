@@ -71,12 +71,13 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
     async function guard(e, exceptId, transaction = null) {
         const read = ref => transaction ? transaction.get(ref) : ref.get();
         const year = String(e.period).slice(0, 4);
-        const [budgets, ex, bank, payroll, payments] = await Promise.all([
+        const [budgets, ex, bank, payroll, payments, advance] = await Promise.all([
             read(db.collection('budgets')),
             read(db.collection('expenses').where('item', '==', e.item)),
             read(db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`)),
             read(db.collection('payroll_runs')),
-            read(db.collection('payments').where('kind', 'in', ['salary', 'tax']))
+            read(db.collection('payments').where('kind', 'in', ['salary', 'tax'])),
+            read(db.collection('advance_reports').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`))
         ]);
         const budget = core.effectiveBudget(budgets.docs.map(d => ({ id: d.id, ...d.data() })), year);
         if (!budget) return null;
@@ -84,7 +85,8 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const approved = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
         const payrollPayments = new Map(payments.docs.filter(d => approved.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
         const bankOut = await withRefundOrigins(bank.docs.map(d => ({ id: d.id, ...d.data() })), transaction);
-        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut, payrollRuns, payrollPayments });
+        const fact = core.factByItem({ year, expenses: ex.docs.filter(d => d.id !== exceptId).map(d => d.data()), bankOut, payrollRuns, payrollPayments,
+            advanceReports: advance.docs.map(d => ({ id: d.id, ...d.data() })) });
         return core.itemOverrun(budget, e.item, fact.get(e.item) || 0, e.amountKop);
     }
 
@@ -95,7 +97,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const policy = await require('./accounting-policy').create({ db, FieldValue }).context();
         const replayOptions = { startPeriod: policy.startDate.slice(0, 7), startDate: policy.startDate };
         const yearStart = `${year}-01` > replayOptions.startPeriod ? `${year}-01` : replayOptions.startPeriod;
-        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity, payrollSnap, payrollPaySnap] = await Promise.all([
+        const [budgets, expenses, bank, settings, apartments, chargeSettings, ledgerSnap, supplierSnap, publicity, payrollSnap, payrollPaySnap, advanceSnap] = await Promise.all([
             allBudgets(),
             db.collection('expenses').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
             db.collection('bank_tx').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get(),
@@ -106,7 +108,8 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
             db.collection('suppliers').get(),
             publicityRef.get(),
             db.collection('payroll_runs').get(),
-            db.collection('payments').where('kind', 'in', ['salary', 'tax']).get()
+            db.collection('payments').where('kind', 'in', ['salary', 'tax']).get(),
+            db.collection('advance_reports').where('period', '>=', `${year}-01`).where('period', '<=', `${year}-12`).get()
         ]);
         const ex = expenses.docs.map(d => ({ id: d.id, ...d.data() }));
         const tx = bank.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -155,7 +158,7 @@ module.exports = function budgetFunctions({ db, FieldValue, requireAdmin, staffR
         const payrollRuns = payrollSnap.docs.map(d => ({ period: d.id, ...d.data() }));
         const approvedPeriods = new Set(payrollRuns.filter(p => p.status === 'approved').map(p => p.period));
         const payrollPayments = new Map(payrollPaySnap.docs.filter(d => approvedPeriods.has(d.data().payroll?.period)).map(d => [d.id, d.data()]));
-        const factInput = { expenses: ex, bankOut, payrollRuns, payrollPayments, year };
+        const factInput = { expenses: ex, bankOut, payrollRuns, payrollPayments, advanceReports: advanceSnap.docs.map(d => ({ id: d.id, ...d.data() })), year };
         const result = core.execution({ budget, fact: core.factByItem(factInput), income: core.incomeFact({ bankIn: tx, year }), months, incomeParts });
         const accounts = Object.values(settings.exists ? settings.data().accounts || {} : {});
         const fundsKop = accounts.reduce((s, a) => s + (!a.currency || a.currency === 'UAH' ? a.balanceKop || 0 : 0), 0);

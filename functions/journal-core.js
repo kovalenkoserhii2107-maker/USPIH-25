@@ -151,6 +151,9 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
     }
 
     const txById = new Map(bankTx.map(t => [t.id, t]));
+    // Аналітика 372 — імʼя зі звіту: банк пише отримувача по-своєму («ІВАНЕНКО І. І.»), і розрахунки з людиною розʼїхались би.
+    const reportPerson = new Map(advanceReports.map(r => [r.id, r.personName]));
+    const accountable = (t, cp) => reportPerson.get(t.advanceReportId) || t.personName || cp.name || 'Підзвітна особа';
     const notesById = new Map(adjustments.filter(n=>n.status==='approved').map(n=>[n.id,n]));
     /** Рахунок дебету списання (кому платили): ним же проводимо повернення цих коштів. */
     const debitOf = t => {
@@ -167,7 +170,7 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
         }
         if (t.kind === 'expense' && t.status === 'done' && t.expenseId) return { dr: '631', dA: expenses.find(x => x.id === t.expenseId)?.supplierName || cp.name || '' };
         if (t.kind === 'expense' && t.status === 'done' && (t.category === 'advance' || t.advanceReportId)) {
-            return { dr: '372', dA: t.personName || cp.name || 'Підзвітна особа' };
+            return { dr: '372', dA: accountable(t, cp) };
         }
         if (t.kind === 'expense' && t.status === 'done' && t.category === 'supplier') return { dr: '631', dA: cp.name || '', advance: true };
         if (t.kind === 'expense' && t.status === 'done') return { dr: '92', dA: BANK_EXPENSE_ITEM[t.category] || 'other' };
@@ -187,7 +190,7 @@ function buildEntries({ ledgers = new Map(), bankTx = [], expenses = [], supplie
             } else if (t.kind === 'payment' && t.status === 'done' && (t.allocations || []).length) {
                 for (const a of t.allocations) add({ ...base, dr: cash(acc), cr: '377', kop: a.amountKop, dA: acc, cA: a.apt, memo: `Оплата внесків, кв. ${a.apt}` });
             } else if (t.kind === 'income' && t.status === 'done' && (t.category === 'advance_return' || t.advanceReportId)) {
-                add({ ...base, dr: cash(acc), cr: '372', kop: t.amountKop, dA: acc, cA: t.personName || cp.name || 'Підзвітна особа', memo: t.purpose || 'Повернення залишку підзвітних коштів' });
+                add({ ...base, dr: cash(acc), cr: '372', kop: t.amountKop, dA: acc, cA: accountable(t, cp), memo: t.purpose || 'Повернення залишку підзвітних коштів' });
             } else if (t.kind === 'income' && t.status === 'done') {
                 const income = policy?.incomeAccounts?.[t.category] || INCOME_ACCOUNT[t.category] || '719';
                 add({ ...base, dr: cash(acc), cr: income, kop: t.amountKop, dA: acc, cA: income === '48' ? t.fundId || defaultFund : t.category || 'other', memo: t.purpose || cp.name || '' });
@@ -413,7 +416,7 @@ function trialBalance(entries, period) {
  * Перевірки перед закриттям місяця. level: block — закрити не можна;
  * warn — можна, але бухгалтер має бачити; ok — усе гаразд.
  */
-function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods = new Set(), closed = [], tb, openingStatus = 'none', start = START_PERIOD, strictOpening = true }) {
+function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods = new Set(), closed = [], tb, openingStatus = 'none', start = START_PERIOD, strictOpening = true, fundNames = {}, defaultFund = 'main', payrollRuns = [], payrollPayments = new Map() }) {
     const out = [];
     const month = bankTx.filter(t => t.period === period);
     if (today <= lastDay(period)) out.push({ level: 'block', text: `Місяць ще не скінчився: закрити можна після ${lastDay(period).split('-').reverse().join('.')}` });
@@ -426,6 +429,25 @@ function closeChecks({ period, today, bankTx = [], expenses = [], chargedPeriods
     if (pending.length) out.push({ level: 'block', text: `Документи чекають затвердження головою: ${pending.length} — затвердьте або відхиліть їх перед закриттям місяця` });
     const advance = tb?.rows.find(r => r.acc === '631')?.byA.filter(x => x.closeDr) || [];
     if (advance.length) out.push({ level: 'warn', text: `Оплати постачальникам без документа (аванси, Дт 631): ${advance.map(x => x.a).join(', ')}` });
+    // 48 — пасивний рахунок: дебетовий залишок фонду означає, що витрат визнано більше, ніж було фінансування.
+    // Залишок без коду фонду (вхідна ОСВ) належить основному фонду.
+    const byFund = new Map();
+    for (const x of tb?.rows.find(r => r.acc === '48')?.byA || []) {
+        const fund = Object.hasOwn(fundNames, x.a) ? x.a : defaultFund;
+        byFund.set(fund, (byFund.get(fund) || 0) + x.closeCr - x.closeDr);
+    }
+    const overspent = [...byFund].filter(([, kop]) => kop < 0);
+    if (overspent.length) out.push({ level: 'warn', text: `Витрати фонду перевищили цільове фінансування (дебетовий залишок 48): ${overspent.map(([fund, kop]) => `${fundNames[fund] || fund} — ${(-kop / 100).toFixed(2)} грн`).join('; ')}. Звірте джерело покриття: тариф, інший фонд чи рішення зборів` });
+    // Зарплату нараховує відомість (Дт 92 Кт 661/651). Те саме списання, віднесене прямо на витрати, подвоює їх.
+    const direct = month.filter(t => !t.bankVoided && t.direction === 'out' && t.kind === 'expense' && t.status === 'done'
+        && ['salary', 'taxes', 'esv'].includes(t.category) && !payrollPayments.has(t.paymentId));
+    if (direct.length && payrollRuns.some(r => r.status === 'approved' && r.run?.rows?.length)) {
+        out.push({ level: 'warn', text: `Списання зарплати чи податків віднесено прямо на витрати, хоча зарплату нараховує відомість: ${direct.length} на ${(sum(direct, t => t.amountKop) / 100).toFixed(2)} грн. Поверніть їх у «Рішення» й привʼяжіть до відомості — інакше витрати подвояться, а борг за 661/641/651 не закриється` });
+    }
+    // Рахунок на оплату не підтверджує, що послугу отримано (ст. 9 Закону № 996-XIV): витрату визнають за актом чи накладною.
+    const noAct = expenses.filter(e => e.period === period && ['approved', 'paid'].includes(e.status) && e.docType === 'invoice' && !e.linkedTo
+        && !expenses.some(x => x.linkedTo === e.id && ['act', 'waybill'].includes(x.docType)));
+    if (noAct.length) out.push({ level: 'warn', text: `Витрати визнано за рахунком без акта чи накладної: ${noAct.length} (№ ${noAct.slice(0, 5).map(e => e.number || '—').join(', ')}${noAct.length > 5 ? '…' : ''}). Додайте акт або накладну — рахунок не підтверджує отримання послуги` });
     const r00 = tb?.rows.find(r => r.acc === '00');
     const left00 = r00 ? r00.closeDr - r00.closeCr : 0;
     if (openingStatus !== 'approved') {

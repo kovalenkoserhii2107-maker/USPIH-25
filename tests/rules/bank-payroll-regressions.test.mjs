@@ -94,6 +94,8 @@ test('salary project prepares a maspay packet; tax transfers and statement settl
     assert.equal((await journal.actions.context({period:'2026-10'})).tb.rows.find(r=>r.acc==='661').closeCr,665819);
     assert.equal((await payroll.actions.pay(...A,{period:'2026-10',stage:'final'})).ok,true);
     assert.equal(calls.length,3);assert.ok(calls.every(p=>p.kind==='tax'));
+    // Платежі створено «зараз», а виписка — за 30.10: відправку датуємо 29.10, щоб тест не залежав від дня запуску.
+    for(const p of await docs('payments')) await db.doc(`payments/${p.id}`).update({sentAt:new Date('2026-10-29T12:00:00Z')});
     for(const p of await docs('payments')) await bank.storeTransactions([tx(`project-${p.id}`,{at:new Date('2026-10-30T12:00:00Z'),direction:'out',amountKop:p.amountKop,purpose:p.purpose,
         counterparty:{account:p.recipient.iban,code:p.recipient.code}})],'mock',await bank.loadContext());
     assert.ok((await docs('payments')).every(p=>p.status==='paid'),JSON.stringify((await docs('payments')).map(p=>({id:p.id,status:p.status}))));

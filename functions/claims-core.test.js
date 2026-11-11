@@ -21,13 +21,23 @@ test("grnToKop коректно переводить гривневий бала
     assert.equal(claims.fmtKop(Math.abs(claims.grnToKop(-8277.4))), "8\u00a0277,40");
 });
 
-test("розрахунок претензійних сум у режимі воєнного стану (пеня = 0, судовий збір = 302,80 грн)", () => {
+test("судовий збір — від прожиткового мінімуму року подання", () => {
+    assert.deepEqual(claims.courtFees("2025-11-10"), { year: 2025, subsistenceKop: 302800, orderKop: 30280, minLawsuitKop: 302800 });
+    assert.deepEqual(claims.courtFees("2026-11-10"), { year: 2026, subsistenceKop: 332800, orderKop: 33280, minLawsuitKop: 332800 });
+    assert.equal(claims.courtFees("2031-01-01").orderKop, 33280, "ще не внесений рік — останній відомий мінімум");
+    const big = claims.calculateClaimTotals({ debtKop: 50000000, date: "2026-11-10" });
+    assert.equal(big.courtFeeLawsuitKop, 750000, "1,5 % ціни позову, коли це більше за мінімум");
+    assert.equal(claims.calculateClaimTotals({ debtKop: 827740, date: "2026-11-10" }).courtFeeLawsuitKop, 332800);
+});
+
+test("розрахунок претензійних сум у режимі воєнного стану (пеня = 0, судовий збір 2025 року = 302,80 грн)", () => {
     const res = claims.calculateClaimTotals({
         debtKop: 827740, // 8 277,40 грн
         monthsOverdue: 14,
         isMartialLaw: true,
         daysOverdue: 150,
-        penaltyPerDayKop: 83
+        penaltyPerDayKop: 83,
+        date: "2025-11-10"
     });
 
     assert.equal(res.principalKop, 827740);
@@ -81,7 +91,7 @@ test("генерація досудової претензії (вимоги): �
     assert.match(text, /UA213052990000026001234567890/);
 });
 
-test("генерація заяви про видачу судового наказу: містить ст. 161 ЦПК, Київський районний суд м. Одеси та судовий збір 302,80 грн", () => {
+test("генерація заяви про видачу судового наказу: містить ст. 161 ЦПК, Київський районний суд м. Одеси та судовий збір року подання", () => {
     const text = claims.generateCourtOrderApp({
         org,
         apt: "208",
@@ -101,7 +111,7 @@ test("генерація заяви про видачу судового нак�
     assert.match(text, /Кузьменко Оксана Сергіївна/);
     assert.match(text, /пункту 3 частини 1 статті 161 Цивільного процесуального кодексу/);
     assert.match(text, /8\s*277,40\s*грн/);
-    assert.match(text, /302,80 грн/); // судовий збір
+    assert.match(text, /332,80 грн/); // судовий збір 2026 року: 0,1 × 3 328 грн
     assert.match(text, /ПРОШУ СУД:/);
 });
 

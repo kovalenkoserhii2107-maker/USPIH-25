@@ -89,7 +89,10 @@ test('план/факт і звіт для мешканців без прізв�
     assert.deepEqual(pub.debt, { totalKop: 125040, count: 1 });
     assert.deepEqual(pub.expenses.map(e => [e.supplier, e.amountKop, e.files[0].name]), [['ТОВ Ліфт-Сервіс', 425000, 'akt.pdf']]);
     // Ні прізвищ мешканців, ні номерів квартир, ні призначень оплат.
-    const text = JSON.stringify(pub);
+    // Позначки часу й контрольні суми не перевіряємо: «1045» у них трапляється випадково (залежить від дати запуску).
+    const plain = v => (v instanceof Timestamp ? null : Array.isArray(v) ? v.map(plain)
+        : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !/hash$/i.test(k)).map(([k, x]) => [k, plain(x)])) : v);
+    const text = JSON.stringify(plain(pub));
     assert.ok(!/Шевченко|1045|кв 45/.test(text));
     assert.ok((await db.doc(`finance/${YEAR}`).get()).exists);
     assert.equal((await bud.actions.context({ year: YEAR })).publish.stale, false);

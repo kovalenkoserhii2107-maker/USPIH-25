@@ -58,3 +58,12 @@ test('own income and expenses retain a real financial result instead of forcing 
     assert.equal(result.osv.find(r=>r.acc==='44').closeDr,2000);
     assert.equal(result.funds[0].usedKop,9000);assert.equal(result.funds[0].closeKop,91000);
 });
+
+test('залишок 48 без коду фонду (вхідна ОСВ) належить основному фонду — фонд не показує хибний мінус',()=>{
+    const data=fixture();
+    // Форма вхідної ОСВ записує залишок цільового фінансування без аналітики.
+    data.history.openingLines[1].a='';data.history.entries[2].dA='';data.input.opening.lines[1].a='';
+    const r=core.annual(data);
+    assert.deepEqual([r.funds[0].openKop,r.funds[0].usedKop,r.funds[0].closeKop],[100000,12000,88000]);
+    assert.ok(!r.checks.some(c=>/витрачено більше/.test(c.text)),JSON.stringify(r.checks));
+});
