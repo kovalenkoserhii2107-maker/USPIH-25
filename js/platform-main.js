@@ -52,30 +52,59 @@ import {
 
 const VIEW_META = {
     tenants: {
-        title: 'Управління всіма ОСББ та базами даних',
-        sub: 'Реєстр підключених ОСББ, перемикання активного контуру БД, онбординг нових будинків та моніторинг стану'
+        crumb: 'Огляд',
+        title: 'ОСББ і бази даних',
+        sub: 'Який будинок зараз у роботі, його стан і всі підключені організації'
     },
     bank: {
-        title: 'Симулятор Приват24 Бізнес API «Автоклієнт» v3.0.0',
-        sub: 'Підписання КЕП вихідних платежів ОСББ, генератор вхідних операцій за шаблонами й вільними реквізитами та жива виписка рахунків'
+        crumb: 'Операції',
+        title: 'Банк Приват24',
+        sub: 'Симулятор Автоклієнта: підпис платежів, тестові надходження й виписка — так, як їх побачить бухгалтерія'
     },
     testing: {
-        title: 'Тестовий полігон і симуляція операцій',
-        sub: 'Перевірка бухгалтерських інваріантів, симуляція виписок Приват24, зарплати, податкових та річних звітів ДПС'
+        crumb: 'Операції',
+        title: 'Тести й симуляції',
+        sub: 'Перевірка цілісності обліку й повний цикл на ізольованому тестовому будинку'
     },
     users: {
-        title: 'Статистика користувачів та активність',
-        sub: 'Аналітика входів співвласників, ролей правління й бухгалтерії та живий потік журналу аудиту (audit_log)'
+        crumb: 'Контроль',
+        title: 'Користувачі й аудит',
+        sub: 'Кабінети мешканців, команда правління й журнал усіх дій у системі'
     },
     inspector: {
-        title: 'Інспектор колекцій БД та ручне коригування',
-        sub: 'Перегляд документів, безпечний Break-Glass редактор із попереднім переглядом diff, обовʼязковою підставою та перерахунком балансу'
+        crumb: 'Контроль',
+        title: 'Інспектор бази даних',
+        sub: 'Перегляд документів і виправлення з обовʼязковою підставою та записом в аудит'
     },
     architecture: {
-        title: 'Архітектура Multi-Tenant SaaS (Світові практики)',
-        sub: 'Фундамент масштабування системи на сотні ОСББ: Control Plane, рівні ізоляції БД, подійний облік та безпека'
+        crumb: 'Довідка',
+        title: 'Як влаштована платформа',
+        sub: 'Ізоляція даних, облік у копійках, безпека й план масштабування на сотні ОСББ'
     }
 };
+
+// Короткі підписи для реєстру — повні назви лишаються в platform-core (спільні з сервером).
+const STATUS_SHORT = { active: 'Працює', onboarding: 'Впровадження', sandbox: 'Пісочниця', suspended: 'Призупинено' };
+const ISOLATION_SHORT = {
+    root_default: 'Основна база',
+    namespace_prefix: 'Префікс колекцій',
+    scoped_prefix: 'Префікс колекцій',
+    named_database: 'Окрема база',
+    dedicated_project: 'Окремий проєкт'
+};
+const tenantStatus = t => {
+    const key = t.isSandbox ? 'sandbox' : (TENANT_STATUSES[t.status] ? t.status : 'active');
+    return { key, label: STATUS_SHORT[key], cls: TENANT_STATUSES[key].cls };
+};
+const tenantKind = t => t.isSandbox ? 'Пісочниця — тестові дані' : t.isPrimary ? 'Робоча база' : 'Підключене ОСББ';
+
+/** Заголовок блоку: назва й пояснення ліворуч, дії — праворуч і вирівняні. */
+function secHead(title, sub = '', actions = '') {
+    return `<div class="pf-sec-head">
+        <div class="pf-sec-copy"><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div>
+        ${actions ? `<div class="pf-sec-actions">${actions}</div>` : ''}
+    </div>`;
+}
 
 const PAYMENT_KIND_LABELS = {
     supplier: 'Постачальнику (631)',
@@ -101,6 +130,7 @@ let activeTemplateId = 'resident_exact';
 let selectedSimApt = '';
 let selectedSimApt2 = '';
 let lastSimulatedTxResult = null;
+let bankSection = 'queue';
 let bankBuilderDraft = null;
 
 // Стан для вкладки «Тести й симуляції»
@@ -481,8 +511,11 @@ function updateTenantSwitcher() {
     const wrap = sel?.closest('.pf-db-switcher');
     if (!sel || !overviewData?.tenants) return;
     sel.innerHTML = overviewData.tenants.map(t =>
-        `<option value="${esc(t.id)}"${t.id === activeTenantId ? ' selected' : ''}>${esc(t.name)} (${t.isSandbox ? 'Пісочниця' : `ЄДРПОУ ${t.edrpou}`})</option>`
+        `<option value="${esc(t.id)}"${t.id === activeTenantId ? ' selected' : ''}>${esc(t.name)}</option>`
     ).join('');
+    const cur = overviewData.tenants.find(t => t.id === activeTenantId);
+    const meta = document.getElementById('pfCtxMeta');
+    if (meta) meta.textContent = cur ? `${tenantKind(cur)}${cur.isSandbox ? '' : ` · ЄДРПОУ ${cur.edrpou || '—'}`}` : '';
     if (wrap) wrap.classList.toggle('is-sandbox', activeTenantId.startsWith('sandbox~'));
     updateBankBadges();
 }
@@ -493,15 +526,18 @@ async function switchView(viewName, { push = true } = {}) {
     document.querySelectorAll('.pf-view').forEach(el => {
         el.hidden = el.dataset.view !== viewName;
     });
-    document.querySelectorAll('[data-view]').forEach(btn => {
-        if (btn.matches('.buh-nav-item, .buh-tab')) {
-            btn.classList.toggle('active', btn.dataset.view === viewName);
-        }
+    document.querySelectorAll('.pf-side-item[data-view], .buh-tab[data-view]').forEach(btn => {
+        const on = btn.dataset.view === viewName;
+        btn.classList.toggle('active', on);
+        if (on) btn.setAttribute('aria-current', 'page');
+        else btn.removeAttribute('aria-current');
     });
+    document.getElementById('pfCrumb').textContent = VIEW_META[viewName].crumb;
     document.getElementById('pfTitle').textContent = VIEW_META[viewName].title;
     document.getElementById('pfSubtitle').textContent = VIEW_META[viewName].sub;
     if (push && location.hash !== `#${viewName}`) {
         history.pushState(null, '', `#${viewName}`);
+        window.scrollTo({ top: 0 });
     }
     await renderCurrentView();
 }
@@ -533,9 +569,9 @@ async function renderCurrentView() {
 // ============================================================
 function tenantFormHtml(t = {}) {
     const isEdit = Boolean(t.id);
-    return `<section class="buh-card ex-form" id="pfTenantForm" style="margin-bottom:16px">
+    return `<section class="buh-card ex-form pf-form" id="pfTenantForm">
         <div class="buh-card-head">
-            <h2>${isEdit ? `Налаштування ОСББ: ${esc(t.name)}` : 'Підключити нове ОСББ до платформи (Multi-Tenant Onboarding)'}</h2>
+            <h2>${isEdit ? `Реквізити: ${esc(t.name)}` : 'Підключити нове ОСББ'}</h2>
             <button type="button" class="btn-ghost-small" data-pf-act="close-tenant-form">Закрити</button>
         </div>
         <p class="buh-note">Кожне ОСББ отримує власний ізольований контур бази даних (Namespace або окрему Named Database Firestore), власний план рахунків, тарифи, інтеграцію з Приват24 Автоклієнт та незалежний журнал аудиту.</p>
@@ -567,7 +603,7 @@ function tenantFormHtml(t = {}) {
             ${!isEdit ? `<label class="am-check pay-wide"><input type="checkbox" id="tfInitSchema" checked><span>Автоматично ініціалізувати базові налаштування обліку (osbb_settings/finance, charges/settings) в ізольованому просторі ОСББ</span></label>` : ''}
         </div>
         <div class="pay-form-actions">
-            <button type="button" class="sv-btn" style="width:auto" data-pf-act="save-tenant" data-edit="${isEdit ? '1' : '0'}">${isEdit ? 'Зберегти зміни ОСББ' : 'Створити контур ОСББ'}</button>
+            <button type="button" class="pf-btn" data-pf-act="save-tenant" data-edit="${isEdit ? '1' : '0'}">${isEdit ? 'Зберегти зміни ОСББ' : 'Створити контур ОСББ'}</button>
         </div>
     </section>`;
 }
@@ -579,80 +615,108 @@ function renderTenantsView() {
     const tenants = overviewData.tenants || [];
     const c = overviewData.counts || {};
     const diag = overviewData.diagnostics || { allOk: true, passedCount: 0, checks: [] };
+    const cur = tenants.find(t => t.id === activeTenantId) || tenants[0] || { id: activeTenantId, name: activeTenantId };
+    const st = tenantStatus(cur);
+    const pending = Number(c.paymentsPending || 0);
+    const review = Number(c.bankReview || 0);
+    const checksTotal = (diag.checks || []).length;
+
+    const stat = ({ label, value, note, tone = '', act = '', to = '', section = '' }) => {
+        const tag = act ? 'button' : 'div';
+        const attrs = act
+            ? ` type="button" data-pf-act="${act}"${to ? ` data-to="${to}"` : ''}${section ? ` data-section="${section}"` : ''}`
+            : '';
+        return `<${tag} class="pf-stat${tone ? ` is-${tone}` : ''}${act ? ' is-link' : ''}"${attrs}>
+            <span>${label}</span><b>${value}</b><small>${note}</small>
+        </${tag}>`;
+    };
+
+    const realCount = tenants.filter(t => !t.isSandbox).length;
 
     host.innerHTML = `
-        <div class="kpi-grid" style="margin-bottom: 14px;">
-            <div class="kpi">
-                <span>Підключені бази ОСББ</span>
-                <b>${tenants.length}</b>
-                <small>активний контур: ${esc(activeTenantId)}</small>
+        <section class="pf-hero${cur.isSandbox ? ' is-sandbox' : ''}">
+            <div class="pf-hero-id">
+                <div class="pf-hero-tags">
+                    <span class="pf-kind"><i aria-hidden="true"></i>${esc(tenantKind(cur))}</span>
+                    <span class="sv-chip ${st.cls}">${esc(st.label)}</span>
+                </div>
+                <h2>${esc(cur.name)}</h2>
+                <p>${esc(cur.address || cur.city || 'Адресу не вказано')}</p>
+                <dl class="pf-facts">
+                    <div><dt>ЄДРПОУ</dt><dd>${esc(cur.edrpou || '—')}</dd></div>
+                    <div><dt>Ідентифікатор бази</dt><dd><code>${esc(cur.id)}</code></dd></div>
+                    <div><dt>Ізоляція даних</dt><dd>${esc(ISOLATION_SHORT[cur.isolationMode] || 'Основна база')}</dd></div>
+                    ${cur.debtKop !== undefined ? `<div><dt>Борг мешканців</dt><dd class="is-out">${fmtKop(cur.debtKop)} грн</dd></div>` : ''}
+                    ${cur.overpaidKop !== undefined ? `<div><dt>Переплати</dt><dd>${fmtKop(cur.overpaidKop)} грн</dd></div>` : ''}
+                </dl>
             </div>
-            <div class="kpi">
-                <span>Квартир в активній базі</span>
-                <b>${c.apartments || 0}</b>
-                <small>адмін-акаунтів: ${c.staff || 0} · судових справ: ${c.claims || 0}</small>
+
+            <div class="pf-hero-stats">
+                ${stat({ label: 'Квартир', value: c.apartments || 0, note: `команда: ${c.staff || 0} · справ у суді: ${c.claims || 0}` })}
+                ${stat({ label: 'Операції банку', value: c.bankTx || 0, note: review ? `чекають рішення: ${review}` : 'усі розібрано', tone: review ? 'warn' : '', act: 'goto', to: 'bank', section: 'statement' })}
+                ${stat({ label: 'На підписі', value: pending, note: pending ? 'платежі в Приват24' : 'черга порожня', tone: pending ? 'warn' : '', act: 'goto', to: 'bank', section: 'queue' })}
+                ${stat({ label: 'Цілісність обліку', value: diag.allOk ? 'Норма' : `${diag.failedCount} розбіжн.`, note: `перевірок пройдено: ${diag.passedCount}/${checksTotal}`, tone: diag.allOk ? 'ok' : 'bad', act: 'goto', to: 'testing' })}
             </div>
-            <div class="kpi">
-                <span>Операцій банку та платежів</span>
-                <b>${(c.bankTx || 0) + (c.payments || 0)}</b>
-                <small>на підписі КЕП: ${c.paymentsPending || 0} · чекають рішення: ${c.bankReview || 0}</small>
+
+            <div class="pf-hero-actions">
+                <button type="button" class="pf-btn" data-pf-act="goto" data-to="bank">Банк Приват24</button>
+                <button type="button" class="pf-btn is-soft" data-pf-act="goto" data-to="inspector">Інспектор БД</button>
+                <button type="button" class="pf-btn is-soft" data-pf-act="goto" data-to="users">Журнал дій</button>
+                ${cur.isSandbox
+                    ? `<a href="accounting-test.html" class="pf-btn is-ghost">Полігон на весь екран ↗</a>`
+                    : `<button type="button" class="pf-btn is-ghost" data-pf-act="edit-tenant" data-id="${esc(cur.id)}">Реквізити ОСББ</button>`}
             </div>
-            <div class="kpi">
-                <span>Цілісність обліку (Invariants)</span>
-                <b style="color:${diag.allOk ? '#16A34A' : '#DC2626'}">${diag.allOk ? '100% ОК' : `Увага (${diag.failedCount})`}</b>
-                <small>перевірено ${diag.passedCount}/${(diag.checks || []).length} контрольних тотожностей</small>
-            </div>
-        </div>
+        </section>
 
         ${showNewTenantForm ? tenantFormHtml(editingTenant || {}) : ''}
 
-        <div class="buh-card">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17px">Реєстр організацій та баз даних (Multi-Tenant Control Plane)</h2>
-                    <p class="buh-note" style="margin:2px 0 0">Перемикайте активну базу даних для огляду, симуляції банку Приват24, тестування, аудиту користувачів або точкового коригування записів.</p>
+        <section class="buh-card pf-reg">
+            ${secHead(
+                `Усі організації <span class="pf-count">${tenants.length}</span>`,
+                `${realCount} ОСББ і тестова пісочниця. Перемкніть базу — усі розділи покажуть її дані.`,
+                `<button type="button" class="pf-btn" data-pf-act="open-new-tenant">+ Підключити ОСББ</button>`
+            )}
+            <div class="pf-reg-list" role="list">
+                <div class="pf-reg-row pf-reg-headrow" aria-hidden="true">
+                    <span>Організація</span><span>ЄДРПОУ</span><span>Квартир</span><span>Ізоляція</span><span>Стан</span><span></span>
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="open-bank-tab">Відкрити Банк Приват24 ›</button>
-                    <button type="button" class="sv-btn" style="width:auto;min-height:40px;padding:0 18px" data-pf-act="open-new-tenant">+ Підключити нове ОСББ</button>
-                </div>
-            </div>
-
-            <div class="pf-tenant-grid">
                 ${tenants.map(t => {
-                    const st = TENANT_STATUSES[t.status] || TENANT_STATUSES.active;
-                    const iso = ISOLATION_MODES[t.isolationMode] || { title: t.isolationMode || 'Root Default' };
+                    const ts = tenantStatus(t);
                     const isCurrent = t.id === activeTenantId;
-                    return `<article class="pf-tenant-card${isCurrent ? ' is-active-context' : ''}">
-                        <div>
-                            <div class="pf-tenant-top">
-                                <div>
-                                    <h3 class="pf-tenant-title">${esc(t.name)}</h3>
-                                    <p class="pf-tenant-sub">${esc(t.address || t.city || 'Адресу не вказано')}</p>
-                                </div>
-                                <span class="sv-chip ${st.cls}">${esc(st.label)}</span>
-                            </div>
-                            <div class="pf-tenant-meta" style="margin-top:12px">
-                                <div><span>ID контуру БД</span><b>${esc(t.id)}</b></div>
-                                <div><span>Код ЄДРПОУ</span><b>${esc(t.edrpou || '—')}</b></div>
-                                <div><span>Приміщень</span><b>${t.apartmentsCount ?? '—'}</b></div>
-                                <div><span>Ізоляція БД</span><b>${esc(iso.title.split('(')[0].trim())}</b></div>
-                                ${t.debtKop !== undefined ? `<div><span>Загальний борг</span><b class="is-out">${fmtKop(t.debtKop)} грн</b></div>` : ''}
-                                ${t.overpaidKop !== undefined ? `<div><span>Переплата</span><b>${fmtKop(t.overpaidKop)} грн</b></div>` : ''}
-                            </div>
+                    return `<div class="pf-reg-row${isCurrent ? ' is-current' : ''}${t.isSandbox ? ' is-sandbox' : ''}" role="listitem">
+                        <div class="pf-reg-name">
+                            <span class="pf-reg-dot" aria-hidden="true"></span>
+                            <div><b>${esc(t.name)}</b><small>${esc(t.address || t.city || 'Адресу не вказано')}</small></div>
                         </div>
-                        <div class="pf-tenant-actions">
-                            <button type="button" class="sv-btn${isCurrent ? ' is-soft' : ''} btn-compact" data-pf-act="select-tenant" data-id="${esc(t.id)}">
-                                ${isCurrent ? '✓ Активний контур' : 'Перемкнути на цю базу'}
+                        <div class="pf-reg-cell" data-label="ЄДРПОУ">${esc(t.isSandbox ? '—' : (t.edrpou || '—'))}</div>
+                        <div class="pf-reg-cell" data-label="Квартир">${t.apartmentsCount ?? '—'}</div>
+                        <div class="pf-reg-cell" data-label="Ізоляція">${esc(ISOLATION_SHORT[t.isolationMode] || '—')}</div>
+                        <div class="pf-reg-cell" data-label="Стан"><span class="sv-chip ${ts.cls}">${esc(ts.label)}</span></div>
+                        <div class="pf-reg-actions">
+                            ${isCurrent
+                                ? `<span class="pf-current-mark">✓ У роботі</span>`
+                                : `<button type="button" class="pf-btn is-sm" data-pf-act="select-tenant" data-id="${esc(t.id)}">Перемкнути</button>`}
+                            <button type="button" class="pf-icon-btn" data-pf-act="open-tenant-bank" data-id="${esc(t.id)}" title="Банк Приват24 цієї бази" aria-label="Банк Приват24: ${esc(t.name)}">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 10h18"/><path d="M12 3 3 8h18z"/><path d="M5 10v8M9 10v8M15 10v8M19 10v8"/><path d="M3 21h18"/></svg>
                             </button>
-                            <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="open-tenant-bank" data-id="${esc(t.id)}">Банк Приват24 ›</button>
-                            <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="inspect-tenant" data-id="${esc(t.id)}">Інспектор БД ›</button>
-                            ${!t.isSandbox ? `<button type="button" class="btn-ghost-small" data-pf-act="edit-tenant" data-id="${esc(t.id)}">Реквізити</button>` : `<a href="accounting-test.html" class="btn-ghost-small">Повний полігон ›</a>`}
+                            <button type="button" class="pf-icon-btn" data-pf-act="inspect-tenant" data-id="${esc(t.id)}" title="Інспектор БД цієї бази" aria-label="Інспектор БД: ${esc(t.name)}">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                            </button>
+                            ${t.isSandbox
+                                ? `<a href="accounting-test.html" class="pf-icon-btn" title="Тестовий полігон на весь екран" aria-label="Тестовий полігон на весь екран">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>`
+                                : `<button type="button" class="pf-icon-btn" data-pf-act="edit-tenant" data-id="${esc(t.id)}" title="Реквізити й налаштування" aria-label="Реквізити: ${esc(t.name)}">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>`}
                         </div>
-                    </article>`;
+                    </div>`;
                 }).join('')}
             </div>
-        </div>
+        </section>
+
+        <button type="button" class="pf-more-link" data-pf-act="goto" data-to="architecture">
+            <span><b>Як влаштована платформа</b><small>Ізоляція даних кожного ОСББ, облік у копійках, безпека й план масштабування</small></span>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
     `;
 }
 
@@ -763,9 +827,9 @@ function bankSetupFormHtml() {
     const curGrn = ((curAcc.balanceKop ?? curAcc.defaultBalanceKop ?? 28540000) / 100).toFixed(2).replace('.', ',');
     const resGrn = ((resAcc.balanceKop ?? resAcc.defaultBalanceKop ?? 15000000) / 100).toFixed(2).replace('.', ',');
 
-    return `<section class="buh-card ex-form" id="pfBankSetupForm" style="margin-bottom:14px">
+    return `<section class="buh-card ex-form pf-form" id="pfBankSetupForm">
         <div class="buh-card-head">
-            <h2>Налаштування віртуального підключення Приват24 Автоклієнт v3.0.0 та рахунків ОСББ</h2>
+            <h2>Рахунки й залишки в симуляторі</h2>
             <button type="button" class="btn-ghost-small" data-pf-act="toggle-bank-setup">Закрити</button>
         </div>
         <p class="buh-note">Після активації віртуального ключа всі розділи Бухгалтерії (<code>buh.html</code>: «Документи», «Зарплата», «Авансові звіти», «Платежі», «Банк») працюють так, ніби введено бойовий токен ПриватБанку: рахунки доступні для оплати, а всі відправлені платежі потрапляють сюди в чергу на КЕП-підпис.</p>
@@ -780,8 +844,8 @@ function bankSetupFormHtml() {
                 <input id="bsSetupResBal" class="field-input" inputmode="decimal" value="${esc(resGrn)}"></label>
         </div>
         <div class="pay-form-actions" style="display:flex;gap:10px;flex-wrap:wrap">
-            <button type="button" class="sv-btn" style="width:auto" data-pf-act="save-bank-setup">✓ Активувати віртуальний ключ Приват24 та зберегти рахунки</button>
-            ${bankSimData?.bankSettings?.simulator ? `<button type="button" class="btn-ghost-small" style="color:#B91C1C" data-pf-act="disable-bank-sim">Вимкнути режим симулятора</button>` : ''}
+            <button type="button" class="pf-btn" data-pf-act="save-bank-setup">Зберегти й підключити симулятор</button>
+            ${bankSimData?.bankSettings?.simulator ? `<button type="button" class="pf-btn is-ghost is-danger" data-pf-act="disable-bank-sim">Вимкнути симулятор</button>` : ''}
         </div>
     </section>`;
 }
@@ -793,9 +857,9 @@ function testOutPaymentFormHtml() {
     const sups = bankSimData?.suppliers || [];
     const defaultSup = sups[0] || { name: 'ТОВ «Одесаліфт-Сервіс»', code: '34512890', iban: 'UA053052990000026007778889991' };
 
-    return `<section class="buh-card ex-form" id="pfTestOutPayForm" style="margin-bottom:14px">
+    return `<section class="buh-card ex-form pf-form" id="pfTestOutPayForm">
         <div class="buh-card-head">
-            <h2>Створити тестовий вихідний платіж ОСББ (відправити в Приват24 на підпис КЕП)</h2>
+            <h2>Тестовий платіж на підпис</h2>
             <button type="button" class="btn-ghost-small" data-pf-act="toggle-test-out-pay">Закрити</button>
         </div>
         <p class="buh-note">Ви можете створити платіж у розділах Бухгалтерії (<a href="buh.html#expenses">«Документи»</a>, <a href="buh.html#payroll">«Зарплата»</a>, <a href="buh.html#advance">«Авансові звіти»</a>, <a href="buh.html#payments">«Платежі»</a>) або прямо тут — він одразу зʼявиться в черзі на підпис КЕП нижче.</p>
@@ -830,7 +894,7 @@ function testOutPaymentFormHtml() {
                 <input id="tpPurpose" class="field-input" maxlength="160" value="Оплата за технічне обслуговування ліфтів згідно з актом № 10/26, без ПДВ"></label>
         </div>
         <div class="pay-form-actions">
-            <button type="button" class="sv-btn" style="width:auto" data-pf-act="create-test-out-pay">Відправити платіж у Приват24 на підпис КЕП</button>
+            <button type="button" class="pf-btn" data-pf-act="create-test-out-pay">Відправити на підпис</button>
         </div>
     </section>`;
 }
@@ -870,117 +934,95 @@ async function renderBankView() {
         myEdrpou: bankSimData.org?.edrpou
     });
 
-    host.innerHTML = `
-        <!-- Статус підключення Приват24 Автоклієнт v3.0.0 та Тестовий ключ -->
-        <div class="buh-card pf-bank-banner ${bs.connected ? '' : 'is-disconnected'}" style="margin-bottom: 14px; flex-direction: column; align-items: stretch;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
-                <div style="flex: 1 1 320px;">
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-                        <span class="pf-p24-pill ${bs.connected ? '' : 'is-warn'}">
-                            ${bs.connected ? '● Приват24 Автоклієнт v3.0.0 ПІДКЛЮЧЕНО' : '○ Приват24 Автоклієнт не активовано'}
-                        </span>
-                        ${bs.simulator
-                            ? `<span class="buh-tag is-payment">Тестове середовище Приват24 (Ключ ••••${esc(bs.tokenHint || '_V3')})</span>`
-                            : bs.tokenSet
-                                ? `<span class="buh-tag is-work">Бойовий сервер acp.privatbank.ua (Ключ ••••${esc(bs.tokenHint || '')})</span>`
-                                : ''}
-                        <span class="buh-note">Контур: <b>${esc(bankSimData.org?.name || activeTenantId)}</b> (ЄДРПОУ ${esc(bankSimData.org?.edrpou || '—')})</span>
-                    </div>
-                    <p class="buh-note" style="margin:0">
-                        Зовнішня симуляція на рівні HTTP-транспорту (<code>functions/privat.js</code> та <code>functions/privat-payroll-api.js</code>): якщо в «Налаштуваннях» бухгалтерії введено <b>тестовий ключ</b>, усі запити йдуть у ізольоване тестове середовище банку (<code>_privat24_sandbox*</code>). Якщо ввести <b>реальний ключ Автоклієнта</b> — система автоматично перемикається на бойовий сервер <code>https://acp.privatbank.ua</code> без жодних змін у коді бухгалтерії.
-                    </p>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    ${bs.tokenSet && !bs.simulator ? `
-                        <span class="buh-tag is-work">Підключено справжній Приват24 — дії симулятора вимкнено</span>
-                    ` : !bs.connected || !bs.simulator ? `
-                        <button type="button" class="sv-btn btn-compact" data-pf-act="quick-enable-sim">⚡ Підключити тестовий ключ (saveToken)</button>
-                    ` : ''}
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="bank-trigger-sync" title="Викликати штатний bank.sync() так само, як кнопка «Виписка» у бухгалтерії">
-                        🔄 Синхронізувати виписку (bank.sync)
-                    </button>
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-bank-setup">
-                        ${showBankSetupForm ? 'Сховати рахунки банку' : 'Рахунки та баланси в банку'}
-                    </button>
-                </div>
-            </div>
+    const realBank = bs.tokenSet && !bs.simulator;
+    const sections = [
+        ['queue', 'На підписі', pending.length],
+        ['generator', 'Нова операція', null],
+        ['statement', 'Виписка', recentTx.length]
+    ];
+    if (!sections.some(([k]) => k === bankSection)) bankSection = 'queue';
 
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;margin-top:8px">
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <span class="buh-note" style="font-weight:700;color:#0F172A">Тестовий ключ Автоклієнта (вводить голова в <a href="buh.html#settings">«Налаштуваннях»</a>, лише замість іншого тестового):</span>
-                    <code id="pfTestTokenCode" style="background:#EFF6FF;color:#1D4ED8;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;border:1px solid #BFDBFE;user-select:all">${esc(bs.testTokenForTenant || bs.sandboxToken || DEFAULT_TEST_TOKEN)}</code>
-                    <button type="button" class="btn-ghost-small" data-pf-act="copy-test-token">📋 Скопіювати ключ</button>
+    host.innerHTML = `
+        <section class="buh-card pf-bank-status${bs.connected ? '' : ' is-off'}">
+            <div class="pf-bank-row">
+                <div class="pf-bank-id">
+                    <span class="pf-p24-pill${bs.connected ? '' : ' is-warn'}">
+                        ${realBank ? '● Справжній Приват24' : bs.connected ? '● Симулятор Автоклієнта підключено' : '○ Банк не підключено'}
+                    </span>
+                    <b>${esc(bankSimData.org?.name || activeTenantId)}</b>
+                    <small>ЄДРПОУ ${esc(bankSimData.org?.edrpou || '—')}${bs.tokenSet || bs.simulator ? ` · ключ ••••${esc(bs.tokenHint || '')}` : ''}${realBank ? ' · дії симулятора вимкнено' : ''}</small>
                 </div>
-                <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-                    <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:#334155;cursor:pointer" title="Якщо увімкнено, після підписання платежу або генерації вхідної транзакції в банку одразу викликається штатний bank.sync(). Якщо вимкнути — подія залишиться тільки на боці банку до натискання кнопки «Виписка» у бухгалтерії.">
-                        <input type="checkbox" id="pfAutoSync" ${autoSyncBank ? 'checked' : ''}>
-                        <span>Авто-виклик <code>bank.sync()</code> після події в банку</span>
-                    </label>
-                    <a href="buh.html#settings" class="btn-ghost-small">У «Налаштування» ↗</a>
-                    <a href="buh.html#bank" class="btn-ghost-small">У «Банк» ↗</a>
-                    <a href="buh.html#inbox" class="btn-ghost-small">У «Рішення» ↗</a>
-                    <a href="buh.html#payments" class="btn-ghost-small">У «Платежі» ↗</a>
+                <div class="pf-sec-actions">
+                    ${!realBank && (!bs.connected || !bs.simulator)
+                        ? `<button type="button" class="pf-btn" data-pf-act="quick-enable-sim">Підключити тестовий ключ</button>` : ''}
+                    <button type="button" class="pf-btn is-soft" data-pf-act="bank-trigger-sync" title="Те саме, що кнопка «Виписка» в бухгалтерії">Отримати виписку</button>
+                    <button type="button" class="pf-btn is-soft${showBankSetupForm ? ' is-on' : ''}" data-pf-act="toggle-bank-setup">Рахунки й залишки</button>
                 </div>
             </div>
-        </div>
+            <div class="pf-bank-row is-sub">
+                <div class="pf-token">
+                    <span>Тестовий ключ</span>
+                    <code id="pfTestTokenCode">${esc(bs.testTokenForTenant || bs.sandboxToken || DEFAULT_TEST_TOKEN)}</code>
+                    <button type="button" class="pf-btn is-sm is-soft" data-pf-act="copy-test-token">Копіювати</button>
+                </div>
+                <label class="pf-check">
+                    <input type="checkbox" id="pfAutoSync" ${autoSyncBank ? 'checked' : ''}>
+                    <span>Оновлювати виписку після кожної події</span>
+                </label>
+            </div>
+            <p class="pf-bank-hint">
+                Голова вводить тестовий ключ у <a href="buh.html#settings">«Налаштуваннях»</a> бухгалтерії — тоді всі запити йдуть у тестове середовище банку.
+                Справжній ключ Автоклієнта перемикає на <code>acp.privatbank.ua</code> без змін у бухгалтерії.
+                Результат видно в <a href="buh.html#bank">«Банку»</a>, <a href="buh.html#inbox">«Рішеннях»</a> і <a href="buh.html#payments">«Платежах»</a>.
+            </p>
+        </section>
 
         ${showBankSetupForm ? bankSetupFormHtml() : ''}
 
-        <!-- KPI Рахунків та черги -->
-        <div class="kpi-grid" style="margin-bottom: 16px;">
-            <div class="kpi">
-                <span>Поточний рахунок (311)</span>
-                <b>${curAcc ? `${fmtKop(curAcc.balanceKop)} грн` : 'Не підключено'}</b>
-                <small>${curAcc ? esc(curAcc.iban) : 'активуйте ключ вище'}</small>
+        <div class="pf-kpis">
+            <div class="pf-stat">
+                <span>Поточний рахунок</span>
+                <b>${curAcc ? `${fmtKop(curAcc.balanceKop)} грн` : '—'}</b>
+                <small>${curAcc ? esc(curAcc.iban) : 'підключіть тестовий ключ'}</small>
             </div>
-            <div class="kpi">
-                <span>Резервний / Ремонтний фонд (311)</span>
+            <div class="pf-stat">
+                <span>Резервний фонд</span>
                 <b>${resAcc ? `${fmtKop(resAcc.balanceKop)} грн` : '—'}</b>
                 <small>${resAcc ? esc(resAcc.iban) : 'другий рахунок ОСББ'}</small>
             </div>
-            <div class="kpi">
-                <span>Очікують підпису КЕП у Приват24</span>
-                <b style="color:${pending.length ? '#2563EB' : '#0F172A'}">${pending.length} пл. (${fmtKop(pendingTotalKop)} грн)</b>
-                <small>${pending.length ? 'готові до підписання нижче' : 'усі вихідні платежі проведено'}</small>
-            </div>
-            <div class="kpi">
-                <span>Виписка рахунку (bank_tx)</span>
-                <b>${recentTx.length} опер.</b>
-                <small>чекають рішення: ${reviewTxCount} · авто-рознесено: ${recentTx.length - reviewTxCount}</small>
-            </div>
+            <button type="button" class="pf-stat is-link${pending.length ? ' is-warn' : ''}" data-pf-act="bank-section" data-section="queue">
+                <span>На підписі КЕП</span>
+                <b>${pending.length}</b>
+                <small>${pending.length ? `на ${fmtKop(pendingTotalKop)} грн` : 'усі платежі проведено'}</small>
+            </button>
+            <button type="button" class="pf-stat is-link${reviewTxCount ? ' is-warn' : ''}" data-pf-act="bank-section" data-section="statement">
+                <span>Операцій у виписці</span>
+                <b>${recentTx.length}</b>
+                <small>${reviewTxCount ? `чекають рішення: ${reviewTxCount}` : 'усі розібрано'}</small>
+            </button>
         </div>
 
-        <!-- БЛОК 1: ЧЕРГА ВИХІДНИХ ПЛАТЕЖІВ НА ПІДПИС КЕП -->
-        <div class="buh-card" style="margin-bottom: 16px;">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17.5px">1. Приват24 для бізнесу — Платежі ОСББ, що очікують підпису КЕП (${pending.length})</h2>
-                    <p class="buh-note" style="margin:3px 0 0">
-                        Сюди автоматично потрапляють усі платежі, відправлені з <a href="buh.html#expenses">«Документів»</a>, <a href="buh.html#payroll">«Зарплати»</a>, <a href="buh.html#advance">«Авансових звітів»</a> та <a href="buh.html#payments">«Платежів»</a>.
-                        Натисніть <b>«Підписати КЕП і провести»</b> — система виконає <code>POST /api/proxy/payment/add-sign</code> і <code>GET /api/statements/transactions</code> (<code>TRANTYPE: "D"</code>, <code>DLR</code>), спише кошти з рахунку та закриє платіж і первинний документ.
-                    </p>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-test-out-pay">+ Створити платіж на підпис</button>
-                    ${pending.length > 1 ? `<button type="button" class="sv-btn btn-compact" data-pf-act="bank-sign-all">✍️ Підписати КЕП всі (${pending.length})</button>` : ''}
-                </div>
-            </div>
+        <div class="pf-seg" role="tablist" aria-label="Банк Приват24">
+            ${sections.map(([k, label, n]) => `<button type="button" role="tab" class="pf-seg-item${k === bankSection ? ' active' : ''}" aria-selected="${k === bankSection}" data-pf-act="bank-section" data-section="${k}">${label}${n ? `<span class="pf-seg-n">${n}</span>` : ''}</button>`).join('')}
+        </div>
+
+        ${bankSection === 'queue' ? `
+        <div class="buh-card pf-bank-card">
+            ${secHead(
+                'Платежі, що чекають підпису КЕП',
+                'Сюди потрапляють платежі з <a href="buh.html#expenses">«Документів»</a>, <a href="buh.html#payroll">«Зарплати»</a> і <a href="buh.html#payments">«Платежів»</a>. «Підписати» проводить платіж так, як це зробив би банк, і додає списання у виписку.',
+                `<button type="button" class="pf-btn is-soft" data-pf-act="toggle-test-out-pay">${showTestOutPayForm ? 'Сховати форму' : '+ Тестовий платіж'}</button>
+                 ${pending.length > 1 ? `<button type="button" class="pf-btn" data-pf-act="bank-sign-all">Підписати всі (${pending.length})</button>` : ''}`
+            )}
 
             ${showTestOutPayForm ? testOutPaymentFormHtml() : ''}
 
-            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:10px 12px;background:#F8FAFC;border-radius:10px;margin-top:10px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-                    <span class="t-muted">Дата проведення банком (DAT_OD):</span>
-                    <input type="date" id="pfSignDate" class="field-input" style="width:auto;height:34px;padding:0 10px" value="${esc(bankSimData.today || '2026-10-20')}">
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-                    <span class="t-muted">Час (TIM_P):</span>
-                    <input type="time" id="pfSignTime" class="field-input" style="width:auto;height:34px;padding:0 10px" value="${esc(nowTime)}">
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                    <input type="checkbox" id="pfSignFee">
-                    <span>Одночасно списати комісію ПриватБанку за платіж (5,00 грн, Дт 92 Кт 311)</span>
-                </label>
+            <div class="pf-sign-opts">
+                <label><span>Дата проведення</span>
+                    <input type="date" id="pfSignDate" class="field-input" value="${esc(bankSimData.today || '2026-10-20')}"></label>
+                <label><span>Час</span>
+                    <input type="time" id="pfSignTime" class="field-input" value="${esc(nowTime)}"></label>
+                <label class="pf-check"><input type="checkbox" id="pfSignFee"><span>Списати комісію банку 5,00 грн (Дт 92 Кт 311)</span></label>
             </div>
 
             ${pending.length ? `
@@ -990,7 +1032,7 @@ async function renderBankView() {
                             <div class="pf-pay-head">
                                 <div>
                                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-                                        <span class="buh-tag is-review">Чекає підпису КЕП</span>
+                                        <span class="buh-tag is-review">Чекає підпису</span>
                                         <span class="buh-tag">${esc(PAYMENT_KIND_LABELS[p.kind] || p.kind || 'Платіж')}</span>
                                         <small class="t-muted">${esc(p.linkedInfo || '')}</small>
                                     </div>
@@ -1012,11 +1054,11 @@ async function renderBankView() {
 
                             <div class="pf-pay-actions">
                                 <div style="display:flex;gap:8px;flex-wrap:wrap">
-                                    <button type="button" class="sv-btn btn-compact" data-pf-act="bank-sign-one" data-id="${esc(p.id)}">✍️ Підписати КЕП і провести в Приват24</button>
-                                    <button type="button" class="sv-btn is-soft btn-compact" style="color:#B91C1C" data-pf-act="bank-reject-one" data-id="${esc(p.id)}">✕ Відхилити банком</button>
+                                    <button type="button" class="pf-btn" data-pf-act="bank-sign-one" data-id="${esc(p.id)}">Підписати й провести</button>
+                                    <button type="button" class="pf-btn is-soft is-danger" data-pf-act="bank-reject-one" data-id="${esc(p.id)}">Відхилити банком</button>
                                 </div>
                                 <details>
-                                    <summary class="buh-note" style="cursor:pointer;font-weight:600;color:#2563EB">{ } Показати JSON-пакети API Приват24 v3.0.0</summary>
+                                    <summary class="buh-note pf-json-sum">Запити до API Приват24 (JSON)</summary>
                                     <pre class="pf-api-preview">${esc(JSON.stringify(p.privatApi, null, 2))}</pre>
                                 </details>
                             </div>
@@ -1033,18 +1075,15 @@ async function renderBankView() {
             `}
         </div>
 
-        <!-- БЛОК 2: КОНСТРУКТОР ВХІДНИХ (І ВИХІДНИХ) ПЛАТЕЖІВ НА БАНК -->
-        <div class="buh-card" style="margin-bottom: 16px;">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17.5px">2. Генератор вхідних (та вихідних) операцій по рахунку Приват24 (Шаблони + Вільні реквізити)</h2>
-                    <p class="buh-note" style="margin:3px 0 0">
-                        Оберіть готовий шаблон або введіть будь-які власні реквізити. Операція формується рівно за специфікацією <code>GET https://acp.privatbank.ua/api/statements/transactions</code> і проходить через штатний класифікатор <code>bank.js</code>.
-                    </p>
-                </div>
-            </div>
+        ` : ''}
 
-            <h3 style="margin:12px 0 6px;font-size:14.5px;color:#334155">Швидкі шаблони операцій Приват24 (натисніть картку для заповнення форми або «⚡ В 1 клік» для миттєвого проведення):</h3>
+        ${bankSection === 'generator' ? `
+        <div class="buh-card pf-bank-card">
+            ${secHead(
+                'Нова операція у виписці',
+                'Оберіть шаблон або впишіть власні реквізити. Операція має формат відповіді Приват24 і проходить через той самий розбір, що й справжня виписка.'
+            )}
+            <h3 class="pf-sub-h">Шаблони — картка заповнює форму, «В 1 клік» проводить одразу</h3>
             <div class="pf-tpl-grid">
                 ${BANK_SIM_TEMPLATES.map(tpl => `
                     <div class="pf-tpl-card${tpl.id === activeTemplateId ? ' is-active' : ''}" data-pf-act="bank-pick-tpl" data-tpl="${esc(tpl.id)}">
@@ -1058,7 +1097,7 @@ async function renderBankView() {
                         </div>
                         <div class="pf-tpl-foot">
                             <span class="buh-note" style="font-size:11.5px">${tpl.id === activeTemplateId ? '✓ Обрано у формі нижче' : 'Натисніть для редагування'}</span>
-                            <button type="button" class="sv-btn is-soft btn-compact" style="min-height:30px;padding:0 10px;font-size:12px" data-pf-act="bank-quick-tpl" data-tpl="${esc(tpl.id)}">⚡ В 1 клік</button>
+                            <button type="button" class="pf-btn is-sm" data-pf-act="bank-quick-tpl" data-tpl="${esc(tpl.id)}">⚡ В 1 клік</button>
                         </div>
                     </div>
                 `).join('')}
@@ -1142,28 +1181,25 @@ async function renderBankView() {
                 <pre id="bsJsonPreview" class="pf-api-preview">${esc(JSON.stringify({ status: 'SUCCESS', exist_next_page: false, transactions: [previewRawTx] }, null, 2))}</pre>
             </details>
 
-            <div class="pay-form-actions" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <button type="button" class="sv-btn" style="width:auto" data-pf-act="bank-sim-submit">
-                    🚀 Провести операцію через API Приват24 у виписку ОСББ
+            <div class="pf-form-actions">
+                <button type="button" class="pf-btn" data-pf-act="bank-sim-submit">
+                    Провести операцію
                 </button>
-                <span class="buh-note">Операція одразу зʼявиться у виписці нижче та в Бухгалтерії (<a href="buh.html#bank">«Банк»</a> / <a href="buh.html#inbox">«Рішення»</a>).</span>
+                <span class="buh-note">Операція зʼявиться у «Виписці» тут і в бухгалтерії — у <a href="buh.html#bank">«Банку»</a> або <a href="buh.html#inbox">«Рішеннях»</a>.</span>
             </div>
 
             ${lastSimulatedTxResult ? renderLastSimResultHtml(lastSimulatedTxResult) : ''}
         </div>
 
-        <!-- БЛОК 3: ЖИВИЙ ЖУРНАЛ БАНКІВСЬКОЇ ВИПИСКИ (bank_tx) -->
-        <div class="buh-card">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17.5px">3. Живий журнал банківської виписки ОСББ (bank_tx · ${recentTx.length})</h2>
-                    <p class="buh-note" style="margin:3px 0 0">Усі проведені вхідні та вихідні операції. Ви можете протестувати навіть банківське сторно (<code>PR_PR: "t"</code>) будь-якої операції.</p>
-                </div>
-                <div style="display:flex;gap:8px">
-                    <a href="buh.html#bank" class="sv-btn is-soft btn-compact">Відкрити у Бухгалтерії ›</a>
-                </div>
-            </div>
+        ` : ''}
 
+        ${bankSection === 'statement' ? `
+        <div class="buh-card pf-bank-card">
+            ${secHead(
+                `Виписка рахунку <span class="pf-count">${recentTx.length}</span>`,
+                'Усі вхідні й вихідні операції. Для перевірки можна сторнувати будь-яку з них так, як це робить банк.',
+                '<a href="buh.html#bank" class="pf-btn is-soft">Відкрити в бухгалтерії ↗</a>'
+            )}
             <div class="jr-scroll" tabindex="0">
                 <table class="buh-table is-compact">
                     <thead>
@@ -1225,6 +1261,7 @@ async function renderBankView() {
                 </table>
             </div>
         </div>
+        ` : ''}
     `;
 }
 
@@ -1282,14 +1319,12 @@ async function renderTestingView() {
     const doneSteps = sandboxState?.steps?.[sandboxPeriod] || {};
 
     host.innerHTML = `
-        <div class="buh-card" style="margin-bottom:16px">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17px">1. Автоматична перевірка цілісності та податкових інваріантів бази (${esc(activeTenantId)})</h2>
-                    <p class="buh-note" style="margin:2px 0 0">Перевіряє тотожність балансів квартир з історією операцій (ledger replay), узгодженість банківських списань із документами та рівність оборотів ОСВ.</p>
-                </div>
-                <button type="button" class="sv-btn" style="width:auto" data-pf-act="run-diagnostics">Перевірити інваріанти бази</button>
-            </div>
+        <div class="buh-card">
+            ${secHead(
+                'Цілісність обліку',
+                'Баланси квартир збігаються з історією операцій, банківські списання — з документами, обороти ОСВ — дебет дорівнює кредиту.',
+                '<button type="button" class="pf-btn" data-pf-act="run-diagnostics">Перевірити зараз</button>'
+            )}
 
             <ul class="pf-check-list">
                 ${(diag.checks || []).map(c => `
@@ -1305,29 +1340,25 @@ async function renderTestingView() {
             </ul>
         </div>
 
-        <div class="buh-card" style="margin-bottom:16px">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17px">2. Ізольований тестовий полігон (Банк, Нарахування, Зарплата, Податкові звіти)</h2>
-                    <p class="buh-note" style="margin:2px 0 0">Повністю ізольована база даних (<code>sandbox~{uid}~*</code>) з імітованим драйвером Приват24 Автоклієнт та перевіркою річної звітності неприбуткової організації.</p>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="sb-prepare">${sandboxState?.ready ? 'Оновити тестовий будинок' : 'Підготувати тестовий будинок'}</button>
-                    <button type="button" class="sv-btn btn-compact" data-pf-act="sb-full">Прогнати повний цикл (3 місяці)</button>
-                    <a href="accounting-test.html" class="sv-btn is-soft btn-compact">Розгорнути полігон на весь екран ›</a>
-                </div>
-            </div>
+        <div class="buh-card">
+            ${secHead(
+                'Тестовий будинок',
+                'Окрема пісочниця з власними даними: нарахування, документи, банк, зарплата, закриття місяця й річні форми. Робочу базу не зачіпає.',
+                `<button type="button" class="pf-btn is-soft" data-pf-act="sb-prepare">${sandboxState?.ready ? 'Оновити будинок' : 'Підготувати будинок'}</button>
+                 <button type="button" class="pf-btn" data-pf-act="sb-full">Повний цикл за 3 місяці</button>
+                 <a href="accounting-test.html" class="pf-btn is-ghost">На весь екран ↗</a>`
+            )}
 
             ${sandboxState ? `
-                <div class="kpi-grid" style="margin:12px 0">
-                    <div class="kpi"><span>Тестових приміщень</span><b>${sandboxState.premises || 0}</b><small>співвласників: ${sandboxState.owners || 0}</small></div>
-                    <div class="kpi"><span>Імітованих операцій банку</span><b>${sandboxState.bankTx || 0}</b><small>вхідні та вихідні</small></div>
-                    <div class="kpi"><span>Платежів у Приват24 (Mock)</span><b>${sandboxState.payments || 0}</b><small>зарплата, податки, постачальники</small></div>
-                    <div class="kpi"><span>Тестовий період</span>
-                        <select id="pfSbPeriod" class="field-input field-select" style="margin-top:4px;height:34px;padding:0 10px">
+                <div class="pf-kpis is-inner">
+                    <div class="pf-stat"><span>Приміщень</span><b>${sandboxState.premises || 0}</b><small>співвласників: ${sandboxState.owners || 0}</small></div>
+                    <div class="pf-stat"><span>Операцій банку</span><b>${sandboxState.bankTx || 0}</b><small>вхідні й вихідні</small></div>
+                    <div class="pf-stat"><span>Платежів</span><b>${sandboxState.payments || 0}</b><small>зарплата, податки, постачальники</small></div>
+                    <label class="pf-stat"><span>Місяць перевірки</span>
+                        <select id="pfSbPeriod" class="field-input field-select pf-stat-select">
                             ${(sandboxState.periods || ['2025-10', '2025-11', '2025-12']).map(p => `<option value="${esc(p)}"${p === sandboxPeriod ? ' selected' : ''}>${esc(periodName(p))}</option>`).join('')}
                         </select>
-                    </div>
+                    </label>
                 </div>
 
                 <div class="pf-check-list">
@@ -1337,22 +1368,22 @@ async function renderTestingView() {
                                 <b>${esc(label)}</b>
                                 <div class="buh-note">${esc(desc)}</div>
                             </div>
-                            <button type="button" class="sv-btn ${doneSteps[stepKey] ? 'is-soft' : ''} btn-compact" data-pf-act="sb-step" data-step="${esc(stepKey)}" ${!sandboxState.ready || doneSteps[stepKey] ? 'disabled' : ''}>
-                                ${doneSteps[stepKey] ? '✓ Виконано' : 'Запустити крок'}
+                            <button type="button" class="pf-btn is-sm${doneSteps[stepKey] ? ' is-soft' : ''}" data-pf-act="sb-step" data-step="${esc(stepKey)}" ${!sandboxState.ready || doneSteps[stepKey] ? 'disabled' : ''}>
+                                ${doneSteps[stepKey] ? '✓ Виконано' : 'Запустити'}
                             </button>
                         </div>
                     `).join('')}
                 </div>
 
-                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="sb-verify" ${!sandboxState.ready ? 'disabled' : ''}>Звірити баланс, податки та ОСВ</button>
-                    <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="sb-forms" ${!(sandboxState.periods || []).every(p => sandboxState.steps?.[p]?.close) ? 'disabled' : ''}>Перевірити річні податкові форми (Неприбутковість + Фінзвітність 1-м/2-м)</button>
-                    <button type="button" class="btn-ghost-small" style="color:#B91C1C" data-pf-act="sb-reset">Очистити тестовий полігон</button>
+                <div class="pf-form-actions">
+                    <button type="button" class="pf-btn is-soft" data-pf-act="sb-verify" ${!sandboxState.ready ? 'disabled' : ''}>Звірити баланс, податки та ОСВ</button>
+                    <button type="button" class="pf-btn is-soft" data-pf-act="sb-forms" ${!(sandboxState.periods || []).every(p => sandboxState.steps?.[p]?.close) ? 'disabled' : ''}>Перевірити річні податкові форми (Неприбутковість + Фінзвітність 1-м/2-м)</button>
+                    <button type="button" class="pf-btn is-ghost is-danger" data-pf-act="sb-reset">Очистити полігон</button>
                 </div>
             ` : `<p class="buh-note">Натисніть «Підготувати тестовий будинок» або відкрийте <a href="accounting-test.html">Тестовий полігон</a> для запуску імітації банку та звітності.</p>`}
 
             ${sandboxVerifyResult ? `
-                <div class="pf-diff-box" style="margin-top:14px;background:#F8FAFC;border-color:#CBD5E1">
+                <div class="pf-diff-box is-neutral">
                     <b>Результати контрольної звірки тестового полігону (${esc(periodName(sandboxPeriod))}):</b>
                     <ul class="pf-check-list" style="margin-top:8px">
                         ${(sandboxVerifyResult.checks || []).map(c => `
@@ -1366,8 +1397,8 @@ async function renderTestingView() {
             ` : ''}
         </div>
 
-        <div class="buh-card">
-            <h2 style="margin:0 0 8px;font-size:17px">3. Каталог еталонних сценаріїв тестування платформи</h2>
+        <details class="buh-card pf-fold">
+            <summary><span><b>Еталонні сценарії</b><small>Що саме перевіряють автотести й симуляції — ${Object.keys(SIMULATION_SCENARIOS).length} сценаріїв</small></span></summary>
             <div class="pf-arch-grid">
                 ${Object.values(SIMULATION_SCENARIOS).map(sc => `
                     <div class="pf-arch-card">
@@ -1378,7 +1409,7 @@ async function renderTestingView() {
                     </div>
                 `).join('')}
             </div>
-        </div>
+        </details>
     `;
 }
 
@@ -1411,32 +1442,32 @@ function renderUsersView() {
     });
 
     host.innerHTML = `
-        <div class="kpi-grid" style="margin-bottom: 14px;">
-            <div class="kpi">
-                <span>Активовані кабінети мешканців</span>
+        <div class="pf-kpis">
+            <div class="pf-stat">
+                <span>Кабінети мешканців</span>
                 <b>${u.activatedApartments} / ${u.totalApartments}</b>
-                <small>рівень активації: ${u.activationRatePct}% приміщень</small>
+                <small>активовано ${u.activationRatePct}% квартир</small>
             </div>
-            <div class="kpi">
-                <span>Стан розрахунків квартир</span>
-                <b>${u.debtorsCount} боржн.</b>
+            <div class="pf-stat">
+                <span>Боржники</span>
+                <b>${u.debtorsCount}</b>
                 <small>переплата: ${u.overpaidCount} · нульовий баланс: ${u.zeroBalanceCount}</small>
             </div>
-            <div class="kpi">
-                <span>Команда управління (Staff)</span>
+            <div class="pf-stat">
+                <span>Команда правління</span>
                 <b>${(u.staffByRole.chair || 0) + (u.staffByRole.accountant || 0) + (u.staffByRole.board || 0)}</b>
                 <small>голова: ${u.staffByRole.chair || 0} · бухг.: ${u.staffByRole.accountant || 0} · правління: ${u.staffByRole.board || 0}</small>
             </div>
-            <div class="kpi">
-                <span>Активність у журналі аудиту</span>
-                <b>${u.events24h} за 24 год</b>
-                <small>за 7 днів: ${u.events7d} операцій</small>
+            <div class="pf-stat">
+                <span>Дій за 24 години</span>
+                <b>${u.events24h}</b>
+                <small>за 7 днів: ${u.events7d}</small>
             </div>
         </div>
 
-        <div class="pf-arch-grid" style="margin-bottom:16px">
-            <div class="buh-card" style="margin:0">
-                <h3 style="margin:0 0 10px;font-size:15.5px">Найактивніші користувачі (за журналом дій)</h3>
+        <div class="pf-two">
+            <div class="buh-card">
+                <h3 class="pf-card-h">Найактивніші користувачі</h3>
                 ${u.topActors?.length ? `
                     <table class="buh-table is-compact">
                         <thead><tr><th>Користувач / вхід</th><th class="t-sum">Кількість дій</th></tr></thead>
@@ -1447,8 +1478,8 @@ function renderUsersView() {
                 ` : '<p class="buh-note">Записів активності ще немає</p>'}
             </div>
 
-            <div class="buh-card" style="margin:0">
-                <h3 style="margin:0 0 10px;font-size:15.5px">Розподіл операцій за модулями системи</h3>
+            <div class="buh-card">
+                <h3 class="pf-card-h">Дії за модулями</h3>
                 ${Object.keys(u.actionBreakdown || {}).length ? `
                     <table class="buh-table is-compact">
                         <thead><tr><th>Модуль (префікс дії)</th><th class="t-sum">Операцій</th></tr></thead>
@@ -1463,13 +1494,11 @@ function renderUsersView() {
         </div>
 
         <div class="buh-card">
-            <div class="buh-toolbar">
-                <div>
-                    <h2 style="margin:0;font-size:17px">Незмінний журнал аудиту системи (Immutable Audit Trail)</h2>
-                    <p class="buh-note" style="margin:2px 0 0">Усі дії бухгалтера, голови правління, автоматики банку та ручні корекції супер-адміна фіксуються у <code>audit_log</code>.</p>
-                </div>
-                <input type="search" id="pfAuditSearch" class="field-input buh-search" placeholder="Пошук за дією, автором, обʼєктом…" value="${esc(auditQuery)}">
-            </div>
+            ${secHead(
+                'Журнал дій',
+                'Кожна дія бухгалтера, голови, автоматики банку й ручні виправлення записуються назавжди.',
+                `<input type="search" id="pfAuditSearch" class="field-input pf-search" placeholder="Пошук: дія, автор, обʼєкт…" value="${esc(auditQuery)}">`
+            )}
 
             <div class="jr-scroll" tabindex="0">
                 <table class="buh-table is-compact">
@@ -1548,22 +1577,20 @@ async function renderInspectorView() {
     const editableJson = selectedDoc ? JSON.stringify(selectedDoc.data, null, 2) : '{}';
 
     host.innerHTML = `
-        <div class="buh-card is-note" style="border-left: 4px solid #D97706; margin-bottom: 14px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-                <div>
-                    <b>Контрольоване ручне коригування бази даних (Break-Glass Audited Manual Adjustment)</b>
-                    <p class="buh-note" style="margin:4px 0 0">У світовій фінансовій практиці прямі виправлення бази даних ніколи не робляться «всліпу»: система спершу показує таблицю змін (<code>Було → Стане</code>), вимагає обовʼязкову підставу для незмінного журналу аудиту (<code>audit_log</code>) і автоматично перераховує похідні баланси.</p>
-                </div>
-                <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="toggle-ledger-adj">
-                    ${showLedgerAdjustForm ? 'Сховати форму запису в ledger' : '+ Коригувальний запис в історію квартири (ledger)'}
-                </button>
+        <div class="pf-callout">
+            <div>
+                <b>Кожне виправлення — з підставою і слідом в аудиті</b>
+                <p>Спершу система показує таблицю «Було → Стане», потім просить підставу й записує зміну в журнал. Баланс квартири перераховується автоматично.</p>
             </div>
+            <button type="button" class="pf-btn is-soft${showLedgerAdjustForm ? ' is-on' : ''}" data-pf-act="toggle-ledger-adj">
+                ${showLedgerAdjustForm ? 'Сховати форму' : '+ Коригувальний запис квартири'}
+            </button>
         </div>
 
         ${showLedgerAdjustForm ? `
-            <section class="buh-card ex-form" style="margin-bottom:14px">
+            <section class="buh-card ex-form pf-form">
                 <div class="buh-card-head">
-                    <h2>Новий коригувальний запис в історію квартири (apartments/{apt}/ledger)</h2>
+                    <h2>Коригувальний запис в історію квартири</h2>
                     <button type="button" class="btn-ghost-small" data-pf-act="toggle-ledger-adj">Закрити</button>
                 </div>
                 <div class="pay-grid">
@@ -1584,15 +1611,15 @@ async function renderInspectorView() {
                         <input id="laReason" class="field-input" maxlength="240" placeholder="Бухгалтерська довідка № 4: уточнення оплати за квитанцією від 12.10.2026"></label>
                 </div>
                 <div class="pay-form-actions">
-                    <button type="button" class="sv-btn" style="width:auto" data-pf-act="save-ledger-adj">Внести запис і перерахувати баланс квартири</button>
+                    <button type="button" class="pf-btn" data-pf-act="save-ledger-adj">Внести запис і перерахувати баланс квартири</button>
                 </div>
             </section>
         ` : ''}
 
-        <div class="buh-card" style="margin-bottom:14px">
+        <div class="buh-card pf-filters">
             <div class="pay-grid">
                 <label class="field">
-                    <span class="field-label">Колекція бази даних (${esc(activeTenantId)})</span>
+                    <span class="field-label">Колекція</span>
                     <select id="pfColSelect" class="field-input field-select">
                         ${Object.entries(INSPECTABLE_COLLECTIONS).map(([k, v]) => `<option value="${esc(k)}"${k === inspectorCol ? ' selected' : ''}>${esc(v.title)} (${esc(k)})</option>`).join('')}
                     </select>
@@ -1614,19 +1641,19 @@ async function renderInspectorView() {
                     ` : ''}
                 ` : ''}
                 <label class="field">
-                    <span class="field-label">Пошук за ID або вмістом JSON</span>
-                    <div style="display:flex;gap:8px">
+                    <span class="field-label">Пошук за ID або вмістом</span>
+                    <div class="pf-inline">
                         <input id="pfInspectQuery" class="field-input" type="search" placeholder="ID або текст…" value="${esc(inspectorQuery)}">
-                        <button type="button" class="sv-btn is-soft btn-compact" data-pf-act="reload-inspector">Знайти</button>
+                        <button type="button" class="pf-btn" data-pf-act="reload-inspector">Знайти</button>
                     </div>
                 </label>
             </div>
         </div>
 
         <div class="pf-inspector-layout">
-            <section class="buh-card" style="margin:0">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <b>Документи (${inspectorDocs.length})</b>
+            <section class="buh-card pf-doc-pane">
+                <div class="pf-pane-head">
+                    <b>Документи <span class="pf-count">${inspectorDocs.length}</span></b>
                     <small class="t-muted">${esc(inspectorCol)}${inspectorSubcol ? `/${inspectorAptId}/${inspectorSubcol}` : ''}</small>
                 </div>
                 ${inspectorDocs.length ? `
@@ -1643,7 +1670,7 @@ async function renderInspectorView() {
                 ` : '<p class="list-empty">Документів не знайдено</p>'}
             </section>
 
-            <section class="buh-card" style="margin:0">
+            <section class="buh-card pf-doc-pane">
                 ${selectedDoc ? `
                     <div class="buh-card-head">
                         <div>
@@ -1658,10 +1685,10 @@ async function renderInspectorView() {
                         ` : ''}
                     </div>
 
-                    <p class="buh-note" style="margin:8px 0">Відредагуйте потрібні поля у JSON-форматі нижче та натисніть <b>«Перевірити зміни (Diff Preview)»</b> перед збереженням.</p>
+                    <p class="buh-note pf-editor-hint">Змініть потрібні поля в JSON, натисніть «Показати зміни», перевірте таблицю й лише тоді застосовуйте.</p>
                     <textarea id="pfJsonEditor" class="pf-json-editor" spellcheck="false">${esc(editableJson)}</textarea>
 
-                    <div class="pay-grid" style="margin-top:12px">
+                    <div class="pf-editor-fields">
                         <label class="field pay-wide">
                             <span class="field-label">Обовʼязкова підстава коригування (записується в audit_log разом зі старими й новими значеннями)</span>
                             <input id="pfPatchReason" class="field-input" maxlength="260" placeholder="Напр.: Виправлення площі за техпаспортом / уточнення особового рахунку">
@@ -1694,9 +1721,9 @@ async function renderInspectorView() {
                         </div>
                     ` : ''}
 
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
-                        <button type="button" class="sv-btn is-soft" style="width:auto" data-pf-act="preview-patch">1. Перевірити зміни (Diff Preview)</button>
-                        <button type="button" class="sv-btn" style="width:auto" data-pf-act="commit-patch">2. Застосувати зміни з записом в аудит</button>
+                    <div class="pf-form-actions">
+                        <button type="button" class="pf-btn is-soft" data-pf-act="preview-patch">1. Показати зміни</button>
+                        <button type="button" class="pf-btn" data-pf-act="commit-patch">2. Застосувати із записом в аудит</button>
                     </div>
                 ` : '<p class="list-empty">Оберіть документ ліворуч для перегляду та коригування</p>'}
             </section>
@@ -1712,10 +1739,8 @@ function renderArchitectureView() {
     if (!host) return;
 
     host.innerHTML = `
-        <div class="buh-card" style="margin-bottom:16px">
-            <h2 style="margin:0 0 8px;font-size:18px">Світові практики побудови Multi-Tenant SaaS та фінансових платформ для багатьох ОСББ</h2>
-            <p class="buh-note">Архітектура платформи побудована за принципами <b>Stripe, Linear, Buildium та AppFolio</b> (провідних світових Property Management & Fintech систем), щоб масштабуватися від одного будинку до сотень ОСББ без переписування бізнес-логіки.</p>
-
+        <div class="buh-card">
+            ${secHead('Шість принципів платформи', 'Як дані кожного ОСББ ізольовані, як рахуються гроші й чому ручне втручання завжди лишає слід.')}
             <div class="pf-arch-grid">
                 <div class="pf-arch-card">
                     <span class="pf-tier-badge">1. Control Plane vs. Data Plane</span>
@@ -1756,7 +1781,7 @@ function renderArchitectureView() {
         </div>
 
         <div class="buh-card">
-            <h2 style="margin:0 0 10px;font-size:17px">Дорожня карта поетапного масштабування (Phased Rollout Roadmap)</h2>
+            ${secHead('План масштабування', 'Що вже працює і що наступне на шляху до сотень ОСББ.')}
             <table class="buh-table is-compact">
                 <thead>
                     <tr>
@@ -1792,7 +1817,7 @@ function renderArchitectureView() {
 // ============================================================
 function initEvents() {
     document.addEventListener('click', async e => {
-        const navBtn = e.target.closest('.buh-nav-item[data-view], .buh-tab[data-view]');
+        const navBtn = e.target.closest('.pf-side-item[data-view], .buh-tab[data-view]');
         if (navBtn) {
             await switchView(navBtn.dataset.view);
             return;
@@ -1807,7 +1832,8 @@ function initEvents() {
                 editingTenant = null;
                 showNewTenantForm = true;
                 renderTenantsView();
-                document.getElementById('tfName')?.focus();
+                document.getElementById('pfTenantForm')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                document.getElementById('tfName')?.focus({ preventScroll: true });
             } else if (act === 'close-tenant-form') {
                 showNewTenantForm = false;
                 editingTenant = null;
@@ -1818,6 +1844,7 @@ function initEvents() {
                     editingTenant = t;
                     showNewTenantForm = true;
                     renderTenantsView();
+                    document.getElementById('pfTenantForm')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
                 }
             } else if (act === 'save-tenant') {
                 setBusy(actBtn, true, 'Зберігаю…');
@@ -1852,6 +1879,12 @@ function initEvents() {
                 await refreshAllData();
             } else if (act === 'open-bank-tab') {
                 await switchView('bank');
+            } else if (act === 'goto') {
+                if (actBtn.dataset.section) bankSection = actBtn.dataset.section;
+                await switchView(actBtn.dataset.to);
+            } else if (act === 'bank-section') {
+                bankSection = actBtn.dataset.section || 'queue';
+                await renderBankView();
             } else if (act === 'open-tenant-bank') {
                 activeTenantId = actBtn.dataset.id;
                 bankSimData = null;

@@ -1,166 +1,269 @@
 /* ============================================================
-   Стилі панелі Super-Admin / Platform Control Plane (platform.html)
+   Платформа ОСББ (platform.html): керування всіма будинками.
+   Каркас — бічна панель (бренд, активна база, розділи групами) і
+   робоча область; на телефоні — верхня смуга з базою й нижні вкладки.
    ============================================================ */
 
-.pf-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-}
+body.platform-mode { --pf-side: 272px; --pf-radius: 22px; }
+body.platform-mode .pf-shell { display: grid; grid-template-columns: var(--pf-side) minmax(0, 1fr); min-height: 100vh; }
+body.platform-mode .pf-shell[hidden] { display: none; }
 
-.pf-head-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+/* ---------- Бічна панель ---------- */
+.pf-side {
+    position: sticky; top: 0; z-index: 30; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px;
+    height: 100vh; padding: 22px 14px 16px; overflow-y: auto; overscroll-behavior: contain;
+    background: rgba(255, 255, 255, .58); box-shadow: inset -1px 0 0 rgba(15, 23, 42, .06);
+    backdrop-filter: saturate(170%) blur(18px); -webkit-backdrop-filter: saturate(170%) blur(18px);
 }
+.pf-side-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 6px; }
+.pf-brand { display: flex; align-items: center; gap: 11px; min-width: 0; color: #000; text-decoration: none; }
+.pf-brand img { flex: none; width: 40px; height: 40px; }
+.pf-brand span { display: flex; flex-direction: column; min-width: 0; }
+.pf-brand b { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+.pf-brand small { color: var(--sv-muted); font-size: 12px; font-weight: 600; }
+.pf-back-mobile { display: none; }
 
+.pf-ctx { display: flex; flex-direction: column; gap: 7px; padding: 12px; border-radius: 18px; background: #fff; box-shadow: var(--sv-shadow); }
+.pf-ctx-label { padding: 0 2px; color: var(--sv-muted); font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.pf-ctx-meta { padding: 0 2px; color: var(--sv-muted); font-size: 12.5px; font-weight: 600; }
 .pf-db-switcher {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: #FFFFFF;
-    border: 1.5px solid #CBD5E1;
-    border-radius: 999px;
-    padding: 5px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #0F172A;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    position: relative; display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 36px 0 12px;
+    border-radius: 12px; background: var(--sv-soft-2); cursor: pointer; transition: background .2s ease;
 }
-
-.pf-db-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #16A34A;
-    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
-    flex-shrink: 0;
-}
-
-.pf-db-switcher.is-sandbox .pf-db-dot {
-    background: #D97706;
-    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2);
-}
-
+.pf-db-switcher:hover { background: var(--sv-soft); }
+.pf-db-switcher:focus-within { box-shadow: 0 0 0 2px #000; }
+.pf-db-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--sv-green); box-shadow: 0 0 0 3px rgba(26, 127, 55, .16); }
+.pf-db-switcher.is-sandbox .pf-db-dot { background: #D97706; box-shadow: 0 0 0 3px rgba(217, 119, 6, .18); }
 .pf-db-switcher select {
-    border: none;
-    background: transparent;
-    font: inherit;
-    color: inherit;
-    outline: none;
-    cursor: pointer;
-    max-width: 240px;
+    flex: 1; min-width: 0; height: 44px; padding: 0; border: 0; outline: none; background: transparent; color: #000;
+    font: 800 14px var(--font); text-overflow: ellipsis; cursor: pointer; -webkit-appearance: none; appearance: none;
 }
+.pf-db-chev { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 
-/* Картки ОСББ (Multi-Tenant Registry) */
-.pf-tenant-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 14px;
-    margin-top: 14px;
+.pf-nav { display: flex; flex-direction: column; gap: 2px; }
+.pf-nav-h { margin: 14px 12px 4px; color: #6B7079; font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.pf-nav-h:first-child { margin-top: 0; }
+.pf-side-item {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 54px;
+    padding: 8px 12px; border: 0; border-radius: 14px; background: none; color: #000; font: inherit; text-align: left; cursor: pointer;
+    transition: background .2s ease, color .2s ease;
 }
+.pf-side-item:hover { background: rgba(255, 255, 255, .85); }
+.pf-side-item.active { background: #000; color: #fff; }
+.pf-side-ico { flex: none; }
+.pf-side-copy { display: flex; flex-direction: column; min-width: 0; }
+.pf-side-copy b { font-size: 14px; font-weight: 800; }
+.pf-side-copy small { overflow: hidden; color: var(--sv-muted); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pf-side-item.active small { color: rgba(255, 255, 255, .66); }
+.pf-side-item.active .buh-badge { background: var(--sv-yellow); color: #000; }
+.pf-side-foot { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
+.pf-side-link {
+    display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 4px; min-height: 40px; border-radius: 999px;
+    background: #fff; color: #000; font: 700 13px var(--font); text-decoration: none; box-shadow: var(--sv-shadow); transition: background .2s ease;
+}
+.pf-side-link:hover { background: var(--sv-soft-2); }
 
-.pf-tenant-card {
-    background: #FFFFFF;
-    border: 1.5px solid #E2E8F0;
-    border-radius: 16px;
-    padding: 18px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 14px;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
+/* ---------- Робоча область ---------- */
+body.platform-mode .pf-main { box-sizing: border-box; width: 100%; max-width: 1260px; margin: 0; padding: 30px clamp(20px, 3vw, 44px) 72px; }
+.pf-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; padding: 0 0 22px; }
+.pf-head-copy { min-width: 0; }
+.pf-crumb { color: var(--sv-muted); font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.pf-head h1 { margin: 4px 0 6px; font-size: clamp(28px, 3.2vw, 38px); font-weight: 800; letter-spacing: -.025em; line-height: 1.1; }
+.pf-head p { max-width: 680px; margin: 0; color: var(--sv-muted); font-size: 15px; font-weight: 500; line-height: 1.45; }
+.pf-head-actions { display: flex; flex: none; gap: 8px; }
+.pf-head .pf-btn.is-soft { background: #fff; box-shadow: var(--sv-shadow); }
+.pf-view { animation: pf-in .35s var(--sv-ease) both; }
+.pf-view[hidden] { display: none; }
+@keyframes pf-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pf-view { animation: none; } }
+body.platform-mode .pf-view .buh-card { margin-bottom: 16px; border-radius: var(--pf-radius); }
 
-.pf-tenant-card.is-active-context {
-    border-color: #1D4ED8;
-    box-shadow: 0 6px 20px rgba(29, 78, 216, 0.09);
+/* ---------- Кнопки ---------- */
+.pf-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; min-height: 40px; padding: 0 18px;
+    border: 0; border-radius: 999px; background: #000; color: #fff; font: 700 14px var(--font); white-space: nowrap; text-decoration: none;
+    cursor: pointer; transition: background .2s ease, transform .15s ease, box-shadow .2s ease;
 }
+.pf-btn:hover { background: #262626; }
+.pf-btn:active { transform: scale(.97); }
+.pf-btn:disabled { opacity: .45; cursor: default; transform: none; }
+.pf-btn.is-soft { background: var(--sv-soft); color: #000; }
+.pf-btn.is-soft:hover, .pf-btn.is-soft.is-on { background: #E0E5EC; }
+.pf-btn.is-ghost { background: transparent; color: #000; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, .14); }
+.pf-btn.is-ghost:hover { background: var(--sv-soft-2); }
+.pf-btn.is-danger { color: var(--sv-red); }
+.pf-btn.is-danger:hover { background: var(--sv-red-bg); }
+.pf-btn.is-sm { min-height: 34px; padding: 0 14px; font-size: 13px; }
+.pf-icon-btn {
+    display: inline-grid; flex: none; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 11px;
+    background: var(--sv-soft); color: #000; text-decoration: none; cursor: pointer; transition: background .2s ease;
+}
+.pf-icon-btn:hover { background: #E0E5EC; }
+.pf-check { display: inline-flex; align-items: center; gap: 8px; color: #000; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.pf-check input { width: 18px; height: 18px; margin: 0; accent-color: #000; }
 
-.pf-tenant-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-}
+/* ---------- Заголовок блоку ---------- */
+.pf-sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 20px; margin-bottom: 16px; }
+.pf-sec-copy { min-width: 0; }
+.pf-sec-head h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.015em; }
+.pf-sec-head p { max-width: 760px; margin: 5px 0 0; color: var(--sv-muted); font-size: 13.5px; font-weight: 500; line-height: 1.5; }
+.pf-sec-actions { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.pf-count { display: inline-grid; place-items: center; min-width: 26px; height: 24px; padding: 0 8px; box-sizing: border-box; border-radius: 999px; background: var(--sv-soft); font-size: 13px; font-weight: 800; letter-spacing: 0; }
+.pf-sub-h { margin: 4px 0 10px; color: var(--sv-muted); font-size: 13.5px; font-weight: 700; }
+.pf-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
 
-.pf-tenant-title {
-    font-size: 17px;
-    font-weight: 800;
-    color: #0F172A;
-    margin: 0 0 4px;
+/* ---------- Показники ---------- */
+.pf-stat {
+    display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; min-width: 0; padding: 14px 16px; border: 0; border-radius: 16px;
+    background: var(--sv-soft-2); color: #000; font: inherit; text-align: left;
 }
+.pf-stat span { color: var(--sv-muted); font-size: 12.5px; font-weight: 700; }
+.pf-stat b { overflow: hidden; font-size: 23px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.pf-stat small { overflow: hidden; color: var(--sv-muted); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pf-stat.is-link { cursor: pointer; transition: background .2s ease, transform .15s ease; }
+.pf-stat.is-link:hover { background: var(--sv-soft); }
+.pf-stat.is-link:active { transform: scale(.98); }
+.pf-stat.is-warn { background: var(--sv-yellow-soft); }
+.pf-stat.is-warn.is-link:hover { background: var(--sv-yellow); }
+.pf-stat.is-warn b { color: var(--sv-amber); }
+.pf-stat.is-ok b { color: var(--sv-green); }
+.pf-stat.is-bad { background: var(--sv-red-bg); }
+.pf-stat.is-bad b { color: var(--sv-red); }
+.pf-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.pf-kpis .pf-stat { background: #fff; box-shadow: var(--sv-shadow); border-radius: 18px; }
+.pf-kpis .pf-stat.is-warn { background: var(--sv-yellow-soft); }
+.pf-kpis .pf-stat.is-link:hover { background: var(--sv-soft-2); }
+.pf-kpis .pf-stat.is-warn.is-link:hover { background: var(--sv-yellow); }
 
-.pf-tenant-sub {
-    font-size: 13px;
-    color: #475569;
-    margin: 0;
+/* ---------- ОСББ у роботі ---------- */
+.pf-hero {
+    display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "id stats" "actions actions";
+    gap: 22px 30px; margin-bottom: 16px; padding: 26px; border-radius: var(--pf-radius); background: #fff; box-shadow: var(--sv-shadow);
 }
+.pf-hero-id { grid-area: id; min-width: 0; }
+.pf-hero-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 10px; }
+.pf-kind { display: inline-flex; align-items: center; gap: 8px; color: var(--sv-green); font-size: 13px; font-weight: 800; }
+.pf-kind i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px rgba(26, 127, 55, .16); }
+.pf-hero.is-sandbox .pf-kind { color: var(--sv-amber); }
+.pf-hero.is-sandbox .pf-kind i { box-shadow: 0 0 0 3px rgba(217, 119, 6, .18); }
+.pf-hero h2 { margin: 0; font-size: 27px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.pf-hero-id > p { margin: 5px 0 0; color: var(--sv-muted); font-size: 14px; font-weight: 600; }
+.pf-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px 18px; margin: 20px 0 0; }
+.pf-facts div { min-width: 0; }
+.pf-facts dt { color: var(--sv-muted); font-size: 12px; font-weight: 600; }
+.pf-facts dd { margin: 3px 0 0; font-size: 14.5px; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pf-facts dd.is-out { color: var(--sv-red); }
+.pf-facts code, .pf-token code { padding: 2px 7px; border-radius: 7px; background: var(--sv-soft-2); font: 700 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.pf-hero-note { margin: 16px 0 0; color: var(--sv-muted); font-size: 13px; font-weight: 500; line-height: 1.45; }
+.pf-hero-stats { grid-area: stats; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 10px; }
+.pf-hero-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 18px; box-shadow: inset 0 1px 0 var(--sv-line); }
 
-.pf-tenant-meta {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 12px;
-    padding: 12px;
-    background: #F8FAFC;
-    border-radius: 12px;
-    font-size: 13px;
+/* ---------- Реєстр організацій ---------- */
+.pf-reg-list { display: flex; flex-direction: column; margin: 0 -8px; }
+.pf-reg-row {
+    display: grid; grid-template-columns: minmax(0, 2.4fr) 92px 70px minmax(0, 1.1fr) 140px 236px; align-items: center; gap: 14px;
+    padding: 12px; border-radius: 14px;
 }
+.pf-reg-row + .pf-reg-row:not(.is-current) { box-shadow: inset 0 1px 0 var(--sv-line); }
+.pf-reg-row.is-current + .pf-reg-row { box-shadow: none; }
+.pf-reg-headrow { padding-top: 0; padding-bottom: 8px; color: var(--sv-muted); font-size: 12px; font-weight: 700; }
+.pf-reg-row.is-current { background: var(--sv-soft-2); }
+.pf-reg-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pf-reg-name > div { display: flex; flex-direction: column; min-width: 0; }
+.pf-reg-name b { overflow: hidden; font-size: 14.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.pf-reg-name small { overflow: hidden; color: var(--sv-muted); font-size: 12.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pf-reg-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #C9CED6; }
+.pf-reg-row.is-current .pf-reg-dot { background: var(--sv-green); box-shadow: 0 0 0 4px rgba(26, 127, 55, .15); }
+.pf-reg-row.is-sandbox.is-current .pf-reg-dot { background: #D97706; box-shadow: 0 0 0 4px rgba(217, 119, 6, .16); }
+.pf-reg-cell { overflow: hidden; min-width: 0; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.pf-reg-cell .sv-chip { max-width: 100%; }
+.pf-reg-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.pf-current-mark { display: inline-flex; align-items: center; min-height: 34px; padding: 0 10px; color: var(--sv-green); font-size: 13px; font-weight: 800; white-space: nowrap; }
+.pf-reg-row.is-sandbox .pf-current-mark { color: var(--sv-amber); }
+.pf-form { margin-bottom: 16px; }
+.pf-more-link {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; padding: 18px 22px; border: 0;
+    border-radius: var(--pf-radius); background: rgba(255, 255, 255, .6); color: #000; font: inherit; text-align: left; cursor: pointer;
+    box-shadow: var(--sv-shadow); transition: background .2s ease;
+}
+.pf-more-link:hover { background: #fff; }
+.pf-more-link span { display: flex; flex-direction: column; gap: 2px; }
+.pf-more-link b { font-size: 15px; font-weight: 800; }
+.pf-more-link small { color: var(--sv-muted); font-size: 13px; font-weight: 600; }
 
-.pf-tenant-meta div span {
-    display: block;
-    font-size: 11.5px;
-    color: #64748B;
+/* ---------- Банк Приват24 ---------- */
+.pf-bank-status { display: flex; flex-direction: column; gap: 14px; }
+.pf-bank-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; }
+.pf-bank-row.is-sub { padding: 12px 14px; border-radius: 14px; background: var(--sv-soft-2); }
+.pf-bank-id { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.pf-bank-id b { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+.pf-bank-id small { color: var(--sv-muted); font-size: 13px; font-weight: 600; }
+.pf-token { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; }
+.pf-token > span { color: var(--sv-muted); font-size: 13px; font-weight: 700; }
+.pf-token code { overflow-wrap: anywhere; background: #fff; user-select: all; }
+.pf-bank-hint { margin: 0; color: var(--sv-muted); font-size: 13px; font-weight: 500; line-height: 1.5; }
+.pf-p24-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: var(--sv-green-bg); color: #145C29; font-size: 12px; font-weight: 800;
 }
+.pf-p24-pill.is-warn { background: var(--sv-yellow); color: var(--sv-yellow-ink); }
+.pf-seg {
+    display: flex; flex-wrap: wrap; gap: 4px; width: fit-content; max-width: 100%; margin-bottom: 14px; padding: 4px; box-sizing: border-box;
+    border-radius: 999px; background: #fff; box-shadow: var(--sv-shadow);
+}
+.pf-seg-item {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 18px; border: 0; border-radius: 999px;
+    background: none; color: #000; font: 700 14px var(--font); white-space: nowrap; cursor: pointer; transition: background .2s ease, color .2s ease;
+}
+.pf-seg-item:hover { background: var(--sv-soft); }
+.pf-seg-item.active { background: #000; color: #fff; }
+.pf-seg-n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: var(--sv-soft); color: #000; font-size: 11.5px; font-weight: 800; }
+.pf-seg-item.active .pf-seg-n { background: rgba(255, 255, 255, .2); color: #fff; }
+.pf-sign-opts { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 12px 14px; border-radius: 14px; background: var(--sv-soft-2); }
+.pf-sign-opts > label:not(.pf-check) { display: flex; flex-direction: column; gap: 4px; color: var(--sv-muted); font-size: 12.5px; font-weight: 700; }
+body.platform-mode .pf-sign-opts .field-input { width: auto; min-height: 38px; padding: 0 10px; background: #fff; }
+.pf-sign-opts .pf-check { min-height: 38px; }
+.pf-sec-head p a, .pf-bank-hint a, .pf-view .buh-note a, .pf-form-actions a {
+    color: #000; font-weight: 700; text-decoration-color: rgba(0, 0, 0, .28); text-underline-offset: 2px;
+}
+.pf-kpis.is-inner { margin: 0 0 14px; }
+.pf-kpis.is-inner .pf-stat { background: var(--sv-soft-2); box-shadow: none; }
+.pf-stat-select { margin-top: 4px; min-height: 36px !important; padding: 0 30px 0 10px !important; background-color: #fff; font-weight: 700; }
+.pf-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pf-two > .buh-card { margin-bottom: 16px; }
+.pf-card-h { margin: 0 0 12px; font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+body.platform-mode .pf-search { width: min(320px, 100%); min-height: 40px; }
+.pf-callout {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-bottom: 16px; padding: 16px 20px;
+    border-radius: var(--pf-radius); background: var(--sv-yellow-soft); box-shadow: inset 0 0 0 1px rgba(138, 75, 0, .12);
+}
+.pf-callout > div { flex: 1 1 360px; min-width: 0; }
+.pf-callout b { font-size: 15px; font-weight: 800; }
+.pf-callout p { margin: 4px 0 0; color: #3D3D3D; font-size: 13.5px; font-weight: 500; line-height: 1.5; }
+.pf-callout .pf-btn.is-soft { background: #fff; }
+.pf-inline { display: flex; gap: 8px; }
+.pf-inline .field-input { flex: 1; min-width: 0; }
+.pf-doc-pane { margin: 0 !important; min-width: 0; }
+.pf-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pf-pane-head b { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.pf-diff-box.is-neutral { background: var(--sv-soft-2); border-color: var(--sv-line); }
+details.pf-fold > summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+details.pf-fold > summary span { display: flex; flex-direction: column; gap: 3px; }
+details.pf-fold > summary b { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+details.pf-fold > summary small { color: var(--sv-muted); font-size: 13px; font-weight: 600; }
+details.pf-fold[open] > summary { margin-bottom: 12px; }
+.pf-json-editor { box-sizing: border-box; max-width: 100%; border-radius: 14px; border-color: transparent; }
+.pf-editor-hint { margin: 10px 0 !important; }
+.pf-editor-fields { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.pf-json-sum { cursor: pointer; font-weight: 700; color: #000; }
 
-.pf-tenant-meta div b {
-    color: #0F172A;
-    font-weight: 700;
-}
-
-.pf-tenant-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
+/* ============================================================
+   Стилі панелі Super-Admin / Platform Control Plane (platform.html)
+   ============================================================ */
 
 /* ============================================================
    Симулятор Приват24 Автоклієнт v3.0.0 (#viewBank)
    ============================================================ */
-.pf-bank-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-    border-left: 5px solid #16A34A;
-    background: linear-gradient(135deg, #F0FDF4 0%, #FFFFFF 65%);
-}
-
-.pf-bank-banner.is-disconnected {
-    border-left-color: #D97706;
-    background: linear-gradient(135deg, #FFFBEB 0%, #FFFFFF 65%);
-}
-
-.pf-p24-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: #DCFCE7;
-    color: #15803D;
-}
-
-.pf-p24-pill.is-warn {
-    background: #FEF3C7;
-    color: #B45309;
-}
-
 .pf-pay-queue {
     display: grid;
     gap: 12px;
@@ -169,14 +272,13 @@
 
 .pf-pay-card {
     background: #FFFFFF;
-    border: 1.5px solid #CBD5E1;
-    border-left: 5px solid #2563EB;
-    border-radius: 14px;
+    border: 1.5px solid var(--sv-line);
+    box-shadow: inset 4px 0 0 var(--sv-yellow);
+    border-radius: 16px;
     padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 10px;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .pf-pay-head {
@@ -250,9 +352,9 @@
 }
 
 .pf-tpl-card.is-active {
-    background: #EFF6FF;
-    border-color: #2563EB;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.1);
+    background: #fff;
+    border-color: #000;
+    box-shadow: 0 0 0 1px #000;
 }
 
 .pf-tpl-card h4 {
@@ -393,8 +495,8 @@
 }
 
 .pf-doc-btn.is-selected {
-    background: #EFF6FF;
-    border-color: #2563EB;
+    background: #fff;
+    border-color: #000;
 }
 
 .pf-doc-btn b {
@@ -489,9 +591,82 @@
 .pf-tier-badge {
     display: inline-block;
     font-size: 11.5px;
-    font-weight: 700;
-    padding: 3px 9px;
+    font-weight: 800;
+    padding: 3px 10px;
     border-radius: 999px;
-    background: #EFF6FF;
-    color: #1D4ED8;
+    background: var(--sv-soft);
+    color: #000;
+}
+
+
+/* ---------- Адаптивність ---------- */
+@media (max-width: 1240px) {
+    .pf-hero { grid-template-columns: minmax(0, 1fr); grid-template-areas: "id" "stats" "actions"; }
+    .pf-hero-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .pf-reg-row { grid-template-columns: minmax(0, 2fr) 92px 70px 140px 236px; }
+    .pf-reg-row > :nth-child(4) { display: none; }
+}
+@media (max-width: 1100px) {
+    body.platform-mode { --pf-side: 236px; }
+    .pf-side-copy small { display: none; }
+    .pf-side-item { min-height: 46px; }
+    .pf-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pf-hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+    body.platform-mode .pf-shell { display: block; }
+    .pf-side {
+        position: sticky; height: auto; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; overflow: visible;
+        background: rgba(236, 241, 247, .86); box-shadow: 0 1px 0 rgba(15, 23, 42, .06);
+    }
+    .pf-side-top { padding: 0; }
+    .pf-brand img { width: 36px; height: 36px; }
+    .pf-brand small, .pf-nav, .pf-side-foot, .pf-ctx-label, .pf-ctx-meta { display: none; }
+    .pf-back-mobile {
+        display: inline-flex; flex: none; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px;
+        background: #fff; color: #000; font: 700 13px var(--font); text-decoration: none; box-shadow: var(--sv-shadow);
+    }
+    .pf-ctx { padding: 4px; border-radius: 14px; }
+    .pf-db-switcher { min-height: 40px; }
+    .pf-db-switcher select { height: 40px; font-size: 14px; }
+    body.platform-mode .pf-main { padding: 14px 16px calc(108px + env(safe-area-inset-bottom)); }
+    .pf-head { align-items: flex-start; padding-bottom: 16px; }
+    .pf-head h1 { font-size: 27px; }
+    .pf-head p { font-size: 14px; }
+    .pf-head .pf-btn { width: 40px; padding: 0; }
+    .pf-head .pf-btn-label { display: none; }
+    .pf-hero { gap: 16px; padding: 18px; }
+    .pf-hero h2 { font-size: 22px; }
+    .pf-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+    .pf-stat { padding: 12px 14px; }
+    .pf-stat b { font-size: 20px; }
+    .pf-hero-actions { padding-top: 14px; }
+    .pf-hero-actions .pf-btn { flex: 1 1 calc(50% - 4px); }
+    .pf-sec-head { flex-direction: column; }
+    .pf-sec-actions { justify-content: flex-start; }
+    .pf-reg-list { margin: 0 -4px; }
+    .pf-reg-headrow { display: none; }
+    .pf-reg-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; padding: 14px 8px; }
+    .pf-reg-row > :nth-child(4) { display: block; }
+    .pf-reg-row.is-current { padding: 14px 12px; }
+    .pf-reg-name { grid-column: 1 / -1; }
+    .pf-reg-name b, .pf-reg-name small { white-space: normal; }
+    .pf-reg-cell { font-size: 13.5px; white-space: normal; }
+    .pf-stat small { white-space: normal; }
+    .pf-reg-cell::before { content: attr(data-label); display: block; color: var(--sv-muted); font-size: 11.5px; font-weight: 600; }
+    .pf-reg-row > .pf-reg-cell:nth-child(5) { grid-column: 1 / -1; }
+    .pf-reg-row > .pf-reg-cell:nth-child(5)::before { display: none; }
+    .pf-reg-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    .pf-reg-actions .pf-btn { flex: 1; }
+    .pf-seg { flex-wrap: nowrap; width: auto; border-radius: 16px; }
+    .pf-seg-item { flex: 1; justify-content: center; padding: 0 10px; border-radius: 12px; font-size: 13px; }
+    .pf-kpis { gap: 10px; }
+    .pf-two { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .pf-callout { padding: 14px 16px; }
+    body.platform-mode .pf-search { width: 100%; }
+    .pf-bank-row .pf-sec-actions, .pf-sec-actions { width: 100%; justify-content: flex-start; }
+    .pf-sec-actions .pf-btn { flex: 1 1 auto; }
+    .pf-bank-hint { display: none; }
+    .pf-sign-opts > label:not(.pf-check) { flex: 1 1 130px; }
+    body.platform-mode .pf-sign-opts .field-input { width: 100%; }
 }

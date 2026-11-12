@@ -11,7 +11,7 @@
         });
     })();
     </script>
-    <title>Платформа управління ОСББ — Super-Admin Control Plane</title>
+    <title>Платформа ОСББ — керування всіма будинками</title>
 
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#E9EEF4">
@@ -25,12 +25,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=218">
-    <link rel="stylesheet" href="style-sv.css?v=218">
-    <link rel="stylesheet" href="style-buh.css?v=218">
-    <link rel="stylesheet" href="style-platform.css?v=218">
+    <link rel="stylesheet" href="style.css?v=219">
+    <link rel="stylesheet" href="style-sv.css?v=219">
+    <link rel="stylesheet" href="style-buh.css?v=219">
+    <link rel="stylesheet" href="style-platform.css?v=219">
 
-    <link rel="modulepreload" href="js/platform-main.js?v=218">
+    <link rel="modulepreload" href="js/platform-main.js?v=219">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -59,56 +59,94 @@
     </div>
 
     <div id="pfApp" class="buh pf-shell" hidden>
-        <header class="buh-top pf-top">
-            <div class="buh-top-row">
-                <a class="buh-brand pf-brand" href="buh.html" title="Повернутися до бухгалтерії">
-                    <img class="buh-brand-mark app-icon" src="assets/icons/icon-192x192.png" alt="" width="44" height="44">
-                    <span><b>Платформа ОСББ</b><small>Super-Admin Control Plane</small></span>
+        <aside class="pf-side" aria-label="Платформа ОСББ">
+            <div class="pf-side-top">
+                <a class="pf-brand" href="buh.html" title="До бухгалтерії">
+                    <img class="app-icon" src="assets/icons/icon-192x192.png" alt="" width="40" height="40">
+                    <span><b>Платформа ОСББ</b><small>Керування всіма будинками</small></span>
                 </a>
-                <nav class="buh-nav pf-nav" aria-label="Розділи платформи">
-                    <button class="buh-nav-item active" data-view="tenants" type="button"><span>ОСББ та бази</span></button>
-                    <button class="buh-nav-item" data-view="bank" type="button"><span>Банк Приват24</span><span class="buh-badge" id="pfBankBadge" hidden></span></button>
-                    <button class="buh-nav-item" data-view="testing" type="button"><span>Тести й симуляції</span></button>
-                    <button class="buh-nav-item" data-view="users" type="button"><span>Користувачі й активність</span></button>
-                    <button class="buh-nav-item" data-view="inspector" type="button"><span>Інспектор БД і корекція</span></button>
-                    <button class="buh-nav-item" data-view="architecture" type="button"><span>Архітектура Multi-Tenant</span></button>
-                </nav>
-                <div class="buh-top-tools pf-tools">
-                    <label class="pf-db-switcher" title="Активний контур бази даних для інспекції та симуляції банку">
-                        <span class="pf-db-dot"></span>
-                        <select id="pfTenantSelect" aria-label="Вибір бази ОСББ">
-                            <option value="uspih-25">ОСББ «Успіх-25» (Робоча БД)</option>
-                        </select>
-                    </label>
-                    <a href="buh.html" class="buh-chip">‹ У бухгалтерію</a>
-                    <a href="admin.html" class="buh-chip">Правління</a>
-                </div>
+                <a href="buh.html" class="pf-back-mobile" aria-label="До бухгалтерії">Бухгалтерія</a>
             </div>
-        </header>
+
+            <div class="pf-ctx">
+                <span class="pf-ctx-label">Зараз у роботі</span>
+                <label class="pf-db-switcher" title="Усі розділи показують дані цієї бази">
+                    <span class="pf-db-dot" aria-hidden="true"></span>
+                    <select id="pfTenantSelect" aria-label="Активна база ОСББ">
+                        <option value="uspih-25">ОСББ «Успіх-25»</option>
+                    </select>
+                    <svg class="pf-db-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </label>
+                <small class="pf-ctx-meta" id="pfCtxMeta">Робоча база</small>
+            </div>
+
+            <nav class="pf-nav" aria-label="Розділи платформи">
+                <span class="pf-nav-h">Огляд</span>
+                    <button class="pf-side-item active" data-view="tenants" type="button">
+                        <svg class="pf-side-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-5h6v5"/></svg>
+                        <span class="pf-side-copy"><b>ОСББ і бази</b><small>Стан і реєстр організацій</small></span>
+                    </button>
+                <span class="pf-nav-h">Операції</span>
+                    <button class="pf-side-item" data-view="bank" type="button">
+                        <svg class="pf-side-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18"/><path d="M12 3 3 8h18z"/><path d="M5 10v8M9 10v8M15 10v8M19 10v8"/><path d="M3 21h18"/></svg>
+                        <span class="pf-side-copy"><b>Банк Приват24</b><small>Підпис і виписка</small></span><span class="buh-badge" id="pfBankBadge" hidden></span>
+                    </button>
+                    <button class="pf-side-item" data-view="testing" type="button">
+                        <svg class="pf-side-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        <span class="pf-side-copy"><b>Тести й симуляції</b><small>Перевірки й полігон</small></span>
+                    </button>
+                <span class="pf-nav-h">Контроль</span>
+                    <button class="pf-side-item" data-view="users" type="button">
+                        <svg class="pf-side-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg>
+                        <span class="pf-side-copy"><b>Користувачі й аудит</b><small>Хто що робив у системі</small></span>
+                    </button>
+                    <button class="pf-side-item" data-view="inspector" type="button">
+                        <svg class="pf-side-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                        <span class="pf-side-copy"><b>Інспектор БД</b><small>Документи й виправлення</small></span>
+                    </button>
+                <span class="pf-nav-h">Довідка</span>
+                    <button class="pf-side-item" data-view="architecture" type="button">
+                        <svg class="pf-side-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        <span class="pf-side-copy"><b>Як влаштовано</b><small>Ізоляція даних і план</small></span>
+                    </button>
+            </nav>
+
+            <div class="pf-side-foot">
+                <a href="buh.html" class="pf-side-link">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                    Бухгалтерія
+                </a>
+                <a href="admin.html" class="pf-side-link">Правління</a>
+            </div>
+        </aside>
 
         <main class="buh-main pf-main">
-            <div class="buh-head pf-head">
-                <div>
-                    <h1 id="pfTitle">Управління всіма ОСББ та базами даних</h1>
-                    <span id="pfSubtitle">Єдиний центр керування організаціями, ізоляцією даних, реквізитами та станом обліку</span>
+            <header class="pf-head">
+                <div class="pf-head-copy">
+                    <span class="pf-crumb" id="pfCrumb">Огляд</span>
+                    <h1 id="pfTitle">ОСББ і бази даних</h1>
+                    <p id="pfSubtitle">Який будинок зараз у роботі, його стан і всі підключені організації</p>
                 </div>
                 <div class="pf-head-actions">
-                    <button type="button" class="sv-btn is-soft btn-compact" id="pfRefreshBtn">Оновити дані</button>
+                    <button type="button" class="pf-btn is-soft" id="pfRefreshBtn">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                        <span class="pf-btn-label">Оновити</span>
+                    </button>
                 </div>
-            </div>
+            </header>
 
-            <section class="buh-view pf-view" data-view="tenants" id="viewTenants"><p class="list-empty">Завантаження реєстру ОСББ…</p></section>
-            <section class="buh-view pf-view" data-view="bank" id="viewBank" hidden><p class="list-empty">Завантаження симулятора Приват24 Автоклієнт…</p></section>
-            <section class="buh-view pf-view" data-view="testing" id="viewTesting" hidden><p class="list-empty">Завантаження тестового полігону…</p></section>
-            <section class="buh-view pf-view" data-view="users" id="viewUsers" hidden><p class="list-empty">Завантаження статистики користувачів…</p></section>
-            <section class="buh-view pf-view" data-view="inspector" id="viewInspector" hidden><p class="list-empty">Завантаження інспектора колекцій БД…</p></section>
-            <section class="buh-view pf-view" data-view="architecture" id="viewArchitecture" hidden><p class="list-empty">Завантаження архітектурної моделі…</p></section>
+            <section class="pf-view" data-view="tenants" id="viewTenants"><p class="list-empty">Завантаження реєстру ОСББ…</p></section>
+            <section class="pf-view" data-view="bank" id="viewBank" hidden><p class="list-empty">Завантаження симулятора Приват24…</p></section>
+            <section class="pf-view" data-view="testing" id="viewTesting" hidden><p class="list-empty">Завантаження тестового полігону…</p></section>
+            <section class="pf-view" data-view="users" id="viewUsers" hidden><p class="list-empty">Завантаження статистики користувачів…</p></section>
+            <section class="pf-view" data-view="inspector" id="viewInspector" hidden><p class="list-empty">Завантаження інспектора БД…</p></section>
+            <section class="pf-view" data-view="architecture" id="viewArchitecture" hidden><p class="list-empty">Завантаження…</p></section>
         </main>
 
         <nav class="buh-tabbar" aria-label="Розділи платформи">
             <button class="buh-tab active" data-view="tenants" type="button">
                 <span class="buh-tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-5h6v5"/></svg></span>
-                <span>ОСББ і бази</span>
+                <span>ОСББ</span>
             </button>
             <button class="buh-tab" data-view="bank" type="button">
                 <span class="buh-tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18"/><path d="M12 3 3 8h18z"/><path d="M5 10v8M9 10v8M15 10v8M19 10v8"/><path d="M3 21h18"/></svg><span class="buh-badge" id="pfBankBadgeTab" hidden></span></span>
@@ -116,15 +154,15 @@
             </button>
             <button class="buh-tab" data-view="testing" type="button">
                 <span class="buh-tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-                <span>Тестування</span>
+                <span>Тести</span>
             </button>
             <button class="buh-tab" data-view="users" type="button">
                 <span class="buh-tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg></span>
-                <span>Активність</span>
+                <span>Аудит</span>
             </button>
             <button class="buh-tab" data-view="inspector" type="button">
                 <span class="buh-tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
-                <span>Інспектор БД</span>
+                <span>Інспектор</span>
             </button>
         </nav>
     </div>
@@ -151,7 +189,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/platform-main.js?v=218').catch(error => {
+    import('./js/platform-main.js?v=219').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження платформи:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
