@@ -1,0 +1,1 @@
+module.exports = { getMessaging: () => ({ sendEachForMulticast: async ({ tokens = [] }) => ({ successCount: 0, failureCount: 0, responses: tokens.map(() => ({ success: false })) }), send: async () => 'demo' }) };

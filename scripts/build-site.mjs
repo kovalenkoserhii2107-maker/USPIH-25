@@ -6,7 +6,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 // content-hashed chunks, so residents never download the board's features.
 await rm('_site', { recursive: true, force: true });
 await mkdir('_site', { recursive: true });
-for (const path of ['index.html', 'admin.html', 'buh.html', 'accounting-test.html', 'style-accounting-test.css', 'platform.html', 'style-platform.css', 'landing.html', 'style-landing.css', 'style.css', 'style-admin.css', 'style-buh.css', 'style-sv.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
+for (const path of ['index.html', 'admin.html', 'buh.html', 'accounting-test.html', 'style-accounting-test.css', 'platform.html', 'style-platform.css', 'landing.html', 'demo.html', 'style-landing.css', 'style.css', 'style-admin.css', 'style-buh.css', 'style-sv.css', 'style-chat.css', 'manifest.json', 'sw.js', 'js', 'assets']) {
     await cp(path, `_site/${path}`, { recursive: true });
 }
 await mkdir('_site/docs/accounting', { recursive:true });
@@ -62,3 +62,19 @@ const all = Object.keys(outputs).filter(path => path.endsWith('.js'));
 console.log(`Built cabinet (${kib(['./js/app.js', ...residentChunks])} KiB at startup) and panel `
     + `(${kib(['./js/admin-main.js', ...adminChunks])} KiB at startup), accounting (${kib(['./js/buh-main.js', ...buhChunks])} KiB), ${Math.round(all.reduce((s, p) => s + outputs[p].bytes, 0) / 1024)} KiB total, `
     + `with ${shell.length} shell URLs.`);
+
+// Демо-будинок (demo.html): сервер functions/* для браузера й готова база.
+// Базу збирає той самий серверний код — тож у демо видно справжні розрахунки.
+{
+    const { bundleServer } = await import('./demo/bundle.mjs');
+    const { pathToFileURL } = await import('node:url');
+    const { resolve } = await import('node:path');
+    await bundleServer('_site/js/demo/server.js');
+    const { makeSeed } = await import('./demo/seed.mjs');
+    const { store, log } = await makeSeed(pathToFileURL(resolve('_site/js/demo/server.js')).href);
+    const failed = log.filter(line => line.startsWith('✗'));
+    if (failed.length) throw new Error(`Демо-будинок не зібрано: ${failed.join('; ')}`);
+    await writeFile('_site/js/demo/seed.json', JSON.stringify(store.dump()));
+    console.log(`Demo house: ${store.docs.size} documents.`);
+}
+
