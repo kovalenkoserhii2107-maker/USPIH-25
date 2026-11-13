@@ -1,6 +1,7 @@
 // Збірка сервера демо-будинку (functions/* → один ESM-файл без залежностей від Node).
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
+import { demoFixture } from './fixture.mjs';
 const here = p => fileURLToPath(new URL(p, import.meta.url));
 const shim = name => here(`./shims/${name}`);
 export const alias = {
@@ -20,7 +21,12 @@ export async function bundleServer(outfile, { minify = true } = {}) {
     await build({
         entryPoints: [here('./server-entry.js')], outfile, bundle: true, format: 'esm', platform: 'browser', target: ['es2020'], minify,
         alias, inject: [shim('process.js')], define: { 'process.env.STORAGE_BUCKET': '"demo"', global: 'globalThis' },
-        plugins: [{ name: 'demo-db', setup(b) { b.onResolve({ filter: /\.\/accounting-test-db$/ }, () => ({ path: shim('accounting-test-db.cjs') })); } }],
+        plugins: [{ name: 'demo-db', setup(b) {
+            b.onResolve({ filter: /\.\/accounting-test-db$/ }, () => ({ path: shim('accounting-test-db.cjs') }));
+            // Контрольний сценарій тестової бухгалтерії — у демо «живий»: імена, боржники, постачальники.
+            b.onResolve({ filter: /\.\/accounting-test-fixture\.json$/ }, () => ({ path: 'demo-fixture', namespace: 'demo' }));
+            b.onLoad({ filter: /^demo-fixture$/, namespace: 'demo' }, async () => ({ contents: JSON.stringify(await demoFixture()), loader: 'json' }));
+        } }],
         logLevel: 'warning', legalComments: 'none'
     });
 }

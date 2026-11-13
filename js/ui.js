@@ -21,9 +21,16 @@
  */
 const OWN_FILES = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\//;
 
+// Демо-будинок: документи лежать поруч зі сторінкою (assets/demo-docs/*.pdf).
+const DEMO_FILES = /^\/(?:[\w.-]+\/)*assets\/demo-docs\/[\w.-]+\.pdf$/;
+const isDemo = () => typeof document !== 'undefined' && document.documentElement.classList.contains('is-demo');
+
 export function safeFileUrl(url) {
     try {
-        const href = new URL(String(url || '')).href;
+        const demo = isDemo();
+        const parsed = demo ? new URL(String(url || ''), location.href) : new URL(String(url || ''));
+        const href = parsed.href;
+        if (demo && parsed.origin === location.origin && DEMO_FILES.test(parsed.pathname)) return href;
         return OWN_FILES.test(href) ? href : '';
     } catch {
         return '';
