@@ -1,6 +1,6 @@
 // firebase-auth для демо-будинку: вхід — обрана роль, вихід — назад до вибору ролі.
 import { user, exitDemo } from './runtime.js';
-import './bar.js';
+import './brand.js';
 const auth = { currentUser: user, name: 'demo', languageCode: 'uk' };
 export const indexedDBLocalPersistence = { type: 'LOCAL' }, browserLocalPersistence = { type: 'LOCAL' }, browserSessionPersistence = { type: 'SESSION' }, inMemoryPersistence = { type: 'NONE' };
 export const initializeAuth = () => auth;
