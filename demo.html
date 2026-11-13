@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Демо-будинок — Кабінет ОСББ</title>
+    <meta name="description" content="Спробуйте застосунок для ОСББ без реєстрації: голова, бухгалтер, член правління й мешканець демо-будинку. Умовні дані, зміни не зберігаються.">
+    <meta name="theme-color" content="#EEF2F7">
+    <meta name="robots" content="noindex">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
+    <link rel="stylesheet" href="style-landing.css">
+    <style>
+        .dm { padding: clamp(28px, 5vw, 64px) 0 64px; }
+        .dm h1 { font-size: clamp(34px, 5vw, 56px); font-weight: 800; line-height: 1.04; letter-spacing: -.04em; }
+        .dm-lead { max-width: 640px; margin-top: 16px; color: #2B2B2B; font-size: clamp(16.5px, 1.5vw, 19px); }
+        .dm-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 32px; }
+        .dm-role { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 22px 22px; border: 0; border-radius: 26px;
+            background: #fff; box-shadow: var(--shadow); color: #000; font: inherit; text-align: left; text-decoration: none; cursor: pointer;
+            transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
+        .dm-role:hover { transform: translateY(-3px); box-shadow: var(--shadow-up); }
+        .dm-role:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
+        .dm-ico { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 17px; }
+        .dm-ico .ico { width: 26px; height: 26px; }
+        .dm-role b { display: block; font-size: 19px; font-weight: 800; letter-spacing: -.015em; }
+        .dm-role span small { display: block; margin-top: 3px; color: var(--muted); font-size: 14px; line-height: 1.4; }
+        .dm-role > .ico { color: #9AA1AC; }
+        .is-chair .dm-ico { background: #EEE8FD; color: #5B3CC4; }
+        .is-acc .dm-ico { background: #FFF0A8; color: #4D4000; }
+        .is-board .dm-ico { background: #E3F2E8; color: #145C29; }
+        .is-res .dm-ico { background: #DDEBFF; color: #1F4FB8; }
+        .dm-notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 26px; }
+        .dm-notes li { padding: 18px 20px; border-radius: 22px; background: rgba(255, 255, 255, .7); box-shadow: var(--shadow); font-size: 14.5px; line-height: 1.45; }
+        .dm-notes b { display: block; margin-bottom: 4px; font-size: 15.5px; }
+        .dm-back { display: inline-flex; margin-top: 28px; color: #000; font-weight: 700; }
+        @media (max-width: 760px) { .dm-roles, .dm-notes { grid-template-columns: minmax(0, 1fr); } .dm-role { grid-template-columns: 46px minmax(0, 1fr) auto; padding: 18px; } .dm-ico { width: 46px; height: 46px; border-radius: 14px; } }
+    </style>
+</head>
+<body>
+    <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+        <symbol id="i-sign" viewBox="0 0 24 24"><path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19l-4 1z"/></symbol>
+        <symbol id="i-report" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3"/></symbol>
+        <symbol id="i-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a5 5 0 0 1 3 4.5v1"/></symbol>
+        <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    </svg>
+
+    <header class="site-header">
+        <div class="wrap header-inner">
+            <a class="brand" href="landing.html"><img src="assets/icons/icon-192x192.png" width="40" height="40" alt=""><span><b>Кабінет ОСББ</b><small>Демо-будинок</small></span></a>
+            <a class="btn btn-quiet" href="landing.html">← На сайт</a>
+            <a class="btn btn-dark header-cta" href="landing.html#contact">Підключити будинок</a>
+        </div>
+    </header>
+
+    <main class="dm">
+        <div class="wrap">
+            <p class="chip"><i aria-hidden="true"></i>Без реєстрації · умовні дані</p>
+            <h1>Демо-будинок. <span class="grad">Оберіть, ким зайти.</span></h1>
+            <p class="dm-lead">Будинок на 300 квартир із закритими місяцями обліку, оплатами мешканців, документами, зарплатою, зборами й зверненнями. Перемикайтеся між ролями будь-коли — панель «Демо» внизу екрана.</p>
+
+            <div class="dm-roles">
+                <a class="dm-role is-chair" href="admin.html" data-role="chair">
+                    <span class="dm-ico"><svg class="ico" aria-hidden="true"><use href="#i-sign"/></svg></span>
+                    <span><b>Голова правління</b><small>Погоджує витрати, підписує платежі, проводить збори</small></span>
+                    <svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg>
+                </a>
+                <a class="dm-role is-acc" href="buh.html" data-role="accountant">
+                    <span class="dm-ico"><svg class="ico" aria-hidden="true"><use href="#i-report"/></svg></span>
+                    <span><b>Бухгалтер</b><small>Банк, документи, зарплата, звіти й закриття місяця</small></span>
+                    <svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg>
+                </a>
+                <a class="dm-role is-board" href="admin.html" data-role="board">
+                    <span class="dm-ico"><svg class="ico" aria-hidden="true"><use href="#i-team"/></svg></span>
+                    <span><b>Член правління</b><small>Звернення, власники, оголошення, опитування</small></span>
+                    <svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg>
+                </a>
+                <a class="dm-role is-res" href="index.html" data-role="resident">
+                    <span class="dm-ico"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg></span>
+                    <span><b>Мешканець, кв. 7</b><small>Баланс, оплата, звернення, голосування на зборах</small></span>
+                    <svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg>
+                </a>
+            </div>
+
+            <ul class="dm-notes">
+                <li><b>Усе по-справжньому</b>Розрахунки, перевірки й підказки — той самий код, що працює в ОСББ «Успіх-25».</li>
+                <li><b>Нічого не зламаєте</b>Дії видно одразу, але вони не зберігаються: після перезавантаження будинок знову як на початку.</li>
+                <li><b>Кожному — свій</b>Ваші зміни бачите лише ви. Інші відвідувачі мають власну копію демо-будинку.</li>
+            </ul>
+            <a class="dm-back" href="landing.html">← Повернутися на сайт</a>
+        </div>
+    </main>
+
+    <script>
+    (function () {
+        function enter(role, page) {
+            try { sessionStorage.setItem('uspih_demo', JSON.stringify({ role: role })); }
+            catch (e) { alert('Браузер забороняє зберегти вибір ролі (приватний режим). Відкрийте демо у звичайному вікні.'); return; }
+            location.href = page;
+        }
+        document.querySelectorAll('[data-role]').forEach(function (a) {
+            a.addEventListener('click', function (e) { e.preventDefault(); enter(a.dataset.role, a.getAttribute('href')); });
+        });
+        // Пряме посилання: demo.html?role=accountant
+        var role = new URLSearchParams(location.search).get('role');
+        var link = role && document.querySelector('[data-role="' + role.replace(/[^a-z]/g, '') + '"]');
+        if (link) enter(link.dataset.role, link.getAttribute('href'));
+    })();
+    </script>
+</body>
+</html>

@@ -204,6 +204,10 @@ button, input, select { font: inherit; color: inherit; }
 .b-ico { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
 .benefits b { display: block; font-size: 16.5px; font-weight: 800; letter-spacing: -.01em; }
 .benefits p { margin-top: 2px; color: #333; font-size: 14.5px; line-height: 1.45; }
+.role-demo { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin-top: 22px; padding: 12px 18px; border-radius: 999px; background: #000; color: #fff;
+    font-size: 15px; font-weight: 700; text-decoration: none; transition: transform .3s var(--ease), box-shadow .3s var(--ease); }
+.role-demo:hover { box-shadow: 0 14px 30px -14px rgba(0, 0, 0, .55); transform: translateY(-1px); }
+.role-demo .ico { width: 18px; height: 18px; }
 .role-visual { position: relative; min-width: 0; }
 .rv-laptop { margin: 0 4% 0 0; }
 .role-visual .rv-phone { position: absolute; right: -2%; bottom: -8%; width: 27%; }
@@ -485,6 +489,7 @@ button, input, select { font: inherit; color: inherit; }
     .role-was { order: 2; margin-top: -8px; font-size: 14.5px; }
     .role-visual { order: 3; }
     .benefits { order: 4; margin-top: 0; }
+    .role-demo { order: 5; margin-top: 0; justify-content: center; width: 100%; }
     .benefits li { grid-template-columns: 38px minmax(0, 1fr); gap: 12px; }
     .b-ico { width: 38px; height: 38px; border-radius: 12px; }
     .benefits b { font-size: 16px; }

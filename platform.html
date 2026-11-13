@@ -4,6 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <script>
+    // Демо-будинок (demo.html): Firebase у цій вкладці підмінено базою в памʼяті
+    // (js/demo/*), «сьогодні» — дата демо-даних. Без позначки нічого не змінюється.
+    (function () {
+        var on; try { on = sessionStorage.getItem('uspih_demo'); } catch (e) { on = null; }
+        if (!on) return;
+        var map = { imports: {} }, base = 'https://www.gstatic.com/firebasejs/10.14.1/firebase-';
+        ['app', 'auth', 'firestore', 'functions', 'storage', 'messaging'].forEach(function (m) {
+            map.imports[base + m + '.js'] = new URL('js/demo/fb-' + m + '.js', location.href).href;
+        });
+        var s = document.createElement('script');
+        s.type = 'importmap';
+        s.textContent = JSON.stringify(map);
+        document.currentScript.after(s);
+        var Real = Date, offset = Real.parse('2026-01-20T09:30:00+02:00') - Real.now();
+        class DemoDate extends Real {
+            constructor() { if (arguments.length) super(...arguments); else super(Real.now() + offset); }
+            static now() { return Real.now() + offset; }
+            static [Symbol.hasInstance](x) { return x instanceof Real; }
+        }
+        DemoDate.__demo = true;
+        window.Date = DemoDate;
+        document.documentElement.classList.add('is-demo');
+    })();
+    </script>
+    <script>
     (function () {
         var stop = function (e) { e.preventDefault(); };
         ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
@@ -25,12 +50,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
-    <link rel="stylesheet" href="style.css?v=220">
-    <link rel="stylesheet" href="style-sv.css?v=220">
-    <link rel="stylesheet" href="style-buh.css?v=220">
-    <link rel="stylesheet" href="style-platform.css?v=220">
+    <link rel="stylesheet" href="style.css?v=221">
+    <link rel="stylesheet" href="style-sv.css?v=221">
+    <link rel="stylesheet" href="style-buh.css?v=221">
+    <link rel="stylesheet" href="style-platform.css?v=221">
 
-    <link rel="modulepreload" href="js/platform-main.js?v=220">
+    <link rel="modulepreload" href="js/platform-main.js?v=221">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -189,7 +214,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/platform-main.js?v=220').catch(error => {
+    import('./js/platform-main.js?v=221').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження платформи:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));

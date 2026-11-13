@@ -4,6 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <script>
+    // Демо-будинок (demo.html): Firebase у цій вкладці підмінено базою в памʼяті
+    // (js/demo/*), «сьогодні» — дата демо-даних. Без позначки нічого не змінюється.
+    (function () {
+        var on; try { on = sessionStorage.getItem('uspih_demo'); } catch (e) { on = null; }
+        if (!on) return;
+        var map = { imports: {} }, base = 'https://www.gstatic.com/firebasejs/10.14.1/firebase-';
+        ['app', 'auth', 'firestore', 'functions', 'storage', 'messaging'].forEach(function (m) {
+            map.imports[base + m + '.js'] = new URL('js/demo/fb-' + m + '.js', location.href).href;
+        });
+        var s = document.createElement('script');
+        s.type = 'importmap';
+        s.textContent = JSON.stringify(map);
+        document.currentScript.after(s);
+        var Real = Date, offset = Real.parse('2026-01-20T09:30:00+02:00') - Real.now();
+        class DemoDate extends Real {
+            constructor() { if (arguments.length) super(...arguments); else super(Real.now() + offset); }
+            static now() { return Real.now() + offset; }
+            static [Symbol.hasInstance](x) { return x instanceof Real; }
+        }
+        DemoDate.__demo = true;
+        window.Date = DemoDate;
+        document.documentElement.classList.add('is-demo');
+    })();
+    </script>
+    <script>
     // iOS Safari ігнорує user-scalable=no: щипок блокуємо тут, щоб застосунок
     // завжди виглядав так, як задумано (подвійний дотик вимкнено в style.css).
     (function () {
@@ -25,12 +50,12 @@
     <link rel="icon" type="image/png" href="assets/icons/icon-192x192.png">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
 
-    <link rel="stylesheet" href="style.css?v=220">
-    <link rel="stylesheet" href="style-chat.css?v=220">
+    <link rel="stylesheet" href="style.css?v=221">
+    <link rel="stylesheet" href="style-chat.css?v=221">
 
     <!-- Модулі запуску качаємо одразу, а не після розбору всієї сторінки
          й самого app.js: інакше SDK Firebase чекав у черзі за ними. -->
-    <link rel="modulepreload" href="js/app.js?v=220">
+    <link rel="modulepreload" href="js/app.js?v=221">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js">
     <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js">
@@ -895,7 +920,7 @@
 })();
 </script>
 <script type="module">
-    import('./js/app.js?v=220').catch(error => {
+    import('./js/app.js?v=221').catch(error => {
         window.USPihModuleFailed = true;
         console.error('Завантаження застосунку:', error);
         window.dispatchEvent(new Event('uspih-module-failed'));
