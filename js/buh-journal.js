@@ -125,6 +125,43 @@ const net = x => (x.closeDr || 0) - (x.closeCr || 0);
 const cell = (kop, l, cls = '') => `<td class="t-sum${cls ? ` ${cls}` : ''}${kop ? '' : ' is-zero'}" data-l="${l}">${kop ? fmtKop(kop) : ''}</td>`;
 const sums = r => `${cell(r.openDr, 'Поч. Дт')}${cell(r.openCr, 'Поч. Кт')}${cell(r.dr, 'Обор. Дт', 'jr-turn')}${cell(r.cr, 'Обор. Кт', 'jr-turn')}${cell(r.closeDr, 'Кін. Дт', 'jr-close')}${cell(r.closeCr, 'Кін. Кт', 'jr-close')}`;
 
+/** Звірка грошових рахунків з банком на кінець місяця: облік, банк, різниця, звідки залишок банку. */
+function bankRecHtml() {
+    const rows = ctx.bankRows || [];
+    const lastIso = `${ctx.period}-${String(new Date(Date.UTC(+ctx.period.slice(0, 4), +ctx.period.slice(5, 7), 0)).getUTCDate()).padStart(2, '0')}`;
+    const last = human(lastIso);
+    const ended = String(ctx.today || '') > lastIso;
+    const chair = session.role === 'chair';
+    const manualRows = rows.map((r, i) => ({ ...r, i })).filter(r => !r.ok);
+    const from = r => r.manual ? 'звірено вручну'
+        : r.bankSource === 'statement' ? `виписка на ${human(r.bankDate)}`
+        : r.bankSource === 'privat' ? `Приват24${r.bankDate ? `, залишок на ${human(r.bankDate)}` : ''}`
+        : r.source === 'file' ? 'немає виписки за місяць' : r.source === 'none' ? 'рахунку немає в налаштуваннях' : 'банк ще не передав залишок';
+    const diff = r => r.bankKop === null ? '' : r.bankKop === r.balanceKop ? '<span class="jr-rec-ok">✓</span>' : `<b class="is-out">${fmtKop(r.bankKop - r.balanceKop)}</b>`;
+    const minus = rows.some(r => r.balanceKop < 0 && !r.ok);
+    return `<div class="jr-rec">
+        <div class="jr-rec-head"><b>Звірка з банком на ${escapeHtml(last)}</b>
+            <span class="jr-rec-state ${ctx.bankReconciled ? 'is-ok' : ended ? 'is-bad' : ''}">${ctx.bankReconciled ? '✓ звірено' : ended ? `${manualRows.length} з ${rows.length} не звірено` : 'після кінця місяця'}</span></div>
+        <p class="buh-note">Залишок банку на кінець місяця система бере сама: з ПриватБанку — щодня, з інших банків — з вихідного залишку завантаженої виписки. Вручну — лише там, де його немає.</p>
+        <div class="jr-scroll"><table class="buh-table is-compact jr-rec-table">
+            <thead><tr><th>Рахунок</th><th class="t-sum">В обліку</th><th class="t-sum">У банку</th><th class="t-sum">Різниця</th><th>Залишок банку</th></tr></thead>
+            <tbody>${rows.map(r => `<tr class="${r.ok ? 'is-ok' : r.state === 'diff' ? 'is-bad' : ''}">
+                <td><b>${escapeHtml(r.bank || 'Банк')}</b><br><small class="t-muted">…${escapeHtml(String(r.iban).slice(-4))} · рах. ${escapeHtml(r.acc)}</small></td>
+                <td class="t-sum${r.balanceKop < 0 ? ' is-out' : ''}">${fmtKop(r.balanceKop)}</td>
+                <td class="t-sum">${r.bankKop === null ? '—' : fmtKop(r.bankKop)}</td>
+                <td class="t-sum">${diff(r)}</td>
+                <td><small>${escapeHtml(from(r))}</small>${r.source === 'file' && r.state === 'none' && !r.manual ? ' <button type="button" class="btn-ghost-small" data-act="stmt-import" data-iban="' + escapeHtml(r.iban) + '">Завантажити ›</button>' : ''}</td>
+            </tr>`).join('')}</tbody></table></div>
+        ${minus ? `<div class="jr-rec-hint"><b>В обліку мінус.</b> На банківському рахунку мінуса не буває: найчастіше у «Вхідній ОСВ» немає залишку рахунку на початок обліку. Відкрийте її й натисніть «Підставити» біля рахунку — система порахує залишок з банку.
+            <button type="button" class="btn-ghost-small" data-go="settings" data-settings-tab="startup">Вхідна ОСВ ›</button></div>` : ''}
+        ${ended && manualRows.length && !chair ? `<details class="jr-cut"><summary>Звірити вручну за паперовою випискою</summary>
+            <p class="buh-note">Лише для рахунків, де залишку банку на ${escapeHtml(last)} немає або він ще не остаточний. Сума має збігтися з обліком — інакше шукайте пропущену операцію.</p>
+            <div class="jr-cut-grid">${manualRows.map(r => `<label class="py-field"><span>${escapeHtml(r.bank || '')} …${escapeHtml(String(r.iban).slice(-4))} · в обліку ${fmtKop(r.balanceKop)} грн</span><input class="field-input" inputmode="decimal" data-jr-cut="${r.i}" placeholder="Залишок у виписці, грн"></label>`).join('')}
+            <label class="py-field"><span>Реквізити виписки</span><input id="jrCutNote" class="field-input" maxlength="300" placeholder="Напр.: виписка Ощадбанку за 31.10" value="${escapeHtml(ctx.bankCut?.note || '')}"></label></div>
+            <button type="button" class="sv-btn is-soft" data-act="bank-cut">Звірити вручну</button></details>` : ''}
+    </div>`;
+}
+
 function checksHtml() {
     const icon = { block: '✕', warn: '!', ok: '✓' };
     const order = { block: 0, warn: 1, ok: 2 };
@@ -372,11 +409,7 @@ export async function loadJournalView() {
         <section class="buh-card jr-checks-card" id="jrChecks">
             <div class="buh-card-head"><h2>${closed ? 'Стан місяця' : 'Перед закриттям'}</h2><span>${closed ? '' : blocks ? `${blocks} блокує` : 'усе гаразд'}</span></div>
             ${checksHtml()}
-            ${!closed && ctx.bankRows?.length ? `<details class="jr-cut"${ctx.bankCut?.key === ctx.key || ctx.opening?.status !== 'approved' ? '' : ' open'}><summary>Звірка з банком на кінець місяця${ctx.bankCut?.key === ctx.key ? ' · ✓ звірено' : ''}</summary>
-                <p class="buh-note">Внесіть залишки з виписки на останній день цього місяця. Поточний залишок банку може належати іншій даті.</p>
-                <div class="jr-cut-grid">${ctx.bankRows.map((r, i) => `<label class="py-field"><span>…${escapeHtml(r.iban.slice(-4))} · ${r.acc} · в обліку ${fmtKop(r.balanceKop)} грн</span><input class="field-input" inputmode="decimal" data-jr-cut="${i}" placeholder="Залишок у виписці, грн" value="${ctx.bankCut?.key === ctx.key ? (r.balanceKop / 100).toFixed(2) : ''}"></label>`).join('')}
-                <label class="py-field"><span>Реквізити виписки / підтвердження</span><input id="jrCutNote" class="field-input" maxlength="300" value="${escapeHtml(ctx.bankCut?.note || '')}"></label></div>
-                <button type="button" class="sv-btn is-soft" data-act="bank-cut">Звірити залишки</button></details>` : ''}
+            ${!closed && ctx.bankRows?.length ? bankRecHtml() : ''}
         </section>
         ${tbHtml()}<div id="jrNotes"></div>`;
     const notesHost = document.getElementById('jrNotes');
@@ -434,9 +467,16 @@ async function onAction(btn) {
         else if (['open-apt', 'open-asset', 'open-adv-person', 'open-entry'].includes(a)) openEntry(btn);
         else if (a === 'csv-tb') { csvTb(); btn.closest('details')?.removeAttribute('open'); }
         else if (a === 'csv-journal') { csvJournal(); btn.closest('details')?.removeAttribute('open'); }
+        else if (a === 'stmt-import') {
+            const { openStatementImport } = await import('./buh-statement.js');
+            await openStatementImport({ iban: btn.dataset.iban || '', onDone: () => loadJournalView() });
+        }
         else if (a === 'bank-cut') {
-            const rows = ctx.bankRows.map((r, i) => ({ ...r, balanceKop: toKop(document.querySelector(`[data-jr-cut="${i}"]`).value) }));
-            await journalAct({ action: 'bankCut', period: ctx.period, rows, note: document.getElementById('jrCutNote').value });
+            const rows = [...document.querySelectorAll('[data-jr-cut]')].map(input => ({ ...ctx.bankRows[Number(input.dataset.jrCut)], value: toKop(input.value) }));
+            if (rows.some(r => !Number.isInteger(r.value))) { toast('Вкажіть залишок кожного рахунку з виписки', 'error'); return; }
+            const off = rows.filter(r => r.value !== r.balanceKop);
+            if (off.length) { toast(`Не збігається: ${off.map(r => `…${String(r.iban).slice(-4)} — різниця ${fmtKop(r.value - r.balanceKop)} грн`).join(', ')}. Шукайте пропущену операцію`, 'error'); return; }
+            await journalAct({ action: 'bankCut', period: ctx.period, rows: rows.map(r => ({ acc: r.acc, iban: r.iban, balanceKop: r.value })), note: document.getElementById('jrCutNote').value });
             toast('Залишки банку звірено', 'success');
         }
         else if (a === 'close') {

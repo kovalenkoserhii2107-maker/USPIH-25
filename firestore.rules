@@ -587,6 +587,15 @@ service cloud.firestore {
       allow read: if validSession() && (canAccount());
       allow write: if false;
     }
+    // Залишки банку на кінець дня (API або виписка файлом) і журнал завантажених виписок.
+    match /bank_balances/{docId} {
+      allow read: if validSession() && (canAccount());
+      allow write: if false;
+    }
+    match /bank_statements/{docId} {
+      allow read: if validSession() && (canAccount());
+      allow write: if false;
+    }
     match /bank_secrets/{docId} {
       allow read, write: if false;
     }

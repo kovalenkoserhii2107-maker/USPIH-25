@@ -31,6 +31,7 @@ const { INCOME_SOURCES } = require('./budget-core');
 const { DEFAULT_COMPONENTS } = require('./charges-core');
 const { reconcile } = require('./reconciliation-core');
 const { activeIn } = require('./payroll-core');
+const statements = require('./statement-core');
 
 const REGION = 'europe-central2';
 
@@ -83,13 +84,14 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             ledgers.get(apt).push({ _id: d.id, ...d.data() });
         });
         const periods = new Map(periodSnap.docs.map(d => [d.id, d.data()]));
-        const [notesSnap, snapshots, cuts, assetsSnap, advanceSnap, staffSnap] = await Promise.all([
+        const [notesSnap, snapshots, cuts, assetsSnap, advanceSnap, staffSnap, balancesSnap] = await Promise.all([
             get(db.collection('accounting_notes')),
             get(db.collection('journal_snapshots')),
             get(db.collection('journal_bank_checks')),
             Promise.resolve().then(() => get(db.collection('assets'))).catch(() => ({ docs: [] })),
             Promise.resolve().then(() => get(db.collection('advance_reports'))).catch(() => ({ docs: [] })),
-            Promise.resolve().then(() => get(db.collection('staff'))).catch(() => ({ docs: [] }))
+            Promise.resolve().then(() => get(db.collection('staff'))).catch(() => ({ docs: [] })),
+            Promise.resolve().then(() => get(db.collection('bank_balances').where('date', '>=', policy.startDate))).catch(() => ({ docs: [] }))
         ]);
         const advanceReports = (advanceSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
         const closedSnapshots = new Map();
@@ -103,6 +105,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             advanceReports,
             staff: (staffSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })),
             bankCuts: new Map(cuts.docs.map(d => [d.id,d.data()])),
+            bankBalances: (balancesSnap?.docs || []).map(d => d.data()),
             input: {
                 start: policy.startDate.slice(0, 7), startDate: policy.startDate, policy, closedSnapshots,
                 adjustments: notesSnap.docs.map(d => ({ id:d.id, ...d.data() })),
@@ -257,7 +260,12 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             });
         }
         const cut = data.bankCuts.get(p);
-        if (!isClosed && bankRows.length && (!cut || cut.key !== key || cut.rows.length !== bankRows.length || bankRows.some(r=>!cut.rows.some(c=>c.iban===r.iban&&c.acc===r.acc&&c.balanceKop===r.balanceKop)))) checks.push({level:'block',text:'Звірте залишки поточного і депозитного рахунків з випискою на кінець саме цього місяця'});
+        // Звірка з банком на кінець місяця: залишок банку з API або виписки файлом, вручну — лише де його немає.
+        const bankRec = statements.reconcileBank({ lastDay: core.lastDay(p), today: now, rows: bankRows, cut, key,
+            accounts: data.bankAccounts.map(a => ({ ...a, balanceDate: core.kyivDate(a.balanceAt) || null })),
+            anchors: data.bankBalances,
+            txs: data.input.bankTx.filter(t => !t.bankVoided && (!t.currency || t.currency === 'UAH')).map(t => ({ account: t.account, date: core.kyivDate(t.at), direction: t.direction, amountKop: t.amountKop })) });
+        if (!isClosed) checks.push(...bankRec.checks.filter(c => c.level === 'block'));
         checks.push(...reconcile({ period: p, start:data.input.start, startDate:data.policy.startDate, runs: data.runs, bankTx: data.input.bankTx, ledgers: data.input.ledgers,
             apartments: data.apartments, openingSet: data.openingSet, openingPending: data.openingPending, expenses: data.input.expenses, payments: data.payments, payrollRuns: data.input.payrollRuns }));
         // Є працівники, а відомість місяця не затверджено — зарплата не потрапить у проводки місяця.
@@ -280,6 +288,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                 if (bank) checks.splice(ok >= 0 ? ok : checks.length, 0, bank);
             }
         }
+        if (!isClosed && bankRec.done) checks.push(...bankRec.checks.filter(c => c.level === 'ok'));
         const lastClosed = data.closed.at(-1) || null;
         if (checks.some(c => c.level === 'block')) {
             const ready = checks.findIndex(c => c.level === 'ok' && c.text.startsWith('Можна закривати'));
@@ -295,7 +304,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
             if (a.legacyId) assetLabels[a.legacyId] = labelStr;
         }
         return {
-            period: p, today: now, start: data.input.start, startDate: data.policy.startDate, policy: data.policy, bankRows, bankCut: cut ? {note:cut.note, date:cut.date, key:cut.key} : null,
+            period: p, today: now, start: data.input.start, startDate: data.policy.startDate, policy: data.policy, bankRows: bankRec.rows, bankReconciled: bankRec.done,
+            bankCut: cut ? {note:cut.note, date:cut.date, key:cut.key} : null,
             periods: core.periodsUpTo(now.slice(0, 7), data.input.start).map(id => ({ id, status: data.periods.get(id)?.status === 'closed' ? 'closed' : 'open' })),
             status: isClosed ? 'closed' : isClosing ? 'closing' : 'open', key,
             closedAt: stored?.closedAt?.toDate?.()?.toISOString() || null, closedBy: stored?.closedBy || null,
@@ -338,11 +348,13 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
     /** 311 за кожним рахунком (з вхідним залишком) проти останнього залишку з банку. */
     function bankCheck(tb, accounts) {
         const byIban = new Map(tb.rows.filter(r=>['311','313','351','143'].includes(r.acc)).flatMap(r=>(r.byA || []).map(x => [String(x.a), x.closeDr - x.closeCr])));
-        const off = accounts.filter(a => (!a.currency || a.currency === 'UAH') && Number.isSafeInteger(a.balanceKop) && (byIban.get(a.iban) || 0) !== a.balanceKop);
-        if (!accounts.length) return null;
+        // Лише рахунки з поточним залишком з банку (API): залишок з виписки файлом належить даті виписки, не сьогодні.
+        const live = accounts.filter(a => a.source !== 'file' && (!a.currency || a.currency === 'UAH') && Number.isSafeInteger(a.balanceKop));
+        const off = live.filter(a => (byIban.get(a.iban) || 0) !== a.balanceKop);
+        if (!live.length) return null;
         return off.length
-            ? { level: 'warn', text: `Рахунок 311 не збігається із залишком банку: ${off.map(a => `…${a.iban.slice(-4)} — облік ${((byIban.get(a.iban) || 0) / 100).toFixed(2)}, банк ${(a.balanceKop / 100).toFixed(2)} грн`).join('; ')}. Причина — вхідний залишок або операції, яких ще немає у виписці` }
-            : { level: 'ok', text: 'Рахунок 311 збігається із залишками банку за всіма рахунками' };
+            ? { level: 'warn', text: `Сьогодні облік і банк розходяться: ${off.map(a => `…${a.iban.slice(-4)} — облік ${((byIban.get(a.iban) || 0) / 100).toFixed(2)}, банк ${(a.balanceKop / 100).toFixed(2)} грн`).join('; ')}. Причина — вхідний залишок або операції, яких ще немає у виписці` }
+            : { level: 'ok', text: 'Сьогодні облік збігається із залишками банку за всіма рахунками' };
     }
 
     /** Чистий рух за рахунком банку з початку обліку (без вхідного залишку). */
@@ -1264,7 +1276,8 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         if (current.status !== 'open') fail('failed-precondition', 'Місяць уже закрито або закривається');
         if (current.today < core.lastDay(period)) fail('failed-precondition', 'Залишок на кінець місяця звіряють після настання цієї дати');
         const clean = rows.map(r => ({ acc: String(r.acc), iban: String(r.iban), balanceKop: Number(r.balanceKop) }));
-        if (clean.length !== current.bankRows.length || new Set(clean.map(r => `${r.acc}:${r.iban}`)).size !== clean.length || clean.some(r => !Number.isSafeInteger(r.balanceKop)
+        // Вручну звіряють рахунки, для яких залишку банку на кінець місяця система не має (або він розходиться через незавершену операцію банку).
+        if (!clean.length || new Set(clean.map(r => `${r.acc}:${r.iban}`)).size !== clean.length || clean.some(r => !Number.isSafeInteger(r.balanceKop)
             || !current.bankRows.some(x => x.acc === r.acc && x.iban === r.iban && x.balanceKop === r.balanceKop))) {
             fail('failed-precondition', 'Залишки виписки не збігаються з обліком. Знайдіть пропущені операції або виправте вхідну ОСВ');
         }

@@ -229,8 +229,11 @@ function normalizeBalance(raw) {
   const iban = normIban(raw.acc);
   if (!iban || !Number.isSafeInteger(toKop(raw.balanceOut ?? raw.balanceIn))) return null;
   const balance = raw.balanceOut ?? raw.balanceIn;
+  // balanceIn за сьогодні — залишок на кінець учорашнього дня: точний якір для звірки місяця.
+  const inKop = raw.balanceIn === undefined || raw.balanceIn === null || raw.balanceIn === '' ? null : toKop(raw.balanceIn);
   return {
     iban, currency: raw.currency || 'UAH', balanceKop: toKop(balance),
+    ...(Number.isSafeInteger(inKop) ? { balanceInKop: inKop } : {}),
     name: String(raw.nameACC || '').trim(), at: new Date()
   };
 }

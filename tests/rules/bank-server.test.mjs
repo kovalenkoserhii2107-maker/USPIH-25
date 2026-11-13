@@ -17,7 +17,7 @@ before(() => {
     bank = bankFunctions({ db, FieldValue, Timestamp, requireAdmin: async () => '900', staffRole: async () => 'accountant' });
 });
 const wipe = async () => {
-    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'bank_secrets', 'advance_reports']) {
+    for (const name of ['apartments', 'bank', 'bank_tx', 'bank_links', 'audit_log', 'payments', 'bank_secrets', 'advance_reports', 'bank_balances', 'bank_statements']) {
         const snap = await db.collection(name).get();
         await Promise.all(snap.docs.map(d => db.recursiveDelete(d.ref)));
     }
@@ -164,4 +164,32 @@ test('відшкодування за авансовим звітом: випи�
     await bank.actions.unassign('900', 'accountant', { txId: `${acc}_ADV1` });
     a1 = (await db.doc('advance_reports/a1').get()).data();
     assert.deepEqual([a1.reimbursedKop, a1.status], [0, 'approved']);
+});
+
+test('рахунок іншого банку: виписка файлом розноситься, повтор не дублює, залишок стає якорем звірки', async () => {
+    await seed();
+    const OSCHAD = 'UA503004650000026001234567890';
+    await assert.rejects(bank.actions.addAccount('900', 'accountant', { iban: 'UA503004650000026001234567891' }), /IBAN/);
+    assert.equal((await bank.actions.addAccount('900', 'accountant', { iban: OSCHAD, name: 'Ремонтний', purpose: 'repair' })).bank, 'Ощадбанк');
+    const statement = { iban: OSCHAD, from: '2026-10-01', to: '2026-10-31', openingKop: 100000, closingKop: 215040, rows: [
+        { date: '2026-10-09', direction: 'in', amountKop: 125040, purpose: 'внесок о/р 1045', name: 'Платник (демо)', code: '', account: '', ref: '' },
+        { date: '2026-10-12', direction: 'out', amountKop: 10000, purpose: 'Комісія банку', name: 'Ощадбанк', code: '', account: '', ref: '' }
+    ] };
+    const first = await bank.actions.importStatement('900', 'accountant', { iban: OSCHAD, statement, fileName: 'oschad.txt', format: '1c' });
+    assert.deepEqual([first.added, first.matched, first.duplicates], [2, 1, 0]);
+    const again = await bank.actions.importStatement('900', 'accountant', { iban: OSCHAD, statement, fileName: 'oschad.txt', format: '1c' });
+    assert.deepEqual([again.added, again.duplicates], [0, 2]);
+    const txs = (await db.collection('bank_tx').where('account', '==', OSCHAD).get()).docs.map(d => d.data());
+    assert.equal(txs.length, 2);
+    assert.equal(txs.find(t => t.direction === 'in').allocations[0].apt, '45');
+    const anchor = (await db.doc(`bank_balances/${OSCHAD}_2026-10-31`).get()).data();
+    assert.deepEqual([anchor.balanceKop, anchor.source], [215040, 'statement']);
+    const account = (await db.doc('bank/settings').get()).data().accounts[OSCHAD];
+    assert.deepEqual([account.source, account.balanceKop, account.balanceDate, account.syncedTo], ['file', 215040, '2026-10-31', '2026-10-31']);
+    // Залишки не сходяться — виписку не приймаємо.
+    await assert.rejects(bank.actions.importStatement('900', 'accountant', { iban: OSCHAD, statement: { ...statement, closingKop: 1 } }), /не дають вихідного/);
+    // Рахунок ПриватБанку виписка файлом не оновлює.
+    await assert.rejects(bank.actions.importStatement('900', 'accountant', { iban: 'UA213052990000026001234567890', statement }), /автоматично/);
+    // З операціями рахунок не видаляють.
+    await assert.rejects(bank.actions.removeAccount('900', 'accountant', { iban: OSCHAD }), /не видаляють/);
 });

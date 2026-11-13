@@ -30,6 +30,7 @@ import { openFlat } from './buh-flats.js';
 import { openJournal } from './buh-journal.js';
 import { openAdvance } from './buh-advance.js';
 import { openPayroll } from './buh-payroll.js';
+import { bankOf } from './statement-import-core.js';
 
 let rows = [];
 let queue = [];
@@ -155,9 +156,10 @@ function heroHtml() {
     if (!accounts.length) {
         return `<section class="bn-hero is-empty">
             <span class="bn-hero-label">Банк не підключено</span>
-            <b class="bn-hero-sum">Підключіть ПриватБанк</b>
-            <p>Виписка й залишки завантажуватимуться щогодини, оплати мешканців розноситимуться самі.</p>
-            <button type="button" class="sv-btn is-white" data-go="settings" data-settings-tab="bank">Підключити ›</button></section>`;
+            <b class="bn-hero-sum">Підключіть банк</b>
+            <p>ПриватБанк — автоматично щогодини. Інший банк — випискою файлом (1С, XML, Excel, CSV): оплати мешканців розносяться так само.</p>
+            <div class="bn-hero-acts"><button type="button" class="sv-btn is-white" data-go="settings" data-settings-tab="bank">Підключити ПриватБанк ›</button>
+            <button type="button" class="sv-btn is-white" data-act="stmt-import">Виписка іншого банку ›</button></div></section>`;
     }
     const uah = accounts.filter(([, a]) => !a.currency || a.currency === 'UAH');
     const total = uah.reduce((s, [, a]) => s + (typeof a.balanceKop === 'number' ? a.balanceKop : 0), 0);
@@ -166,12 +168,14 @@ function heroHtml() {
         : sync?.ok === false ? [`${sync.partial ? 'Оновлено частково' : 'Виписка не оновилась'}: ${sync.error || 'помилка'}`, 'is-bad']
         : sync ? [`Виписка оновлена о ${timeOf(sync.at)}`, 'is-good'] : ['Виписку ще не отримано', 'is-wait'];
     return `<section class="bn-hero">
-        <div class="bn-hero-top"><span class="bn-hero-label">На рахунках ОСББ</span><span class="bn-sync ${state[1]}">${escapeHtml(state[0])}</span></div>
+        <div class="bn-hero-top"><span class="bn-hero-label">На рахунках ОСББ</span><span class="bn-sync ${state[1]}">${escapeHtml(state[0])}</span>
+            <button type="button" class="bn-import" data-act="stmt-import" title="Завантажити виписку рахунку в іншому банку">⇪ Виписка іншого банку</button></div>
         <b class="bn-hero-sum">${money(total)}</b>
         <div class="bn-accs">${accounts.map(([iban, a]) => `<button type="button" class="bn-acc${filters.account === iban ? ' is-active' : ''}" data-account="${escapeHtml(iban)}" title="Показати операції цього рахунку">
-            <span>${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')}${a.available === false ? ' · немає доступу' : ''}</span>
+            <span>${escapeHtml(ACCOUNT_PURPOSES[a.purpose] || 'Рахунок')} · ${escapeHtml(a.bank || bankOf(iban))}${a.available === false && a.source !== 'file' ? ' · немає доступу' : ''}</span>
             <b>${accountBalance(a)}</b>
-            <small>${escapeHtml(maskIban(iban))}${a.lastSync?.ok === false && a.available !== false ? ' · не оновлено' : ''}</small></button>`).join('')}</div>
+            <small>${escapeHtml(maskIban(iban))}${a.source === 'file' ? (a.balanceDate ? ` · за випискою на ${escapeHtml(a.balanceDate.split('-').reverse().join('.'))}` : ' · виписок ще немає')
+                : a.lastSync?.ok === false && a.available !== false ? ' · не оновлено' : ''}</small></button>`).join('')}</div>
     </section>`;
 }
 
@@ -657,6 +661,11 @@ async function onClick(e) {
     const btn = t.closest('[data-act]');
     const a = btn?.dataset.act;
     if (a === 'sheet-close') { closeSheet(); return; }
+    if (a === 'stmt-import') {
+        const { openStatementImport } = await import('./buh-statement.js');
+        await openStatementImport({ iban: filters.account && settings.accounts?.[filters.account]?.source === 'file' ? filters.account : '', onDone: () => loadBankView() });
+        return;
+    }
     if (a === 'sheet-back') { detail = stack.pop() || null; renderSheet(); markCurrent(); return; }
     if (t.closest('[data-go]')) return; // перехід у розділ — buh-main.js
 
