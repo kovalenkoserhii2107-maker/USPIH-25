@@ -12,6 +12,8 @@
 //   bank_secrets/privat — токен Автоклієнта (правила: ніхто не читає)
 //   bank_tx/{id}       — операції виписки з рішенням (див. TX нижче)
 //   bank_links/{key}   — запамʼятовані платники: ключ → квартира
+//   bank_balances/{iban}_{date} — залишок банку на кінець дня (з API або виписки файлом)
+//   bank_statements/{id} — журнал завантажених виписок інших банків
 //
 // TX: { bankId, account, at, period, direction: in|out, amountKop, currency,
 //       purpose, counterparty: { name, account, code }, payerKey,
@@ -30,6 +32,7 @@ const { matchExpense } = require('./expenses-core');
 const privat = require('./privat');
 const { balanceFromLedger } = require('./charges-core');
 const { refreshAccounts } = require('./bank-accounts');
+const statements = require('./statement-core');
 const { randomUUID } = require('crypto');
 const payrollIdentity = require('./payroll-payment-core');
 
@@ -345,7 +348,9 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 const last = Object.hasOwn(previous || {}, 'syncedTo') ? previous.syncedTo || ctx.startDate
                     : previous && ctx.settings.lastSync?.ok && ctx.settings.syncedTo ? ctx.settings.syncedTo : ctx.startDate;
                 const from = new Date(`${last}T00:00:00+03:00`);
-                from.setDate(from.getDate() - OVERLAP_DAYS);
+                // Рахунок вели виписками файлом до цієї дати: API продовжує з наступного дня, без перекриття (інакше задвоїло б операції).
+                if (previous?.source === 'file' || previous?.fileUntil === last) from.setDate(from.getDate() + 1);
+                else from.setDate(from.getDate() - OVERLAP_DAYS);
                 const start = new Date(`${ctx.startDate}T00:00:00+03:00`);
                 try {
                     const list = await bankApi.fetchTransactions(token, { iban, from: from < start ? start : from, to: new Date() });
@@ -358,6 +363,13 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                     errors.push({ iban, error: message }); results.set(iban, { ok: false, error: message });
                 }
             }
+            // Залишок на початок сьогоднішнього дня = кінець учорашнього: щоденний якір для звірки місяця.
+            const yesterday = statements.prevDay(today);
+            const anchors = db.batch();
+            for (const b of balances) if (Number.isSafeInteger(b.balanceInKop) && (!b.currency || b.currency === 'UAH')) {
+                anchors.set(db.doc(`bank_balances/${core.safeId(`${b.iban}_${yesterday}`)}`), { iban: b.iban, date: yesterday, balanceKop: b.balanceInKop, source: 'privat', at: FieldValue.serverTimestamp() });
+            }
+            await anchors.commit();
             await db.runTransaction(async t => {
                 const current = (await t.get(settingsRef)).data() || {};
                 if ((current.connectionId || null) !== connectionId) throw new Error('Підключення банку змінилося — повторіть синхронізацію');
@@ -764,7 +776,81 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
         return { ok: true };
     }
 
-    const bankAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('bankAction', async request => {
+    // --------------------------------------------------------
+    // РАХУНКИ В ІНШИХ БАНКАХ І ВИПИСКИ ФАЙЛОМ
+    // --------------------------------------------------------
+    async function addAccount(actor, role, { iban, name, purpose }) {
+        const key = statements.normIban(iban);
+        if (!statements.validIban(key)) fail('invalid-argument', 'Перевірте IBAN: 29 символів, починається з UA, контрольна сума не сходиться');
+        if (!PURPOSES.includes(purpose || 'current')) fail('invalid-argument', 'Невідоме призначення рахунку');
+        const bank = statements.bankOf(key);
+        await db.runTransaction(async t => {
+            const current = (await t.get(settingsRef)).data() || {};
+            if (current.accounts?.[key]) fail('already-exists', 'Такий рахунок уже є');
+            t.set(settingsRef, { accounts: { [key]: { source: 'file', bank, name: text(name, 80), purpose: purpose || 'current', currency: 'UAH',
+                available: true, syncedTo: null, addedBy: actor, addedAt: FieldValue.serverTimestamp() } }, startDate: current.startDate || DEFAULT_START }, { merge: true });
+        });
+        await audit(actor, role, 'bank.addAccount', 'bank/settings', `Додано рахунок …${key.slice(-4)} (${bank}) — виписки файлом`, { iban: key, bank });
+        return { ok: true, bank };
+    }
+
+    async function removeAccount(actor, role, { iban }) {
+        const key = statements.normIban(iban);
+        const settings = (await settingsRef.get()).data() || {};
+        const account = settings.accounts?.[key];
+        if (!account) fail('not-found', 'Рахунок не знайдено');
+        if (account.source !== 'file') fail('failed-precondition', 'Рахунок ПриватБанку керується підключенням банку');
+        const used = await db.collection('bank_tx').where('account', '==', key).limit(1).get();
+        if (!used.empty) fail('failed-precondition', 'З рахунку вже завантажено операції — його не видаляють, щоб не зламати облік');
+        await settingsRef.update({ [`accounts.${key}`]: FieldValue.delete() });
+        await audit(actor, role, 'bank.removeAccount', 'bank/settings', `Видалено рахунок …${key.slice(-4)}`, { iban: key });
+        return { ok: true };
+    }
+
+    /** Виписка іншого банку: ті самі правила рознесення, що й для ПриватБанку. */
+    async function importStatement(actor, role, { iban, statement, fileName, format }) {
+        const key = statements.normIban(iban);
+        const settings = (await settingsRef.get()).data() || {};
+        const account = settings.accounts?.[key];
+        if (!account) fail('not-found', 'Спершу додайте рахунок у «Налаштуваннях → Банки й рахунки»');
+        if (account.source !== 'file') fail('failed-precondition', 'Цей рахунок оновлюється з банку автоматично — виписка файлом задвоїла б операції');
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+        let clean;
+        try { clean = statements.cleanStatement(statement, { iban: key, today, startDate: settings.startDate || DEFAULT_START }); }
+        catch (error) { fail('invalid-argument', error.message); }
+        const ctx = await loadContext();
+        const list = statements.toTransactions(clean, key).filter(t => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(t.at) >= ctx.startDate);
+        let before = 0;
+        for (let i = 0; i < list.length; i += 300) {
+            const refs = list.slice(i, i + 300).map(t => db.doc(`bank_tx/${core.safeId(`${t.account}_${t.bankId}`)}`));
+            before += (await db.getAll(...refs)).filter(d => d.exists).length;
+        }
+        const result = list.length ? await storeTransactions(list, 'statement', ctx) : { added: 0, matched: 0 };
+        const ref = db.collection('bank_statements').doc();
+        const anchors = statements.statementAnchors(clean);
+        const batch = db.batch();
+        batch.set(ref, { iban: key, bank: account.bank || statements.bankOf(key), format: text(format, 20), fileName: text(fileName, 120),
+            from: clean.from, to: clean.to, openingKop: clean.openingKop, closingKop: clean.closingKop, inKop: clean.inKop, outKop: clean.outKop,
+            rows: clean.rows.length, added: result.added, duplicates: before, matched: result.matched, by: actor, at: FieldValue.serverTimestamp() });
+        for (const a of anchors) batch.set(db.doc(`bank_balances/${core.safeId(`${key}_${a.date}`)}`), { iban: key, date: a.date, balanceKop: a.balanceKop, source: 'statement', statementId: ref.id, at: FieldValue.serverTimestamp() });
+        const latest = anchors.sort((a, b) => (a.date < b.date ? -1 : 1)).at(-1);
+        const update = { [`accounts.${key}.lastSync`]: { ok: true, at: Timestamp.now(), added: result.added, statement: ref.id } };
+        if (!account.syncedTo || clean.to > account.syncedTo) update[`accounts.${key}.syncedTo`] = clean.to;
+        if (latest && (!account.balanceDate || latest.date >= account.balanceDate)) Object.assign(update, {
+            [`accounts.${key}.balanceKop`]: latest.balanceKop, [`accounts.${key}.balanceDate`]: latest.date,
+            [`accounts.${key}.balanceAt`]: Timestamp.fromDate(new Date(`${latest.date}T21:00:00Z`))
+        });
+        batch.update(settingsRef, update);
+        await batch.commit();
+        await audit(actor, role, 'bank.importStatement', `bank_statements/${ref.id}`,
+            `Виписка …${key.slice(-4)} за ${clean.from} — ${clean.to}: нових операцій ${result.added}, уже були ${before}`, { iban: key, rows: clean.rows.length, added: result.added });
+        return { ok: true, rows: clean.rows.length, added: result.added, duplicates: before, matched: result.matched, skipped: clean.rows.length - list.length };
+    }
+
+    const text = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+
+    // Виписка файлом на кілька тисяч операцій розноситься довше за звичайну дію.
+    const bankAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 300 }, callGuard('bankAction', async request => {
         const actor = await requireAdmin(request, ['chair', 'accountant']);
         const role = await staffRole(actor);
         const data = request.data || {};
@@ -789,6 +875,9 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
             case 'removeToken': return removeToken(actor, role);
             case 'receiptPdf': return receiptPdf(actor, role, data);
             case 'setAccount': return setAccount(actor, role, data);
+            case 'addAccount': return addAccount(actor, role, data);
+            case 'removeAccount': return removeAccount(actor, role, data);
+            case 'importStatement': return importStatement(actor, role, data);
             case 'sync':
                 try { return await sync(`manual:${actor}`); }
                 catch (error) { fail('unavailable', `Банк не відповів: ${String(error.message || error).slice(0, 200)}`); }
@@ -804,5 +893,5 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
     );
 
     // Для інтеграційних тестів на емуляторі (tests/rules/bank-server.test.mjs).
-    return { bankAction, syncBank, sync, storeTransactions, loadContext, actions: { assign, classifyTx, matchPayment, unassign, refund, refundResident, receiptPdf, saveToken, removeToken, setAccount, sync } };
+    return { bankAction, syncBank, sync, storeTransactions, loadContext, actions: { assign, classifyTx, matchPayment, unassign, refund, refundResident, receiptPdf, saveToken, removeToken, setAccount, addAccount, removeAccount, importStatement, sync } };
 };

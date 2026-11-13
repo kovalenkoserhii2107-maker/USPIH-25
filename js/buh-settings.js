@@ -23,6 +23,7 @@ import { openExpenses } from './buh-expenses.js';
 import { openCharges } from './buh-charges.js';
 import { openPayrollBank, DEFAULT_TAXES, withDefaultTaxes } from './buh-payroll.js';
 import { loadOpening, openingAction, openingInput } from './buh-opening.js';
+import { bankOf } from './statement-import-core.js';
 import { loadAccountingSettings } from './buh-accounting-settings.js';
 import { mountMigration } from './buh-migration.js';
 import { mountDatabaseReset, databaseResetStatus } from './buh-database-reset.js';
@@ -209,14 +210,24 @@ function bankHtml() {
                 ${connected ? '<button type="button" class="sv-btn is-soft" data-act="token-remove">Відключити</button>' : ''}
             </div>
             <p class="se-hint">Токен бачить лише сервер. Тестовий банк підключає голова в <a href="platform.html#bank">симуляторі Приват24</a>. Зарплатний проект і відомості — <button type="button" class="se-a" data-act="st-payroll-bank">у «Зарплата → Приват24» ›</button></p>`)
-        + (accounts.length ? card('se-accounts', 'Рахунки ОСББ', `<span class="py-muted">${accounts.length}</span>`, `
-            <p class="se-lead">Призначення визначає субрахунок обліку (311, 313, 351) і рахунок для оплат і зарплати.</p>
+        + card('se-accounts', 'Рахунки ОСББ', `<span class="py-muted">${accounts.length}</span>`, `
+            <p class="se-lead">Рахунки можуть бути в різних банках. ПриватБанк оновлюється сам; інші банки — випискою файлом у розділі «Банк» (1С, XML camt.053, Excel, CSV). Призначення визначає субрахунок обліку (311, 313, 351).</p>
             ${accounts.map(([iban, a]) => `<div class="se-acc" data-iban="${escapeHtml(iban)}">
-                <span class="se-acc-main"><b>${escapeHtml(maskIban(iban))}</b><small>${escapeHtml(a.name || '')}${a.available === false ? ' · немає доступу за токеном' : ''}${a.currency && a.currency !== 'UAH' ? ` · ${escapeHtml(a.currency)}` : ''}</small></span>
+                <span class="se-acc-main"><b>${escapeHtml(a.bank || bankOf(iban))} · ${escapeHtml(maskIban(iban))}</b><small>${a.source === 'file' ? 'виписки файлом' : 'Приват24, автоматично'}${a.name ? ` · ${escapeHtml(a.name)}` : ''}${a.available === false && a.source !== 'file' ? ' · немає доступу за токеном' : ''}${a.currency && a.currency !== 'UAH' ? ` · ${escapeHtml(a.currency)}` : ''}${a.source === 'file' && a.balanceDate ? ` · залишок на ${escapeHtml(a.balanceDate.split('-').reverse().join('.'))}` : ''}</small></span>
                 <b class="se-acc-sum">${accountBalance(a)}</b>
                 <select class="field-select acc-purpose-select" aria-label="Призначення ${escapeHtml(maskIban(iban))}">${Object.entries(ACCOUNT_PURPOSES).map(([k, t]) =>
                     `<option value="${k}"${k === (a.purpose || 'current') ? ' selected' : ''}>${t}</option>`).join('')}</select>
-            </div>`).join('')}`) : '')
+                ${a.source === 'file' ? '<button type="button" class="btn-ghost-small" data-act="acc-remove" title="Видалити рахунок без операцій">Видалити</button>' : ''}
+            </div>`).join('')}
+            <details class="se-more se-acc-add"><summary>+ Рахунок в іншому банку</summary>
+                <div class="se-row se-inline">
+                    <input id="stAccIban" maxlength="40" autocomplete="off" spellcheck="false" placeholder="IBAN: UA…" aria-label="IBAN рахунку">
+                    <input id="stAccName" maxlength="80" placeholder="Назва (необовʼязково)" aria-label="Назва рахунку">
+                    <select id="stAccPurpose" class="field-select" aria-label="Призначення">${Object.entries(ACCOUNT_PURPOSES).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
+                    <button type="button" class="sv-btn" data-act="acc-add">Додати</button>
+                </div>
+                <p class="se-hint">Банк визначається за IBAN. Залишок і операції зʼявляться після першої виписки; її залишок на кінець місяця система використає для звірки.</p>
+            </details>`)
         + card('se-youscore', 'YouScore', chip(ycReal ? `бойовий ключ ${ex.youscoreKeyMasked || ''}` : 'тестовий режим', ycReal ? 'is-done' : 'is-work'), `
             <p class="se-lead">Автозаповнення постачальників з ЄДР, податковий борг; суди й виконавчі провадження боржників; перевірка власника квартири (ДРРП).</p>
             <div class="se-row se-inline">
@@ -581,6 +592,19 @@ async function onAction(btn, host) {
         setBusy(btn, true, 'Перевіряю в банку…');
         const r = await act({ action: 'saveToken', token }, 60000);
         toast(`Підключено. Рахунків: ${r?.accounts ?? 0}`, 'success');
+        await loadSettingsView();
+    } else if (a === 'acc-add') {
+        const iban = val('stAccIban').replace(/\s+/g, '').toUpperCase();
+        if (!/^UA\d{27}$/.test(iban)) { toast('IBAN: UA і 27 цифр', 'error'); return; }
+        setBusy(btn, true, 'Додаю…');
+        const r = await act({ action: 'addAccount', iban, name: val('stAccName'), purpose: document.getElementById('stAccPurpose')?.value || 'current' });
+        toast(`Додано рахунок: ${r.bank}. Виписку завантажте в розділі «Банк»`, 'success');
+        await loadSettingsView();
+    } else if (a === 'acc-remove') {
+        const iban = btn.closest('[data-iban]')?.dataset.iban;
+        if (!iban || !await confirmDialog('Видалити рахунок?', `${bankOf(iban)} …${iban.slice(-4)}. Можна лише поки з нього не завантажено операцій.`, 'Видалити')) return;
+        await act({ action: 'removeAccount', iban });
+        toast('Рахунок видалено', 'success');
         await loadSettingsView();
     } else if (a === 'token-remove') {
         if (!await confirmDialog('Відключити банк?', 'Токен буде видалено з сервера. Завантажені операції лишаться.', 'Відключити')) return;

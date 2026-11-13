@@ -124,18 +124,28 @@ function payrollStep(payroll) {
     return { ...base, state: 'work', short: 'затверджено, виплату не завершено', facts, action: 'Відкрити відомість' };
 }
 
-/** Звірка залишків банку з обліком на останній день місяця — без неї сервер не закриє місяць. */
+/** Звірка залишків банку з обліком на останній день місяця — без неї сервер не закриє місяць.
+ *  Залишок банку на кінець місяця система бере сама (ПриватБанк — щодня, інші банки — з виписки файлом). */
 function bankCutStep(period, journal, today) {
     const base = { key: 'bankcut', title: 'Звірка залишків банку', go: 'journal', inline: 'bankcut',
-        text: `Залишки поточного й депозитного рахунків в обліку мають дорівнювати випискам на ${human(lastDay(period))}. Введіть залишки з виписки й її реквізити — розбіжність покаже пропущену операцію.` };
+        text: `Залишки рахунків в обліку мають дорівнювати банку на ${human(lastDay(period))}. Залишок банку система бере сама: з ПриватБанку — щодня, з інших банків — з виписки файлом. Вручну — лише там, де його немає.` };
     if (!journal) return { ...base, state: 'unknown', short: 'немає даних', facts: [], action: 'Відкрити проводки' };
     const rows = journal.bankRows || [];
-    const facts = rows.map(r => [`…${String(r.iban).slice(-4)} · рах. ${r.acc}`, grn(r.balanceKop)]);
+    const label = r => `${r.bank ? `${r.bank} ` : ''}…${String(r.iban).slice(-4)}`;
+    const facts = rows.map(r => [`${label(r)} · рах. ${r.acc}`, Number.isInteger(r.bankKop) && r.bankKop !== r.balanceKop ? `${grn(r.balanceKop)} · банк ${grn(r.bankKop)}` : grn(r.balanceKop)]);
     if (journal.status === 'closed') return { ...base, state: 'done', short: 'звірено під час закриття', facts: [], action: 'Відкрити проводки' };
     if (!rows.length) return { ...base, state: 'done', short: 'рахунків для звірки немає', facts, action: 'Відкрити проводки' };
-    if (journal.bankCut?.key && journal.bankCut.key === journal.key) return { ...base, state: 'done', short: `звірено${journal.bankCut.note ? ` · ${journal.bankCut.note}` : ''}`, facts, action: 'Відкрити проводки' };
+    if (journal.bankReconciled === true) {
+        const manual = rows.filter(r => r.manual && r.state !== 'match').length;
+        return { ...base, state: 'done', short: manual ? `звірено: ${rows.length - manual} автоматично, ${manual} вручну` : 'звірено з банком автоматично', facts, action: 'Відкрити проводки' };
+    }
+    if (journal.bankReconciled === undefined && journal.bankCut?.key && journal.bankCut.key === journal.key) return { ...base, state: 'done', short: `звірено${journal.bankCut.note ? ` · ${journal.bankCut.note}` : ''}`, facts, action: 'Відкрити проводки' };
     if ((today || journal.today || '') <= lastDay(period)) return { ...base, state: 'locked', short: `після ${human(lastDay(period))}`, facts, action: 'Звірити після кінця місяця' };
-    return { ...base, state: 'work', short: journal.bankCut ? 'операції змінились — звірте знову' : `звірте з випискою на ${human(lastDay(period))}`, facts, action: 'Звірити залишки' };
+    const diff = rows.filter(r => r.state === 'diff' && !r.manual), none = rows.filter(r => r.state === 'none' && !r.manual);
+    const short = diff.length ? `розходиться: ${diff.map(label).join(', ')}`
+        : none.length ? `немає залишку банку: ${none.map(label).join(', ')}`
+        : journal.bankCut ? 'операції змінились — звірте знову' : `звірте з випискою на ${human(lastDay(period))}`;
+    return { ...base, state: 'work', short, facts, action: diff.length ? 'Відкрити звірку' : 'Звірити залишки' };
 }
 
 /** Звітність і податки за місяць: прострочене — дія, інше — строк у наступному місяці. */

@@ -126,3 +126,14 @@ test('підсумки місяця з оборотно-сальдової ві�
         expensesKop: 250, incomeKop: 30, suppliersDebtKop: 70, payrollKop: 400, esvKop: 88, balanced: true });
     assert.equal(monthTotals(null), null);
 });
+
+test('звірка банку: автоматично, розбіжність і рахунок без виписки', () => {
+    const rows = [{ acc: '311', iban: 'UA213052990000026007054321001', bank: 'ПриватБанк', balanceKop: 100, bankKop: 100, state: 'match', ok: true },
+        { acc: '311', iban: 'UA503004650000026001234567890', bank: 'Ощадбанк', balanceKop: 50, bankKop: null, state: 'none', ok: false, source: 'file' }];
+    const auto = by(monthSteps({ ...ready, journal: { ...journal, bankCut: null, bankReconciled: true, bankRows: [rows[0]] } }), 'bankcut');
+    assert.deepEqual([auto.state, auto.short], ['done', 'звірено з банком автоматично']);
+    const none = by(monthSteps({ ...ready, journal: { ...journal, bankCut: null, bankReconciled: false, bankRows: rows } }), 'bankcut');
+    assert.deepEqual([none.state, none.short], ['work', 'немає залишку банку: Ощадбанк …7890']);
+    const diff = by(monthSteps({ ...ready, journal: { ...journal, bankCut: null, bankReconciled: false, bankRows: [{ ...rows[0], bankKop: 90, state: 'diff', ok: false }] } }), 'bankcut');
+    assert.deepEqual([diff.short, diff.action, diff.facts[0][1]], ['розходиться: ПриватБанк …1001', 'Відкрити звірку', '1,00 грн · банк 0,90 грн']);
+});

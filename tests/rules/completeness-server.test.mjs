@@ -59,7 +59,7 @@ test('вхідна ОСВ: чернетка, підказка з банку, з�
     assert.equal(ctx.tb.rows.find(r => r.acc === '00'), undefined);
     assert.equal(ctx.tb.rows.find(r => r.acc === '311').openDr, 2500000);
     assert.ok(!ctx.checks.some(c => /оборотно-сальдову на 30\.09/.test(c.text)));
-    assert.ok(ctx.checks.some(c => /311 збігається із залишками банку/.test(c.text)));
+    assert.ok(ctx.checks.some(c => /облік збігається із залишками банку/.test(c.text)));
     await db.doc('journal_periods/2026-10').set({ status: 'closed' });
     await assert.rejects(journal.actions.saveOpening(...A, { lines: [] }), /закритий місяць/);
 });

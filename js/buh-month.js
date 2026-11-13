@@ -137,9 +137,13 @@ function detailHtml(s, j) {
     const facts = s.facts?.length ? `<dl class="mn-facts is-step">${s.facts.map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join('')}</dl>` : '';
     const checks = s.checks?.length ? `<ul class="mn-step-checks">${s.checks.map(c => `<li class="is-${c.level}">${escapeHtml(c.text)}</li>`).join('')}</ul>` : '';
     const missing = s.missing?.length ? `<div class="mn-missing">${s.missing.map(c => `<button type="button" class="mn-chip" data-act="add-act" data-contract="${escapeHtml(c.id)}">+ акт: ${escapeHtml(c.supplierName || c.subject || `№ ${c.number}`)}</button>`).join('')}</div>` : '';
+    const need = (j.bankRows || []).map((r, i) => ({ ...r, i })).filter(r => r.ok !== true);
+    const files = need.filter(r => r.source === 'file' && r.state === 'none');
     const cut = s.inline === 'bankcut' && s.state === 'work' && !isChair() ? `<form class="mn-cut" data-cut>
-        ${(j.bankRows || []).map((r, i) => `<label class="py-field"><span>…${escapeHtml(String(r.iban).slice(-4))} · рах. ${escapeHtml(r.acc)} — в обліку ${escapeHtml(money(r.balanceKop))}</span>
-            <input inputmode="decimal" data-cut-row="${i}" placeholder="Залишок у виписці, грн" autocomplete="off"></label>`).join('')}
+        ${files.length ? `<p class="mn-cut-note">Немає виписки за місяць: ${files.map(r => `${escapeHtml(r.bank || '')} …${escapeHtml(String(r.iban).slice(-4))}`).join(', ')}.
+            <button type="button" class="mn-chip" data-act="stmt-import" data-iban="${escapeHtml(files[0].iban)}">Завантажити виписку ›</button></p>` : ''}
+        ${need.map(r => `<label class="py-field"><span>${escapeHtml(r.bank || '')} …${escapeHtml(String(r.iban).slice(-4))} · рах. ${escapeHtml(r.acc)} — в обліку ${escapeHtml(money(r.balanceKop))}${Number.isInteger(r.bankKop) ? `, банк ${escapeHtml(money(r.bankKop))}` : ''}</span>
+            <input inputmode="decimal" data-cut-row="${r.i}" placeholder="Залишок у виписці, грн" autocomplete="off"></label>`).join('')}
         <label class="py-field"><span>Реквізити виписки</span><input id="mnCutNote" maxlength="300" placeholder="Напр.: виписка Приват24 за 31.10" autocomplete="off"></label>
         <button type="submit" class="sv-btn">Звірити залишки</button></form>` : '';
     const action = s.close ? `<button type="button" class="sv-btn" data-act="close">${escapeHtml(s.action)}</button>`
@@ -222,11 +226,13 @@ async function reopenMonth() {
 }
 
 async function bankCut(form) {
-    const rows = (data.journal.bankRows || []).map((r, i) => ({ acc: r.acc, iban: r.iban, balanceKop: toKop(form.querySelector(`[data-cut-row="${i}"]`).value) }));
+    const inputs = [...form.querySelectorAll('[data-cut-row]')];
+    const ledger = inputs.map(i => data.journal.bankRows[Number(i.dataset.cutRow)]);
+    const rows = inputs.map((input, k) => ({ acc: ledger[k].acc, iban: ledger[k].iban, balanceKop: toKop(input.value) }));
     const note = form.querySelector('#mnCutNote').value.trim();
     if (rows.some(r => !Number.isInteger(r.balanceKop))) { toast('Вкажіть залишок кожного рахунку з виписки', 'error'); return; }
     if (note.length < 5) { toast('Вкажіть реквізити виписки', 'error'); return; }
-    const off = rows.filter((r, i) => r.balanceKop !== data.journal.bankRows[i].balanceKop);
+    const off = rows.filter((r, k) => r.balanceKop !== ledger[k].balanceKop);
     if (off.length) { toast(`Не збігається: …${off.map(r => r.iban.slice(-4)).join(', …')}. Шукайте пропущену операцію у виписці`, 'error'); return; }
     const btn = form.querySelector('[type="submit"]');
     setBusy(btn, true, 'Звіряю…');
@@ -236,6 +242,11 @@ async function bankCut(form) {
 
 async function onAction(btn) {
     const a = btn.dataset.act;
+    if (a === 'stmt-import') {
+        const { openStatementImport } = await import('./buh-statement.js');
+        await openStatementImport({ iban: btn.dataset.iban || '' });
+        return;
+    }
     if (a === 'toggle') {
         open = open === btn.dataset.key ? null : btn.dataset.key;
         const host = document.getElementById('viewMonth');
