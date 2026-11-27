@@ -172,8 +172,8 @@ function renderAccount(apartment) {
         <h5 class="mn-h">Налаштування й переходи</h5>
         <nav class="mn-group" aria-label="Налаштування й переходи">
             ${row('data-view="settings"', 'settings', 'Налаштування', 'реквізити, банк, облік, правила, перехід на облік')}
-            ${row('href="platform.html"', 'finance', 'Платформа ОСББ (Super-Admin)', 'усі ОСББ і бази, інспектор БД, тести, активність')}
-            ${row('href="platform.html#bank"', 'finance', 'Симулятор Приват24 API', 'підпис КЕП платежів, вхідні операції, рахунки')}
+            ${session.role === 'chair' ? row('href="platform.html"', 'finance', 'Платформа ОСББ (Super-Admin)', 'усі ОСББ і бази, інспектор БД, тести, активність') : ''}
+            ${session.role === 'chair' ? row('href="platform.html#bank"', 'finance', 'Симулятор Приват24 API', 'тестові ОСББ: підпис КЕП платежів, вхідні операції, рахунки') : ''}
             ${row('href="accounting-test.html"', 'check', 'Тестова бухгалтерія', 'окремий будинок, імітований банк, звірки')}
             ${links.join('')}
         </nav>`;
@@ -243,7 +243,8 @@ document.addEventListener('click', e => {
         return;
     }
     if (e.target.closest('#buhAccountBtn')) { openSheet('buhMoreSheet'); return; }
-    if (e.target.closest('[data-act="logout"]')) { resetSession(); signOut(auth).then(toResident); }
+    // У демо signOut сам веде на demo.html — не перебиваємо його переходом на вхід.
+    if (e.target.closest('[data-act="logout"]')) { const demo = document.documentElement.classList.contains('is-demo'); resetSession(); signOut(auth).then(() => { if (!demo) toResident(); }); }
 });
 
 document.getElementById('buhSyncChip').addEventListener('click', async e => {
@@ -252,7 +253,10 @@ document.getElementById('buhSyncChip').addEventListener('click', async e => {
     btn.textContent = 'Синхронізую…';
     try {
         const r = await act({ action: 'sync' });
-        toast(`Нових: ${r.imported}, рознесено: ${r.autoAssigned}, чекають: ${r.review}`, 'success');
+        // bankAction sync повертає { added, matched } (або waiting/skipped).
+        toast(r.waiting ? 'Банк на нічному регламенті — спробуємо пізніше'
+            : r.skipped ? 'Банк не підключено'
+            : `Нових операцій: ${r.added ?? 0}, рознесено автоматично: ${r.matched ?? 0}`, 'success');
     } catch (err) { toast(err.message, 'error'); }
     finally { btn.disabled = false; renderSync(); }
 });

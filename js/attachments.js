@@ -3,7 +3,7 @@
 // та переглядач документів. Використовується і в повідомленнях,
 // і у зверненнях, і в картках співвласників.
 // ============================================================
-import { escapeHtml, formatFileSize, lockScroll, unlockScroll, safeFileUrl } from './ui.js';
+import { escapeHtml, formatFileSize, lockScroll, unlockScroll, safeFileUrl, safeHref } from './ui.js';
 
 const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'];
 
@@ -210,7 +210,7 @@ export function openDocViewer(docFile) {
         body.innerHTML = `<div class="doc-viewer-generic">
                 <span class="file-icon icon-${kind} file-icon-lg">${docIconSvg(kind)}</span>
                 <p>Перегляд цього типу файлів у застосунку недоступний.</p>
-                <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="btn-primary-inline">Відкрити файл</a>
+                <a href="${escapeHtml(safeHref(url))}" target="_blank" rel="noopener" class="btn-primary-inline">Відкрити файл</a>
             </div>`;
     }
 

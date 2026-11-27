@@ -29,7 +29,7 @@ service cloud.firestore {
         || request.auth.token.get('auth_time', 0) > get(/databases/$(database)/documents/_maintenance/reset).data.authCutoff;
     }
     function isSignedIn() {
-      return request.auth != null && validSession();
+      return request.auth != null && request.auth.token.email is string && validSession();
     }
 
     match /_maintenance/{id} {
@@ -181,8 +181,16 @@ service cloud.firestore {
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownersStatus'])
             || request.resource.data.ownersStatus in ['confirmed', 'review']));
 
+      // Мешканець при першому вході створює лише порожню картку з
+      // фіксованим набором полів. Площу (кворум), баланс, особовий рахунок
+      // і статуси вносить правління чи бухгалтерія, а не сам мешканець.
       allow create: if !maintenanceActive() && validSession() && (isSignedIn() && apt == myApt()
-                    && request.resource.data.isAdmin == false);
+                    && request.resource.data.keys().hasOnly(['passwordChanged', 'area', 'entrance', 'isAdmin', 'lastLogin'])
+                    && request.resource.data.get('passwordChanged', false) == false
+                    && request.resource.data.get('area', '') == ''
+                    && request.resource.data.get('entrance', '') == ''
+                    && request.resource.data.isAdmin == false
+                    && request.resource.data.get('lastLogin', request.time) == request.time);
       // Правління веде дані квартири, бухгалтер — гроші, а позначку
       // службового запису (isAdmin) змінює лише голова.
       allow create, update: if !maintenanceActive() && validSession() && (staffMayWriteApartment());
@@ -463,7 +471,13 @@ service cloud.firestore {
     // ---------- ГОЛОСУВАННЯ ----------
     match /polls/{pollId} {
       allow read: if validSession() && (isSignedIn());
-      allow create, update, delete: if !maintenanceActive() && validSession() && (canManage());
+      allow create, delete: if !maintenanceActive() && validSession() && (canManage());
+      // Завершені збори не «перевідкриваються», а опублікований протокол не
+      // «знімається»: інакше через це можна було б переписати голоси після протоколу.
+      allow update: if !maintenanceActive() && validSession() && (canManage()
+        && (resource.data.get('isMeeting', false) != true
+            || ((resource.data.get('status', '') != 'closed' || request.resource.data.get('status', '') == 'closed')
+                && (resource.data.get('protocolPublished', false) != true || request.resource.data.get('protocolPublished', false) == true))));
 
       // Електронний і старий паперовий голос: votes/{номер квартири}.
       // Новий паперовий голос співвласника: votes/owner:{квартира}:{ownerId}
@@ -494,7 +508,15 @@ service cloud.firestore {
 
         // Старі голоси квартири лишаються доступними правлінню.
         // Нові індивідуальні документи перевіряються окремо.
+        // Після публікації протоколу підсумки зафіксовані: голоси не змінює
+        // й не видаляє ніхто, зокрема правління. Між завершенням зборів і
+        // протоколом правління ще може виправити помилку внесення.
+        function protocolNotPublished() {
+          return get(/databases/$(database)/documents/polls/$(pollId)).data.get('protocolPublished', false) != true;
+        }
+
         allow create, update: if !maintenanceActive() && validSession() && (canManage()
+          && protocolNotPublished()
           && (!('ownerId' in request.resource.data) || validOwnerPaperVote()));
 
         function validResidentVote() {
@@ -520,7 +542,7 @@ service cloud.firestore {
         }
 
         allow create, update: if !maintenanceActive() && validSession() && (isSignedIn() && validResidentVote());
-        allow delete: if !maintenanceActive() && validSession() && (canManage());
+        allow delete: if !maintenanceActive() && validSession() && (canManage() && protocolNotPublished());
       }
     }
 

@@ -8,7 +8,7 @@ import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase
 import { meterStore } from './meter-store.js';
 import { METER_RESOURCES } from './meter-core.js';
 import { financeSummary, houseResourceMonths, costChange } from './finance-core.js';
-import { escapeHtml, formatMoney, formatDateTime } from './ui.js';
+import { escapeHtml, formatMoney, formatDateTime, safeHref } from './ui.js';
 import { ICONS, monthTitle, monthGenitive, chartHtml } from './resident-ui.js';
 import { opsListHtml, opsFilterHtml, opsInMonth, opsTotalKop, opsMonthTitle } from './finance-ops.js';
 
@@ -80,7 +80,7 @@ function expensesHtml(list) {
         <ul class="hf-docs">${shown.map(e => `<li>
             <div class="hf-item-head"><span><b>${escapeHtml(e.supplier)}</b></span><b>${kop(e.amountKop)} грн</b></div>
             <small>${escapeHtml(String(e.date).split('-').reverse().join('.'))} · ${escapeHtml(e.description)} · ${escapeHtml(e.item)}${e.amountKop < 0 ? ' · сторно' : e.paid ? '' : ' · до оплати'}</small>
-            ${(e.files || []).length ? `<p class="hf-files">${e.files.map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(e.doc)}: ${escapeHtml(f.name)}</a>`).join('')}</p>` : ''}
+            ${(e.files || []).length ? `<p class="hf-files">${e.files.map(f => `<a href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener">${escapeHtml(e.doc)}: ${escapeHtml(f.name)}</a>`).join('')}</p>` : ''}
         </li>`).join('')}</ul>
         ${list.length > shown.length ? `<button type="button" class="btn-ghost am-more-btn" data-hf-allexp>Показати всі (${list.length})</button>` : ''}
     </section>`;

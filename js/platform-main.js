@@ -126,6 +126,11 @@ let bankSimData = null;
 let autoSyncBank = true;
 let showBankSetupForm = false;
 let showTestOutPayForm = false;
+// «Тестовий платіж» створюється через paymentAction, який не знає про ОСББ платформи
+// й пише в робочу базу «Успіх-25» (а з боєвим токеном — у справжній Приват24).
+// Тому форма доступна лише в браузерному демо-будинку, де база — у памʼяті.
+const testPaymentAllowed = () => document.documentElement.classList.contains('is-demo')
+    && (!activeTenantId || activeTenantId === 'uspih-25');
 let activeTemplateId = 'resident_exact';
 let selectedSimApt = '';
 let selectedSimApt2 = '';
@@ -151,6 +156,9 @@ let inspectorDocs = [];
 let selectedDoc = null;
 let patchPreviewDiffs = null;
 let showLedgerAdjustForm = false;
+// На сервері ще немає дії ledgerAdjustment: форма завжди падала з «Невідома дія».
+// Виправлення рядків історії квартири — через сторно/повернення в бухгалтерії.
+const LEDGER_ADJUSTMENT_READY = false;
 
 function serializeDocData(val) {
     if (val === null || val === undefined) return val;
@@ -175,7 +183,9 @@ async function callPlatform(payload) {
         const msg = String(err?.message || '');
         // Обхід сервера — лише для читання. Запис (реєстр ОСББ, ручні коригування) без сервера
         // обійшов би перевірки закритого місяця й дозволених полів, тож помилку показуємо як є.
-        const readOnly = ['overview', 'bankSimulatorContext', 'inspectCollection', 'runDiagnostics'].includes(payload?.action);
+        // runDiagnostics навмисно не тут: перевірка цілісності по неповних даних браузера
+        // показувала б хибні розбіжності, тож без сервера краще чесна помилка.
+        const readOnly = ['overview', 'bankSimulatorContext', 'inspectCollection'].includes(payload?.action);
         if (readOnly && /not-found|unimplemented|function.*not.*exist|CORS|internal|Failed to fetch|Невідома дія платформи/i.test(msg)) {
             return clientFallbackPlatform({ tenantId: activeTenantId, ...payload });
         }
@@ -1011,11 +1021,11 @@ async function renderBankView() {
             ${secHead(
                 'Платежі, що чекають підпису КЕП',
                 'Сюди потрапляють платежі з <a href="buh.html#expenses">«Документів»</a>, <a href="buh.html#payroll">«Зарплати»</a> і <a href="buh.html#payments">«Платежів»</a>. «Підписати» проводить платіж так, як це зробив би банк, і додає списання у виписку.',
-                `<button type="button" class="pf-btn is-soft" data-pf-act="toggle-test-out-pay">${showTestOutPayForm ? 'Сховати форму' : '+ Тестовий платіж'}</button>
+                `${testPaymentAllowed() ? `<button type="button" class="pf-btn is-soft" data-pf-act="toggle-test-out-pay">${showTestOutPayForm ? 'Сховати форму' : '+ Тестовий платіж'}</button>` : ''}
                  ${pending.length > 1 ? `<button type="button" class="pf-btn" data-pf-act="bank-sign-all">Підписати всі (${pending.length})</button>` : ''}`
             )}
 
-            ${showTestOutPayForm ? testOutPaymentFormHtml() : ''}
+            ${showTestOutPayForm && testPaymentAllowed() ? testOutPaymentFormHtml() : ''}
 
             <div class="pf-sign-opts">
                 <label><span>Дата проведення</span>
@@ -1582,12 +1592,12 @@ async function renderInspectorView() {
                 <b>Кожне виправлення — з підставою і слідом в аудиті</b>
                 <p>Спершу система показує таблицю «Було → Стане», потім просить підставу й записує зміну в журнал. Баланс квартири перераховується автоматично.</p>
             </div>
-            <button type="button" class="pf-btn is-soft${showLedgerAdjustForm ? ' is-on' : ''}" data-pf-act="toggle-ledger-adj">
+            ${LEDGER_ADJUSTMENT_READY ? `<button type="button" class="pf-btn is-soft${showLedgerAdjustForm ? ' is-on' : ''}" data-pf-act="toggle-ledger-adj">
                 ${showLedgerAdjustForm ? 'Сховати форму' : '+ Коригувальний запис квартири'}
-            </button>
+            </button>` : ''}
         </div>
 
-        ${showLedgerAdjustForm ? `
+        ${LEDGER_ADJUSTMENT_READY && showLedgerAdjustForm ? `
             <section class="buh-card ex-form pf-form">
                 <div class="buh-card-head">
                     <h2>Коригувальний запис в історію квартири</h2>
@@ -1954,6 +1964,7 @@ function initEvents() {
                 showTestOutPayForm = !showTestOutPayForm;
                 await renderBankView();
             } else if (act === 'create-test-out-pay') {
+                if (!testPaymentAllowed()) { toast('Тестовий платіж доступний лише в демо-будинку', 'error'); return; }
                 const amountKop = toKop(document.getElementById('tpAmount')?.value || '');
                 if (!amountKop || amountKop <= 0) {
                     toast('Вкажіть суму платежу більшу за 0,00 грн', 'error');
@@ -2387,8 +2398,9 @@ onAuthStateChanged(auth, async user => {
 
     try {
         await loadProfile(apt);
-        if (!session.role || !hasRight(session.role, 'account')) {
-            location.replace('index.html');
+        // Платформа керує всіма ОСББ — лише голова (сервер перевіряє те саме).
+        if (session.role !== 'chair') {
+            location.replace(session.role && hasRight(session.role, 'account') ? 'buh.html' : 'index.html');
             return;
         }
         rememberWorkMode('buh');

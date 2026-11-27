@@ -47,6 +47,17 @@ const REFUND_REASONS = { bounce: 'банк повернув платіж (док
 const DEFAULT_START = '2026-10-01';
 // Банк може дооформити операцію заднім числом — перечитуємо кілька днів.
 const OVERLAP_DAYS = 3;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const addDays = (day, n) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+/** Північ за Києвом (+02:00 узимку, +03:00 влітку) для дати 'YYYY-MM-DD'. */
+function kyivMidnight(day) {
+    for (const offset of ['+03:00', '+02:00']) {
+        const d = new Date(`${day}T00:00:00${offset}`);
+        const local = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).format(d);
+        if (local.startsWith(day) && local.endsWith('00')) return d;
+    }
+    return new Date(`${day}T00:00:00+02:00`);
+}
 
 module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmin, staffRole, balances, expenses, lock, bankApi = privat }) {
     const settlement = require('./payroll-settlement')({ db, FieldValue, lock });
@@ -347,11 +358,15 @@ module.exports = function bankFunctions({ db, FieldValue, Timestamp, requireAdmi
                 const previous = ctx.settings.accounts?.[iban];
                 const last = Object.hasOwn(previous || {}, 'syncedTo') ? previous.syncedTo || ctx.startDate
                     : previous && ctx.settings.lastSync?.ok && ctx.settings.syncedTo ? ctx.settings.syncedTo : ctx.startDate;
-                const from = new Date(`${last}T00:00:00+03:00`);
-                // Рахунок вели виписками файлом до цієї дати: API продовжує з наступного дня, без перекриття (інакше задвоїло б операції).
-                if (previous?.source === 'file' || previous?.fileUntil === last) from.setDate(from.getDate() + 1);
-                else from.setDate(from.getDate() - OVERLAP_DAYS);
-                const start = new Date(`${ctx.startDate}T00:00:00+03:00`);
+                // Дні рахуємо на датах, а не на годинах: банк приймає київську дату,
+                // а «+03:00» узимку (+02:00) давав 23:00 попереднього дня — тобто зайвий день.
+                // Рахунок вели виписками файлом до цієї дати: API продовжує з наступного дня, без перекриття.
+                let fromDay = previous?.source === 'file' || previous?.fileUntil === last ? addDays(last, 1) : addDays(last, -OVERLAP_DAYS);
+                // Перекриття в OVERLAP_DAYS не заходить у період, покритий виписками файлом:
+                // там операції мають інші bankId (st-…), і API задвоїв би їх з другої синхронізації.
+                if (ISO_DAY.test(previous?.fileUntil || '') && fromDay <= previous.fileUntil) fromDay = addDays(previous.fileUntil, 1);
+                const from = kyivMidnight(fromDay);
+                const start = kyivMidnight(ctx.startDate);
                 try {
                     const list = await bankApi.fetchTransactions(token, { iban, from: from < start ? start : from, to: new Date() });
                     const r = await storeTransactions(list, 'privat', ctx);

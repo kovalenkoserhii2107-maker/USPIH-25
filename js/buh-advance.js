@@ -7,7 +7,7 @@
 // Принцип: «Система пропонує — людина підтверджує».
 // ============================================================
 import { session } from './firebase.js';
-import { escapeHtml, toast, setBusy, confirmDialog } from './ui.js';
+import { escapeHtml, toast, setBusy, confirmDialog, safeHref } from './ui.js';
 import { loadAdvance, advanceAct, expAct, loadRequisites, loadPaymentContext, loadPayments, uploadExpenseFiles } from './buh-data.js';
 import { defaultAccount } from './buh-payments.js';
 import { fmtKop, toKop, periodName } from './charges-core.js';
@@ -174,7 +174,7 @@ function lineRowHtml(l, idx, allLines = []) {
             <label class="field pay-wide"><span class="field-label">Фото чека або скан (PDF/JPG/PNG)</span>
                 <input class="field-input av-file" type="file" multiple accept=".pdf,image/*"></label>
         </div>
-        ${(l.files || []).length ? `<p class="buh-note" style="margin-top:6px">Додані файли: ${l.files.map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener" class="buh-file">${escapeHtml(f.name)}</a>`).join(' ')}</p>` : ''}
+        ${(l.files || []).length ? `<p class="buh-note" style="margin-top:6px">Додані файли: ${l.files.map(f => `<a href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener" class="buh-file">${escapeHtml(f.name)}</a>`).join(' ')}</p>` : ''}
     </div>`;
 }
 
@@ -327,7 +327,7 @@ function detailCardHtml(r, empty) {
                     <td>${i + 1}</td>
                     <td><b>${escapeHtml(ADVANCE_DOC_TYPES[l.docType] || l.docType)}</b><br><small>№ ${escapeHtml(l.number || '—')} від ${human(l.date)}</small></td>
                     <td><b>${escapeHtml(l.supplier || '—')}</b><br><small>${escapeHtml(l.desc || '')}${l.assetId ? ` · [${escapeHtml(l.assetId)}]` : ''}</small>
-                        ${(l.files || []).length ? `<br><small>${l.files.map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener" class="buh-file">${escapeHtml(f.name)}</a>`).join(' ')}</small>` : ''}</td>
+                        ${(l.files || []).length ? `<br><small>${l.files.map(f => `<a href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener" class="buh-file">${escapeHtml(f.name)}</a>`).join(' ')}</small>` : ''}</td>
                     <td>${escapeHtml(l.postingAcc || '92')}${l.assetId ? `<br><small>${escapeHtml(l.assetId)}</small>` : ''}</td>
                     <td class="t-sum"><b>${fmtKop(l.amountKop)} грн</b></td>
                 </tr>`).join('')}</tbody>

@@ -22,6 +22,27 @@ test('Суми й дати: різні записи без похибок', () =
     assert.equal(s.toDate('46300'), '2026-10-05');
 });
 
+test('Суми з 3–4 знаками після крапки не множаться на 1000 (аудит, п. 14)', () => {
+    // Людський формат таблиць: «1.234» — розряди, але «1250.500» і «100.0000» — дріб.
+    assert.equal(s.toKop('100.0000'), 10000);
+    assert.equal(s.toKop('1250.500'), 125050);
+    assert.equal(s.toKop('1.234'), 123400);
+    assert.equal(s.toKop('1,234,567.89'), 123456789);
+    // Машинні формати (camt.053, 1С): один роздільник — завжди десятковий, третій знак округлює.
+    assert.equal(s.toKopStrict('100.0000'), 10000);
+    assert.equal(s.toKopStrict('1250.500'), 125050);
+    assert.equal(s.toKopStrict('1.005'), 101);
+    assert.equal(s.toKopStrict('-850,5'), -85050);
+    assert.equal(s.toKopStrict('1.234,56'), null);
+    const xml = `<Document><BkToCstmrStmt><Stmt><Acct><Id><IBAN>${OSCHAD}</IBAN></Id></Acct>
+  <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt>1000.0000</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-10-01</Dt></Dt></Bal>
+  <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt>1100.0000</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-10-31</Dt></Dt></Bal>
+  <Ntry><Amt>100.0000</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>2026-10-05</Dt></BookgDt></Ntry>
+</Stmt></BkToCstmrStmt></Document>`;
+    const st = s.parseCamt(xml);
+    assert.deepEqual([st.openingKop, st.closingKop, st.rows[0].amountKop], [100000, 110000, 10000]);
+});
+
 test('Довідник банків однаковий у браузері й на сервері', () => {
     assert.deepEqual(s.BANKS, Object.fromEntries(Object.entries(server.BANKS)));
     assert.equal(s.bankOf(OSCHAD), 'Ощадбанк');

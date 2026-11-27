@@ -32,6 +32,8 @@ const privat = require('./privat');
 const { cleanApt, fromKop, normIban, safeId } = require('./bank-core');
 
 const REGION = 'europe-central2';
+// Поля співвласника, які можна виправити вручну (опечатки в ПІБ, документ, частка).
+const OWNER_PATCH_FIELDS = ['name', 'docInfo', 'shareFrac', 'sharePerc'];
 
 function serializeValue(val) {
     if (val === null || val === undefined) return val;
@@ -72,7 +74,15 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
     // Симулятор має право писати «банківські» операції лише туди, де стоїть тестовий ключ
     // або ключа немає. Зі справжнім токеном Приват24 тестові надходження, підписи й сторно
     // потрапили б у живий облік квартир — тому всі дії симулятора тоді відхиляються.
-    async function assertSimulatorAllowed(targetDb) {
+    async function assertSimulatorAllowed(targetDb, { allowMain = false } = {}) {
+        // Робоча база «Успіх-25» — не полігон: фіктивні «надходження» симулятора
+        // гасили б справжні борги квартир, а підписи — справжні платежі.
+        // Симулятор працює в окремих ОСББ платформи, у тестовій бухгалтерії
+        // та в браузерному демо-будинку (process.env.DEMO). Вимкнути вже
+        // підключений тестовий банк на робочій базі можна (allowMain).
+        if (targetDb === db && !allowMain && process.env.DEMO !== '1') {
+            fail('failed-precondition', 'Симулятор банку не працює на робочій базі «Успіх-25». Використовуйте тестову бухгалтерію або окреме тестове ОСББ');
+        }
         const snap = await targetDb.doc('bank_secrets/privat').get();
         const token = snap.exists ? String(snap.data()?.token || '').trim() : '';
         if (token && !privat.isSandboxToken(token)) {
@@ -668,7 +678,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         const targetDb = resolveTenantDb(tenantId);
         const { bankSvc } = resolveServices(targetDb, actor);
         // Відключаємо лише тестовий ключ: справжній токен банку знімають у «Налаштуваннях» бухгалтерії.
-        await assertSimulatorAllowed(targetDb);
+        await assertSimulatorAllowed(targetDb, { allowMain: true });
 
         if (bankSvc?.actions?.removeToken) {
             await bankSvc.actions.removeToken(actor, role);
@@ -1235,24 +1245,34 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         // Дозволені лише поля зі списку інспектора; гроші — цілими копійками.
         // Рядки історії квартири (ledger) — це гроші: їх змінюють лише операціями, не латкою.
         if (subcollection === 'ledger') fail('invalid-argument', 'Рядки історії квартири змінюються лише через операції бухгалтерії (сторно, повернення)');
+        // Єдина підколекція з латками — співвласники квартири. Будь-яке інше значення
+        // раніше вимикало перевірку дозволених полів і писало в кореневу колекцію.
+        if (subcollection && (subcollection !== 'owners' || colName !== 'apartments' || !aptId)) {
+            fail('invalid-argument', 'Ручне коригування підтримує лише співвласників квартири (apartments/{кв}/owners)');
+        }
+        if (aptId && (aptId.includes('/') || aptId === '.' || aptId === '..')) fail('invalid-argument', 'Некоректний номер квартири');
         const meta = core.INSPECTABLE_COLLECTIONS[colName];
-        if (!subcollection) {
-            const allowed = new Set(meta.editableFields || []);
-            const bad = Object.keys(validation.cleanPatch).filter(k => !allowed.has(k));
-            if (bad.length) fail('invalid-argument', `Ці поля не можна змінювати вручну: ${bad.join(', ')}`);
-        }
-        for (const [k, v] of Object.entries(validation.cleanPatch)) {
-            if (/Kop$/.test(k) && v !== null && !Number.isSafeInteger(v)) fail('invalid-argument', `Поле ${k} має бути цілим числом копійок`);
-        }
+        const allowed = new Set(subcollection === 'owners' ? OWNER_PATCH_FIELDS : (meta.editableFields || []));
 
         const targetDb = resolveTenantDb(tenantId);
-        const docPath = (colName === 'apartments' && aptId && ['ledger', 'owners'].includes(subcollection))
-            ? `apartments/${aptId}/${subcollection}/${docId}`
+        const docPath = subcollection === 'owners'
+            ? `apartments/${aptId}/owners/${docId}`
             : `${colName}/${docId}`;
 
         const ref = targetDb.doc(docPath);
         const snap = await ref.get();
-        const beforeData = snap.exists ? serializeValue(snap.data()) : {};
+        // Латка виправляє наявний запис; опечатка в ID не створює «документ-привид».
+        if (!snap.exists) fail('not-found', `Документ ${docPath} не знайдено`);
+        const beforeData = serializeValue(snap.data());
+        // Перевіряємо лише змінені поля: інспектор надсилає документ цілком,
+        // і незмінні службові поля (balance, updatedAt) не повинні блокувати правку.
+        const changedKeys = core.computePatchDiff(beforeData, validation.cleanPatch).map(d => d.field);
+        const bad = changedKeys.filter(k => !allowed.has(k));
+        if (bad.length) fail('invalid-argument', `Ці поля не можна змінювати вручну: ${bad.join(', ')}`);
+        validation.cleanPatch = Object.fromEntries(changedKeys.map(k => [k, validation.cleanPatch[k]]));
+        for (const [k, v] of Object.entries(validation.cleanPatch)) {
+            if (/Kop$/.test(k) && v !== null && !Number.isSafeInteger(v)) fail('invalid-argument', `Поле ${k} має бути цілим числом копійок`);
+        }
         // Закритий місяць не правиться ні старим, ні новим періодом документа.
         const periodLock = require('./period-lock')(targetDb);
         if (colName !== 'journal_periods') for (const period of new Set([beforeData.period, validation.cleanPatch.period].filter(v => typeof v === 'string' && /^\d{4}-\d{2}$/.test(v)))) {
@@ -1282,7 +1302,7 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         updatePayload.manualAdjustedBy = actor;
         updatePayload.manualAdjustedAt = FieldValue.serverTimestamp();
 
-        await ref.set(updatePayload, { merge: true });
+        await ref.update(updatePayload);
 
         await writeAudit(targetDb, actor, role, 'platform.manualPatch', docPath,
             `Ручне коригування ${docPath} (${diffs.length} полів): ${validation.reason}`,
@@ -1323,7 +1343,9 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
 
     const platformAction = onCall({ region: REGION, maxInstances: 4, timeoutSeconds: 120 }, callGuard('platformAction', async request => {
         if (!request.auth?.uid || !request.auth.token?.email?.endsWith('@uspih-25.com')) fail('permission-denied', 'Потрібен службовий вхід у цей застосунок');
-        const actor = await requireAdmin(request, ['chair', 'accountant']);
+        // Платформа бачить і змінює всі ОСББ — лише голова (супер-адмін).
+        // Бухгалтер одного будинку не повинен бачити квартири, РНОКПП і журнал інших.
+        const actor = await requireAdmin(request, ['chair']);
         const role = await staffRole(actor);
         const actorUid = request.auth?.uid || actor;
         const data = request.data || {};
@@ -1336,6 +1358,10 @@ module.exports = function platformFunctions({ db, FieldValue, Timestamp, require
         switch (data.action) {
             case 'overview':
                 return overview(actor, role, data, actorUid);
+            // Та сама серверна перевірка інваріантів, що й в огляді. Раніше дії
+            // не було, і клієнт рахував її сам по неповних даних — з хибними «аваріями».
+            case 'runDiagnostics':
+                return (await overview(actor, role, data, actorUid)).diagnostics;
             case 'bankContext':
             case 'bankSimulatorContext':
                 return bankSimulatorContext(actor, role, data);

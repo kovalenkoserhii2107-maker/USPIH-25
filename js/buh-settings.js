@@ -209,7 +209,7 @@ function bankHtml() {
                 <button type="button" class="sv-btn" data-act="token-save">Перевірити й зберегти</button>
                 ${connected ? '<button type="button" class="sv-btn is-soft" data-act="token-remove">Відключити</button>' : ''}
             </div>
-            <p class="se-hint">Токен бачить лише сервер. Тестовий банк підключає голова в <a href="platform.html#bank">симуляторі Приват24</a>. Зарплатний проект і відомості — <button type="button" class="se-a" data-act="st-payroll-bank">у «Зарплата → Приват24» ›</button></p>`)
+            <p class="se-hint">Токен бачить лише сервер. Тестовий банк — лише в <a href="accounting-test.html">тестовій бухгалтерії</a> або в окремому тестовому ОСББ платформи, не на робочій базі. Зарплатний проект і відомості — <button type="button" class="se-a" data-act="st-payroll-bank">у «Зарплата → Приват24» ›</button></p>`)
         + card('se-accounts', 'Рахунки ОСББ', `<span class="py-muted">${accounts.length}</span>`, `
             <p class="se-lead">Рахунки можуть бути в різних банках. ПриватБанк оновлюється сам; інші банки — випискою файлом у розділі «Банк» (1С, XML camt.053, Excel, CSV). Призначення визначає субрахунок обліку (311, 313, 351).</p>
             ${accounts.map(([iban, a]) => `<div class="se-acc" data-iban="${escapeHtml(iban)}">
@@ -439,7 +439,7 @@ function startupHtml() {
 function serviceHtml() {
     return card('se-test', 'Тестовий полігон', '', `
             <p class="se-lead">Окремий навчальний будинок: нарахування, імітована виписка, зарплата, проводки й звірка звітів. Робочу базу не зачіпає.</p>
-            <div class="se-actions"><a class="sv-btn" href="accounting-test.html">Відкрити полігон ›</a><a class="sv-btn is-soft" href="platform.html">Платформа ОСББ ›</a></div>`)
+            <div class="se-actions"><a class="sv-btn" href="accounting-test.html">Відкрити полігон ›</a>${isChair() ? '<a class="sv-btn is-soft" href="platform.html">Платформа ОСББ ›</a>' : ''}</div>`)
         + (isChair() ? '<div id="se-reset" class="se-wrap"><div id="resetSettings"></div></div>' : '');
 }
 

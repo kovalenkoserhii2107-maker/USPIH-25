@@ -4,7 +4,7 @@
 // Спільне для «Фінансів будинку» мешканця й кошторису в кабінеті;
 // так само — надходження (хто заплатив: приміщення чи компанія).
 // ============================================================
-import { escapeHtml, formatMoney } from './ui.js';
+import { escapeHtml, formatMoney, safeHref } from './ui.js';
 
 const svg = body => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const KIND = {
@@ -41,7 +41,7 @@ export function opsListHtml(list, { withPurpose = false, income = false } = {}) 
                 ${o.who ? `<b class="fo-who">${escapeHtml(o.who)}</b>` : ''}
                 <span class="fo-amount">${formatMoney(o.amountKop / 100)}<small> грн</small></span>
                 ${note ? `<small class="fo-note">${escapeHtml(note)}</small>` : ''}
-                ${(o.files || []).length ? `<span class="hf-files">${o.files.map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('')}</span>` : ''}
+                ${(o.files || []).length ? `<span class="hf-files">${o.files.map(f => `<a href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('')}</span>` : ''}
             </span>
         </li>`;
     }).join('')}</ul>`;

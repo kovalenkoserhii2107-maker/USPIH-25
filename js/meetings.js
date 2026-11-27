@@ -20,7 +20,7 @@ import {
 import {
     ref as sRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, lockScroll, unlockScroll } from './ui.js';
+import { escapeHtml, formatDateTime, toast, setBusy, confirmDialog, lockScroll, unlockScroll, safeHref } from './ui.js';
 import { renderAttachments, renderFileManager } from './attachments.js';
 import { buildRecipients } from './messages-admin.js';
 import { fetchDirectory } from './directory.js';
@@ -420,7 +420,7 @@ function meetingCard(poll, apartments) {
             · письмове опитування: <b>${paper}</b>${
             q ? ` · кворум: <b>${fmtPct(q.ownersPct)}%</b>` : ''}</span>
         ${poll.protocolUrl
-            ? `<a class="meeting-protocol-link" href="${escapeHtml(poll.protocolUrl)}"
+            ? `<a class="meeting-protocol-link" href="${escapeHtml(safeHref(poll.protocolUrl))}"
                   target="_blank" rel="noopener">Протокол опубліковано — відкрити PDF</a>`
             : ''}
         <div class="poll-actions">${actions.join('')}</div>
@@ -512,7 +512,7 @@ export async function loadProtocols(append = false) {
             return;
         }
         host.innerHTML = protocolDocs.map(d => `
-            <a class="proto-row" href="${escapeHtml(d.url)}" target="_blank" rel="noopener">
+            <a class="proto-row" href="${escapeHtml(safeHref(d.url))}" target="_blank" rel="noopener">
                 <span class="proto-row-text">
                     <span class="proto-row-title">${escapeHtml(d.title)}</span>
                     <span class="proto-row-meta">${escapeHtml(d.category || 'Протоколи')} ·

@@ -659,3 +659,56 @@ test('правила перевіряють набір зон, суми кана
     }
     assert.equal((await getDoc(doc(resident, 'apartments/45/meter_state/current'))).exists(), false);
 });
+
+// ---------- Регресії з аудиту ----------
+
+test('мешканець створює лише порожню картку своєї квартири — без площі, балансу й статусів (аудит, п. 2)', async () => {
+    const resident = env.authenticatedContext('newcomer', { email: '77@uspih-25.com' }).firestore();
+    const card = () => ({ passwordChanged: false, area: '', entrance: '', isAdmin: false, lastLogin: serverTimestamp() });
+    for (const extra of [{ area: 999999 }, { balance: 500000 }, { ownersStatus: 'verified' }, { personalAccount: 'X' }, { passwordChanged: true }]) {
+        await assertFails(setDoc(doc(resident, 'apartments/77'), { ...card(), ...extra }));
+    }
+    await assertFails(setDoc(doc(resident, 'apartments/78'), card()));
+    await assertSucceeds(setDoc(doc(resident, 'apartments/77'), card()));
+});
+
+test('після протоколу голоси не змінюються й не видаляються навіть правлінням (аудит, п. 13)', async () => {
+    await seed();
+    const admin = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).firestore();
+    await setDoc(doc(admin, 'polls/closed-meeting'), { isMeeting: true, options: ['Кошторис'], status: 'active' });
+    const paper = doc(admin, 'polls/closed-meeting/votes/46');
+    await assertSucceeds(setDoc(paper, { source: 'paper', answers: { 0: 'За' }, enteredBy: 'board', votedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(doc(admin, 'polls/closed-meeting'), { status: 'closed' }));
+    // Збори завершено, протоколу ще немає: помилку внесення виправити можна.
+    await assertSucceeds(setDoc(paper, { answers: { 0: 'Проти' } }, { merge: true }));
+    // Збори не «перевідкриваються».
+    await assertFails(updateDoc(doc(admin, 'polls/closed-meeting'), { status: 'active' }));
+    await assertSucceeds(updateDoc(doc(admin, 'polls/closed-meeting'), { protocolPublished: true }));
+    await assertFails(setDoc(paper, { answers: { 0: 'За' } }, { merge: true }));
+    await assertFails(setDoc(doc(admin, 'polls/closed-meeting/votes/45'), { source: 'paper', answers: { 0: 'За' }, enteredBy: 'board', votedAt: serverTimestamp() }));
+    await assertFails(firestore.deleteDoc(paper));
+    await assertFails(updateDoc(doc(admin, 'polls/closed-meeting'), { protocolPublished: false }));
+    // Дописати посилання на протокол можна.
+    await assertSucceeds(updateDoc(doc(admin, 'polls/closed-meeting'), { protocolUrl: 'https://firebasestorage.googleapis.com/v0/b/uspih-25.firebasestorage.app/o/osbb_docs%2Fp.pdf' }));
+});
+
+test('вхід без email не проходить як мешканець', async () => {
+    await seed();
+    const anon = env.authenticatedContext('anon').firestore();
+    await assertFails(getDoc(doc(anon, 'polls/any')));
+});
+
+test('файли відповідей правління бачить лише квартира звернення й команда (аудит, п. 11)', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async context => {
+        await setDoc(doc(context.firestore(), 'requests/r1'), { apt: '45', text: 'Протікає дах', status: 'answered' });
+        await setDoc(doc(context.firestore(), 'apartments/46'), { isAdmin: false });
+        await uploadString(ref(context.storage(), 'replies/r1/answer.pdf'), 'pdf', 'raw', { contentType: 'application/pdf' });
+    });
+    const own = env.authenticatedContext('resident', { email: '45@uspih-25.com' }).storage();
+    const neighbour = env.authenticatedContext('neighbour', { email: '46@uspih-25.com' }).storage();
+    const board = env.authenticatedContext('admin', { email: 'board@uspih-25.com' }).storage();
+    await assertSucceeds(getMetadata(ref(own, 'replies/r1/answer.pdf')));
+    await assertSucceeds(getMetadata(ref(board, 'replies/r1/answer.pdf')));
+    await assertFails(getMetadata(ref(neighbour, 'replies/r1/answer.pdf')));
+});

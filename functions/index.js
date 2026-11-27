@@ -34,11 +34,25 @@ async function staffRole(apt) {
     return apartment.exists && apartment.data().isAdmin === true ? 'chair' : null;
 }
 
+const AUTH_DOMAIN = '@uspih-25.com';
+
 /** Збори, графік ДТЕК та інші рішення правління — голова й члени правління. */
 async function requireAdmin(request, roles = ['chair', 'board'], {allowDuringReset=false} = {}) {
-    if (!allowDuringReset && (await db.doc('_maintenance/reset').get()).data()?.active) throw new HttpsError('failed-precondition', 'Триває підготовка або очищення бази. Продовжіть її в налаштуваннях');
-    const email = request.auth?.token?.email || '';
-    const apt = email.split('@')[0];
+    const email = request.auth?.token?.email;
+    // Роль визначає номер перед «@», тож чужий домен (напр. 45@gmail.com)
+    // не повинен давати права квартири чи службового номера 45.
+    if (!request.auth?.uid || typeof email !== 'string' || !email.endsWith(AUTH_DOMAIN)) {
+        throw new HttpsError('unauthenticated', 'Потрібен службовий вхід у цей застосунок');
+    }
+    const reset = (await db.doc('_maintenance/reset').get()).data();
+    if (!allowDuringReset && reset?.active) throw new HttpsError('failed-precondition', 'Триває підготовка або очищення бази. Продовжіть її в налаштуваннях');
+    // Як validSession() у firestore.rules: після початку очищення старі сесії
+    // (видані до authCutoff) не працюють і в серверних функціях.
+    if (reset && typeof reset.authCutoff === 'number' && request.auth.uid !== reset.keeperUid
+        && !(Number(request.auth.token.auth_time || 0) > reset.authCutoff)) {
+        throw new HttpsError('unauthenticated', 'Сесія застаріла — увійдіть знову');
+    }
+    const apt = email.slice(0, -AUTH_DOMAIN.length);
     if (!apt) throw new HttpsError('unauthenticated', 'Потрібен вхід');
     if (!roles.includes(await staffRole(apt))) {
         throw new HttpsError('permission-denied', 'Лише для правління');
@@ -468,9 +482,14 @@ exports.journalAction = journal.journalAction;
 const reports = require('./reports')({ db, FieldValue, requireAdmin, staffRole, journal });
 exports.reportsAction = reports.reportsAction;
 
-// Демо-прогін бухгалтерії на тестовому акаунті (див. demo.js).
-const demo = require('./demo')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, bank, expenses, budget, journal, payroll });
-exports.demoAction = demo.demoAction;
+// Старий демо-прогін (demoAction) видалено: його «прибирання» чистило
+// справжні періоди, зарплату й історію квартир у робочій базі. Навчальний
+// облік — лише в ізольованій тестовій бухгалтерії (accounting-test.html).
+// Заглушка лишається, доки функцію не видалено в Firebase Console: деплой
+// без --force зупиняється, якщо з коду зникає вже розгорнута функція.
+exports.demoAction = onCall({ region: 'europe-central2', maxInstances: 1 }, async () => {
+    throw new HttpsError('failed-precondition', 'Демо-прогін на робочій базі вимкнено. Використовуйте тестову бухгалтерію (accounting-test.html)');
+});
 
 // Initial accounting exports and full database maintenance are chair-only.
 const migration = require('./migration')({ db, FieldValue, Timestamp, requireAdmin, staffRole, charges, journal, reports });

@@ -379,16 +379,3 @@ export async function journalAct(payload) {
     }
 }
 
-// ------------------------------------------------------------
-// ДЕМО-ПРОГІН (тестовий акаунт)
-// ------------------------------------------------------------
-// Збій — не null: голова має бачити, чому демо недоступне (напр., функцію ще не розгорнуто).
-export const loadDemo = () => once('demo', () => callBackend('demoAction', { action: 'status' }).catch(e => ({ error: e?.message || 'сервер не відповів' })));
-export async function demoAct(action, extra = {}) {
-    try {
-        return await callBackend('demoAction', { action, ...extra }, 540000);
-    } finally {
-        invalidateDirectory();
-        invalidate();
-    }
-}

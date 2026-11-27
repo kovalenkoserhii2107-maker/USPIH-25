@@ -11,11 +11,6 @@ let app,db,service;const oldFetch=globalThis.fetch;
 before(async()=>{app=initializeApp({projectId:'uspih-25-rules-test'},'private-accounting-test');db=getFirestore(app);for(const c of await db.listCollections())await db.recursiveDelete(c);service=require('./accounting-test')({db,FieldValue,Timestamp,requireAdmin:async request=>{if(!['chair','accountant'].includes(request.auth.token.role))throw new Error('Permission denied');return request.auth.token.email.split('@')[0];}});globalThis.fetch=async(url,...args)=>{if(/^http:\/\/(?:127\.0\.0\.1|localhost):\d+\//.test(String(url)))return oldFetch(url,...args);throw new Error('A training action must never make a live HTTP request');};});
 after(async()=>{for(const c of await db.listCollections())await db.recursiveDelete(c);await deleteApp(app);globalThis.fetch=oldFetch;});
 const request=(uid,data,role='chair')=>({auth:{uid,token:{email:'298@uspih-25.com',role}},data});
-test('legacy public demo start directs the user to isolated books before writing anything',async()=>{
- const legacy=require('./demo')({db,FieldValue,Timestamp,requireAdmin:async()=>'298',staffRole:async()=>'chair'});
- await assert.rejects(legacy.demoAction.run(request('legacy',{action:'run'})),e=>e.code==='failed-precondition'&&e.message.includes('accounting-test.html'));
- assert.equal((await db.doc('demo/state').get()).exists,false);
-});
 test('private three-month accounting cycle preserves production and another user, retries do not duplicate records',async()=>{
  await db.doc('apartments/298').set({balance:123.45,personalAccount:'PRODUCTION'});await db.doc('apartments/298/owners/real').set({name:'Production owner'});await db.doc('apartments/298/ledger/real').set({kind:'payment',period:'2026-10',amount:123.45});await db.doc('bank_secrets/privat').set({token:'PRODUCTION-NOT-FOR-TRAINING'});await db.doc('finance/current').set({sentinel:'production'});
  const run=data=>service.handle(request('user_A',data));

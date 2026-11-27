@@ -58,6 +58,10 @@ const ISOLATION_MODES = {
     }
 };
 
+// editableFields — лише описові поля. Суми, статуси грошових документів,
+// закриття періоду й ролі команди змінюються тільки штатними операціями
+// (сторно, повернення, закриття/відкриття місяця, «Команда»): латка в обхід
+// них розсинхронізувала б проводки, баланси й журнал.
 const INSPECTABLE_COLLECTIONS = {
     apartments: {
         label: 'Квартири та приміщення (apartments)',
@@ -73,7 +77,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Фінанси та банк',
         pkLabel: 'ID транзакції',
         summaryFields: ['period', 'direction', 'amountKop', 'status', 'kind', 'purpose'],
-        editableFields: ['status', 'kind', 'category', 'purpose', 'period', 'expenseId', 'paymentId']
+        editableFields: ['category', 'purpose', 'period', 'expenseId', 'paymentId']
     },
     payments: {
         label: 'Платіжні доручення Приват24 (payments)',
@@ -81,7 +85,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Фінанси та банк',
         pkLabel: 'ID платежу',
         summaryFields: ['kind', 'amountKop', 'status', 'account', 'purpose'],
-        editableFields: ['status', 'purpose', 'amountKop', 'bankRef', 'error']
+        editableFields: ['purpose', 'bankRef', 'error']
     },
     expenses: {
         label: 'Документи витрат (expenses)',
@@ -89,7 +93,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Бухгалтерія та договори',
         pkLabel: 'ID документа',
         summaryFields: ['docType', 'number', 'date', 'period', 'supplierName', 'amountKop', 'status'],
-        editableFields: ['number', 'date', 'period', 'amountKop', 'vatKop', 'item', 'postingAcc', 'assetId', 'status', 'description']
+        editableFields: ['number', 'date', 'period', 'item', 'postingAcc', 'assetId', 'description']
     },
     contracts: {
         label: 'Договори з постачальниками (contracts)',
@@ -113,7 +117,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Облік та закриття',
         pkLabel: 'Період (YYYY-MM)',
         summaryFields: ['period', 'count', 'totalKop', 'complete', 'status'],
-        editableFields: ['complete', 'status', 'note']
+        editableFields: ['note']
     },
     journal_periods: {
         label: 'Періоди журналу проводок / ОСВ (journal_periods)',
@@ -121,7 +125,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Облік та закриття',
         pkLabel: 'Період (YYYY-MM)',
         summaryFields: ['status', 'closedBy', 'closedAt'],
-        editableFields: ['status', 'reopenReason']
+        editableFields: []
     },
     claims: {
         label: 'Претензійно-позовні справи (claims)',
@@ -145,7 +149,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Облік та закриття',
         pkLabel: 'ID звіту',
         summaryFields: ['number', 'date', 'period', 'personName', 'advanceKop', 'status'],
-        editableFields: ['number', 'date', 'period', 'personName', 'personCode', 'personIban', 'purpose', 'advanceKop', 'status', 'comment']
+        editableFields: ['number', 'date', 'period', 'personName', 'personCode', 'personIban', 'purpose', 'comment']
     },
     staff: {
         label: 'Команда правління та ролі (staff)',
@@ -153,7 +157,7 @@ const INSPECTABLE_COLLECTIONS = {
         group: 'Реєстр та мешканці',
         pkLabel: 'Логін / вхід (ID)',
         summaryFields: ['name', 'role', 'active'],
-        editableFields: ['name', 'role', 'active', 'note']
+        editableFields: ['name', 'note']
     }
 };
 

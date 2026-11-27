@@ -10,7 +10,7 @@
 // ============================================================
 import { db } from './firebase.js';
 import { getDocs, collection } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { escapeHtml, getInitials, avatarGradient } from './ui.js';
+import { escapeHtml, getInitials, avatarGradient, safeHref } from './ui.js';
 
 export const GROUPS = {
     board: {
@@ -98,7 +98,7 @@ function contactButtons(m) {
     }
     const tg = telegramHref(m.telegram);
     if (tg) {
-        html += `<a href="${escapeHtml(tg)}" target="_blank" rel="noopener" class="contact-btn contact-btn-telegram">${ICONS.telegram}Telegram</a>`;
+        html += `<a href="${escapeHtml(safeHref(tg))}" target="_blank" rel="noopener" class="contact-btn contact-btn-telegram">${ICONS.telegram}Telegram</a>`;
     }
     if (m.email) {
         html += `<a href="mailto:${escapeHtml(m.email)}" class="contact-btn">${ICONS.mail}Пошта</a>`;

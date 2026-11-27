@@ -69,8 +69,15 @@ service firebase.storage {
       allow delete: if writeEnabled() && (admin());
     }
 
+    // Відповіді правління на звернення приватні, як і самі звернення:
+    // їх бачить команда й лише та квартира, що подала звернення.
+    function requestOwner(requestId) {
+      let req = /databases/(default)/documents/requests/$(requestId);
+      return firestore.exists(req) && firestore.get(req).data.get('apt', '') == myApt();
+    }
+
     match /replies/{requestId}/{file=**} {
-      allow read: if signedIn();
+      allow read: if signedIn() && (admin() || requestOwner(requestId));
       allow create, update, delete: if writeEnabled() && (admin() && (request.resource == null || safeUpload(15)));
     }
 

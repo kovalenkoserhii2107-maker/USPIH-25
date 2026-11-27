@@ -5,7 +5,7 @@
 // операція банку → платіж чи документ → …) і повернутися «Назад».
 // Розрахунки — chain-core.js.
 // ============================================================
-import { escapeHtml, toast, confirmDialog } from './ui.js';
+import { escapeHtml, toast, confirmDialog, safeHref } from './ui.js';
 import {
     loadPayment, loadTx, loadPayments, loadExpenses, payAct, act, money, signed, when, dateOnly, tagOf, maskIban,
     PAYMENT_KINDS, PAYMENT_STATUS, CONTRACT_STATUS
@@ -181,7 +181,7 @@ async function contractBody(id) {
     const s = contractSummary(c, ex, payments);
     const ids = new Set(s.docs.map(e => e.id));
     const pays = payments.filter(p => ids.has(p.expenseId));
-    const files = (c.files || []).map(f => `<a class="chs-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('');
+    const files = (c.files || []).map(f => `<a class="chs-file" href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('');
     const tiles = [['За документами', s.billedKop], ['Сплачено', s.paidKop], ['На підписі в банку', s.inBankKop], ['Лишилось сплатити', s.dueKop],
         ...(s.capLeftKop !== null ? [['Лишилось від суми договору', s.capLeftKop]] : [])].filter(([, v], i) => i < 2 || v);
     return [`Договір № ${c.number}`, `

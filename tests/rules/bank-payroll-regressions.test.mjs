@@ -510,3 +510,22 @@ test('bank confirmation during cancellation preserves the paid payment and relea
         assert.equal((await reports.actions.payrollData({period:'2026-10'})).summary.paidKop,864700);
     } finally {release.resolve();await canceling;}
 });
+
+test('перехід з виписок файлом на API: перекриття не заходить у період файлу й на другій синхронізації (аудит, п. 15)', async () => {
+    await seedBank();
+    // Рахунок вели файлом до 31.10, далі — API; синхронізація вже була 02.11.
+    await db.doc('bank/settings').set({ accounts: { [OWN]: { purpose: 'current', currency: 'UAH', source: 'privat', fileUntil: '2026-10-31', syncedTo: '2026-11-02' } } }, { merge: true });
+    const requested = [];
+    privat.fetchTransactions = async (_, q) => { requested.push(q.from); return []; };
+    await action({ action: 'sync' });
+    assert.equal(requested.length, 1);
+    // Без обмеження було б 30.10 (syncedTo − 3 дні) — і API задвоїв би операції з файлу.
+    const kyivDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(d);
+    assert.equal(kyivDay(requested[0]), '2026-11-01');
+    // Перша синхронізація після файлу взимку: раніше «+03:00» давав 23:00 31.10 за Києвом,
+    // і банк повертав увесь останній день файлу ще раз.
+    await db.doc('bank/settings').set({ accounts: { [OWN]: { source: 'file', syncedTo: '2026-10-31', fileUntil: null } } }, { merge: true });
+    requested.length = 0;
+    await action({ action: 'sync' });
+    assert.equal(kyivDay(requested[0]), '2026-11-01');
+});

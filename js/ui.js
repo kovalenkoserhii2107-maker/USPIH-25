@@ -37,6 +37,25 @@ export function safeFileUrl(url) {
     }
 }
 
+/**
+ * Безпечне значення для href: лише https/http, blob цього ж сайту та відносні
+ * адреси. «javascript:», «data:», «vbscript:» тощо стають «#» — escapeHtml
+ * екранує лапки, але не схему, тож клік по такому «файлу» виконав би код
+ * у сесії голови чи бухгалтера. Звідки файл (наше сховище чи ні) —
+ * окрема перевірка: safeFileUrl на клієнті й isOwnFileUrl на сервері.
+ */
+export function safeHref(url) {
+    const raw = String(url ?? '').trim();
+    if (!raw) return '#';
+    try {
+        const base = typeof location !== 'undefined' ? location.href : 'https://invalid.local/';
+        const parsed = new URL(raw, base);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return parsed.href;
+        if (parsed.protocol === 'blob:' && typeof location !== 'undefined' && raw.startsWith(`blob:${location.origin}/`)) return raw;
+    } catch { /* некоректна адреса */ }
+    return '#';
+}
+
 export function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str).replace(/[&<>"']/g, (c) => ({

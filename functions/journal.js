@@ -978,6 +978,22 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         };
     }
 
+    // Чеки авансового звіту — лише файли, завантажені в застосунок (expenses/…),
+    // як у витратах. Довільна адреса (зокрема «javascript:») у звіті, який
+    // відкриває голова, — це збережений XSS. У браузерному демо файли — blob:.
+    const ADVANCE_FILE_URL = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/uspih-25\.(firebasestorage\.app|appspot\.com)\/o\/expenses%2F/;
+    function cleanAdvanceFiles(files) {
+        const list = (Array.isArray(files) ? files : []).slice(0, 10).map(f => ({
+            name: text(f?.name, 160), url: String(f?.url || ''), path: String(f?.path || ''),
+            size: Number(f?.size) || 0, type: text(f?.type, 100)
+        }));
+        const demoBlob = f => process.env.DEMO === '1' && f.url.startsWith('blob:');
+        if (list.some(f => !demoBlob(f) && (!ADVANCE_FILE_URL.test(f.url) || !f.path.startsWith('expenses/')))) {
+            fail('invalid-argument', 'Файл чека має бути завантажений у застосунок');
+        }
+        return list;
+    }
+
     async function saveAdvanceReport(actor, role, data) {
         const p = String(data.period || today().slice(0, 7)).trim();
         const date = String(data.date || today()).trim();
@@ -1026,7 +1042,7 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
                     assetQty: Number(l.assetQty || 1),
                     assetUnit: text(l.assetUnit || 'шт.', 20),
                     desc: text(l.desc, 300),
-                    files: Array.isArray(l.files) ? l.files : []
+                    files: cleanAdvanceFiles(l.files)
                 };
             })
         };
@@ -1034,37 +1050,50 @@ module.exports = function journalFunctions({ db, FieldValue, requireAdmin, staff
         const error = advanceCore.checkAdvanceReport(report);
         if (error) fail('invalid-argument', error);
 
-        const totals = advanceCore.calculateReportTotals(report);
-        report.spentKop = totals.spentKop;
-        report.balanceKop = totals.balanceKop;
-        report.reimburseKop = totals.reimburseKop;
-        report.returnKop = totals.returnKop;
-        report.reimbursedKop = Number(data.reimbursedKop || 0);
-        report.returnedKop = Number(data.returnedKop || 0);
-
-        const approved = role === 'chair' || data.approve === true && role === 'chair';
-        report.status = approved ? (totals.isFullySettled ? 'settled' : 'approved') : 'pending';
-        if (approved) {
-            report.approvedBy = actor;
-            report.approvedAt = FieldValue.serverTimestamp();
+        const approved = role === 'chair';
+        if (!report.number) {
+            // Наступний номер серед звітів цього місяця (раніше список був порожнім — завжди «1»).
+            const existing = await db.collection('advance_reports').where('period', '==', p).get();
+            report.number = advanceCore.suggestReportNumber(p, existing.docs.map(d => d.data()));
         }
-
-        if (!report.number) report.number = advanceCore.suggestReportNumber(p, []);
-        const docId = report.id || safeId(report.number);
+        // ID нового звіту — хеш місяця й номера: safeId вирізав кирилицю, і «АЗ-1»
+        // та «АО-1» ставали одним документом «_-1», перезаписуючи один одного.
+        const isNew = !report.id;
+        const docId = report.id || `adv-${sha(`${p}|${report.number}`)}`;
         report.id = docId;
         const ref = db.doc(`advance_reports/${safeId(docId)}`);
 
         await db.runTransaction(async t => {
+            const oldSnap = await t.get(ref);
+            const old = oldSnap.exists ? oldSnap.data() : null;
+            if (old && isNew) fail('already-exists', `Авансовий звіт № ${report.number} за цей місяць уже є — відкрийте його для редагування`);
+            if (old?.status === 'settled') fail('failed-precondition', 'Звіт уже розраховано — виправлення лише сторнуванням');
             const policy = await policyStore.context(t);
             await lock?.assertOpen(p, 'Авансовий звіт', t);
+            // Звіт закритого місяця не можна «перенести» у відкритий, змінивши період.
+            if (old?.period && old.period !== p) await lock?.assertOpen(old.period, 'Авансовий звіт', t);
             if (!policy.funds.some(f => f.id === report.fundId)) report.fundId = policy.defaultFund;
+
+            // Виплачене й повернене веде сервер (виплата, виписка), а не форма.
+            report.reimbursedKop = Math.max(0, Number(old?.reimbursedKop || 0));
+            report.returnedKop = Math.max(0, Number(old?.returnedKop || 0));
+            const totals = advanceCore.calculateReportTotals(report);
+            report.spentKop = totals.spentKop;
+            report.balanceKop = totals.balanceKop;
+            report.reimburseKop = totals.reimburseKop;
+            report.returnKop = totals.returnKop;
+            report.status = approved ? (totals.isFullySettled ? 'settled' : 'approved') : 'pending';
+            if (approved) {
+                report.approvedBy = actor;
+                report.approvedAt = FieldValue.serverTimestamp();
+            }
 
             t.set(ref, {
                 ...report,
                 updatedBy: actor,
                 updatedAt: FieldValue.serverTimestamp(),
-                createdBy: actor,
-                createdAt: FieldValue.serverTimestamp()
+                // Автора й дату створення не переписуємо при кожному збереженні.
+                ...(old ? {} : { createdBy: actor, createdAt: FieldValue.serverTimestamp() })
             }, { merge: true });
 
             // Автоматичне створення / оприбуткування карток ТМЦ або МНМА на складі

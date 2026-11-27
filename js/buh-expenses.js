@@ -10,7 +10,7 @@
 // Усі записи — через сервер (expenseAction).
 // ============================================================
 import { session } from './firebase.js';
-import { escapeHtml, toast, setBusy, confirmDialog, promptDialog } from './ui.js';
+import { escapeHtml, toast, setBusy, confirmDialog, promptDialog, safeHref } from './ui.js';
 import {
     loadExpenses, expAct, uploadExpenseFiles, loadPaymentContext, loadPayments, CONTRACT_STATUS, maskIban, when, dateOnly, loadTx, PAYMENT_STATUS
 } from './buh-data.js';
@@ -58,7 +58,7 @@ const mainsFor = doc => mainsOf(doc, ctx.expenses);
 const docName = x => `${ctx.docTypes[x.docType] || 'Документ'} № ${x.number} від ${human(x.date)}`;
 const docsWord = n => (n % 10 === 1 && n % 100 !== 11 ? 'документ' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'документи' : 'документів');
 const val = id => document.getElementById(id)?.value?.trim() ?? '';
-const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
+const filesHtml = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
 const allExistingAssetIds = () => ctx?.existingAssetIds || (ctx?.expenses || []).map(x => x.assetId).filter(Boolean);
 
 /** Відкрити розділ на потрібній вкладці, за потреби — з готовою формою чи документом. */
@@ -656,7 +656,7 @@ function scanHtml(e) {
         : kind === 'pdf' ? `<iframe src="${url}#toolbar=0&amp;view=FitH" title="Скан: ${escapeHtml(first.name)}" loading="lazy"></iframe>`
             : '';
     return `<div class="dc-scan is-${kind}">${view}
-        <span class="dc-files">${[first, ...rest].map(f => `<a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('')}</span></div>`;
+        <span class="dc-files">${[first, ...rest].map(f => `<a href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join('')}</span></div>`;
 }
 
 function fieldsHtml(e) {

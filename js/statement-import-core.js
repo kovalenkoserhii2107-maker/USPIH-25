@@ -34,22 +34,55 @@ export function validIban(value) {
 const IBAN_RE = /UA\d{27}/;
 const clean = v => String(v ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
 
-/** «1 234,56», «-850.00», «1'234.56 UAH», «(120,00)» → копійки цілим числом, без похибок плаваючої коми. */
-export function toKop(value) {
-    if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 100) : null;
+/** Цілі гривні й дробова частина рядками → копійки; третій знак округлює (1.005 → 101), як bank-core на сервері. */
+function digitsToKop(whole, frac, negative) {
+    if (!/^\d+$/.test(whole || '0') || !/^\d*$/.test(frac)) return null;
+    const f = (frac + '000').slice(0, 3);
+    const kop = BigInt(whole || '0') * 100n + BigInt(f.slice(0, 2)) + (Number(f[2]) >= 5 ? 1n : 0n);
+    if (kop > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    return negative ? -Number(kop) : Number(kop);
+}
+
+function signAndBody(value) {
     let s = clean(value).replace(/\s|'|’|грн\.?|uah/gi, '');
-    if (!s) return null;
     let negative = false;
     if (/^\(.*\)$/.test(s)) { negative = true; s = s.slice(1, -1); }
     if (/^[-−–]/.test(s)) { negative = true; s = s.slice(1); }
     if (s.startsWith('+')) s = s.slice(1);
-    // Остання кома чи крапка з 1–2 цифрами після неї — десятковий роздільник; решта — розряди.
-    const m = /^(\d[\d.,]*?)(?:[.,](\d{1,2}))?$/.exec(s);
-    if (!m) return null;
-    const whole = m[1].replace(/[.,]/g, '');
-    if (!/^\d+$/.test(whole)) return null;
-    const kop = Number(whole) * 100 + Number((m[2] || '0').padEnd(2, '0'));
-    return Number.isSafeInteger(kop) ? (negative ? -kop : kop) : null;
+    return { s, negative };
+}
+
+/**
+ * Машинна сума з camt.053 чи 1С: «1250.500», «100.0000», «-850,5» — один роздільник,
+ * і він завжди десятковий. Розрядів у цих форматах немає, тож «100.0000» — це 100 грн,
+ * а не мільйон (як вийшло б у «людського» розбору нижче).
+ */
+export function toKopStrict(value) {
+    if (typeof value === 'number') return toKop(value);
+    const { s, negative } = signAndBody(value);
+    const m = /^(\d+)(?:[.,](\d*))?$/.exec(s);
+    return m ? digitsToKop(m[1], m[2] || '', negative) : null;
+}
+
+/**
+ * «1 234,56», «-850.00», «1'234.56 UAH», «(120,00)», «1.234.567,89» → копійки цілим числом.
+ * Обидва роздільники — десятковий останній; один роздільник кілька разів — розряди;
+ * один раз — десятковий, крім «1.234» (до трьох цифр перед і рівно три після — розряди).
+ * Для машинних форматів (camt.053, 1С) — toKopStrict.
+ */
+export function toKop(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 100) : null;
+    const { s, negative } = signAndBody(value);
+    if (!s || !/^\d[\d.,]*$/.test(s)) return null;
+    const seps = s.match(/[.,]/g) || [];
+    if (!seps.length) return digitsToKop(s, '', negative);
+    const last = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+    const after = s.slice(last + 1);
+    // Перша група розрядів — не довша за 3 цифри: «1250.500» не може бути тисячами.
+    const decimal = new Set(seps).size === 2 ? true : seps.length > 1 ? false : after.length !== 3 || last > 3;
+    return decimal
+        ? digitsToKop(s.slice(0, last).replace(/[.,]/g, ''), after, negative)
+        : digitsToKop(s.replace(/[.,]/g, ''), '', negative);
 }
 
 /** «05.10.2026», «05.10.2026 14:31», «2026-10-05», «05/10/2026», серійне число Excel → 'YYYY-MM-DD'. */
@@ -105,7 +138,7 @@ export function parse1C(text, ownIban = '') {
         const payeeAcc = normIban(PICK(d, 'ПолучательСчет', 'ПолучательРасчСчет', 'ОтримувачРахунок'));
         const out = iban ? payerAcc === iban : Boolean(PICK(d, 'ДатаСписано'));
         if (iban && payerAcc !== iban && payeeAcc !== iban) continue; // документ не цього рахунку
-        const amountKop = toKop(PICK(d, 'Сумма', 'Сума'));
+        const amountKop = toKopStrict(PICK(d, 'Сумма', 'Сума'));
         const date = toDate(PICK(d, out ? 'ДатаСписано' : 'ДатаПоступило', 'ДатаСписано', 'ДатаПоступило', 'Дата'));
         if (!amountKop || !date) continue;
         rows.push({
@@ -119,7 +152,7 @@ export function parse1C(text, ownIban = '') {
     }
     return summary('1c', rows, {
         iban: iban || null, from: toDate(PICK(sec, 'ДатаНачала', 'ДатаПочатку')), to: toDate(PICK(sec, 'ДатаКонца', 'ДатаКінця')),
-        openingKop: toKop(PICK(sec, 'НачальныйОстаток', 'ПочатковийЗалишок')), closingKop: toKop(PICK(sec, 'КонечныйОстаток', 'КінцевийЗалишок'))
+        openingKop: toKopStrict(PICK(sec, 'НачальныйОстаток', 'ПочатковийЗалишок')), closingKop: toKopStrict(PICK(sec, 'КонечныйОстаток', 'КінцевийЗалишок'))
     });
 }
 
@@ -168,7 +201,7 @@ export function parseCamt(text) {
     if (!stmt) throw new Error('У файлі немає виписки camt.053 (Stmt)');
     const iban = normIban(txt(stmt, 'Acct', 'Id', 'IBAN'));
     const amount = node => {
-        const kop = toKop(txt(node, 'Amt'));
+        const kop = toKopStrict(txt(node, 'Amt'));
         return kop === null ? null : (txt(node, 'CdtDbtInd') === 'DBIT' ? -kop : kop);
     };
     let openingKop = null, closingKop = null, from = null, to = null;

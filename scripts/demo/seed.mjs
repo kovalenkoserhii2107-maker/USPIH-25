@@ -175,7 +175,7 @@ export async function makeSeed(serverUrl) {
         { from: '2025-01', to: '2025-12', pdfo: 1800, vz: 500, esv: 2200, minWageKop: 800000, maxBaseMult: 20, subsistenceKop: 302800 },
         { from: '2026-01', to: '2026-12', pdfo: 1800, vz: 500, esv: 2200, minWageKop: 864700, maxBaseMult: 20, subsistenceKop: 332800 }
     ], basis: 'Закон про Держбюджет-2026: мінімальна зарплата 8 647 грн' }, CHAIR));
-    await db.collection('payroll_people').get().then(s => Promise.all(s.docs.map(d => d.ref.update({ position: 'Бухгалтер', gender: 'female' }))));
+    await db.collection('payroll_people').get().then(s => Promise.all(s.docs.map(d => d.ref.update({ position: 'Бухгалтер', gender: 'Ж' }))));
     await step('відомість січня', () => call('payrollAction', { action: 'save', period: '2026-01', inputs: {} }, ACC));
 
     // ---------- 8. Подані звіти, звірені власники, заявки на зміну ----------

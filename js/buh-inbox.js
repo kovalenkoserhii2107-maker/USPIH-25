@@ -6,7 +6,7 @@
 // На телефоні — кнопка «Так» на кожній картці. Будь-яке рішення
 // можна змінити вручну, а потім повернути з «Банку».
 // ============================================================
-import { escapeHtml, toast, confirmDialog } from './ui.js';
+import { escapeHtml, toast, confirmDialog, safeHref } from './ui.js';
 import {
     loadQueue, loadDirectory, loadCharges, loadExpenses, loadPayments, loadBudget, loadJournal, journalAct, loadPayroll, payrollAct, loadReports, expAct, act, bankQuery, signed, when, money, maskIban, skipProposal, INCOME_CATEGORIES, EXPENSE_CATEGORIES
 } from './buh-data.js';
@@ -276,7 +276,7 @@ function taskCardHtml(item, index) {
     const p = item.proposal;
     const e = p.expense, c = p.contract;
     const head = `<article class="inbox-card is-task${index === focus ? ' is-focus' : ''}${busy.has(item.tx.id) ? ' is-busy' : ''}" data-id="${escapeHtml(item.tx.id)}" data-index="${index}" tabindex="-1">`;
-    const files = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
+    const files = list => (list || []).map(f => `<a class="buh-file" href="${escapeHtml(safeHref(f.url))}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`).join(' ');
     const date = d => String(d || '').split('-').reverse().join('.');
     const body = {
         'approve-exp': () => [`${fmtKop(e.amountKop)} ₴`, `затвердження · ${escapeHtml(e.approval?.reason || '')}`, e.supplierName,
